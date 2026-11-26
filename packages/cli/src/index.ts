@@ -90,7 +90,8 @@ import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/pro
 import { formatMemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory } from "@rustybuns/shell-bun/history";
 import { isRecord } from "@rustybuns/shell-bun/guard";
-import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, prodLikeFlag, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
+import { DEV_HTTP_PORT, bridgeConnect, connectUrl, portFree, writeConnectEntry } from "./connect-dev.ts";
+import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, freePort, prodLikeFlag, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
 import { triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
 import { skillCommand } from "./skill.ts";
@@ -1208,8 +1209,19 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
       yield* Effect.sleep(`${drain.seconds} seconds`);
     }
   }
+  // worker.connect (#5506): Alchemy's local Worker takes HTTP only, so dev listens on the TCP port itself and
+  // carries each connection to the app's connect() through a dev entry (connect-dev.ts).
+  const tcp = sub === "dev" && cfg.worker?.connect ? cfg.worker.connect.port : undefined;
+  const bridge = tcp === undefined ? undefined : yield* step(async () => {
+    const http = await portFree(DEV_HTTP_PORT) ? DEV_HTTP_PORT : await freePort();
+    Object.assign(buildEnv, { RB_CONNECT_DEV: writeConnectEntry(cfg.worker!), RB_CONNECT_DEV_PORT: String(http) });
+    const server = await bridgeConnect(tcp, connectUrl(http));
+    console.log(`connect(): tcp 127.0.0.1:${tcp} -> the Worker on http://127.0.0.1:${http}`);
+    return server;
+  });
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
   const code = yield* timed(prof, `alchemy ${sub}`, run([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
+  bridge?.close();
   // Either way the drain is lifted. A failed deploy leaves the old build running. A good one can too, for a while:
   // Cloudflare lets a busy object keep its old code until it goes idle (up to 5 minutes), and its drain
   // lives in memory, so it would refuse new claims until then (#3433). Rooms already on the new build have no drain to lift.
