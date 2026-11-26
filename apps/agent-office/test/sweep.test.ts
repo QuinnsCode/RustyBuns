@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepHalfGone, sweepHalfRemoved, sweepScratch, WORKTREES } from "../live/sweep.ts";
+import { cacheKey, dueDaily, inUse, lockVersions, playwrightBuilds, pruneBunCache, pruneBunDaily, prunePlaywright, slug, sweepBuilt, sweepHalfGone, sweepHalfRemoved, sweepScratch, WORKTREES } from "../live/sweep.ts";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "rb-sweep-"));
 
@@ -158,6 +158,28 @@ test("with no lockfile to go by, the cache is left alone", async () => {
   const r = await pruneBunCache([path.join(root, "empty")], true, path.join(root, "cache"), 0);
   expect(r.refused).toContain("no bun.lock");
   expect(existsSync(path.join(root, "cache", "a@1.0.0@@@1"))).toBe(true);
+});
+
+test("the floor prunes the Bun cache once a day, and an install running puts it off without using up the day", async () => {
+  const root = tmp();
+  const day = 24 * 3_600_000, t0 = Date.now();
+  const stamp = path.join(root, "stamp");
+  expect([dueDaily(stamp, t0), dueDaily(stamp, t0 + 3_600_000), dueDaily(stamp, t0 + day - 1), dueDaily(stamp, t0 + day), dueDaily(stamp, t0 + day + 1)]).toEqual([true, false, false, true, false]);
+
+  const checkout = path.join(root, "repo"), cache = path.join(root, "install", "cache");
+  mkdirSync(checkout, { recursive: true });
+  writeFileSync(path.join(checkout, "bun.lock"), `{ "packages": { "a": ["a@1.0.0", "", {}, "sha512-x"] } }`);
+  const old = new Date(t0 - 2 * 3_600_000);
+  for (const d of ["a@1.0.0@@@1", "a@0.9.0@@@1"]) { mkdirSync(path.join(cache, d), { recursive: true }); utimesSync(path.join(cache, d), old, old); }
+
+  expect(await pruneBunDaily([checkout], cache, t0, () => true)).toBe("");
+  expect(existsSync(path.join(cache, "a@0.9.0@@@1"))).toBe(true);
+  expect(await pruneBunDaily([checkout], cache, t0, () => false)).toMatch(/^🧹 Bun cache: removed 1 version no bun.lock names/);
+  expect([existsSync(path.join(cache, "a@0.9.0@@@1")), existsSync(path.join(cache, "a@1.0.0@@@1"))]).toEqual([false, true]);
+  mkdirSync(path.join(cache, "a@0.8.0@@@1"));
+  utimesSync(path.join(cache, "a@0.8.0@@@1"), old, old);
+  expect(await pruneBunDaily([checkout], cache, t0 + 3_600_000, () => false)).toBe("");
+  expect(existsSync(path.join(cache, "a@0.8.0@@@1"))).toBe(true);
 });
 
 test("lockfile and cache names parse the same way, and odd ones parse to nothing", () => {

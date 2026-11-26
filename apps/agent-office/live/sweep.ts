@@ -6,7 +6,8 @@
 //     we know, that repo's worktrees folder exists, and no worktree in it is <name> (or a parent of it, for a session
 //     started in a subfolder). Anything that doesn't parse stays. The office runs it on start and after each send-home.
 //  2. Bun's cache, ~/.bun/install/cache, which keeps every version ever downloaded. `pruneBunCache` keeps what any
-//     bun.lock in a live checkout or worktree names and removes other `name@version@@@N` folders. Manual, dry run first.
+//     bun.lock in a live checkout or worktree names and removes other `name@version@@@N` folders. `office:sweep` dry-runs
+//     it, and the floor runs it about once a day (`pruneBunDaily`, #6183), never while a `bun install` runs.
 //  3. node_modules and build output (`dist`, `target`, `.wrangler/tmp`, only where git ignores them) in worktrees no
 //     worker sits at (kept on send-home because git sees work main lacks). A seated worker may be serving its `dist`, so
 //     the rule needs the office's list of who sits where: the office runs it after each send-home, with the workers it
@@ -18,7 +19,7 @@
 //     only changes are files deleted by a cut-off remove (`sweepHalfRemoved`, #5913), when the sweep knows who sits where.
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
-import { existsSync, realpathSync, statfsSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statfsSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { lstat, readdir, readFile, readlink, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -387,6 +388,51 @@ export async function pruneBunCache(roots: string[], go: boolean, cache = path.j
   return { paths, bytes, locks };
 }
 
+// #6183: the cache grew without limit between hand runs (`bun pm cache rm` freed 42 GB on 2026-11-16). The floor's sweep
+// timer prunes it about once a day: it reads every lockfile, too much for each 30-minute round. The cache is one per Mac
+// and shared by every floor, so the prune keeps what any office repo's lockfiles name, and one stamp gates all floors.
+
+/** How often the floor prunes the Bun cache on its own. */
+export const PRUNE_MS = 24 * 3_600_000;
+
+/** Every repo the office has a floor for: `~/agent-office/<owner>/<repo>` with an `.agent-office` folder. */
+export function officeRepos(root = path.join(homedir(), "agent-office")): string[] {
+  const out: string[] = [];
+  try {
+    for (const owner of readdirSync(root, { withFileTypes: true })) {
+      if (!owner.isDirectory()) continue;
+      for (const repo of readdirSync(path.join(root, owner.name), { withFileTypes: true }))
+        if (repo.isDirectory() && existsSync(path.join(root, owner.name, repo.name, ".agent-office"))) out.push(path.join(root, owner.name, repo.name));
+    }
+  } catch {}
+  return out;
+}
+
+/** Whether a day has passed since `stamp` was last touched (or it never was); when it has, touches it at `now`. */
+export function dueDaily(stamp: string, now = Date.now(), everyMs = PRUNE_MS): boolean {
+  try { if (now - statSync(stamp).mtimeMs < everyMs) return false; } catch {}
+  try {
+    writeFileSync(stamp, "");
+    utimesSync(stamp, now / 1000, now / 1000);
+  } catch { return false; }
+  return true;
+}
+
+/** Whether a `bun install` (or `bun add`) runs anywhere on this Mac: a hire's, or a worker's own. */
+export function installRunning(): boolean {
+  try { return Bun.spawnSync(["pgrep", "-f", "bun (install|add|i)( |$)"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0; } catch { return true; }
+}
+
+/**
+ * The floor's daily Bun cache prune over `roots`, and the line saying what it freed ('' when it didn't run or freed
+ * nothing). While an install runs it waits for the next round without using up the day.
+ */
+export async function pruneBunDaily(roots: string[], cache = path.join(homedir(), ".bun", "install", "cache"), now = Date.now(), busy = installRunning): Promise<string> {
+  if (!existsSync(cache) || busy() || !dueDaily(path.join(path.dirname(cache), ".rustybuns-pruned"), now)) return "";
+  const r = await pruneBunCache([...new Set(roots)], true, cache);
+  return r.paths.length ? `🧹 Bun cache: removed ${r.paths.length} version${r.paths.length === 1 ? "" : "s"} no bun.lock names, ${gb(r.bytes)} freed` : "";
+}
+
 // --- other package caches ----------------------------------------------------------------------------------------------
 
 export interface Cache {
@@ -547,7 +593,9 @@ export function sweepEvery(dir: string, live: () => string[], say: (line: string
   const timer = setInterval(() => {
     if (busy) return;
     busy = true;
-    void sweepFloor(dir, live()).then((line) => line && say(line)).finally(() => { busy = false; });
+    void sweepFloor(dir, live()).then((line) => line && say(line))
+      .then(() => pruneBunDaily([dir, ...officeRepos()])).then((line) => line && say(line))
+      .catch(() => {}).finally(() => { busy = false; });
   }, everyMs);
   timer.unref?.();
   return { stop: () => clearInterval(timer) };

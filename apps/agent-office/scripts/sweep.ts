@@ -10,28 +10,17 @@
 // `modules` deletes node_modules and git-ignored dist/target/.wrangler/tmp of worktrees no worker sits at (asks
 // `office-workers list`, skips if the office is down). `playwright` deletes browser builds no playwright-core names.
 // `worktrees` only lists: sending a worker home is the owner's call. ~/Downloads and anything else you made is never read.
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { arr, bool, check, obj, opt, str } from "@rustybuns/util/guard";
-import { caches, duKb, gb, inUse, listTrees, pruneBunCache, prunePlaywright, sweepBuilt, sweepScratch } from "../live/sweep.ts";
+import { caches, duKb, gb, inUse, listTrees, officeRepos, pruneBunCache, prunePlaywright, sweepBuilt, sweepScratch } from "../live/sweep.ts";
 
 const args = process.argv.slice(2);
 const go = args.includes("--go");
 const many = (flag: string) => args.flatMap((a, i) => (a === flag && args[i + 1] ? [path.resolve(args[i + 1]!)] : []));
 const only = args.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const want = (part: string) => (only ? only.includes(part) : part !== "worktrees");
-
-function officeRepos(): string[] {
-  const root = path.join(homedir(), "agent-office");
-  const out: string[] = [];
-  for (const owner of existsSync(root) ? readdirSync(root, { withFileTypes: true }) : []) {
-    if (!owner.isDirectory()) continue;
-    for (const repo of readdirSync(path.join(root, owner.name), { withFileTypes: true }))
-      if (repo.isDirectory() && existsSync(path.join(root, owner.name, repo.name, ".agent-office"))) out.push(path.join(root, owner.name, repo.name));
-  }
-  return out;
-}
 
 /** The worktree paths workers on `repo`'s floor still use (not "landed: free to go"), from the office; undefined when it doesn't answer. */
 async function seatedTrees(repo: string): Promise<string[] | undefined> {
