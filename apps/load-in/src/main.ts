@@ -56,8 +56,8 @@ import { handsView, type Hold } from "./hands/view.ts";
 import { mountInk } from "./you/ink-view.ts";
 import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
-import { dress, faceLook, tapeLabel, type Dressed } from "./faces.ts";
-import { begun, callName, idlePrompt, nextStep } from "./next.ts";
+import { dress, faceLook, type Dressed } from "./faces.ts";
+import { begun, callName, idlePrompt, nextStep, tapeLabel } from "./next.ts";
 import { toward } from "./toward.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
@@ -164,13 +164,28 @@ spot.visible = false;
 scene.add(spot);
 const spotLamp = new THREE.PointLight(0xffc88a, 0, 2.8, 1.6);
 // While the piece has a place to go, both ends speak amber: its outline, pool, cone and lamp take the stand's warm
-// colour, and a dashed line of the same tape runs along the floor from the piece to its stand.
+// colour, and a dashed line of the same tape runs along the floor from your feet to the piece and on to its stand
+// (from you, once it is in your hands).
 const COOL = 0x4cc9f0, WARM = 0xff8a1e, coolPool = goalPool.material.map, warmPool = poolTexture(WARM);
-const trailTex = trailTexture();
-const trail = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: trailTex, transparent: true, depthWrite: false }));
-trail.renderOrder = 1;
-trail.visible = false;
-scene.add(trail);
+const trails = [0, 1].map(() => {
+  const tex = trailTexture(), mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  mesh.renderOrder = 1;
+  mesh.visible = false;
+  scene.add(mesh);
+  return { mesh, tex };
+});
+/** Lay one length of tape from `a` to `b` on the floor, short of each end by `inset` (or a third of the way, if shorter). */
+function layTrail(t: (typeof trails)[number], a: { x: number; z: number } | null | undefined, b: { x: number; z: number } | null | undefined, inset: [number, number]) {
+  const dx = b && a ? b.x - a.x : 0, dz = b && a ? b.z - a.z : 0, len = Math.hypot(dx, dz);
+  t.mesh.visible = !!a && !!b && len > 0.9;
+  if (!a || !b || !t.mesh.visible) return;
+  const i0 = Math.min(inset[0], len / 3), i1 = Math.min(inset[1], len / 3), run = len - i0 - i1, mid = i0 + run / 2;
+  t.mesh.position.set(a.x + (dx / len) * mid, (world.level.floorAt?.(b.x, b.z) ?? 0) + 0.011, a.z + (dz / len) * mid);
+  t.mesh.rotation.y = -Math.atan2(dz, dx);
+  t.mesh.scale.set(run, 1, 0.1);
+  t.tex.repeat.set(run / 0.3, 1);
+  t.tex.offset.x = -performance.now() / 1600;
+}
 function trailTexture() {
   const c = document.createElement("canvas");
   c.width = 64; c.height = 16;
@@ -402,16 +417,10 @@ function draw() {
   goalLine.color.setHex(warm ? WARM : COOL);
   goalLamp.color.setHex(warm ? 0xffc88a : 0x9fe3ff);
   if (goalPool.material.map !== (warm ? warmPool : coolPool)) { goalPool.material.map = warm ? warmPool : coolPool; goalPool.material.needsUpdate = true; }
-  const from = tgt && tgt !== held ? tgt : held ? { x: you.x, z: you.z } : null;
-  trail.visible = !!to && !!from;
-  if (to && from) {
-    const dx = to.x - from.x, dz = to.z - from.z, len = Math.hypot(dx, dz), inset = Math.min(0.45, len / 3), run = Math.max(0, len - inset * 2);
-    trail.position.set(from.x + dx / 2, (world.level.floorAt?.(to.x, to.z) ?? 0) + 0.011, from.z + dz / 2);
-    trail.rotation.y = -Math.atan2(dz, dx);
-    trail.scale.set(run, 1, 0.1);
-    trailTex.repeat.set(run / 0.3, 1);
-    trailTex.offset.x = -performance.now() / 1600;
-  }
+  // The tape starts where you stand: to the piece while your hands are empty, then on from it to the stand.
+  const piece = tgt && tgt !== held ? tgt : null;
+  layTrail(trails[0], to ? { x: you.x, z: you.z } : null, to ? piece ?? to : null, [0.35, 0.45]);
+  layTrail(trails[1], to ? piece : null, to, [0.45, 0.45]);
   spot.visible = !!to;
   spotLamp.intensity = to ? 2.4 + 0.5 * pulse : 0;
   if (to) {
