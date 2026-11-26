@@ -14,7 +14,9 @@
 //       blender/out/refs/<id>.now.png: front, side, three-quarter and head close-ups of public/models/<id>.glb, through an
 //       orthographic camera (blender/closeups.py). --main also draws git main's GLB to <id>.main.png at the same scale,
 //       so a change in size shows. --limb l_hand (any sheet node) swaps the last two tiles for that limb up close, from
-//       its outer side and from the front, in <id>.<node>.now.png. One Blender at a time.
+//       its outer side and from the front, in <id>.<node>.now.png. On the office Mac each drawing is one Blender queue
+//       job on the builder Mac (scripts/blender-queue.ts `blender`), its pictures brought back; the rest runs here,
+//       so --judge and --draft use this Mac's `claude -p`.
 //   bun scripts/beast-refs.ts --compare <id> [--out file.html]
 //       One self-contained page (blender/out/refs/<id>.compare.html): the references with their credits, the model
 //       before (git main) and now as close-up strips, and the traits with a tick or a cross each from the last judge
@@ -36,7 +38,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { $ } from "bun";
-import { runBlender } from "@rustybuns/cli/blender";
+import { blender } from "../../../scripts/blender-queue.ts";
 import { esc } from "@rustybuns/util";
 import { arr, int, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
 import { PICKS } from "../src/art.ts";
@@ -124,14 +126,16 @@ export async function fetchRefs(id: string, o: { query?: string; category?: stri
   return refs;
 }
 
-/** git main's GLB of the beast in a temporary file, or null when main has none (a new beast). */
+/** git main's GLB of the beast in a file under blender/out/refs (sent with the Blender job: it isn't in the tree), or
+ *  null when main has none (a new beast). The caller removes it. */
 async function mainGlb(id: string): Promise<string | null> {
   const root = (await $`git rev-parse --show-toplevel`.cwd(APP).text()).trim();
   const rel = `${join(APP, "public", "models", `${id}.glb`).slice(root.length + 1)}`;
   await $`git fetch -q origin main`.cwd(root).nothrow();
   const blob = await $`git show origin/main:${rel}`.cwd(root).quiet().nothrow();
   if (blob.exitCode !== 0) return null;
-  const tmp = join(tmpdir(), `${id}-main-${Date.now()}.glb`);
+  mkdirSync(refsOut, { recursive: true });
+  const tmp = join(refsOut, `${id}.main-${Date.now()}.glb`);
   await Bun.write(tmp, blob.stdout);
   return tmp;
 }
@@ -163,7 +167,7 @@ export async function closeups(id: string, o: { main?: boolean; limb?: string } 
   const focus = o.limb ? ["--focus", await limbFocus(id, o.limb)] : [];
   // one Blender for both builds, so they share one framing (the larger's)
   try {
-    await runBlender({ script: "blender/closeups.py", args: [now, res.now, ...(before ? [before, res.main!] : []), ...focus], cwd: APP });
+    await blender({ script: "blender/closeups.py", args: [now, res.now, ...(before ? [before, res.main!] : []), ...focus], cwd: APP, out: [refsOut], send: before ? [before] : [] });
   } finally { if (before) rmSync(before, { force: true }); }
   for (const out of Object.values(res)) for (const v of VIEWS) rmSync(`${out.slice(0, -4)}.${v}.png`, { force: true }); // the single views each strip was made from
   return res;
@@ -226,7 +230,10 @@ export async function candidates(id: string, files: string[]): Promise<Built[]> 
   }
   const before = await mainGlb(id), main = join(refsOut, `${id}.main.png`);
   try {
-    await runBlender({ script: "blender/closeups.py", args: [...(before ? [before, main] : []), ...built.flatMap((b) => [b.glb, b.strip])], cwd: APP });
+    await blender({
+      script: "blender/closeups.py", args: [...(before ? [before, main] : []), ...built.flatMap((b) => [b.glb, b.strip])], cwd: APP,
+      out: [refsOut], send: [...(before ? [before] : []), ...built.map((b) => b.glb)],
+    });
   } finally { if (before) rmSync(before, { force: true }); }
   for (const out of [main, ...built.map((b) => b.strip)]) for (const v of VIEWS) rmSync(`${out.slice(0, -4)}.${v}.png`, { force: true });
   return built;

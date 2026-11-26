@@ -141,6 +141,15 @@ export interface World {
   stats: { navyCraftLost: number; rimCraftLost: number; torpsShot: number; torpsHit: number; splits: number; shipsLost: Record<Side, number>; dealt: Record<Side, Record<DmgSrc, number>> };
   groupN: number;
   field: Field | null;
+  /** A level's own rule (`src/sim/levels.ts`); null in the other battles. */
+  goal: Goal | null;
+}
+
+/** A level's rule: what the clock running out means (a strike you were too slow for is lost, a last stand you outlast
+ *  is won), and a ship of yours that must reach a point alive. */
+export interface Goal {
+  onTime: "win" | "loss"; why: string;
+  escort?: { ship: number; x: number; z: number; r: number; why: string };
 }
 
 /** A hull's numbers: size, speed, guns, point defence and what its hangar launches. */
@@ -214,7 +223,7 @@ export function emptyWorld(seed: number, mode: World["mode"] = "flagship"): Worl
     rimTemper: "zealot", rimDoctrine: "steady", rimIntent: "", rimNext: 0,
     flagship: 0, limit: 480,
     stats: { navyCraftLost: 0, rimCraftLost: 0, torpsShot: 0, torpsHit: 0, splits: 0, shipsLost: { navy: 0, rim: 0 }, dealt: { navy: { guns: 0, torps: 0, craft: 0, rake: 0, mines: 0 }, rim: { guns: 0, torps: 0, craft: 0, rake: 0, mines: 0 } } },
-    groupN: 0, field: null,
+    groupN: 0, field: null, goal: null,
   };
 }
 
@@ -785,10 +794,19 @@ export function nextCall(w: World, side: Side) {
 function judge(w: World) {
   const fl = flagship(w);
   if (!fl) { w.outcome = "loss"; w.why = "Your flagship is gone."; return; }
+  const e = w.goal?.escort;
+  if (e) {
+    const s = w.ships.find((o) => o.id === e.ship)!;
+    if (s.dead) { w.outcome = "loss"; w.why = `The ${s.name} is lost.`; return; }
+    if (dist(s.x, s.z, e.x, e.z) < e.r) { w.outcome = "win"; w.why = e.why; return; }
+  }
   if (w.planet.base <= 0) { w.outcome = "win"; w.why = `The Compact base on ${w.planet.name} burns.`; return; }
   const rimLeft = w.ships.some((s) => !s.dead && s.side === "rim") || w.waves.some((v) => !v.done);
   if (!rimLeft) { w.outcome = "win"; w.why = `Every Compact hull over ${w.planet.name} is broken. The base is yours to take.`; return; }
-  if (w.t >= w.limit) { w.outcome = "draw"; w.why = "Time: the Compact holds on long enough to evacuate."; }
+  if (w.t >= w.limit) {
+    if (w.goal) { w.outcome = w.goal.onTime; w.why = w.goal.why; }
+    else { w.outcome = "draw"; w.why = "Time: the Compact holds on long enough to evacuate."; }
+  }
 }
 
 /** Spend focus on a power. Returns whether it took. */
