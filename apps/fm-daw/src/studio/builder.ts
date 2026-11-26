@@ -79,7 +79,9 @@ export function venueSrc(link: string): string | null {
   return VENUE_SRC.test(src) ? src : null;
 }
 const XYZ = (v: unknown): [number, number, number] => { const [x, y, z] = arr(num(-50, 50), 3, { min: 3 })(v); return [x, y, z]; };
-const VENUE: Guard<Venue> = obj({ src: str(300, { re: VENUE_SRC }), scale: num(0.05, 100), at: XYZ, yaw: num(-7, 7) });
+/** A captured ground's heights (@rustybuns/gear groundMap): at most 32 samples a side. */
+const LAND = obj({ x0: num(-500, 500), z0: num(-500, 500), cell: num(0.05, 50), cols: int(2, 32), h: arr(num(-200, 200), 32 * 32, { min: 4 }) });
+const VENUE: Guard<Venue> = obj({ src: str(300, { re: VENUE_SRC }), scale: num(0.05, 100), at: XYZ, yaw: num(-7, 7), land: opt(LAND) });
 
 /** A studio from the wire or this browser's storage, checked. */
 export const Studio: Guard<StudioDef> = obj({
