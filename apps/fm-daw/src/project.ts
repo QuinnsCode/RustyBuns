@@ -16,7 +16,7 @@ import type { StudioDef } from "./studio/room.ts";
 import { RUNG, type Rung } from "./rewind.ts";
 import { DeckPress, DeckSay, MixSay } from "./dj/booth.ts";
 import { SOUND_MAX_FRAMES } from "./clock.ts";
-import { Chain, MAX_CHAIN, Song, chained, patternsOf, relink } from "./song.ts";
+import { Chain, MAX_CHAIN, Song, relayoutLanes, relayoutNotes, relink, relinkLanes } from "./song.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -212,16 +212,23 @@ export function sanitize(x: unknown): Project | null {
   // older projects had fewer tracks: pad with silent synth tracks (gain 0)
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
-  const made = fitTakes(tracks.map((v, ti) => track(v, ti, beats))), song = songOf(p.song, bars).song;
-  const fitted = song ? linked(made, song) : made;
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...builtOf(p.built), ...songOf(p.song, bars) };
+  const song = songOf(p.song, bars).song;
+  const out: Project = { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitTakes(tracks.map((v, ti) => track(v, ti, beats))), ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...builtOf(p.built), ...songOf(p.song, bars) };
+  return song ? laidOut(out, song, song) : out;
 }
 
 /** song only when it fits the loop exactly. */
 const songOf = (v: unknown, bars: number): { song?: Song } => { const s = check(Song, v); return s && s.bars * s.chain.length === bars ? { song: s } : {}; };
 
-/** The tracks with every slot playing its pattern again, as each pattern's first slot holds it. */
-const linked = (tracks: TrackDoc[], song: Song): TrackDoc[] => tracks.map((t) => ({ ...t, notes: chained(patternsOf(t.notes, song, BEATS_PER_BAR), song, BEATS_PER_BAR) }));
+/**
+ * Every track's notes and automation lanes, and Shape's moves, each pattern as chain `was` held it, laid out along
+ * `song` (what falls past the end goes). With `was` the same song, every slot plays its pattern again.
+ */
+function laidOut(p: Project, was: Song, song: Song): Project {
+  const beats = song.bars * song.chain.length * BEATS_PER_BAR, { eqAuto, ...rest } = p;
+  const tracks = p.tracks.map((t) => ({ ...t, notes: relayoutNotes(t.notes, was, song, BEATS_PER_BAR), ...(t.auto ? { auto: sanitizeLanes(relayoutLanes(t.auto, was, song, BEATS_PER_BAR), beats) } : {}) }));
+  return { ...rest, tracks, ...eqAutoOf(sanitizeEqAuto(relayoutLanes(eqAuto ?? [], was, song, BEATS_PER_BAR), beats, p.eq)) };
+}
 
 /** desk only when something on it was moved, so a groove nobody mixed players in reads as it did. */
 const deskOf = (d: SeshDesk): { desk?: SeshDesk } => (plainSeshDesk(d) ? {} : { desk: d });
@@ -484,8 +491,13 @@ export function apply(p: Project, op: Op): Project {
         return { ...t, notes: song ? relink(t.notes, notes, song, BEATS_PER_BAR) : notes };
       });
     }
-    case "auto":
-      return withTrack(p, op.track, (t) => ({ ...t, auto: sanitizeLanes(op.lanes, loopBeats(p)) }));
+    case "auto": {
+      const song = p.song, beats = loopBeats(p);
+      return withTrack(p, op.track, (t) => {
+        const auto = sanitizeLanes(op.lanes, beats);
+        return { ...t, auto: song ? sanitizeLanes(relinkLanes(t.auto ?? [], auto, song, BEATS_PER_BAR), beats) : auto };
+      });
+    }
     case "track":
       return withTrack(p, op.track, (t) => ({
         ...t,
@@ -514,9 +526,10 @@ export function apply(p: Project, op: Op): Project {
       const { eqAuto, ...rest } = p;
       return { ...rest, eq, ...eqAutoOf(sanitizeEqAuto(eqAuto, loopBeats(p), eq)) };
     }
-    case "eqAuto":
-      const { eqAuto: _, ...rest } = p;
-      return { ...rest, ...eqAutoOf(sanitizeEqAuto(op.lanes, loopBeats(p), p.eq)) };
+    case "eqAuto": {
+      const { eqAuto: was, ...rest } = p, beats = loopBeats(p), lanes = sanitizeEqAuto(op.lanes, beats, p.eq);
+      return { ...rest, ...eqAutoOf(p.song ? sanitizeEqAuto(relinkLanes(was ?? [], lanes, p.song, BEATS_PER_BAR), beats, p.eq) : lanes) };
+    }
     case "eqPhase": {
       const { eqLinear: _, ...rest } = p;
       return { ...rest, ...linearOf(op.linear) };
@@ -571,9 +584,9 @@ export function apply(p: Project, op: Op): Project {
       const was = p.song ?? { bars: p.bars, chain: [0] }, song: Song = { bars: was.bars, chain: op.chain.slice(0, MAX_CHAIN) };
       const bars = song.bars * song.chain.length;
       if (bars > MAX_BARS || !song.chain.length) return p;
-      // each track's patterns as the old chain had them, laid out along the new one; what falls past the end goes
-      const tracks = p.tracks.map((t) => ({ ...t, notes: chained(patternsOf(t.notes, was, BEATS_PER_BAR), song, BEATS_PER_BAR) }));
-      return { ...p, bars, song, tracks: fitTakes(tracks, bars * BEATS_PER_BAR) };
+      // each pattern as the old chain had it, laid out along the new one
+      const next = laidOut({ ...p, bars, song }, was, song);
+      return { ...next, tracks: fitTakes(next.tracks, bars * BEATS_PER_BAR) };
     }
     default:
       return p;
