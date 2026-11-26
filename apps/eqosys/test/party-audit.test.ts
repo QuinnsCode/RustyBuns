@@ -132,7 +132,7 @@ test("a page that closes its party socket and keeps the call is out of voice aft
   const stub = parties.get(parties.idFromName(code));
   try {
     setSystemTime(new Date(Date.now() + VOICE_GRACE + 1000));
-    await stub.alarm();
+    await stub.alarm!();
   } finally { setSystemTime(); }
   await until(() => orders.some((o) => o.t === "kick"));
   expect(orders.filter((o) => o.t === "kick").map((o) => o.sub)).toEqual([bo.id]);
