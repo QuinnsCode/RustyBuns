@@ -6,7 +6,7 @@
 // textures painted in code (planks with grain, ceiling tiles on their grid, wedge foam, folded curtains, brick, carpet),
 // the room's absorbers (wedge foam cut as real ridges) and curtains hung where its data says, paint rolled on by hand, a framed
 // control-room window whose glass reflects the room, the cables, tape, wall plates and road cases a room in use collects,
-// the marks and paper of one people work in (scuffed walls, worn floor, posters, a music stand, a set list, a clock, sockets, air grilles), and on high a little bloom, a vignette and grain.
+// the marks and paper of one people work in (scuffed walls, worn floor, posters, a music stand, a set list, a clock, sockets, air grilles), and on high a camera's depth of field focused on what is at the middle of the view, a little bloom, lens fringing toward the edges, a vignette and grain.
 // Two settings: `high` (shadows, post) and `low` (neither, for a weak laptop or a phone); ?quality= or Q picks one.
 // Other files build their meshes with `surface(name, color)` and mark a lamp or a screen with userData.glow.
 import * as THREE from "three";
@@ -17,7 +17,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
-import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
+import { FullScreenQuad, Pass } from "three/examples/jsm/postprocessing/Pass.js";
 import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
 import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
@@ -493,12 +493,63 @@ function ground(renderer: THREE.WebGLRenderer, scene: THREE.Scene, group: THREE.
   for (const o of hidden) o.visible = true;
   quad.dispose(); depth.dispose(); b.dispose();
   // the tight line is dark; the wide shade is lighter, since the downlights and the bounce still reach under things
-  for (const [rt, opacity] of [[tight, 1], [a, 0.8]] as const) {
+  for (const [rt, opacity] of [[tight, 1], [a, 0.95]] as const) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shade(rt.texture, opacity));
     m.rotation.x = -Math.PI / 2; m.scale.y = -1; m.position.y = 0.002; m.name = "ground";
     group.add(m);
   }
   return n;
+}
+
+/**
+ * A camera's depth of field (round 11): it focuses on the nearest thing at the middle of the view, as a phone's
+ * autofocus does, and what is nearer or farther blurs by how far it is out of focus, as a disc (golden-angle taps).
+ * A tap only lends its colour if it is itself blurred that far, so a sharp thing never smears over what is behind it.
+ * Reads the scene's depth from the composer's own target, so it costs one pass and no second render of the room.
+ */
+class Focus extends Pass {
+  readonly mat: THREE.ShaderMaterial;
+  readonly quad: FullScreenQuad;
+  constructor(readonly camera: THREE.PerspectiveCamera) {
+    super();
+    this.mat = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, near: { value: 0.1 }, far: { value: 100 }, px: { value: new THREE.Vector2(1, 1) }, size: { value: 4 } },
+      vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: `#include <packing>
+        uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform float near; uniform float far; uniform vec2 px; uniform float size;
+        varying vec2 vUv;
+        float dist(vec2 uv) { return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, near, far); }
+        // how many pixels across a point at distance z blurs to, focused at f
+        float coc(float z, float f) { return min(size * abs(1.0 - f / z) * 1.4, size * 2.0); }
+        void main() {
+          float f = 1e4;
+          for (int i = 0; i < 5; i++) { vec2 o = vec2(i == 1 ? 1.0 : i == 2 ? -1.0 : 0.0, i == 3 ? 1.0 : i == 4 ? -1.0 : 0.0) * 0.03; f = min(f, dist(vec2(0.5) + o)); }
+          float r = coc(dist(vUv), f);
+          vec4 sum = texture2D(tDiffuse, vUv); float n = 1.0;
+          if (r > 0.5) {
+            for (int i = 1; i < 24; i++) {
+              float k = float(i) / 24.0, a = float(i) * 2.39996;
+              vec2 o = vec2(cos(a), sin(a)) * sqrt(k) * r;
+              vec2 uv = vUv + o * px;
+              float w = clamp(coc(dist(uv), f) - length(o) + 1.0, 0.0, 1.0);
+              sum += texture2D(tDiffuse, uv) * w; n += w;
+            }
+          }
+          gl_FragColor = sum / n;
+        }`,
+    });
+    this.quad = new FullScreenQuad(this.mat);
+  }
+  override render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget) {
+    const u = this.mat.uniforms;
+    u.tDiffuse!.value = readBuffer.texture; u.tDepth!.value = readBuffer.depthTexture;
+    u.near!.value = this.camera.near; u.far!.value = this.camera.far;
+    u.px!.value.set(1 / readBuffer.width, 1 / readBuffer.height);
+    u.size!.value = readBuffer.height / 360; // about 2 px of blur at 720 for something twice as far as the focus
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+  override dispose() { this.mat.dispose(); this.quad.dispose(); }
 }
 
 /** A see-through black that darkens what's under it by its texture's alpha: drawn over a surface, never hiding it. */
@@ -1258,8 +1309,9 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   // (no screen-space AO: its depth pass takes the glass for a wall and fogs the view through it, and it costs the most)
   let composer: EffectComposer | null = null, film: ShaderPass | null = null;
   if (high) {
-    composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+    composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1) }));
     composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new Focus(camera)); // before the bloom, so a blurred lamp still blooms round its blur
     // only light sources bloom (the cans glow at 6): a lit surface under a can, like white keys, stays crisp
     composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.18, 0.35, 4));
     composer.addPass(new OutputPass());
@@ -1269,15 +1321,18 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       fragmentShader: `uniform sampler2D tDiffuse; uniform float t; varying vec2 vUv;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + t) * 43758.5453); }
         void main() {
-          vec4 c = texture2D(tDiffuse, vUv);
           vec2 q = vUv - 0.5;
+          vec4 c = texture2D(tDiffuse, vUv);
+          // a real lens fringes a little toward its edges: red and blue land a hair apart, nothing at the middle
+          c.r = texture2D(tDiffuse, vUv + q * 0.0025).r;
+          c.b = texture2D(tDiffuse, vUv - q * 0.0025).b;
           c.rgb *= 1.0 - dot(q, q) * 0.55;            // the lens darkens toward its corners
           c.rgb += (hash(vUv * 977.0) - 0.5) * 0.025; // film grain
           gl_FragColor = c;
         }`,
     });
     composer.addPass(film);
-    post.push("bloom", "vignette", "grain");
+    post.push("focus", "bloom", "fringe", "vignette", "grain");
   }
 
   // every mesh casts and takes shadows, glowing ones get their light: checked now and then, as people come and go
