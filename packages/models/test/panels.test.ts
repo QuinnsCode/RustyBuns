@@ -6,8 +6,6 @@ import { GEAR_SIZES, type GearId } from "../src/gear.ts";
 import { PANELS } from "../src/panels.ts";
 import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../gear/src/catalog.ts";
 
-// The catalog still wires these the old way: the KS118 as a passive sub (#6011), the VTX A12 as a powered box.
-const CATALOG_LAGS = new Set(["sub-18", "line-array-box"]);
 const speakers = catalogIds.filter((id) => catalogGear(id).speaker && id !== "cab-4x12" && id !== "synergy-horn" && id !== "tapped-horn-18");
 
 test.each(speakers)("%s has its real panel", (id) => {
@@ -22,5 +20,5 @@ test.each(speakers)("%s has its real panel", (id) => {
   }
   const wired = panel!.sockets.flatMap((s) => (s.jack ? [s.jack] : []));
   expect(new Set(wired).size).toBe(wired.length);
-  if (!CATALOG_LAGS.has(id)) expect(wired.sort()).toEqual(jackNames(catalogGear(id)).sort());
+  expect(wired.sort()).toEqual(jackNames(catalogGear(id)).sort());
 });

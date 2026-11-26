@@ -1,5 +1,5 @@
-// The bigger bar: a real stage at the back, passive 15" tops and two subs run off a rolling amp rack, two powered
-// wedges, and a breaker panel on the right wall. Each wall outlet sits on a numbered circuit with a 15 or 20 A breaker,
+// The bigger bar: a real stage at the back, passive 15" tops run off a rolling amp rack, two powered subs (mains and a
+// signal line each) and two powered wedges, and a breaker panel on the right wall. Each wall outlet sits on a numbered circuit with a 15 or 20 A breaker,
 // and the back-bar cooler is always plugged into circuit 3. Put the amp rack on the cooler's circuit and it trips at
 // show level, killing the cooler with it: walk to the panel, reset it, move the plug. `judge` runs the patch through
 // packages/gear's compile, trips what is over, and says what is fed. Plain data, no DOM.

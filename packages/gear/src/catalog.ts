@@ -93,12 +93,15 @@ const list: Gear[] = [
     speaker: { sensitivity: 99, maxSpl: 130, ratedWatts: 500, ohms: 8, coverage: { h: 90, v: 50 }, lowCut: 45, highCut: 20000, rearLoss: 18 },
   },
   {
+    // Powered, as the KS118 it copies (#6011): a class D amp on its back, mains on a locking IEC, XLR in and thru. Its
+    // draw at show level is the sheet's 1/8-power figure (3.0 A at 120 V); the sheet gives no idle figure.
     id: "sub-18",
-    what: '18" subwoofer',
+    what: '18" powered subwoofer',
     size: box(0.52, 0.638, 0.784),
     kg: 45,
-    jacks: { "speaker-in": 1, "speaker-out": 1 },
-    speaker: { sensitivity: 99, maxSpl: 133, ratedWatts: 800, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 35, highCut: 120, rearLoss: 6 },
+    jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
+    speaker: { sensitivity: 99, maxSpl: 133, ratedWatts: 800, ohms: null, coverage: { h: 360, v: 360 }, lowCut: 35, highCut: 120, rearLoss: 6 },
+    draw: { idle: 35, loud: 360 },
   },
   {
     id: "wedge-12",
@@ -175,14 +178,14 @@ const list: Gear[] = [
   // Its ground lift (`lift` on the placed box) breaks pin 1 when the amp and the desk make a ground loop.
   { id: "di-box", what: "active DI box with a ground lift", size: box(0.1, 0.05, 0.13), kg: 0.6, jacks: { "inst-in": 1, "line-out": 1, "xlr-out": 1 } },
   {
-    // Hung, not stood: one element of a flown line array, too heavy for one person (two carry it, or a crew).
+    // Hung, not stood: one element of a flown line array, too heavy for one person (two carry it, or a crew). Passive,
+    // as the VTX A12 it copies: an NL8 in and an NL8 link, four amp channels down the one cable (LF, LF, MF, HF).
     id: "line-array-box",
-    what: "line array element, powered",
+    what: "passive line array element",
     size: box(1.118, 0.33, 0.495),
     kg: 75,
-    jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
-    speaker: { sensitivity: 100, maxSpl: 138, ratedWatts: 1000, ohms: null, coverage: { h: 100, v: 12 }, lowCut: 60, highCut: 18000, rearLoss: 25 },
-    draw: { idle: 40, loud: 500 },
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 100, maxSpl: 138, ratedWatts: 1000, ohms: 8, coverage: { h: 100, v: 12 }, lowCut: 60, highCut: 18000, rearLoss: 25 },
   },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
   // Speakers that hang: a line array box (flown in a column from a rigging point, its splay to the next box set at the

@@ -3,7 +3,7 @@
 // the motor takes the hang up to trim. Main hangs either side of the stage, side hangs out wide, and two delay towers
 // halfway down the floor, timed so their sound lands just after the mains'. The subs sit on the floor at the stage edge;
 // a cardioid pair (a second sub right behind the first, polarity flipped, delayed by the gap) keeps the stage quiet. Power
-// comes from the building's company switch, three legs of 50 A: each hang and the sub amps are a feed you put on a leg,
+// comes from the building's company switch, three legs of 50 A: each hang's amps and the powered subs are a feed you put on a leg,
 // and a leg over its breaker trips. It is too much for one person: the hired hands carry what you send them to, two to
 // a box. Plain data, no DOM; the page (arena-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
@@ -68,9 +68,10 @@ export const SWITCH = { x: 19.6, z: 14 };
 export const LEGS = ["L1", "L2", "L3"] as const;
 export type Leg = (typeof LEGS)[number];
 export const LEG_AMPS = 50, VOLTS = 120;
-/** What the sub amps draw per sub at show level, watts. */
-export const SUB_AMP_W = 750;
-/** The feeds you put on a leg: one per rigging point, and the sub amps. */
+/** What one powered sub draws at show level (its sheet's 1/8-power figure), and the amps driving one passive line array
+ * box (four channels), watts. */
+export const SUB_W = catalog("sub-18").draw!.loud, BOX_AMP_W = 500;
+/** The feeds you put on a leg: one per rigging point (its amp rack), and the subs. */
 export const FEEDS = [...POINTS.map((p) => p.key), "subs"] as const;
 
 /** The crowd should hear this, mids and highs, dB SPL. A big room, so a wider window. */
@@ -359,11 +360,11 @@ export function pad(w: World, selected: string | null, tagged: string | null): R
   return out;
 }
 
-/** What a feed draws at show level: a hang its flown boxes, the sub amps a share per sub on the floor. */
+/** What a feed draws at show level: a hang the amps for its flown boxes, the subs each its own. */
 export function feedWatts(w: World, feed: string): number {
-  if (feed === "subs") return w.items.filter((i) => i.gear === "sub-18" && i.y === 0 && !reserved(w, i.key) && w.held?.key !== i.key).length * SUB_AMP_W;
+  if (feed === "subs") return w.items.filter((i) => i.gear === "sub-18" && i.y === 0 && !reserved(w, i.key) && w.held?.key !== i.key).length * SUB_W;
   const h = arena(w).hangs[feed];
-  return h?.flown ? h.boxes.length * catalog(BOX).draw!.loud : 0;
+  return h?.flown ? h.boxes.length * BOX_AMP_W : 0;
 }
 
 /** Each leg's load against its breaker: trips past it (not on Cozy), warns past 80%. */
@@ -392,7 +393,7 @@ export function hangSources(w: World, kinds: readonly PointKind[] = ["main", "si
   });
 }
 
-/** The subs that play: on the floor, the sub amps powered, each with its delay and polarity. */
+/** The subs that play: on the floor, their feed powered, each with its delay and polarity. */
 export function subSources(w: World): Source[] {
   if (!powered(w, "subs")) return [];
   const a = arena(w);

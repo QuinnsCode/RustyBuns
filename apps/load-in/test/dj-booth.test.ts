@@ -12,16 +12,15 @@ const c = (kind: CableKind, from: string, to: string, lengthM = 3): Cable => {
   return { kind, lengthM, from: [a, aj], to: [b, bj] };
 };
 
-/** Power to everything, master to the tops (the left top's thru on to the sub's amp), the booth outs to the monitors. */
+/** Power to everything, master to the tops (the left top's thru on to the powered sub), the booth outs to the monitors. */
 const system: Cable[] = [
   c("power", "wall-1 power-out-1", "distro power-in"),
   ...["deck-1", "deck-2", "mixer", "mon-l", "mon-r", "top-l"].map((k, i) => c("power", `distro power-out-${i + 1}`, `${k} power-in`)),
   c("power", "wall-1 power-out-2", "top-r power-in", 5),
-  c("power", "wall-2 power-out-1", "rack power-in"),
+  c("power", "wall-2 power-out-1", "sub power-in"),
   c("xlr", "mixer xlr-out-1", "top-l xlr-in", 5),
   c("xlr", "mixer xlr-out-2", "top-r xlr-in", 5),
-  c("xlr", "top-l xlr-out", "rack xlr-in-1", 5),
-  c("speaker", "rack speaker-out-1", "sub speaker-in", 5),
+  c("xlr", "top-l xlr-out", "sub xlr-in", 5),
   c("xlr", "mixer xlr-out-3", "mon-l xlr-in"),
   c("xlr", "mixer xlr-out-4", "mon-r xlr-in"),
 ];

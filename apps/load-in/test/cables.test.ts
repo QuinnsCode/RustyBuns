@@ -3,7 +3,7 @@
 // page's `window.loadIn` harness makes.
 import { expect, test } from "bun:test";
 import { setDial } from "../src/assists.ts";
-import { newWorld, pickUp, putDown } from "../src/sim.ts";
+import { newWorld, pickUp, putDown, type Level } from "../src/sim.ts";
 import { cableState, dropEnd, endInHand, fedBy, grabEnd, newCables, plug, settle, takeCable, takeRoll, unplug, walkWith } from "../src/cables/cables.ts";
 
 test("run power from the outlet to the speaker across the walkway, see the hazard, lay a ramp over it", () => {
@@ -91,4 +91,53 @@ test("two hands: an end in each, a roll on the right, the end that fits goes in,
   expect(hold()).toEqual({ right: "speaker-10 b", left: null });
   expect(dropEnd(c)).toEqual({ ok: true });
   expect(cableState(w, c).cables.find((r) => r.key === "speaker-10")?.roll?.state).toBe("down");
+});
+
+// The boxes' real panels (#6029): each jack is the connector on its maker's sheet, and a wrong plug says why.
+const PANELS_ROOM: Level = {
+  name: "panels",
+  bounds: { x0: -2.75, x1: 2.75, z0: 0.25, z1: 6.75 },
+  room: { x0: -3, x1: 3, z0: 0, z1: 7, height: 3, door: 2 },
+  outlets: [{ key: "outlet", x: -2.2, y: 0.3, z: 0.01 }],
+  start: { x: 0, z: 4, yaw: 0 },
+  items: [
+    { key: "top", gear: "top-15-passive", x: -1.4, y: 0, z: 2.5, rot: 0 },
+    { key: "array", gear: "line-array-box", x: 1.2, y: 0, z: 2.5, rot: 0 },
+    { key: "fill", gear: "line-array-10", x: -1.4, y: 0, z: 4.5, rot: 0 },
+    { key: "case", gear: "road-case-m", x: 0, y: 0, z: 1.2, rot: 0 },
+  ],
+  caseLoad: [
+    { key: "nl4", kind: "speaker", lengthM: 10 },
+    { key: "nl8", kind: "speaker", lengthM: 10, ends: ["nl8", "nl8"] },
+    { key: "iec", kind: "power", lengthM: 10 },
+    { key: "true1", kind: "power", lengthM: 10, ends: ["edison", "powercon-true1"] },
+  ],
+};
+
+test("each box takes the plug on its sheet: speakON not into a quarter-inch link, NL8 for a four-way box, TRUE1 for powerCON", () => {
+  setDial("sim");
+  const w = newWorld(PANELS_ROOM), c = newCables(w), behind = (x: number, z = 1.9) => walkWith(w, c, x, z);
+  // The passive top: a speakON goes in its NL4, not its quarter-inch link.
+  behind(0.4, 1.2); expect(takeCable(w, c, "speaker")).toEqual({ ok: true });
+  behind(-1.4);
+  expect(plug(w, c, "top", "speaker-out")).toEqual({ ok: false, why: "that speakON NL4 plug won't go into a quarter-inch TS socket" });
+  expect(plug(w, c, "top", "speaker-in")).toEqual({ ok: true });
+  // The four-way line array box: the NL4's two pairs aren't enough, the NL8's four are.
+  behind(0.4, 1.2); expect(grabEnd(w, c, "nl4", "b")).toEqual({ ok: true });
+  behind(1.2);
+  expect(plug(w, c, "array", "speaker-in")).toEqual({ ok: false, why: "a speakON carries 2 amp channels and the passive line array element takes 4: it wants an NL8 cable" });
+  expect(dropEnd(c)).toEqual({ ok: true });
+  behind(0.4, 1.2); expect(takeCable(w, c, "speaker")).toEqual({ ok: true });
+  behind(1.2); expect(plug(w, c, "array", "speaker-in")).toEqual({ ok: true });
+  // The powered line array box: an IEC cord won't go in its powerCON TRUE1 inlet, a TRUE1 cord does.
+  behind(0.4, 1.2); expect(takeCable(w, c, "power")).toEqual({ ok: true });
+  walkWith(w, c, -2.0, 0.7); expect(plug(w, c, "outlet", "power-out-1")).toEqual({ ok: true });
+  behind(0.4, 1.2); expect(grabEnd(w, c, "iec", "b")).toEqual({ ok: true });
+  behind(-1.4, 3.9);
+  expect(plug(w, c, "fill", "power-in")).toEqual({ ok: false, why: "that IEC plug won't go into a powerCON TRUE1 socket" });
+  expect(dropEnd(c)).toEqual({ ok: true });
+  behind(0.4, 1.2); expect(takeCable(w, c, "power")).toEqual({ ok: true });
+  walkWith(w, c, -2.0, 0.7); expect(plug(w, c, "outlet", "power-out-2")).toEqual({ ok: true });
+  behind(0.4, 1.2); expect(grabEnd(w, c, "true1", "b")).toEqual({ ok: true });
+  behind(-1.4, 3.9); expect(plug(w, c, "fill", "power-in")).toEqual({ ok: true });
 });

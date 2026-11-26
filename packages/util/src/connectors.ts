@@ -157,13 +157,14 @@ const CARRY_WORD: { readonly [C in Carries]: string } = {
 };
 
 /** Whether `plug` goes into `socket`, and if not, why, in a player's words. A male plug goes into a female socket (or
- * a genderless pair, speakON into speakON); a socket's `takes` lists the other types it also fits. */
-export function fits(plug: End, socket: End): string | null {
-  const p = CONNECTORS[plug.type], s = CONNECTORS[socket.type];
+ * a genderless pair, speakON into speakON); a socket's `takes` lists the other types it also fits. A socket can carry
+ * other than its connector's usual (`carries`: an old tri-amp bass takes its speaker line on an XLR). */
+export function fits(plug: End, socket: End & { carries?: Carries }): string | null {
+  const p = CONNECTORS[plug.type], s = CONNECTORS[socket.type], sc = socket.carries ?? s.carries;
   if (plug.type !== socket.type && !s.takes.includes(plug.type)) {
-    if (p.carries !== s.carries) return `that's ${p.name}, it carries ${CARRY_WORD[p.carries]}; this ${s.name} takes ${CARRY_WORD[s.carries]}`;
+    if (p.carries !== sc) return `that's ${p.name}, it carries ${CARRY_WORD[p.carries]}; this ${s.name} takes ${CARRY_WORD[sc]}`;
     if (p.type.startsWith("powercon-") && s.type.startsWith("powercon-")) return `${p.name} won't twist into ${s.name}: blue is power in, grey is power out, keyed so they never meet`;
-    return `a ${p.name} plug doesn't fit a ${s.name} socket`;
+    return `that ${p.name} plug won't go into a ${s.name} socket`;
   }
   if (plug.gender !== "none" && plug.gender === socket.gender) return `both ends are ${plug.gender}: turn the cable round`;
   return null;

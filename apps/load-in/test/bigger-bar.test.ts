@@ -20,16 +20,18 @@ const rig = (rackOn: string): Cable[] => [
   c("power", "distro power-out-1", "mixer power-in"),
   c("power", "distro power-out-2", "wedge-1 power-in"),
   c("power", "distro power-out-3", "wedge-2 power-in"),
+  c("power", "distro power-out-4", "sub-l power-in"),
+  c("power", "distro power-out-5", "sub-r power-in"),
   c("power", rackOn, "rack power-in", 10),
   c("xlr", "mixer xlr-out-1", "rack xlr-in-1", 15),
   c("xlr", "mixer xlr-out-2", "rack xlr-in-2", 15),
-  c("xlr", "mixer xlr-out-3", "rack xlr-in-3", 15),
+  // the subs are powered (#6011): a signal line to the first, its thru on to the second
+  c("xlr", "mixer xlr-out-3", "sub-l xlr-in", 15),
+  c("xlr", "sub-l xlr-out", "sub-r xlr-in", 1),
   c("xlr", "mixer xlr-out-4", "wedge-1 xlr-in", 15),
   c("xlr", "wedge-1 xlr-out", "wedge-2 xlr-in", 3),
   c("speaker", "rack speaker-out-1", "top-l speaker-in", 20),
   c("speaker", "rack speaker-out-2", "top-r speaker-in", 5),
-  c("speaker", "rack speaker-out-3", "sub-l speaker-in", 3),
-  c("speaker", "sub-l speaker-out", "sub-r speaker-in", 1),
 ];
 
 test("cable the rig, trip the bar's breaker, reset it at the panel, move the plug: every speaker fed", () => {
@@ -43,10 +45,10 @@ test("cable the rig, trip the bar's breaker, reset it at the panel, move the plu
   const tripped = judge(w, placed, rig("bar-1 power-out-2"), panel);
   expect(tripped.justTripped).toEqual(["3"]);
   expect(tripped.circuits.find((x) => x.circuit === "3")).toEqual({ circuit: "3", amps: 15, tripped: true, over: false });
-  expect(fed(tripped)).toEqual(["wedge-1", "wedge-2"]);
+  expect(fed(tripped)).toEqual(["sub-l", "sub-r", "wedge-1", "wedge-2"]);
   expect(tripped.problems.map((p) => `${p.kind} ${p.items[0]}`)).toEqual(["no-power cooler", "no-power rack"]);
-  // Doors on that: two speakers of six, and warm drinks behind the bar.
-  expect(show(w, tripped)).toMatchObject({ sound: 3, coolerOff: true, pass: false });
+  // Doors on that: the tops dead (the subs and wedges play on the stage circuit), and warm drinks behind the bar.
+  expect(show(w, tripped)).toMatchObject({ sound: 37, coolerOff: true, pass: false });
 
   // The panel is across the room; reset it there, and with the rack still on that circuit it trips again.
   expect(resetBreaker(w, panel)).toEqual({ ok: false, why: "the breaker panel is out of reach" });
@@ -64,15 +66,15 @@ test("cable the rig, trip the bar's breaker, reset it at the panel, move the plu
   expect(fixed.circuits.every((x) => !x.tripped)).toBe(true);
   expect(show(w, fixed)).toMatchObject({ sound: 100, coolerOff: false, pass: true, pay: 300 });
 
-  // The 20 m run to the left top loses over half a dB in 16 AWG; the short ones barely anything.
+  // The 20 m run to the left top loses over half a dB in 16 AWG; the 5 m one to the right top barely anything.
   expect(fixed.lossDb["top-l"]).toBeGreaterThan(0.5);
-  expect(fixed.lossDb["sub-r"]).toBeLessThan(0.05);
+  expect(fixed.lossDb["top-r"]).toBeLessThan(0.2);
 });
 
-test("both subs and both tops on one rack channel is 2 ohms in parallel at best: four is fine, five shuts it down", () => {
+test("passive tops chained on one rack channel: four is 2 ohms and fine, a fifth shuts it down", () => {
   const w = newWorld(BIGGER_BAR);
-  const placed = [...w.items.map((i) => ({ id: i.key, gear: i.gear })), { id: "top-x", gear: "top-15-passive" }];
-  const chain = ["top-l", "top-r", "sub-l", "sub-r", "top-x"];
+  const placed = [...w.items.map((i) => ({ id: i.key, gear: i.gear })), ...["top-x", "top-y", "top-z"].map((id) => ({ id, gear: "top-15-passive" }))];
+  const chain = ["top-l", "top-r", "top-x", "top-y", "top-z"];
   const cables = (n: number) => [
     c("power", "stage-2 power-out-1", "rack power-in"),
     c("power", "stage-1 power-out-1", "mixer power-in"),
@@ -98,6 +100,6 @@ test("on Cozy the same overload warns instead of tripping: circuit 3 is marked o
 
 test("where the cables decide what plays, only gear that draws power offers a switch", () => {
   const switches = Object.fromEntries(BIGGER_BAR.items.map((i) => [i.gear, hasSwitch(i.gear, true)]));
-  expect(switches).toMatchObject({ "top-15-passive": false, "sub-18": false, "wedge-12": true, "amp-rack-4u": true, "mixer-small": true });
+  expect(switches).toMatchObject({ "top-15-passive": false, "sub-18": true, "wedge-12": true, "amp-rack-4u": true, "mixer-small": true });
   expect(hasSwitch("top-15-passive")).toBe(true);
 });

@@ -4,6 +4,7 @@
 import { clamp } from "@rustybuns/util";
 import { gear, type CableKind } from "@rustybuns/gear";
 import { feltKg } from "./assists.ts";
+import type { Ends } from "./cables/ends.ts";
 
 /** Metres per second, empty-handed and standing: a brisk walk, so getting across a big level isn't a chore. */
 export const WALK = 2.6;
@@ -53,7 +54,7 @@ export interface Level {
   /** Sand underfoot: every step is slower, and small wheels sink (only balloon tyres roll). */
   ground?: "sand";
   /** What the road case holds here, if not the usual three (cables.ts CASE_LOAD). */
-  caseLoad?: readonly { key: string; kind: CableKind; lengthM: number }[];
+  caseLoad?: readonly { key: string; kind: CableKind; lengthM: number; ends?: Ends }[];
   /** The box truck the gear came in, parked outside with its back open: its bed, floor to roof. The back (the open end)
    * is at z0, the bulkhead behind the cab at z1. */
   truck?: Truck;

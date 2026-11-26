@@ -51,13 +51,13 @@ test("the crew carries the boxes in, the hangs fly and line up, the stage stays 
   // A 75 kg box is two people's work.
   walkWith(w, c, -10, 54);
   w.you.yaw = 0;
-  expect(pickUp(w, "box-1")).toEqual({ ok: false, why: "line array element, powered is 75 kg, too heavy to lift alone" });
+  expect(pickUp(w, "box-1")).toEqual({ ok: false, why: "passive line array element is 75 kg, too heavy to lift alone" });
 
   rigUp(w, c);
   // Nothing plays until it has power.
   expect(score(w).crowd).toBeNull();
   for (const [feed, leg] of Object.entries(POWER)) expect(setLeg(w, feed, leg)).toEqual({ ok: true });
-  expect(legs(w).map((l) => l.watts)).toEqual([4000, 4000, 3000]);
+  expect(legs(w).map((l) => l.watts)).toEqual([4000, 4000, 1440]);
 
   const s = score(w);
   expect(s.covered).toBeGreaterThan(0.85);
@@ -92,7 +92,7 @@ test("everything on one leg trips it, and plain subs fill the stage", () => {
   const w = newWorld(ARENA), c = newCables(w);
   rigUp(w, c);
   for (const feed of Object.keys(POWER)) setLeg(w, feed, "L1");
-  expect(legs(w)[0]).toMatchObject({ watts: 11000, tripped: true });
+  expect(legs(w)[0]).toMatchObject({ watts: 9440, tripped: true });
   expect(score(w)).toMatchObject({ crowd: null, pass: false });
 
   for (const [feed, leg] of Object.entries(POWER)) setLeg(w, feed, leg);

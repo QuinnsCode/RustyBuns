@@ -25,6 +25,7 @@
     "./scenery": "./src/scenery.ts",
     "./gear": "./src/gear.ts",
     "./panels": "./src/panels.ts",
+    "./sockets": "./src/sockets.ts",
     "./lineup": "./src/lineup.ts",
     "./surfaces": "./src/surfaces.ts",
     "./textures/*": "./textures/*",

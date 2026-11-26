@@ -22,17 +22,15 @@ const bar: Placed[] = [
   { id: "desk", gear: "mixer-small" },
   { id: "topL", gear: "top-12-powered" },
   { id: "topR", gear: "top-12-powered" },
-  { id: "rack", gear: "amp-rack-4u" },
   { id: "sub", gear: "sub-18" },
   { id: "distro", gear: "distro-box" },
 ];
 const barCables = [
   c("power", "wall power-out-1", "distro power-in"),
-  ...["desk", "topL", "topR", "rack"].map((id, i) => c("power", `distro power-out-${i + 1}`, `${id} power-in`)),
+  ...["desk", "topL", "topR", "sub"].map((id, i) => c("power", `distro power-out-${i + 1}`, `${id} power-in`)),
   c("xlr", "desk xlr-out-1", "topL xlr-in"),
   c("xlr", "topR xlr-in", "desk xlr-out-2"), // laid from the far end: still runs desk -> top
-  c("xlr", "topL xlr-out", "rack xlr-in-1"),
-  c("speaker", "rack speaker-out-1", "sub speaker-in"),
+  c("xlr", "topL xlr-out", "sub xlr-in"), // the sub is powered (#6011): mains and the left top's thru
 ];
 
 const chain = (n: number): Placed[] => [...garage.slice(0, 1), garage[2]!, ...Array.from({ length: n }, (_, i) => ({ id: `box${i + 1}`, gear: "top-15-passive" }))];
@@ -70,8 +68,8 @@ const gigCables = [
 const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[]; fed: Record<string, boolean>; problems: string[] }[] = [
   { name: "the garage: guitar, head, cab", placed: garage, cables: garageCables, outlets: [wall(15)], fed: { cab: true }, problems: [] },
   { name: "the garage with the head unplugged", placed: garage, cables: garageCables.slice(1), outlets: [wall(15)], fed: { cab: false }, problems: ["no-power head"] },
-  { name: "the dive bar: two tops off the desk, the sub off the rack, all on a 20 A circuit", placed: bar, cables: barCables, outlets: [wall(20)], fed: { topL: true, topR: true, sub: true }, problems: [] },
-  { name: "the dive bar on a 15 A circuit trips", placed: bar, cables: barCables, outlets: [wall(15)], fed: { topL: true, topR: true, sub: true }, problems: ["breaker desk,topL,topR,rack"] },
+  { name: "the dive bar: two tops off the desk, the powered sub off the left top's thru, on a 15 A circuit", placed: bar, cables: barCables, outlets: [wall(15)], fed: { topL: true, topR: true, sub: true }, problems: [] },
+  { name: "the dive bar's sub with no mains is silent", placed: bar, cables: barCables.filter((x) => x.to[0] !== "sub" || x.kind !== "power"), outlets: [wall(15)], fed: { topL: true, topR: true, sub: false }, problems: ["no-power sub"] },
   { name: "two 8 ohm boxes on a 4 ohm minimum head are fine", placed: chain(2), cables: chainCables(2), outlets: [wall(15)], fed: { box1: true, box2: true }, problems: [] },
   { name: "three are 2.67 ohms and not", placed: chain(3), cables: chainCables(3), outlets: [wall(15)], fed: { box1: false, box2: false, box3: false }, problems: ["low-load head,box1,box2,box3"] },
   {

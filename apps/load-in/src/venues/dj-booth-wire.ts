@@ -49,7 +49,7 @@ export function wireBooth(L: BoothHands): string[] {
   run("power", "wall-2 power-out-1", "distro power-in");
   ["deck-1", "deck-2", "mixer", "mon-l", "mon-r"].forEach((k, i) => run("power", `distro power-out-${i + 1}`, `${k} power-in`));
   run("power", "wall-2 power-out-2", "top-l power-in");
-  run("power", "wall-1 power-out-1", "rack power-in");
+  run("power", "wall-1 power-out-1", "sub power-in");
   run("power", "wall-1 power-out-2", "top-r power-in");
   run("rca", "deck-1 rca-out", `mixer ${input}2`);
   run("rca", "deck-2 rca-out", `mixer ${input}3`);
@@ -57,10 +57,9 @@ export function wireBooth(L: BoothHands): string[] {
   run("xlr", "mixer xlr-out-3", "mon-l xlr-in");
   run("xlr", "mixer xlr-out-4", "mon-r xlr-in");
   run("xlr", "mixer xlr-out-1", "top-l xlr-in");
-  run("xlr", "top-l xlr-out", "rack xlr-in-1");
+  run("xlr", "top-l xlr-out", "sub xlr-in");
   run("xlr", "mixer xlr-out-2", "top-r xlr-in");
-  run("speaker", "rack speaker-out-1", "sub speaker-in");
-  for (const k of ["deck-1", "deck-2", "mixer", "mon-l", "mon-r", "top-l", "top-r", "rack", "sub"]) L.power(k, true);
+  for (const k of ["deck-1", "deck-2", "mixer", "mon-l", "mon-r", "top-l", "top-r", "sub"]) L.power(k, true);
   // Back round the left end of the booth to the DJ's spot.
   L.walkTo(-2.1, 2.6); L.walkTo(-2.1, LANE); L.walkTo(0, LANE);
   return fail;

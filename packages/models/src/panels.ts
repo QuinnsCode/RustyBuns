@@ -112,7 +112,7 @@ export const PANELS: { readonly [id in GearId]?: Panel } = {
   },
   "top-15-passive": {
     face: "back", drive: "passive", pins: "NL4 1+/1- = jack tip/sleeve, 2+/2- not connected (plate)",
-    sockets: [nl4("speaker-in", "input", -30, 274), { jack: "speaker-out", type: "ts", gender: "female", role: "link (in parallel)", at: [30, 274] }],
+    sockets: [nl4("speaker-in", "input", -30, 274), { jack: "speaker-out", type: "ts", gender: "female", role: "link (in parallel)", at: [30, 274], carries: "speaker" }],
     ref: "jbl/jrx215-spec-sheet p2, jrx215-back.jpg: plate centred, its bottom 226 mm up",
   },
   "wedge-12-passive": {

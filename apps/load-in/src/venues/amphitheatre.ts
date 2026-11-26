@@ -358,12 +358,12 @@ export function wantDelay(w: World): number {
   return Math.round((Math.hypot(t.x - p.x, t.y - (frameY(h) - (h.boxes * BOX_H) / 2), t.z - p.z) / c) * 1000 + LEAD_MS);
 }
 
-/** The sub line by the lip (where the amps for it stand), within a few metres of it in the pit or on the deck lip. */
+/** The sub line by the lip (the powered subs and their processor), within a few metres of it in the pit or on the deck lip. */
 export const atSubs = (w: World) => Math.abs(w.you.x) < 11 && w.you.z > -5 && w.you.z < 3;
 
 /** The subs' setting on their amp channels: all forward, or the back row turned, flipped and delayed by its spacing. */
 export function subs(w: World, mode: SubMode): Answer {
-  if (!atSubs(w)) return { ok: false, why: "the sub amps are at the lip of the stage" };
+  if (!atSubs(w)) return { ok: false, why: "the subs are at the lip of the stage" };
   const r = amp(w);
   if (r.subs === mode) return { ok: true };
   w.t += 120;
