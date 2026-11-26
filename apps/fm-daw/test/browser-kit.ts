@@ -4,7 +4,8 @@
 import { afterAll, beforeAll } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromePath, launchChrome, startVite, until, type Tab } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, startVite } from "../../../scripts/chrome.ts";
+export { waitFor } from "../../../scripts/chrome.ts";
 
 export const hasChrome = !!chromePath();
 export let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -25,10 +26,3 @@ export function useBrowser(...flags: string[]) {
   afterAll(() => { chrome?.stop(); vite?.stop(); });
 }
 
-/** `until` (scripts/chrome.ts) for any truthy answer, awaited: on a miss its error also carries what `state` says then. */
-export async function waitFor(tab: Tab, what: string, expr: string, ms = 30_000, state?: string) {
-  try { await until(tab, `(async () => !!(${expr}))()`, what, ms); } catch (e) {
-    if (state && e instanceof Error) e.message += `; state: ${JSON.stringify(await tab.eval(state).catch(() => null))}`;
-    throw e;
-  }
-}

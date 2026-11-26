@@ -3,7 +3,7 @@
 // where a returning player finds what they picked last time.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
-import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, startVite, waitFor } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(120_000); // vite serves the game cold, then plays a round in headless Chrome
 
@@ -12,15 +12,11 @@ let vite: Awaited<ReturnType<typeof startVite>>;
 beforeAll(async () => { [chrome, vite] = await Promise.all([launchChrome(), startVite(join(import.meta.dir, ".."))]); });
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test("a newcomer's first card is the ways to play, Solo is one tap to a round, and the picks under Options stay picked", async () => {
   const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}`);
-  };
+  const until = (what: string, expr: string, ms = 30_000) => waitFor(tab, what, expr, ms, "window.hippoTycoon?.state()", 50);
   // What a person can see and press: each button's own words (its first line), and the controls on screen.
   const tap = (word: string) => page(`[...document.querySelectorAll("button")].find((b) => b.firstChild?.textContent?.trim() === ${JSON.stringify(word)}).click()`);
   /** The choices shown as picked in the row a screen reader names `label`. */

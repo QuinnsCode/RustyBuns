@@ -2,7 +2,7 @@
 // game is on the page, New game plays Tape 1, the Book opens and says the job, its five are the next page (the arrows
 // walk the cards, Enter picks, Set out is one press down), and the world keeps the first goal on screen.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, waitFor } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(300_000); // the whole opening by keyboard in headless Chrome (about 120 s on CI)
 
@@ -21,12 +21,17 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     };
     const focused = () => tab.eval<string>("document.activeElement?.id || document.activeElement?.dataset.id || ''");
     // what the page was doing when a wait ran out: the scene and how far in, frames drawn, focus, visibility
-    const where = () => tab.eval<string>(`JSON.stringify({ director: mythicMasters.director.state(), frames: window.__mmFrames?.() ?? null, focus: document.activeElement?.id || document.activeElement?.tagName, hidden: document.hidden, visibility: document.visibilityState, hasFocus: document.hasFocus() })`).catch((e) => String(e));
+    const WHERE = `({ director: mythicMasters.director.state(), frames: window.__mmFrames?.() ?? null, focus: document.activeElement?.id || document.activeElement?.tagName, hidden: document.hidden, visibility: document.visibilityState, hasFocus: document.hasFocus() })`;
+    const where = () => tab.eval<string>(`JSON.stringify(${WHERE})`).catch((e) => String(e));
+    /** Waits for `expr` in the page; a miss says what the page was doing. */
+    const sees = (what: string, expr: string, ms = 30_000) => waitFor(tab, what, expr, ms, WHERE);
+    /** For a wait that presses keys between looks. */
     const until = async (what: string, ok: () => Promise<boolean>, ms = 30_000) => {
       for (const end = Date.now() + ms; !(await ok()); await Bun.sleep(100)) if (Date.now() > end) throw new Error(`never saw ${what}: ${await where()}`);
     };
     await tab.eval(`(() => { let n = 0; const f = () => { n++; requestAnimationFrame(f); }; requestAnimationFrame(f); window.__mmFrames = () => n; })()`);
-    const shown = (sel: string) => tab.eval<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return !!el && !el.closest("[hidden]") && el.getBoundingClientRect().height > 0; })()`);
+    const SHOWN = (sel: string) => `(() => { const el = document.querySelector(${JSON.stringify(sel)}); return !!el && !el.closest("[hidden]") && el.getBoundingClientRect().height > 0; })()`;
+    const shown = (sel: string) => tab.eval<boolean>(SHOWN(sel));
     const text = (sel: string) => tab.eval<string>(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ""`);
 
     // The title says the job on the page, not behind the (?).
@@ -37,7 +42,7 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     await press("ArrowDown");
     expect(await focused()).toBe("newGame");
     await press("Enter");
-    await until("Tape 1", () => tab.eval<boolean>(`mythicMasters.director.state().beat?.id === "abduction"`));
+    await sees("Tape 1", `mythicMasters.director.state().beat?.id === "abduction"`);
     expect(await tab.eval<boolean>("mythicMasters.journey.state() === null")).toBe(true);
     // a key skips it once the tape listens, later on a slow runner: press while it still plays, not once after a timer.
     // Each poll keeps the scene's time and the frames drawn, so a wait that runs out says what the tape was doing.
@@ -54,7 +59,7 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     } catch (e) { throw new Error(`${(e as Error).message}\n  last polls: ${polls.slice(-8).join(", ")}`); }
 
     // The Book opens: page by page it says the job and offers its five, then asks. The arrows walk its buttons.
-    await until("the Book", () => shown("#bookTalk .demand"));
+    await sees("the Book", SHOWN("#bookTalk .demand"));
     const said: string[] = [];
     for (let i = 0; i < 12 && (await tab.eval<boolean>(`!!document.querySelector("#bookTalk [data-next]")`)); i++) {
       said.push(await text("#bookTalk .demand"));
@@ -71,7 +76,7 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     await press("Enter");
 
     // Its five: the Book's own words on the page; the first press is the first card, right walks along, Enter picks.
-    await until("the Book's five", () => shown("#starters .spoken"));
+    await sees("the Book's five", SHOWN("#starters .spoken"));
     expect(await text("#starters h1")).toContain("Book");
     // the page swings in, longer on a slow runner (#5388): a press before it lands moves nothing, so press until one
     // lands; the one that does takes the first card, as a player's first press does
@@ -93,13 +98,13 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     await press("Enter");
 
     // The world: your three, what you told the Book kept, and the first goal on screen until the first keeper falls.
-    await until("the journey", () => tab.eval<boolean>("mythicMasters.journey.state() !== null"));
+    await sees("the journey", "mythicMasters.journey.state() !== null");
     expect(await tab.eval<string[]>("mythicMasters.journey.state().party.map((m) => m.id)")).toEqual(["hodag", "squonk", "agropelter"]);
     expect(await tab.eval<unknown>("mythicMasters.book.state().talk?.said")).toEqual({ open: "all" });
-    await until("the first goal", () => shown("#worldHud .goal"));
+    await sees("the first goal", SHOWN("#worldHud .goal"));
     expect(await text("#worldHud .goal")).toContain("keeper");
     await tab.eval("mythicMasters.journey.clearTo(1, 0)");
-    await until("the goal done", async () => !(await shown("#worldHud .goal")));
+    await sees("the goal done", `!${SHOWN("#worldHud .goal")}`);
   } finally {
     chrome.stop(); vite.stop();
   }

@@ -7,7 +7,7 @@ import { DEFAULTS, parseSettings, volumeOf } from "@rustybuns/game-controls";
 import { pickQuality, STORE_KEY } from "@rustybuns/util/quality";
 import { musicLevel, phrase, SCORE, sting, type Cue } from "../src/music.ts";
 import { choose, looksOf, startChoice } from "../src/display.ts";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, waitFor } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(300_000); // vite serves the game cold, then walks every Settings tab in headless Chrome
 
@@ -99,9 +99,9 @@ test.skipIf(!chromePath())("in the running app: the music wakes on a key and fol
     type Q = { now: string; choice: string; pixelRatio: number; shadows: boolean };
     const music = () => tab.eval<Music>("mythicMasters.music()");
     const quality = () => tab.eval<Q>("mythicMasters.quality()");
-    const until = async (what: string, ok: () => Promise<boolean>, ms = 20_000) => {
-      for (const end = Date.now() + ms; !(await ok()); await Bun.sleep(100)) if (Date.now() > end) throw new Error(`never saw ${what}: ${JSON.stringify(await music())}`);
-    };
+    /** Waits for `ok`, an expression over the page's music `m`. */
+    const until = (what: string, ok: string, ms = 20_000) =>
+      waitFor(tab, what, `(() => { const m = mythicMasters.music(); return ${ok}; })()`, ms, "mythicMasters.music()");
     // the panel's own inputs, moved as a hand would: a slider dragged, a box ticked, a button pressed
     const slide = (name: string, v: number) => tab.eval(`(() => { const i = document.querySelector('.gc-dialog input[name="${name}"]'); i.value = "${v}"; i.dispatchEvent(new Event("input")); })()`);
     const tick = (name: string, on: boolean) => tab.eval(`(() => { const i = document.querySelector('.gc-dialog input[name="${name}"]'); i.checked = ${on}; i.dispatchEvent(new Event("change")); })()`);
@@ -111,25 +111,25 @@ test.skipIf(!chromePath())("in the running app: the music wakes on a key and fol
     expect((await music()).playing).toBe(false);
     await tab.call("Input.dispatchKeyEvent", { type: "keyDown", key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16 });
     await tab.call("Input.dispatchKeyEvent", { type: "keyUp", key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16 });
-    await until("the music playing", async () => (await music()).playing && (await music()).gain > 0.4);
+    await until("the music playing", "m.playing && m.gain > 0.4");
     expect((await music()).cue).toBe("book");
 
     // Settings open: the music ducks under the card; the slider at 0 silences the gain, raised it comes back.
     await tab.eval("mythicMasters.settings(true)");
-    await until("the duck", async () => (await music()).volume < 0.5);
+    await until("the duck", "m.volume < 0.5");
     await slide("music", 0);
-    await until("silence", async () => (await music()).gain < 0.01);
+    await until("silence", "m.gain < 0.01");
     expect((await music()).playing).toBe(false);
     await slide("music", 0.8);
-    await until("the raised slider heard", async () => (await music()).gain > 0.1);
+    await until("the raised slider heard", "m.gain > 0.1");
     await tick("musicOn", false);
-    await until("Music on off", async () => (await music()).gain < 0.01);
+    await until("Music on off", "m.gain < 0.01");
     await tick("musicOn", true);
     await tab.eval("mythicMasters.settings(false)");
-    await until("back up after Settings shut", async () => Math.abs((await music()).volume - 0.8) < 0.01);
+    await until("back up after Settings shut", "Math.abs(m.volume - 0.8) < 0.01");
     // a fight's cue, held for the harness, takes over from the Book's
     await tab.eval(`mythicMasters.music("fight")`);
-    await until("the fight cue", async () => (await music()).cue === "fight");
+    await until("the fight cue", `m.cue === "fight"`);
 
     // Quality: Low applies now (pixel ratio and shadows) and is where the next load starts; Auto forgets it.
     await tab.eval("mythicMasters.settings(true)");
@@ -148,7 +148,7 @@ test.skipIf(!chromePath())("in the running app: the music wakes on a key and fol
     await load(chrome.cdp, tab, vite.url, 1500);
     expect(await tab.eval<unknown>("(() => { const q = mythicMasters.quality(); return { choice: q.choice, bloom: q.looks.bloom }; })()")).toEqual({ choice: "auto", bloom: true });
     await tab.call("Input.dispatchKeyEvent", { type: "keyDown", key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16 });
-    await until("the music at the default volume", async () => (await music()).volume === 1);
+    await until("the music at the default volume", "m.volume === 1");
     expect(tab.noise.filter((n) => n.startsWith("uncaught"))).toEqual([]);
   } finally {
     chrome.stop(); vite.stop();

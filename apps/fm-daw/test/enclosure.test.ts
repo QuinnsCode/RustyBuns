@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BoxFilter, PLANS, curveOf, design, encodePlan, logFreqs } from "@rustybuns/gear";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, until } from "../../../scripts/chrome.ts";
 import { instantiateFm, type Exports } from "../src/engine/wasm.ts";
 import { RustBox, rustCurve } from "../src/speakers/rust.ts";
 
@@ -57,7 +57,7 @@ test.skipIf(!hasChrome)("pick a plan, swap the walls, brace them, pull it apart 
     const tab = await openTab(chrome.cdp, size, phone);
     const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
     await load(chrome.cdp, tab, `${vite.url}/speakers.html`, 0);
-    for (const end = Date.now() + 30_000; Date.now() < end && !(await page<boolean>("!!window.qspeakers").catch(() => false)); ) await Bun.sleep(50);
+    await until(tab, "!!window.qspeakers", "the speaker page", 30_000, 50);
     const state = () => page<State>("qspeakers.state()");
 
     // The sealed sub: its six walls, a brace and the woofer stand in 3D, and it lands near Qtc 0.72.

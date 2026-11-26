@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchChrome, load, openTab, type Chrome, type Tab } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, waitFor, type Chrome, type Tab } from "../../../scripts/chrome.ts";
 import { tsRoller, wasmRoller } from "../src/roller.ts";
 import { checkAssetLinks } from "../scripts/twa.ts";
 
@@ -43,15 +43,16 @@ beforeAll(async () => {
 afterAll(() => { server?.stop(true); chrome?.stop(); });
 
 const state = () => tab.eval<State>("pocketDice.state()");
-async function until(what: string, ok: (s: State) => boolean) {
-  for (let i = 0; i < 60; i++) { const s = await state(); if (ok(s)) return s; await Bun.sleep(250); }
-  throw new Error(`${what}: ${JSON.stringify(await state())}`);
+/** Waits for `ok`, an expression over the page's state `s`, and hands back that state. */
+async function until(what: string, ok: string) {
+  await waitFor(tab, what, `(() => { const s = pocketDice.state(); return ${ok}; })()`, 15_000, "pocketDice.state()", 250);
+  return state();
 }
 
 test("installs, works offline, and opens a shared roll with no network", async () => {
   const url = `http://127.0.0.1:${server.port}/`;
   await load(chrome.cdp, tab, url, 500);
-  const first = await until("worker takes over", (s) => s.offlineReady && s.controlled);
+  const first = await until("worker takes over", "s.offlineReady && s.controlled");
   expect(first.engine).toBe("wasm");
 
   const { installabilityErrors } = await tab.call("Page.getInstallabilityErrors");
@@ -65,7 +66,7 @@ test("installs, works offline, and opens a shared roll with no network", async (
 
   server.stop(true);
   await load(chrome.cdp, tab, `${url}?seed=7&n=3&d=20`, 500);
-  const offline = await until("loads from the cache", (s) => s.last?.seed === 7);
+  const offline = await until("loads from the cache", "s.last?.seed === 7");
   expect(offline).toMatchObject({ engine: "wasm", controlled: true, last: { seed: 7, n: 3, sides: 20, dice: tsRoller.roll(7, 3, 20) } });
   expect(tab.noise).toEqual([]);
 });
@@ -89,7 +90,7 @@ test("the desktop app serves the same page, worker and wasm included", async () 
     if (!url) throw new Error(`host exited before serving:\n${seen}`);
     tab = await openTab(chrome.cdp, { w: 900, h: 700 }, true);
     await load(chrome.cdp, tab, `${url}/?token=${token}`, 500);
-    expect(await until("worker takes over", (s) => s.offlineReady && s.controlled)).toMatchObject({ engine: "wasm" });
+    expect(await until("worker takes over", "s.offlineReady && s.controlled")).toMatchObject({ engine: "wasm" });
     expect((await tab.eval<State["last"]>("pocketDice.roll(9)"))?.dice).toEqual(tsRoller.roll(9, 2, 6));
     expect(tab.noise).toEqual([]);
   } finally {

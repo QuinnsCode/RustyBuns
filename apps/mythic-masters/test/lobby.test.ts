@@ -6,7 +6,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { check, obj, str } from "@rustybuns/util/guard";
 import { newKey } from "@rustybuns/util/token";
-import { chromePath, freePort, launchChrome, load, openTab, startVite, type Tab } from "../../../scripts/chrome.ts";
+import { chromePath, freePort, launchChrome, load, openTab, startVite, waitFor, type Tab } from "../../../scripts/chrome.ts";
 import { APP } from "../src/account.ts";
 import { serveEdge } from "../scripts/edge.ts";
 
@@ -64,27 +64,31 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
     await load(chrome.cdp, t, new URL(query, vite.url).href, 3000);
     return t;
   };
+  /** For a wait across tabs, or outside a page: one tab's waits are `waitFor`'s. */
   const until = async <T>(get: () => Promise<T>, ok: (v: T) => boolean, ms = 20_000) => {
     const end = Date.now() + ms;
     for (let v = await get(); !ok(v); v = await get()) { if (Date.now() > end) throw new Error(`still ${JSON.stringify(v)}`); await Bun.sleep(300); }
   };
-  const lobby = (t: Tab) => t.eval<string>(`document.querySelector("#worldHud .lobby")?.textContent ?? ""`);
+  const LOBBY = `document.querySelector("#worldHud .lobby")?.textContent ?? ""`;
+  const lobby = (t: Tab) => t.eval<string>(LOBBY);
+  /** Waits for `t`'s lobby to say `text`. */
+  const says = (t: Tab, text: string) => waitFor(t, `the lobby saying ${JSON.stringify(text)}`, `(${LOBBY}).includes(${JSON.stringify(text)})`, 20_000, LOBBY, 300);
   const press = (t: Tab, text: string) => t.eval<boolean>(`(() => { const b = [...document.querySelectorAll("#worldHud button")].find((b) => b.textContent.trim() === ${JSON.stringify(text)}); b?.click(); return !!b; })()`);
   const search = (t: Tab) => t.eval<string>("location.search");
 
   // Ada, signed in and alone in the world, presses Walk together: she is in her party's lobby, its host.
   const ada = await player(ada0, "?world=1&a=hodag");
-  await until(() => ada.eval<boolean>(`!!document.querySelector("#worldHud .together button")`), (on) => on);
+  await waitFor(ada, "Walk together", `!!document.querySelector("#worldHud .together button")`, 20_000, undefined, 300);
   await ada.eval(`document.querySelector("#worldHud .together button").click()`);
-  await until(() => search(ada), (s) => /party=[A-Z]+/.test(s));
+  await waitFor(ada, "a party in the address", "/party=[A-Z]+/.test(location.search)", 20_000, "location.search", 300);
   const code = /party=([A-Z]+)/.exec(await search(ada))![1]!;
-  await until(() => lobby(ada), (l) => l.includes("Ada (host)"));
+  await says(ada, "Ada (host)");
   // Bo opens the link she sent him: both see both, and he says he's ready.
   const bo = await player(bo0, `?world=1&party=${code}&a=jersey-devil`);
-  await until(() => lobby(ada), (l) => l.includes("Bo"));
+  await says(ada, "Bo");
   // Cy, who isn't Ada's friend, opens the same link: the lobby says why they can't join, not that the code is wrong.
   const cy = await player(cy0, `?world=1&party=${code}&a=hodag`);
-  await until(() => lobby(cy), (l) => l.includes("Only the host's friends can join with the code alone: ask someone in the party for its link."));
+  await says(cy, "Only the host's friends can join with the code alone: ask someone in the party for its link.");
   expect(await lobby(ada)).not.toContain("Cy");
   // Ada copies the party link (it carries the invite key and her name). Dee, with no account, opens it in a browser of her own.
   await ada.eval(`navigator.clipboard.writeText = async (t) => { window.copied = t; }`);
@@ -95,7 +99,7 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
   await load(chrome.cdp, dee, vite.url, 500);
   await dee.eval(`localStorage.setItem("mm.eqosys", ${JSON.stringify(eq)})`);
   await load(chrome.cdp, dee, `${sent}&a=hodag`, 3000);
-  await until(() => lobby(dee), (l) => l.includes("Sign in to join Ada's party"));
+  await says(dee, "Sign in to join Ada's party");
   // Sign in opens eqosys in a small window beside the game; she makes an account there and eqosys sends the window back.
   await dee.call("Runtime.evaluate", { expression: `[...document.querySelectorAll("#worldHud .lobby button")].find((b) => b.textContent.trim() === "Sign in").click()`, userGesture: true });
   const popup = async () => ((await chrome.cdp.send("Target.getTargets", {})).targetInfos as { url: string }[]).find((t) => t.url.startsWith(`${eq}/login?`))?.url ?? "";
@@ -104,18 +108,18 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
   const up = await call("/do/signup", { form: { app: ask.get("app")!, return: ask.get("return")!, challenge: ask.get("challenge")!, state: ask.get("state")!, name: "Dee", email: "dee@example.com", password: PASSWORD } });
   await dee.call("Runtime.evaluate", { expression: `void window.open(${JSON.stringify(up.to)}, "eq-signin")`, userGesture: true });
   // The game never reloaded: the login came back to it, and she is in Ada's lobby, though they were never friends.
-  await until(() => lobby(ada), (l) => l.includes("Dee"));
-  await until(() => lobby(dee), (l) => l.includes("Ada (host)"));
+  await says(ada, "Dee");
+  await says(dee, "Ada (host)");
   expect(await dee.eval<string>("location.search")).toContain(`party=${code}`);
   expect(await press(dee, "Ready")).toBe(true);
-  await until(() => lobby(ada), (l) => l.includes("Dee ready"));
+  await says(ada, "Dee ready");
   expect(await press(bo, "Ready")).toBe(true);
-  await until(() => lobby(ada), (l) => l.includes("Bo ready"));
+  await says(ada, "Bo ready");
   // Ada starts: both pages go to the room the party was given, through the door that checks their tokens, and each
   // sees the other walking there, by the name eqosys knows them by.
   expect(await press(ada, "Start")).toBe(true);
   await until(() => Promise.all([search(ada), search(bo)]), ([a, b]) => /room=/.test(a) && a === b);
-  await until(() => Promise.all([ada, bo].map((t) => t.eval<boolean>(`typeof mythicMasters !== "undefined" && !!mythicMasters.world.online()`))), (up) => up.every(Boolean));
+  await Promise.all([ada, bo].map((t) => waitFor(t, "the world online", `typeof mythicMasters !== "undefined" && !!mythicMasters.world.online()`, 20_000, undefined, 300)));
   const friends = (t: Tab) => t.eval<{ name: string }[]>(`mythicMasters.world.online()?.friends ?? []`);
   const walk = (t: Tab) => t.eval(`(async () => { const w = mythicMasters.world, s = w.state(); for (let i = 0; i < 4; i++) { w.teleport(s.x + 3 + i * 0.4, s.z - 6); await new Promise((r) => setTimeout(r, 200)); } })()`);
   await until(() => Promise.all([walk(ada), walk(bo)]).then(() => Promise.all([friends(ada), friends(bo)])), ([a, b]) => [a, b].map((f) => f.map((x) => x.name).sort().join()).join("|") === "Bo,Dee|Ada,Dee");

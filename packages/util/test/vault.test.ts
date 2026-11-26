@@ -3,7 +3,7 @@
 // back signed in by renewing with a proof from that same key, across origins (so the DPoP header passes CORS).
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
-import { launchChrome, load, openTab } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
 import { checkDpop, newKey, sign } from "../src/token.ts";
 
 setDefaultTimeout(60_000); // builds a page and signs in in headless Chrome
@@ -38,14 +38,13 @@ let chrome: Awaited<ReturnType<typeof launchChrome>>;
 beforeAll(async () => { chrome = await launchChrome(); });
 afterAll(() => { chrome?.stop(); game.stop(true); eq.stop(true); });
 
-const until = async (ok: () => Promise<boolean>) => { for (let i = 0; i < 100 && !await ok(); i++) await Bun.sleep(100); };
 
 test("signed in, nothing of it in localStorage; reloaded, still signed in by a renewal the page's own key proves", async () => {
   const tab = await openTab(chrome.cdp, { w: 800, h: 600 }, false, true);
   await load(chrome.cdp, tab, PAGE, 300);
   expect(await tab.eval<boolean>("t.back.then(() => t.eq.login() === null)")).toBe(true);
   await tab.eval("void t.eq.signIn()");
-  await until(() => tab.eval<boolean>(`!!window.t && t.back.then(() => t.eq.login()?.name === "Ada")`).catch(() => false));
+  await waitFor(tab, "Ada signed in", `!!window.t && t.back.then(() => t.eq.login()?.name === "Ada")`, 10_000);
   expect(await tab.eval<string>("t.eq.login()?.name")).toBe("Ada");
   expect(await tab.eval<string>("t.stored()")).not.toContain("refresh");
   expect(await tab.eval<string>("t.stored()")).not.toContain("token");

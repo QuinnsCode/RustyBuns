@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { durableObject, serve } from "@rustybuns/shell-bun";
-import { chromePath, launchChrome, load, openTab, startVite, type Tab } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, waitFor, type Tab } from "../../../scripts/chrome.ts";
 import worker from "../src/worker.ts";
 import Listen, { CLOSE_FULL, CLOSE_NOT_YOURS } from "../src/listen.ts";
 
@@ -61,16 +61,13 @@ type Heard = { name: string; live: boolean; over: boolean; ears: number; cues: {
 test.skipIf(!hasChrome)("go live on the decks: a second tab opens the link and hears both demo tracks, then the set ends", async () => {
   const shell = site();
   const on = (tab: Tab) => <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (page: ReturnType<typeof on>, what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(100)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}: ${JSON.stringify(await page("window.qlisten?.state() ?? window.qdecks?.liveState()").catch(() => null))}`);
-  };
+  const until = (tab: Tab, what: string, expr: string, ms = 30_000) => waitFor(tab, what, expr, ms, "window.qlisten?.state() ?? window.qdecks?.liveState()");
   const decksTab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, decksTab, `${shell.url}/decks.html`, 0);
   const decks = on(decksTab);
-  await until(decks, "the decks", "!!window.qdecks");
+  await until(decksTab, "the decks", "!!window.qdecks");
   await decks("qdecks.start()");
-  await until(decks, "the demo tracks on", "qdecks.state().decks.every((d) => d.name)");
+  await until(decksTab, "the demo tracks on", "qdecks.state().decks.every((d) => d.name)");
   await decks("(qdecks.quantize(false), qdecks.cross(-1), qdecks.play(0))");
   expect(await decks<boolean>(`qdecks.live(true, "Sunday warm-up")`)).toBe(true);
   const link = (await decks<{ link: string; on: boolean }>("qdecks.liveState()"))!;
@@ -81,25 +78,25 @@ test.skipIf(!hasChrome)("go live on the decks: a second tab opens the link and h
   const earTab = await openTab(chrome.cdp, { w: 420, h: 800 }, true);
   await load(chrome.cdp, earTab, link.link, 0);
   const ear = on(earTab);
-  await until(ear, "the listen page", "!!window.qlisten");
+  await until(earTab, "the listen page", "!!window.qlisten");
   await ear("qlisten.play()");
-  await until(ear, "deck A heard", "(() => { const s = qlisten.state(); return s.playing && s.level > 0.01; })()");
+  await until(earTab, "deck A heard", "(() => { const s = qlisten.state(); return s.playing && s.level > 0.01; })()");
   let heard = (await ear<Heard>("qlisten.state()"))!;
   expect(heard).toMatchObject({ name: "Sunday warm-up", live: true, over: false });
   expect(heard.cues.map((c) => c.name)).toEqual(["Night drive (124)"]);
-  await until(decks, "the listener counted", "qdecks.liveState().ears === 1");
+  await until(decksTab, "the listener counted", "qdecks.liveState().ears === 1");
 
   // deck B in on the crossfader, A stopped: the listener still hears music, and B is on the list
   await decks("(qdecks.play(1), qdecks.cross(1), qdecks.play(0))");
-  await until(ear, "deck B on the list", `qlisten.state().cues.some((c) => c.name === "Dune runner (128)")`);
+  await until(earTab, "deck B on the list", `qlisten.state().cues.some((c) => c.name === "Dune runner (128)")`);
   const t0 = heard.time;
   await Bun.sleep(4000);
   heard = (await ear<Heard>("qlisten.state()"))!;
   expect(heard.time).toBeGreaterThan(t0 + 2);
-  await until(ear, "deck B heard", "qlisten.state().level > 0.01");
+  await until(earTab, "deck B heard", "qlisten.state().level > 0.01");
 
   await decks("qdecks.live(false)");
-  await until(ear, "the set over", "qlisten.state().over");
+  await until(earTab, "the set over", "qlisten.state().over");
   expect(await decks<boolean>("qdecks.liveState().on")).toBe(false);
   await shell.stop();
 });

@@ -3,7 +3,7 @@
 // once each, and × forgets one. No network needed: nothing here loads YouTube's player (both decks are busy).
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab } from "../../../scripts/chrome.ts";
-import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
+import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 
 setDefaultTimeout(30_000);
 useBrowser("--autoplay-policy=no-user-gesture-required");
@@ -13,10 +13,7 @@ type Shelf = { id: string; title: string }[];
 test.skipIf(!hasChrome)("links pasted mid-set wait in the library, once each, and are there next visit", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}`);
-  };
+  const until = (what: string, expr: string, ms = 30_000) => waitFor(tab, what, expr, ms, undefined, 50);
   // a paste on the page itself, not into a box, as Cmd+V over the decks does it
   const paste = (text: string) => page(`(() => { const d = new DataTransfer(); d.setData("text/plain", ${JSON.stringify(text)}); document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true })); return true; })()`);
   const shelf = () => page<Shelf>("qdecks.state().shelf");

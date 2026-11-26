@@ -3,7 +3,7 @@
 // same fight on both pages (the room compares their hashes; a page that drifts is told). The pause menu doesn't stop
 // it. Needs Chrome; skipped in CI like the walk-together journey (together.test.ts).
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { chromePath, freePort, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, freePort, launchChrome, load, openTab, startVite, waitFor, type Tab } from "../../../scripts/chrome.ts";
 import { serveParty } from "../scripts/party.ts";
 
 setDefaultTimeout(120_000); // two pages fight a duel in headless Chrome (skipped on CI)
@@ -15,10 +15,9 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends open one duel, pick 
   process.env.MM_PARTY = String(port);
   const vite = await startVite(new URL("..", import.meta.url).pathname);
   const chrome = await launchChrome(), site = vite.url.replace(/\/$/, "");
-  const until = async <T>(get: () => Promise<T>, ok: (v: T) => boolean, ms = 15_000) => {
-    const end = Date.now() + ms;
-    for (let v = await get(); !ok(v); v = await get()) { if (Date.now() > end) throw new Error(`still ${JSON.stringify(v)}`); await Bun.sleep(200); }
-  };
+  /** Waits on tab `t` for `ok`, an expression over its duel `d`. */
+  const until = (t: Tab, what: string, ok: string, ms = 15_000) =>
+    waitFor(t, what, `(() => { const d = mythicMasters.duel(); return ${ok}; })()`, ms, "mythicMasters.duel()", 200);
   try {
     // Each player has a journey (the world makes one from ?a=), then opens the challenge's link.
     const player = async (lead: string) => {
@@ -29,12 +28,12 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends open one duel, pick 
     };
     const a = await player("hodag"), b = await player("squonk");
     const duel = (t: typeof a) => t.eval<Duel>("mythicMasters.duel()");
-    await until(() => duel(b), (d) => d.status === "in" && d.seats?.names.every((n) => n !== null) === true);
+    await until(b, "both seats taken", `d.status === "in" && d.seats?.names.every((n) => n !== null)`);
     expect([(await duel(a)).seats?.you, (await duel(b)).seats?.you]).toEqual([0, 1]);
 
     expect(await a.eval<boolean>("mythicMasters.duelPick(0)")).toBe(true);
     expect(await b.eval<boolean>("mythicMasters.duelPick(0)")).toBe(true);
-    await until(() => Promise.all([duel(a), duel(b)]), ([x, y]) => x.on && y.on && (x.tick ?? 0) > 120 && (y.tick ?? 0) > 120);
+    await Promise.all([a, b].map((t) => until(t, "the fight 120 ticks in", "d.on && (d.tick ?? 0) > 120")));
     // Seat 1 sees the fight from its own side: its fighter is the squonk.
     const [fa, fb] = await Promise.all([a.eval<{ fighters: { id: string }[] }>("mythicMasters.state()"), b.eval<{ fighters: { id: string }[] }>("mythicMasters.state()")]);
     expect(fa.fighters.map((f) => f.id)).toEqual(["hodag", "squonk"]);
@@ -56,7 +55,7 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends open one duel, pick 
 
     // B leaves: A's fight is off, said plainly.
     await b.eval(`mythicMasters.duelLeave()`);
-    await until(() => duel(a), (d) => d.screen === "No contest");
+    await until(a, "No contest", `d.screen === "No contest"`);
   } finally {
     chrome.stop(); vite.stop(); party.stop();
   }

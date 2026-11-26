@@ -4,7 +4,7 @@
 // starts it. Any page error or console.error fails it.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
-import { launchChrome, load, openTab, startVite, type Cdp } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, startVite, waitFor, type Cdp } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(120_000); // vite serves the page cold, then plays the tutorial on the beat in headless Chrome
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -20,10 +20,7 @@ async function open(cdp: Cdp, path: string, own = false) {
   const tab = await openTab(cdp, { w: 800, h: 560 }, false, own);
   await load(cdp, tab, new URL(path, vite.url).href, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("window.delayedReaction?.state()").catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms = 30_000) => waitFor(tab, what, expr, ms, "window.delayedReaction?.state()", 50);
   /** A real click (a user gesture, so the music may start) on the element `selector` finds. */
   const click = async (selector: string) => {
     const r = await page<{ x: number; y: number }>(`(() => { const b = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);

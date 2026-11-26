@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import host, { _reset } from "../desktop/host.ts";
-import { chromePath, glFlags, launchChrome, load, openTab, startVite, type Chrome } from "../../../scripts/chrome.ts";
+import { chromePath, glFlags, launchChrome, load, openTab, startVite, waitFor, type Chrome } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(120_000); // vite serves the app cold, then draws a 3D model in headless Chrome
 
@@ -28,8 +28,7 @@ test.skipIf(!chromePath())("with no key, a phone and a desktop show a model to t
   for (const [w, h, mobile] of [[1280, 720, false], [390, 844, true]] as const) {
     const tab = await openTab(chrome.cdp, { w, h }, mobile, true);
     await load(chrome.cdp, tab, `http://127.0.0.1:${server.port}/`, 1500);
-    const end = Date.now() + 20_000;
-    while (!(await tab.eval<Sample | null>("window.meshySample?.state() ?? null"))?.loaded && Date.now() < end) await Bun.sleep(200);
+    await waitFor(tab, "the sample loaded", "window.meshySample?.state().loaded", 20_000, "window.meshySample?.state() ?? null", 200);
     expect(await tab.eval<Sample>("window.meshySample.state()")).toMatchObject({ loaded: true, error: null });
     // The key box is there, under the example, and on a phone the whole first screen fits.
     const key = await tab.eval<{ top: number; below: boolean }>(`(() => {
