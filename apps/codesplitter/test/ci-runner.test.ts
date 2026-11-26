@@ -109,7 +109,6 @@ test("a monorepo queues only the workspaces a branch touches, and main runs them
 
   await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
   expect(await names("main")).toEqual(["apps/a:test", "apps/b:test"]);
-  const [first] = (await checks("main")).runs;
   // A fresh clone has no node_modules, so it installs first, at the root (#775).
   const command = async (ref: string) => (await (await call("ryan", `/api/repos/ryan/lab/checks/${(await checks(ref)).runs[0].id}`)).json()).command;
   expect(await command("main")).toBe("bun install && cd 'apps/a' && bun run test");

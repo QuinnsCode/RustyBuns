@@ -8,7 +8,8 @@
 // only) and the Agent Office workers (`office-workers list --json`, or --workers for a file of the same), and when
 // a PR's head or main moved it stages the board again (mervin-board.ts, git reads only) and posts the rows that
 // changed. A PR that merged is dropped, and the board it was staged on is scored against what landed (`--score`),
-// so the tiers' hit rates build up with no one asking. --once does one pass; --dry prints the rows instead of posting.
+// so the tiers' hit rates build up with no one asking. Each PR's red checks carry Ester's verdict, sorted against
+// main's own run of the same check (`gh api .../check-runs`, read only). --once does one pass; --dry prints the rows instead of posting.
 // With --record each scored round is kept on the server (CI time per landed PR, needless holds, the wrong files),
 // and each wrong file is written here as a fixture for test/conflicts.test.ts (--fixtures, by default
 // apps/codesplitter/test/fixtures/wrongs): file text stays on this machine, only paths are posted.
@@ -20,7 +21,9 @@ import { join } from "node:path";
 import { order, run, score, TIERS, type Board, type BoardPr, BoardPrs, type Stage } from "./mervin-board.ts";
 import { noCi, runsOn, STALL_AFTER, stallOf, view, type Pr, type Runs } from "../../../scripts/pr.ts";
 import { writeTree } from "./shadow.ts";
-import { needless, roundOf, type BoardRow, type Hits, type Round } from "../src/board.ts";
+import { needless, roundOf, type BoardRow, type EsterVerdict, type Hits, type Round } from "../src/board.ts";
+import { sortRed } from "../src/ester-sort.ts";
+import { arr, check, nul, obj, opt, str } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
@@ -38,12 +41,13 @@ export function reach(files: string[], apps: string[], uses: Record<string, stri
 }
 
 /** One stage as the board's row. `owners` maps a PR number to the worker that owns it. */
-export function rowOf(s: Stage, board: Board, owners: Map<number, string>, blast?: BoardRow["blast"], stall?: string): BoardRow {
+export function rowOf(s: Stage, board: Board, owners: Map<number, string>, blast?: BoardRow["blast"], stall?: string, main = new Map<string, MainCheck>()): BoardRow {
+  const ester = esterOf(s, main);
   const c = Object.fromEntries(TIERS.map((t) => [t, s.files.filter((f) => f.tier === t).length]));
   return {
     pr: s.pr, head: s.head, ci: s.ci ?? "none", tiers: c, files: s.files.length,
     clashes: board.clashes.filter((x) => x.prs.includes(s.pr)).map((x) => ({ kind: x.kind, key: x.key, with: x.prs.filter((n) => n !== s.pr), ...(x.main && { main: true }) })),
-    ...(s.title && { title: s.title }), ...(s.failing?.length && { failing: s.failing }),
+    ...(s.title && { title: s.title }), ...(s.failing?.length && { failing: s.failing }), ...(ester.length && { ester }),
     ...(s.stackedOn && { stackedOn: s.stackedOn }), ...(owners.has(s.pr) && { owner: owners.get(s.pr) }), ...(blast && { blast }), ...(stall && { stall }),
   };
 }
@@ -74,6 +78,27 @@ export async function stalls(prs: BoardPr[], owners: Map<number, string>, known:
 
 /** What the worker is told about its PR's stalled head. */
 export const stallPrompt = (pr: number, line: string) => `Mervin's board: PR #${pr}'s head has had no typecheck or apps check for ${STALL_AFTER / 60} minutes: ${line}. Fix it on your own branch (bun run pr ${pr} --no-wait says more).`;
+
+/** Main's check runs at one commit as `gh api repos/{owner}/{repo}/commits/<sha>/check-runs` writes them. */
+export const MainChecks = obj({ check_runs: arr(obj({ name: str(1000), status: opt(str(100, { min: 0 })), conclusion: opt(nul(str(100, { min: 0 }))) }), 1000, { drop: true }) });
+export type MainCheck = "fail" | "running" | "pass";
+
+/** Each check's state on main, by name: red, still running, or green. */
+export function mainChecksOf(x: unknown): Map<string, MainCheck> {
+  const out = new Map<string, MainCheck>();
+  for (const c of check(MainChecks, x)?.check_runs ?? []) {
+    out.set(c.name, c.status && c.status !== "completed" ? "running" : ["failure", "timed_out", "cancelled"].includes(c.conclusion ?? "") ? "fail" : "pass");
+  }
+  return out;
+}
+
+/** Ester's verdict on each of a PR's own red checks (#5784): main's when main fails it too, wait while main's run of it is going, else the PR's own. */
+export function esterOf(s: Pick<Stage, "pr" | "failing">, main: Map<string, MainCheck>): EsterVerdict[] {
+  return (s.failing ?? []).slice(0, 20).map((name) => {
+    const v = sortRed(name, { onMain: main.get(name) === "fail", mainRunning: main.get(name) === "running", suspects: [s.pr], red: [s.pr], redWhy: name, pending: [] });
+    return { test: v.test, owner: v.owner, why: v.why, ...(v.prs.length && { prs: v.prs }) };
+  });
+}
 
 /** PR number to worker, from `office-workers list --json` (any array of {name, pr}, the pr a number or a URL). */
 export function ownersOf(workers: unknown): Map<number, string> {
@@ -184,11 +209,14 @@ if (import.meta.main) {
       const deps = Object.keys({ ...pj.dependencies, ...pj.devDependencies });
       for (const [d, n] of names) if (deps.includes(n)) (uses[d] ??= []).push(a);
     }
+    // Ester sorts each red check against main's own run of it (read only; none when no PR is red).
+    const mainChecks = board.stages.some((s) => s.failing?.length)
+      ? mainChecksOf(JSON.parse(sh(["gh", "api", `repos/{owner}/{repo}/commits/${main}/check-runs?per_page=100`], top) || "{}")) : new Map<string, MainCheck>();
     const reaches = new Map(board.stages.map((s) => [s.pr, reach(s.files.map((f) => f.path), apps, uses)]));
     const rows = board.stages.map((s) => {
       const r = reaches.get(s.pr)!;
       const blast = r.blast ? { apps: r.blast, prs: board.stages.filter((o) => o.pr !== s.pr && reaches.get(o.pr)!.own.some((a) => r.blast!.includes(a))).map((o) => o.pr) } : undefined;
-      return rowOf(s, board, owners, blast, marks.get(s.pr));
+      return rowOf(s, board, owners, blast, marks.get(s.pr), mainChecks);
     });
     const changed = rows.filter((r) => posted.get(r.pr) !== JSON.stringify(r));
     const drop = [...posted.keys()].filter((n) => !rows.some((r) => r.pr === n));

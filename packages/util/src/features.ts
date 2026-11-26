@@ -5,17 +5,18 @@ import { Bad, type Guard } from "./guard.ts";
 
 /**
  * Every file's guarded content with its id, in order.txt's order, then any the order doesn't name, by id.
- * `files` maps an id to the parsed JSON. Throws when a file isn't whole, or order.txt names an id with no file or names one twice.
+ * `files` is each file's id with its parsed JSON. Throws when a file isn't whole, or order.txt names an id with no file or names one twice.
  */
-export function ordered<T>(files: Record<string, unknown>, order: string, guard: Guard<T>, where: string): (T & { id: string })[] {
-  const ids = Object.keys(files).sort();
+export function ordered<T>(files: Iterable<readonly [id: string, json: unknown]>, order: string, guard: Guard<T>, where: string): (T & { id: string })[] {
+  const byId = new Map(files);
+  const ids = [...byId.keys()].sort();
   const names = order.split("\n").map((l) => l.trim()).filter(Boolean);
   const missing = names.filter((id) => !ids.includes(id));
   if (missing.length) throw new Error(`${where}/order.txt names items with no file: ${missing.join(", ")}`);
   const twice = names.filter((id, i) => names.indexOf(id) !== i);
   if (twice.length) throw new Error(`${where}/order.txt names these twice: ${twice.join(", ")}`);
   return [...names, ...ids.filter((id) => !names.includes(id))].map((id) => {
-    try { return { id, ...guard(files[id]) }; }
+    try { return { id, ...guard(byId.get(id)) }; }
     catch (e) { throw e instanceof Bad ? new Error(`${where}/${id}.json needs ${e.path.join(".") || e.why}`) : e; }
   });
 }

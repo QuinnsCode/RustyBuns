@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { apply, empty, fromText, text, type Doc } from "../src/lines.ts";
 import { diffToOps, merge3, rebase } from "../src/sync.ts";
 

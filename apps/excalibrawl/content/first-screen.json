@@ -6,5 +6,14 @@
   "nextFight": "Next live fight in {clock}",
   "untilThen": ". Until then, a sample fight.",
   "pastFights": "Past fights",
-  "noneYet": "None yet. Each live fight lands here when it ends."
+  "noneYet": "None yet. Each live fight lands here when it ends.",
+  "askTitle": "Pick the next fight",
+  "askSub": "Post something for them to draw. The prompt with the most reactions this hour is the next live fight.",
+  "askPlaceholder": "a knight fighting a toaster",
+  "askPost": "Post",
+  "askLoading": "Loading this hour's prompts…",
+  "askNone": "No prompts this hour yet. Post one, or the next fight draws from the list.",
+  "askLead": "Up next",
+  "askReport": "Report this prompt",
+  "askReported": "Reported"
 }

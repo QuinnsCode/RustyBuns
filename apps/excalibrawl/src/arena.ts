@@ -4,6 +4,7 @@
 // model calls: Workers AI has no spend cap of its own, so past DAILY_CALLS fighters sit their turns out.
 
 import { DurableObject } from "cloudflare:workers";
+import { Sockets, type RoomSocket } from "@rustybuns/util/room";
 import { CANVAS, finished, judgeMatch, newMatch, playTurn, type Fighter, type MatchState, type TurnDeps } from "./engine/match.ts";
 import { practiceAnswers } from "./engine/brain.ts";
 import { regionFor } from "./engine/ops.ts";
@@ -12,7 +13,8 @@ import { PLANNER, parsePlan, planRequest, practicePlan } from "./engine/plan.ts"
 import { promptFor } from "./engine/prompts.ts";
 import { take } from "./budget.ts";
 import { addToIndex, summarize } from "./archive.ts";
-import type { LiveMatch, LiveMessage } from "./live-wire.ts";
+import { Summaries, type LiveMatch, type LiveMessage } from "./live-wire.ts";
+import { check } from "@rustybuns/util/guard";
 
 /** Turns per fighter, and the gap between them: about three minutes of fight. A plan is 5–12 parts and a
  * finished drawing can pass, so more turns mostly bought clutter (the bake-off, src/lab/run.ts). */
@@ -46,22 +48,15 @@ const live = ({ log: _l, nextId: _n, talks: _t, ...m }: MatchState): LiveMatch =
 export class Arena extends DurableObject<Cloudflare.Env> {
   private load = () => this.ctx.storage.get<MatchState>("match");
 
-  private send(msg: LiveMessage) {
-    const json = JSON.stringify(msg);
-    for (const ws of this.ctx.getWebSockets()) {
-      try {
-        ws.send(json);
-      } catch {
-        /* gone */
-      }
-    }
-  }
+  /** Every viewer's socket; they carry nothing of their own. */
+  private sockets = new Sockets<true, LiveMessage>(this.ctx);
+  private send = (msg: LiveMessage) => this.sockets.broadcast(msg);
 
-  /** Start the hour's fight, unless one is already running. */
-  async start(now = Date.now()): Promise<{ ok: boolean; id?: string; reason?: string }> {
+  /** Start the hour's fight on `prompt` (a posted one, src/board.ts), else the list's, unless one is already running. */
+  async start(now = Date.now(), prompt?: string): Promise<{ ok: boolean; id?: string; reason?: string }> {
     const cur = await this.load();
     if (cur && now - cur.startedAt < STALE_MS) return { ok: false, reason: "a fight is on", id: cur.id };
-    const m = newMatch(`m-${now}`, promptFor(now), fightersFor(now), TURNS, now);
+    const m = newMatch(`m-${now}`, prompt ?? promptFor(now), fightersFor(now), TURNS, now);
     await this.ctx.storage.put("match", m);
     await this.ctx.storage.setAlarm(now + 1_000);
     this.send({ t: "start", match: live(m) });
@@ -83,7 +78,7 @@ export class Arena extends DurableObject<Cloudflare.Env> {
       const { talks: _t, ...replay } = m;
       await this.env.ARCHIVE.put(`matches/${m.id}.json`, JSON.stringify(replay), { httpMetadata: { contentType: "application/json" } });
       const prev = await this.env.ARCHIVE.get("index.json");
-      const index = addToIndex(prev ? await prev.json() : [], summary);
+      const index = addToIndex((prev && check(Summaries, await prev.json())) || [], summary);
       await this.env.ARCHIVE.put("index.json", JSON.stringify(index), { httpMetadata: { contentType: "application/json" } });
     }
     await this.ctx.storage.delete("match");
@@ -122,15 +117,14 @@ export class Arena extends DurableObject<Cloudflare.Env> {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket only", { status: 426 });
-    const [client, server] = Object.values(new WebSocketPair());
-    this.ctx.acceptWebSocket(server!);
+    const { server, response } = this.sockets.upgrade(true);
     const m = await this.load();
-    server!.send(JSON.stringify({ t: "hello", match: m ? live(m) : null } satisfies LiveMessage));
-    return new Response(null, { status: 101, webSocket: client });
+    this.sockets.send(server, { t: "hello", match: m ? live(m) : null });
+    return response;
   }
 
   webSocketMessage() {}
-  webSocketClose(ws: WebSocket) {
+  webSocketClose(ws: RoomSocket) {
     try {
       ws.close();
     } catch {

@@ -13,7 +13,7 @@ test("every inline script on the page parses", () => {
 // The vein: who a repo listens to, its branches as tiles and curves, and its history.
 describe("the vein", () => {
   const src = html.slice(html.indexOf("// The vein: a repo's family"), html.indexOf("/** The vein of a repo:"));
-  const { gitMapModel, gitCurve, commitLanes, tagMarks } = new Function(`${src}; return { gitMapModel, gitCurve, commitLanes, tagMarks };`)();
+  const { gitMapModel, commitLanes } = new Function(`${src}; return { gitMapModel, commitLanes };`)();
   const link = (m: any, from: string, to: string) => m.links.find((l: any) => l.from === from && l.to === to);
 
   test("a dug fork was copied once and doesn't listen", () => {
@@ -55,7 +55,7 @@ describe("the vein", () => {
 // Line picks come as runs (#710): ⌘-click and gutter drags make gaps.
 describe("picked lines as runs", () => {
   const src = html.slice(html.indexOf("/** Picked line indexes"), html.indexOf("// The game's door"));
-  const { runsOf, runsLabel } = new Function(`${src}; return { runsOf, runsLabel };`)();
+  const { runsLabel } = new Function(`${src}; return { runsLabel };`)();
 
   test("labels say a line, a run, or several, and cut a long list short", () => {
     expect(runsLabel([[4, 4]])).toBe("line 4");
@@ -68,7 +68,7 @@ describe("picked lines as runs", () => {
 // Branch names follow git, not the handle rule (#701); the page checks them as you type, as the server does.
 describe("branch names", () => {
   const src = html.slice(html.indexOf("/** What's wrong with a branch name"), html.indexOf("/** Under a branch-name box"));
-  const { branchNameError, tidyBranch } = new Function(`${src}; return { branchNameError, tidyBranch };`)();
+  const { branchNameError } = new Function(`${src}; return { branchNameError };`)();
 
   test("the page's rule says what the server's says", async () => {
     const server = (await import("../src/env.ts")).branchNameError;
@@ -87,17 +87,6 @@ describe("what changed since you were last here", () => {
     const store = new Map<string, string>();
     const localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
     return new Function("localStorage", `${src}; return { lastRevKey, lastRev, sawRev, changedRuns, LAST_REVS };`)(localStorage);
-  };
-  /** The account's copy (#779), with fetch and the clock stubbed. */
-  const account = () => {
-    const sent: unknown[] = [], timers = new Map<number, () => void>();
-    let n = 0;
-    const fetch = async (url: string, init: RequestInit) => void sent.push([url, init.method, JSON.parse(init.body as string)]);
-    const setTimeout = (f: () => void) => (timers.set(++n, f), n);
-    const clearTimeout = (id: number) => timers.delete(id);
-    const fns = new Function("localStorage", "fetch", "setTimeout", "clearTimeout", `${src}; return { tellSeen, flushSeen };`)({}, fetch, setTimeout, clearTimeout);
-    const tick = () => { const all = [...timers.values()]; timers.clear(); for (const f of all) f(); };
-    return { ...fns, sent, tick, settle: () => new Promise((ok) => queueMicrotask(() => queueMicrotask(ok))) };
   };
 
   test("a file's last-seen rev is kept per repo, branch and path", () => {
@@ -150,9 +139,8 @@ describe("lineKey", () => {
 // Selecting by rule, for the palette, the right-click menu and agents.
 describe("picking lines by rule", () => {
   const src = html.slice(html.indexOf("const pickAll"), html.indexOf('/** "line 4", "lines 4'));
-  const { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges, pickWith } = new Function(`${src}; return { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges, pickWith };`)();
+  const { pickMatching, pickWith } = new Function(`${src}; return { pickMatching, pickWith };`)();
   const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
-  const code = ["function a() {", "  if (x) {", "    one();", "", "    two();", "  }", "  three();", "}", "", "const b = 1;"];
 
   test("a rule's lines go onto the pick by mode: a toggle flips each, keeping the rest", () => {
     const now = new Set([0, 3]), hit = new Set([3, 11]);

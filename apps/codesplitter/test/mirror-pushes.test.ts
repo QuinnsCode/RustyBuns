@@ -1,9 +1,8 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { git, pushBranch, upstreamLag, upstreamMessages } from "../src/mirror.ts";
-import type { Exec } from "../src/agent-run.ts";
-import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
+import { git, upstreamLag } from "../src/mirror.ts";
+import { root, up, sh, post, get, sync, file, editHere, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
 
 setDefaultTimeout(30_000);
 

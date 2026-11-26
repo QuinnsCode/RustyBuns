@@ -4,7 +4,7 @@ import { join } from "node:path";
 import {
   CURVES, RIDE, STACK, WEATHER, repoOf, stackOf, buildNotes, caption, eventPush, filterRange, gustRide, isRobot, newRide, rideEvents, stepRide, tapRide, timeTicks, weatherAt, windAt, type EventKind, type Side, type Commit, breeze, cleanRefs, clockAt, currentIndex, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, readInput, scoreAt, simplifyParents, slotOf, topFiles, topFriends, veinChart,
 } from "../src/gitpath/gitpath.ts";
-import { eventKinds, eventModel, model, modelIds } from "../src/gitpath/models.ts";
+import { eventKinds, eventModel, modelIds } from "../src/gitpath/models.ts";
 
 const commit = (over: Partial<Commit> = {}): Commit => ({ hash: "a".repeat(40), author: "ada", date: "2026-01-01T00:00:00Z", subject: "s", added: 1, removed: 0, ...over });
 const at = (day: number, over: Partial<Commit> = {}) => commit({ date: new Date(Date.UTC(2026, 0, day)).toISOString(), hash: String(day).padStart(40, "0"), ...over });
@@ -243,8 +243,6 @@ describe("the playhead", () => {
 });
 
 describe("the time slider", () => {
-  // Three commits a day, a day, then ten days apart: the slider goes by date, not by commit.
-  const notes = buildNotes(graph(["a", [], 1], ["b", ["a"], 2], ["c", ["b"], 12]));
   test("ticks are month starts, few enough to read, with a year label once they're yearly", () => {
     const t = timeTicks(Date.UTC(2026, 0, 15), Date.UTC(2026, 3, 20), 5);
     expect(t.map((x) => x.label)).toEqual(["2026-02", "2026-03", "2026-04"]);
