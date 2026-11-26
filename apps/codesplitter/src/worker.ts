@@ -277,7 +277,7 @@ import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";
 // The CS binding of a code-mode program (codemode.ts): on the edge a stub of this class, under Bun nothing.
 // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- cloudflare:workers has no types in this app; only the class it uses is named
-const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> }, () => null);
+const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => object) | undefined> }, () => null);
 export const CSBridge = cf && class extends cf.WorkerEntrypoint {
   call(name: string, json: string) { const p = csProps(this.ctx.props); return bridgeCall(p, name, json, bridgeDispatch(p, this.env as Env)); }
 };
