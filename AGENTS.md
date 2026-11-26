@@ -87,6 +87,8 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
 - `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
   `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
   When it says an after-bot head has no checks, run `bun run kick <n>` (one empty commit on top, pushed).
+- `bun run steer <issue#>` (or `--text "..."`): a first call on a task before hiring for it: the likely app and files to
+  start in, the kind of job, how its five nearest past tasks went (merged, steers) and the open PRs on those files. Advice only; `--eval` scores it on the last two weeks.
 - `bun run issue <n> [n ...]`: an issue's brief (header, PRs that close it, body cut at a paragraph, last three comments); `--full` for all of it.
 - `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
