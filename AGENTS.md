@@ -102,6 +102,8 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
 - `bun run bridge`: every app on one page (open and closed issues, last commit against last good release, last deploy from this Mac against last merged and newest PR, Mac/Windows/Linux/
   Android/iOS/server/Cloudflare, bindings, hourly CI, whether its live page answers) and the owner's S to F tiers, dragged
   into `~/.rustybuns/tiers.json`. `--json` for the scan, `--html out.html` for a snapshot. An app in S or A is one the owner cares about most.
+- A merge round (the PR agent's) is `bun apps/codesplitter/scripts/mervin-merge.ts`: the plan first, then `--go`, rather than
+  hand-rolled `gh pr merge` loops. Mervin's line merge settles what git can't; a `Merge after` PR gets it from `scripts/after.ts`.
 - `bun run phil` (`--hire`): the oldest open Mythic Masters issue nobody holds (no MANUAL RUNs, climbs or owner-waiting ones), with its baton prompt.
 - `bun run brief <app>`: an app's brief (what it is, its notes files, scripts, tests, port, probe handle) from its own files; no app lists them all (the `rustybuns-apps` skill).
   A fact the next agent in that app needs goes in its README or a notes file there, where `brief` finds it.

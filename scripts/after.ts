@@ -2,8 +2,10 @@
 // the PR body when other open PRs change the same files. Each pass reads every open PR with that line; once every PR it
 // names has merged (or closed), it merges `main` into the branch and pushes, so the branch is current with what it
 // waited on and CI runs on the result. The line then reads `Merged main in after #12, #34`, so the next pass skips it.
-// When main doesn't merge clean (a card: a person must choose), it pushes nothing, comments on the PR with the files and
-// tags its author, and the line reads `Main conflicts after #12, #34`.
+// When git's merge of main conflicts, each conflicted file goes through Mervin's line merge (`lineMerge` in
+// apps/codesplitter/scripts/shadow.ts, loaded at run time since it needs the packages installed). When he settles every
+// file it commits, pushes and names them in a comment. Otherwise (a card: a person must choose) it pushes nothing,
+// comments on the PR with each file and Mervin's cards and tags its author, and the line reads `Main conflicts after #12, #34`.
 //
 //   bun scripts/after.ts [--dry]
 //
@@ -32,6 +34,8 @@
 // Issues closed more than UNBLOCK_DAYS ago are left alone. Merging then goes on in each PR's `Merge after` order as it
 // goes green, as before.
 
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { arr, bool, check, int, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 import { AFTER_BOT, RUN_FIELDS, Runs, headRuns } from "./pr.ts";
@@ -80,7 +84,8 @@ export const KICK_MESSAGE = "Start CI (after-bot push started no checks)";
 const MERGED_LINE = /^merged main in after #\d+/im;
 const flagMark = (sha: string) => `<!-- after:unchecked ${sha} -->`;
 
-export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number }
+/** `lineMerge`: Mervin's, which settles git's conflicts; without it every conflict goes to a person. */
+export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; lineMerge?: LineMerge | null }
 
 /** A `Merged main in after` PR whose head is still the bot's: has it CI, and if not, start it (token) or flag it once (no token). Null when the head is someone else's. */
 function ciCheck(gh: Gh, git: Git, pr: AfterPr, o: Required<PassOpts>): string | null {
@@ -131,9 +136,21 @@ export const marked = (body: string, to: string) => body.replace(LINE, (all) => 
 /** What a PR is told when the runner's push starts no checks (#5733). */
 export const NO_CHECKS = 'main is merged in, but this push starts no checks (#5733). Push one commit of your own on top: `git commit --allow-empty -m "Start CI" && git push`';
 
+/**
+ * Mervin's line merge of one file (`lineMerge` in apps/codesplitter/scripts/shadow.ts): clean with its text, or the
+ * cards he left. Passed in rather than imported, since it needs the repo's packages installed (the CLI loads it).
+ */
+export type LineMerge = (path: string, base: string, main: string, branch: string, attributes?: string) =>
+  { clean: boolean; text: string | null; conflicts: { lint?: string }[] };
+
+/** What one conflicted file came to: Mervin's clean text, or why a person must choose in it. */
+type Settled = { f: string; text: string } | { f: string; text: null; why: string };
+/** The file a card line (`` `path`: why ``) is about. */
+const fileOf = (line: string) => line.slice(1, line.indexOf("`", 1));
+
 /** One pass over the open PRs; answers one line per PR it looked at. `token`: pushes run CI (AFTER_TOKEN is set). */
 export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
-  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, ...opts }, { dry, token } = o;
+  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, lineMerge: null, ...opts }, { dry, token } = o;
   const out: string[] = [];
   const must = (...a: string[]) => {
     const r = git(...a);
@@ -157,14 +174,14 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
     if (dry) { out.push(`#${pr.number} would merge main in`); continue; }
     const named = after.map((n) => `#${n}`).join(", ");
     try {
-      const files = mergeMain(pr, named);
-      if (!files) {
+      const { conflicts: files, settled } = mergeMain(pr, named);
+      if (!files.length) {
         gh.setBody(pr.number, marked(pr.body, "Merged main in after"));
-        pushed(pr, "");
+        pushed(pr, settled, settled ? " (settled its conflicts)" : "");
       } else {
-        gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch. A person must choose in:\n\n${files.map((f) => `- \`${f}\``).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`);
+        gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch, not even through Mervin's line merge. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`);
         gh.setBody(pr.number, marked(pr.body, "Main conflicts after"));
-        out.push(`#${pr.number} conflicts with main in ${files.join(", ")}: commented`);
+        out.push(`#${pr.number} conflicts with main in ${files.map(fileOf).join(", ")}: commented`);
       }
     } catch (e) { out.push(`#${pr.number} failed: ${e instanceof Error ? e.message : String(e)}`); }
   }
@@ -183,28 +200,52 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
       try {
         if (gh.head(n).comments.some((c) => c.body.includes(unblockMark(issue.number)))) continue;
         if (dry) { out.push(`#${n} would merge main in: blocker #${issue.number} is fixed`); continue; }
-        const files = mergeMain(pr, `the fix for #${issue.number}`);
-        if (!files) pushed(pr, `${unblockMark(issue.number)}\nThe test that held this PR red (${b!.test}) is fixed on main (#${issue.number} closed), so main is merged in and its checks rerun on the fix.`, ` after blocker #${issue.number}`);
+        const { conflicts: files, settled } = mergeMain(pr, `the fix for #${issue.number}`);
+        if (!files.length) pushed(pr, `${unblockMark(issue.number)}\nThe test that held this PR red (${b!.test}) is fixed on main (#${issue.number} closed), so main is merged in and its checks rerun on the fix.${settled ? `\n\n${settled}` : ""}`, ` after blocker #${issue.number}`);
         else {
-          gh.comment(pr.number, `${unblockMark(issue.number)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue.number}), but main no longer merges clean into this branch. A person must choose in:\n\n${files.map((f) => `- \`${f}\``).join("\n")}\n\nMerge main in (or rebase) and push.`);
-          out.push(`#${n} conflicts with main in ${files.join(", ")} after blocker #${issue.number}: commented`);
+          gh.comment(pr.number, `${unblockMark(issue.number)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue.number}), but main no longer merges clean into this branch, not even through Mervin's line merge. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push.`);
+          out.push(`#${n} conflicts with main in ${files.map(fileOf).join(", ")} after blocker #${issue.number}: commented`);
         }
       } catch (e) { out.push(`#${n} failed: ${e instanceof Error ? e.message : String(e)}`); }
     }
   }
   return out;
 
-  /** Merges main into the PR's branch and pushes: null when it did, else the files that conflict (nothing pushed). */
-  function mergeMain(pr: AfterPr, why: string): string[] | null {
+  /**
+   * Merges main into the PR's branch and pushes. `conflicts`: the files a person must choose in (nothing pushed).
+   * Otherwise pushed, and `settled` names each conflicted file `settle` resolved and how (one line each, for the comment).
+   */
+  function mergeMain(pr: AfterPr, why: string): { conflicts: string[]; settled: string } {
     must("fetch", "-q", "origin", "main", pr.headRefName);
     must("checkout", "-q", "-B", `after-${pr.number}`, `origin/${pr.headRefName}`);
     if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${why} landed)`, "origin/main").code === 0) {
       must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
-      return null;
+      return { conflicts: [], settled: "" };
     }
     const files = must("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
-    git("merge", "--abort");
-    return files;
+    const done = files.map((f) => mervin(f));
+    if (done.some((d) => d.text === null)) {
+      git("merge", "--abort");
+      return { conflicts: done.map((d) => d.text === null ? `\`${d.f}\`: ${d.why}` : `\`${d.f}\`: Mervin settled it`), settled: "" };
+    }
+    const root = must("rev-parse", "--show-toplevel").trim();
+    for (const { f, text } of done) { writeFileSync(join(root, f), text!); must("add", "--", f); }
+    must("commit", "-q", "--no-edit");
+    must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
+    return { conflicts: [], settled: `git's merge of main conflicted, and Mervin's line merge (apps/codesplitter/scripts/shadow.ts) settled every file:\n\n${files.map((f) => `- \`${f}\``).join("\n")}` };
+  }
+  /** One conflicted file through Mervin's line merge, from the index's three stages (1 base, 2 the branch, 3 main). */
+  function mervin(f: string): Settled {
+    if (!o.lineMerge) return { f, text: null, why: "Mervin's line merge didn't load (are the packages installed?)" };
+    const stage = (n: number) => { const r = git("show", `:${n}:${f}`); return r.code === 0 ? r.out : null; };
+    const [base, branch, main] = [stage(1), stage(2), stage(3)];
+    if (base === null || branch === null || main === null) return { f, text: null, why: "one side added or deleted it" };
+    if ([base, branch, main].some((s) => s.includes("\0"))) return { f, text: null, why: "a binary file" };
+    const attrs = git("show", "origin/main:.gitattributes");
+    const r = o.lineMerge(f, base, main, branch, attrs.code === 0 ? attrs.out : "");
+    if (r.clean && r.text !== null) return { f, text: r.text };
+    const lint = r.conflicts.flatMap((c) => c.lint ? [c.lint] : []);
+    return { f, text: null, why: `Mervin left ${r.conflicts.length} card${r.conflicts.length === 1 ? "" : "s"}${lint.length ? ` (${[...new Set(lint)].join("; ")})` : ""}` };
   }
   /** Says a push happened: with the token its checks run; without, one comment with the fix (and `note`, if any). */
   function pushed(pr: AfterPr, note: string, tail = "") {
@@ -248,7 +289,11 @@ export const ghCli: Gh = {
 if (import.meta.main) {
   help(import.meta.path);
   const git: Git = (...a) => sh(["git", ...a]);
-  const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true" };
+  // Mervin's line merge needs the repo's packages; a checkout without them still runs, sending every conflict to a person.
+  let lineMerge: LineMerge | null = null;
+  try { lineMerge = (await import("../apps/codesplitter/scripts/shadow.ts")).lineMerge; }
+  catch (e) { console.log(`::warning::Mervin's line merge didn't load, so conflicts go to a person: ${e instanceof Error ? e.message : String(e)}`); }
+  const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true", lineMerge };
   const lines = pass(ghCli, git, opts);
   console.log(lines.length ? lines.join("\n") : "no open PR says merge after, and no fixed blocker holds one");
   // A pass that pushed looks again a few minutes on, so a head that got no CI is started or flagged now, not next hour.
