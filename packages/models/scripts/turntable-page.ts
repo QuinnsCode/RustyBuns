@@ -10,7 +10,7 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearLook } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearLook, gearPieces } from "../src/gear.ts";
 import { surface, gearSurfaces } from "../src/surfaces.ts";
 
 // `close` is a macro shot: the front three-quarter view moved in on the top front corner, where a pixel is about
@@ -144,9 +144,22 @@ function danceStack(): THREE.Group {
   return g;
 }
 
-async function show(id: GearId | "dance-stack", angle: Angle) {
+/** `<id>~exploded`: a box built piece by piece (`gearPieces`) pulled apart, each piece forward of the last in the order
+ * it goes in; `<id>~<piece>`: that piece alone, where it sits in the box. */
+function pieces(name: string): THREE.Group {
+  const [id, which] = name.split("~") as [GearId, string], g = new THREE.Group();
+  for (const [i, p] of (gearPieces(id, { look }) ?? []).entries()) {
+    if (which !== "exploded" && which !== p.name) continue;
+    if (which === "exploded") p.group.position.z = i * 0.22;
+    g.add(p.group);
+  }
+  return g;
+}
+const PIECE_IDS = GEAR_IDS.flatMap((id) => { const p = gearPieces(id); return p ? [`${id}~exploded`, ...p.map((q) => `${id}~${q.name}`)] : []; });
+
+async function show(id: string, angle: Angle) {
   if (shown) scene.remove(shown);
-  shown = id === "dance-stack" ? danceStack() : gear(id, { look, height: 1.6 });
+  shown = id === "dance-stack" ? danceStack() : id.includes("~") ? pieces(id) : gear(id as GearId, { look, height: 1.6 });
   scene.add(shown);
   shown.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(shown), c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
@@ -186,4 +199,4 @@ async function show(id: GearId | "dance-stack", angle: Angle) {
 // `?plain=1` is the flat look (the `low` quality setting); otherwise the material kit from the served textures/.
 if (!plain) { const kit = gearSurfaces({ base: "/textures/" }); setLook(kit.look, kit.ready); }
 
-Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack"], angles: Object.keys(ANGLES), show, ready: true, look: () => look, ao, contact, key } });
+Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack", ...PIECE_IDS], angles: Object.keys(ANGLES), show, ready: true, look: () => look, ao, contact, key } });
