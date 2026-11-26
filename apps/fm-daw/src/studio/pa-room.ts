@@ -11,7 +11,7 @@
 // out here and moved at body rate (jam.ts BODY_HZ), not every frame, with short glides so nothing clicks.
 // `hearSpeaker` and `paSpeakers` are pure, for the test; `PaRoom` is the Web Audio graph.
 import { clamp } from "@rustybuns/util";
-import { airAbsorption, banks, levelAt, MILD_FIELD, screenPath, source, speedOfSound, stackSources, stackWidth, system, systemSound, type Field, type RigPlan, type Source, type System } from "@rustybuns/gear";
+import { airAbsorption, banks, heightMap, highest, levelAt, MILD_FIELD, screenPath, source, speedOfSound, stackSources, stackWidth, system, systemSound, type Field, type RigPlan, type Source, type System } from "@rustybuns/gear";
 import { BODY_HZ } from "./jam.ts";
 import { thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
@@ -37,11 +37,13 @@ export const WET = 0.4;
 export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono"; spread?: number; boxes?: Source[]; field?: Field }
 
 /** The field an open-air room's sound crosses (@rustybuns/gear field.ts): its air (a mild evening when left out), what
- *  the crowd stands on and its banks as the land's heights. None indoors: a room's floor is flat and its air still. */
+ *  the crowd stands on and the land's heights: its drawn banks and a captured venue's ground, the higher where both
+ *  are. None indoors: a room's floor is flat and its air still. */
 export function roomField(def: StudioDef): Field | undefined {
-  const out = def.outdoor;
+  const out = def.outdoor, v = def.venue;
   if (!out) return undefined;
-  return { tempC: out.air?.tempC ?? MILD_FIELD.tempC, humidity: out.air?.humidity ?? MILD_FIELD.humidity, ground: out.ground ?? MILD_FIELD.ground, terrain: out.banks?.length ? banks(out.banks) : undefined };
+  const terrain = highest(out.banks?.length ? banks(out.banks) : undefined, v?.land ? heightMap(v.land, v.at, v.yaw, v.scale) : undefined);
+  return { tempC: out.air?.tempC ?? MILD_FIELD.tempC, humidity: out.air?.humidity ?? MILD_FIELD.humidity, ground: out.ground ?? MILD_FIELD.ground, terrain };
 }
 
 /** The PA you placed: an open-air party's, else an indoor room's own (none: the club stacks either side of the decks). */
