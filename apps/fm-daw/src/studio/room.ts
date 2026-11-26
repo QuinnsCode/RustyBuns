@@ -2,7 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
-import type { GeneratorId, SystemId } from "@rustybuns/gear";
+import type { Bank, GeneratorId, Ground, SystemId } from "@rustybuns/gear";
 import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
@@ -120,6 +120,13 @@ export interface Outdoor {
   rugs?: { at: [number, number]; yaw: number; w: number; d: number }[];
   /** Everyone carries a hand lantern of their own while they're on their feet, and puts it down to sit at a seat. */
   carry?: boolean;
+  /** The night's air, C and % relative humidity (@rustybuns/gear field.ts MILD_FIELD when left out): it takes the highs
+   *  with distance and sets the speed the delay marks are worked at. */
+  air?: { tempC: number; humidity: number };
+  /** What the crowd stands on (soil when left out): grass soaks up, tarmac and water hand back. */
+  ground?: Ground;
+  /** Banks and humps on the field (@rustybuns/gear `banks`): the land's heights. One between a stack and you cuts its highs. */
+  banks?: Bank[];
   seed: number;
 }
 
