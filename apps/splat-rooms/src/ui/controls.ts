@@ -27,7 +27,22 @@ font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0
 .ui-house .gc-chev{order:3;margin-left:10px}
 .ui-house .gc-card label:has(>input[type=range]){grid-template-columns:auto 1fr 3.5em}.ui-house .gc-card label:has(>input[type=range]) .gc-lab{white-space:nowrap}
 .ui-house .gc-card input[type=checkbox]{border-radius:4px;border-color:var(--oxide);background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));box-shadow:inset 0 1px 3px rgb(0 0 0 / .7),inset 0 0 0 1px rgb(239 228 201 / .05)}
-.ui-house .gc-card input[type=checkbox]:checked{background:linear-gradient(180deg,rgb(4 18 24 / .7),var(--accent-soft));border-color:var(--accent);box-shadow:var(--glow),inset 0 1px 3px rgb(0 0 0 / .6)}`;
+.ui-house .gc-card input[type=checkbox]:checked{background:linear-gradient(180deg,rgb(4 18 24 / .7),var(--accent-soft));border-color:var(--accent);box-shadow:var(--glow),inset 0 1px 3px rgb(0 0 0 / .6)}
+.ui-house .gc-card input[type=checkbox]::before{content:"OFF";position:absolute;right:4px;top:50%;transform:translateY(-50%);font:800 7px/1 var(--mono);letter-spacing:.04em;color:rgb(147 161 173 / .55)}
+.ui-house .gc-card input[type=checkbox]:checked::before{content:"ON";right:auto;left:5px;color:var(--cream);text-shadow:0 0 4px rgb(239 228 201 / .6)}
+.ui-house .gc-card label:has(>input:checked){box-shadow:inset 0 -1px 0 rgb(92 214 239 / .45)}
+.ui-house .gc-prof{font-size:0;gap:0;flex-direction:column;justify-content:center;line-height:1}.ui-house .gc-prof svg{display:none}
+.ui-house .gc-prof::before{font:600 1.05rem/1 var(--silk);letter-spacing:.1em;text-transform:uppercase}
+.ui-house .gc-prof[data-slot="0"]::before{content:"Kit A"}.ui-house .gc-prof[data-slot="1"]::before{content:"Kit B"}
+.ui-house .gc-prof[data-slot="2"]::before{content:"Kit C"}.ui-house .gc-prof[data-slot="3"]::before{content:"Kit D"}
+.ui-house .gc-profiles{counter-reset:gckit}.ui-house .gc-prof{counter-increment:gckit}
+.ui-house .gc-prof::after{content:"SR-KIT · " counter(gckit,decimal-leading-zero);white-space:nowrap;margin-top:4px;font:800 .5rem/1 var(--mono);letter-spacing:.14em;color:var(--red);opacity:.85}
+.ui-house .gc-prof[aria-pressed=true]::before{color:var(--accent);text-shadow:0 0 8px rgb(92 214 239 / .5)}
+.ui-house .gc-fold .gc-icon{width:38px;height:38px;border-radius:50%;border-color:var(--oxide);color:#1a1208;
+background:radial-gradient(circle,#f1dcae 0 30%,#8a6a3c 31% 36%,transparent 37%),repeating-conic-gradient(#d8b77a 0 6deg,#4a3820 6deg 12deg);
+box-shadow:0 0 0 2px rgb(0 0 0 / .6),0 2px 4px #000}
+.ui-house .gc-fold .gc-icon:hover:not(:disabled){background:radial-gradient(circle,#f1dcae 0 30%,#8a6a3c 31% 36%,transparent 37%),repeating-conic-gradient(#e8c98c 0 6deg,#5a4426 6deg 12deg);box-shadow:var(--glow),0 2px 4px #000}
+.ui-house .gc-fold .gc-icon svg{width:14px;height:14px;position:relative}`;
 
 /** Brass, by the house kit's tokens: a capped fader thumb with a groove, a dark inset slot, and a rocker switch whose block lights cyan when on. */
 const BRASS = "linear-gradient(90deg,#5a4426,#d8b77a 42%,#f1dcae 50%,#8a6a3c 58%,#4a3820)";
