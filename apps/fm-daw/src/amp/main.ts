@@ -31,6 +31,9 @@ import { startMidi } from "../ui/input.ts";
 import { MODES, Screen, lightLevels, topHz, hzLabel, type ScreenMode } from "./screens.ts";
 import type { AmpSettings, ChainSlot, FromAmp } from "./messages.ts";
 import type { MountedStage, StageAmp } from "./stage3d.ts";
+import { AMP_LESSON } from "./lesson.ts";
+import { mountLessonCard } from "../studio/lesson-card.ts";
+import { askedFor, PageLesson } from "../studio/page-lesson.ts";
 import { AMP_SLOT, freshOrder, grip, isMachine, loadChip, moveTo, tidyOrder, type MachineId } from "./pedalboard.ts";
 
 const KEY = "q-amp";
@@ -634,7 +637,9 @@ ui.devices.hidden = S.source !== "guitar";
 const glowOf = (swing: number) => Math.min(1, Math.log10(1 + swing) / Math.log10(151));
 let db = new Float32Array(8192).fill(-Infinity), wave = new Float32Array(16384);
 let push = 0;
+let lessonTick = 0;
 function frame() {
+  if (++lessonTick % 10 === 0) lessonCard.frame(); // a few times a second: the steps read the knobs, the board and the cables
   if (analyser) {
     if (db.length !== analyser.frequencyBinCount) { db = new Float32Array(analyser.frequencyBinCount); wave = new Float32Array(analyser.fftSize); }
     analyser.getFloatFrequencyData(db);
@@ -686,6 +691,13 @@ onParts((p) => {
 }
 requestAnimationFrame(frame);
 
+/** Q Amps' lesson (lesson.ts), read from the page's state as it stands; the cap button in the corner, or ?lesson=amp, starts it. */
+const lesson = new PageLesson(AMP_LESSON, () => ({
+  gain: (S.knobs[S.amp] ?? ampOf(S.amp).knobs).gain, lit: S.lit, drive: S.drive, tape: loopOf().tape.on === 1, order: S.order, pedalsHeard: sound.pedals,
+}));
+const lessonCard = mountLessonCard(document.body, lesson, { float: true, done: "Done. That's your rig now: play it, or try the other amps under the same pedals", offer: { title: AMP_LESSON.title, start: () => lesson.start() } });
+if (askedFor(location.search, AMP_LESSON.id)) { lesson.start(); lessonCard.frame(); }
+
 // Ask the page instead of screenshotting it (scripts/probe.ts).
 Object.assign(window, {
   qamp: {
@@ -701,6 +713,8 @@ Object.assign(window, {
     bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
     start,
     setAmp,
+    /** Q Amps' lesson (lesson.ts): "amp" starts it, null leaves it; then the lesson as it stands. */
+    lesson: (id?: string | null) => { if (id === null) lesson.leave(); else if (id === AMP_LESSON.id) lesson.start(); lessonCard.frame(); return { lesson: lesson.state(), finished: lesson.finished }; },
     /** Cut the chain onto worker threads before these links ([] for one thread); the page does this itself when over budget. */
     split: (cuts: number[]) => threads?.split(cuts),
     /** Pull out the cable in a jack, e.g. unplug("head", "speaker"). */
