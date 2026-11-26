@@ -5,20 +5,23 @@ import { join } from "node:path";
 import { timesFromLog } from "./test-times.ts";
 import { section } from "./ci-group.ts";
 
-// #5564: a group job runs every app's suite even after one goes red, fails if any did, and its log splits back per app.
-test("a group job runs each suite in its folder, fails when one fails, and its log splits back into each app's times", async () => {
+// #5564, #5920: a group job runs each suite in its own folder and stops at the first red one, naming what it never
+// ran; its log splits back per app.
+test("a group job runs each suite in its folder, stops at the first red one, and its log splits back into each app's times", async () => {
   const at = (name: string, body: string) => {
     const dir = mkdtempSync(join(tmpdir(), `ci-group-${name}-`));
     writeFileSync(join(dir, "a.test.ts"), `import { test, expect } from "bun:test";\ntest("x", () => { ${body} });\n`);
     return dir;
   };
-  const red = at("red", "expect(1).toBe(2);"), green = at("green", "expect(1).toBe(1);");
-  const run = await Bun.$`bun ${import.meta.dir}/ci-group.ts ${red} ${"bun test ./a.test.ts"} ${green} ${"bun test ./a.test.ts"}`.quiet().nothrow();
+  const green = at("green", "expect(1).toBe(1);"), red = at("red", "expect(1).toBe(2);"), after = at("after", "expect(1).toBe(1);");
+  const cmd = "bun test ./a.test.ts";
+  const run = await Bun.$`bun ${import.meta.dir}/ci-group.ts ${green} ${cmd} ${red} ${cmd} ${after} ${cmd}`.quiet().nothrow();
   const log = run.stdout.toString() + run.stderr.toString();
   expect(run.exitCode).toBe(1);
   expect(log).toContain(`::error title=failed::${red}:`);
-  expect(log).not.toContain(`${green}:`);
-  // Both ran: one pass and one fail summed over the job, as ci-test-count.ts reads it.
+  expect(log).toContain(`Not run after it: ${after}`);
+  expect(log).not.toContain(`ci-group: ${after}`);
+  // The green one and the red one ran: one pass and one fail summed over the job, as ci-test-count.ts reads it.
   expect(log).toMatch(/ 1 pass/);
   expect(log).toMatch(/ 1 fail/);
 

@@ -15,7 +15,9 @@ import { surface, gearSurfaces } from "../src/surfaces.ts";
 
 // `close` is a macro shot: the front three-quarter view moved in on the top front corner, where a pixel is about
 // half a millimetre, so the coat's grain, the grille's holes and the hardware show as they would in a close photo.
-const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16] } as const;
+// `photo` is the dance stack top's reference photo's own view (#5948): from the box's left, near straight on, a little
+// above; `straight` is the owner's straight-on photo's. Neither is in the default set; `--js "turntable.angles = ['photo']"` picks one.
+const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16], photo: [-15, 8], straight: [0, 4] } as const;
 type Angle = keyof typeof ANGLES;
 
 // `?sky=1` (an outdoor overcast HDRI, the default): the photos' soft daylight. The sky does most of the lighting, the
@@ -199,4 +201,4 @@ async function show(id: string, angle: Angle) {
 // `?plain=1` is the flat look (the `low` quality setting); otherwise the material kit from the served textures/.
 if (!plain) { const kit = gearSurfaces({ base: "/textures/" }); setLook(kit.look, kit.ready); }
 
-Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack", ...PIECE_IDS], angles: Object.keys(ANGLES), show, ready: true, look: () => look, ao, contact, key } });
+Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack", ...PIECE_IDS], angles: ["front", "side", "back", "close"], show, ready: true, look: () => look, ao, contact, key } });

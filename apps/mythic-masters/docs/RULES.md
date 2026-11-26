@@ -29,10 +29,10 @@ From the code: src/journey.ts atLevel.
 
 ## 4. XP: who earns it, how much, what the next level costs
 
-- Only the beast that wins the fight earns XP. The others in the line-up get none.
+- The beast that wins the fight earns all of its XP. The others in the line-up watched, and each gets 50% of it.
 - A win gives 10 XP for each level of the creature you beat. The next level costs 15 XP for each level you have now. Example: a level-5 beast needs 75 XP, and beating a level-4 creature gives 40.
 
-From the code: src/journey.ts gainXp, toNext.
+From the code: src/journey.ts gainXp, shareXp, WATCH_SHARE, toNext.
 
 ## 5. Health carries between fights
 
@@ -136,7 +136,7 @@ From the code: src/demand.ts demandOf; src/book.ts spendInk.
 
 - A friend joins your world through a party link. Up to 6 players share a region.
 - When you walk into a wild one or a keeper, friends in the region can join the fight. A lone creature that faces a team hits harder: 2.5 times against two, 3.5 against three, 5 against four.
-- Each player's own beast earns the XP, and each player has the usual 3 tries of ink. The first bind that holds takes the creature. A keeper beaten together clears the stone only for a player whose next stone it is.
+- Each player's own beast earns the XP (the rest of that player's line-up gets half), and each player has the usual 3 tries of ink. The first bind that holds takes the creature. A keeper beaten together clears the stone only for a player whose next stone it is.
 
 From the code: src/journey.ts OUTNUMBERED; src/net/party.ts MAX_PLAYERS; src/coop.ts.
 

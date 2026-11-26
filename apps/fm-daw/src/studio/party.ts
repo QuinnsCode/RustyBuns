@@ -4,8 +4,8 @@
 // like, but only one is live: the room other people join. Every change hands back a new store, so the page can keep
 // it in this browser and a sesh or an agent's tool can send the same data later.
 import { arr, check, int, nul, obj, opt, str, type Of } from "@rustybuns/util/guard";
-import type { StudioDef } from "./room.ts";
-import { MAX_SPOTS, Studio } from "./builder.ts";
+import type { StudioDef, Venue } from "./room.ts";
+import { edit, MAX_SPOTS, Studio } from "./builder.ts";
 
 export const MAX_PARTIES = 24;
 export const MAX_SCENES = 12;
@@ -104,6 +104,18 @@ export const keepStudio = (s: Parties, studio: StudioDef): Done => withParty(s, 
   ...p, scenes: p.scenes.map((x) => (x.id === p.scene ? { ...x, studio } : x)),
 }));
 
+/** Lay every scene of the open party out in one real venue (#5933), or take it away (null): the performers change over
+ *  in the same place. Each scene keeps its own seats; a scene whose room the venue's edit refuses says why. */
+export const setVenue = (s: Parties, venue: Venue | null): Done => withParty(s, s.open, (p) => {
+  const scenes: Scene[] = [];
+  for (const x of p.scenes) {
+    const b = edit(x.studio, { t: "venue", venue });
+    if (!b.ok) return `${x.performer}'s scene: ${b.why}`;
+    scenes.push({ ...x, studio: b.def });
+  }
+  return { ...p, scenes };
+});
+
 /** A new scene for `performer`, starting from `studio` (the one on stage, as a rule), and put it on stage. */
 export const addScene = (s: Parties, performer: string, studio: StudioDef): Done => withParty(s, s.open, (p) => {
   performer = performer.trim();
@@ -175,4 +187,52 @@ export const restore = (s: Parties, n: number): Done => withParty(s, s.open, (p)
 export function whenWords(when: number | null, locale?: string): string {
   if (when === null) return "Open now";
   return new Date(when).toLocaleString(locale, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+// ---- on the owner's eqosys account (#5932): the Worker keeps one store per signed-in person (src/party-store.ts) ----
+/** Who owns a store, as its join links name them: a hash of their eqosys id, never the id itself. */
+export const OWNER = /^[0-9a-f]{24}$/;
+/** The Qollab room the live party is: the same room for everyone who has its join link, on any device. */
+export const partyRoom = (owner: string, id: string) => `party-${owner}-${id}`.slice(0, 64);
+/** GET or PUT /parties?token=: your store on your account, and the owner key your join links carry. */
+export const PartiesReply = obj({ owner: str(24, { re: OWNER }), store: Parties });
+export type PartiesReply = Of<typeof PartiesReply>;
+/** GET /party/<owner>: the live party as anyone with its link sees it (no versions, only the scene on stage). */
+export const LiveParty = obj({ name: str(60, { min: 1 }), when: nul(int(0, 2 ** 53)), room: str(64), performer: str(40, { min: 1 }), studio: Studio });
+export type LiveParty = Of<typeof LiveParty>;
+/** The live party of `owner`'s store, or null when none is live. */
+export function liveParty(s: Parties, owner: string): LiveParty | null {
+  const p = s.parties.find((x) => x.id === s.live);
+  if (!p) return null;
+  const on = sceneOf(p);
+  return { name: p.name, when: p.when, room: partyRoom(owner, p.id), performer: on.performer, studio: on.studio };
+}
+
+// ---- the join page follows the live party (#5963): the owner's scene switch reaches everyone already in its room ----
+/** The owner key a join link carries (`&party=`), or null: not a party's link. */
+export function partyFrom(search: string): string | null {
+  const o = new URLSearchParams(search).get("party");
+  return o && OWNER.test(o) ? o : null;
+}
+/** How often a join page asks the owner's store what is on stage. */
+export const FOLLOW_MS = 4_000;
+/**
+ * Where a join page goes when the owner's live party changed: the same link with the scene on stage now (and the new
+ * party's room when another one went live), so everyone walks into the next performer's setup. Null: stay (it is
+ * the one standing here, or nothing is live now, so the room people are in keeps going).
+ */
+export function partyFollow(href: string, live: LiveParty | null, standing: StudioDef): string | null {
+  if (!live) return null;
+  const u = new URL(href);
+  if (u.searchParams.get("room") === live.room && JSON.stringify(live.studio) === JSON.stringify(standing)) return null;
+  u.searchParams.set("room", live.room);
+  u.searchParams.set("studio", "yours");
+  u.searchParams.set("built", JSON.stringify(live.studio));
+  u.searchParams.set("name", live.name);
+  return u.href;
+}
+/** The join page's invite line: the party, who is on, and when it starts if it hasn't yet. */
+export function invitedWords(live: LiveParty, now: number, locale?: string): string {
+  const starts = live.when !== null && live.when > now ? ` It starts ${whenWords(live.when, locale)}.` : "";
+  return `You're invited to ${live.name}. ${live.performer} is on.${starts}`;
 }

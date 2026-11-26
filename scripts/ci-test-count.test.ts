@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { countOf, hung, limits, limitOf, notice, reported, slow, testFiles } from "./ci-test-count.ts";
+import { countOf, failedSibling, firstFailure, hung, limits, limitOf, notice, reported, slow, testFiles } from "./ci-test-count.ts";
 
 const parallelOut = "bun test v1.4.3 8x PARALLEL\n\ntest/a.test.ts:\n(pass) a1\n\n\x1b[1mtest/d.test.ts:\x1b[0m\n(pass) d1\n";
 
@@ -98,4 +98,39 @@ test("a run past its budget is killed, process tree and all, and exits 124", asy
   expect(out).toContain("::error title=hung::Still running after 0.02 min, killed.");
   // The background sleep held the pipe open too: had it lived, reading stdout would have waited 30s.
   expect(Date.now() - started).toBeLessThan(10_000);
+});
+
+// #5920: a red lane names the file that failed first; a group job's files sit under their app's folder.
+test("names the first file that failed, or the last one started when it threw before a test", () => {
+  const rows: [string, string | undefined][] = [
+    ["test/a.test.ts:\n(pass) a\n\ntest/b.test.ts:\n(fail) b > c [1.00ms]\nBailed out after 1 failure\n", "test/b.test.ts"],
+    ["ci-group: apps/borg\ntest/a.test.ts:\n(pass) a\nci-group: apps/qcrm\n::group::test/z.test.ts:\n(fail) z\n::endgroup::\n", "apps/qcrm/test/z.test.ts"],
+    ["test/a.test.ts:\n(pass) a\n\ntest/b.test.ts:\nerror: Cannot find module './gone'\n", "test/b.test.ts"],
+    ["error: no tests\n", undefined],
+  ];
+  for (const [out, want] of rows) expect(firstFailure(out)).toBe(want);
+});
+
+test("a lane's siblings are the other lanes of its own app", () => {
+  const job = (name: string, conclusion?: string, step?: string) => ({ name, conclusion, steps: step ? [{ conclusion: step }] : [] });
+  const rows: [ReturnType<typeof job>[], string, string | undefined][] = [
+    [[job("test fm-daw 1/6"), job("test fm-daw 3/6", "failure")], "test fm-daw 1/6", "test fm-daw 3/6"],
+    [[job("test fm-daw 1/6"), job("test fm-daw 4/6", undefined, "failure")], "test fm-daw 1/6", "test fm-daw 4/6"],
+    [[job("test fm-daw 1/6", "failure"), job("test two-fronts 2/4", "failure"), job("test fm-daw 2/6", "success")], "test fm-daw 1/6", undefined],
+    [[job("test fm-daw 1/6"), job("test fm-daw-x 2/6", "failure")], "test fm-daw 1/6", undefined],
+  ];
+  for (const [jobs, lane, want] of rows) expect(failedSibling(jobs, lane)).toBe(want);
+});
+
+test("a lane whose sibling failed stops its tests and says which lane went red first", async () => {
+  const api = Bun.serve({ port: 0, fetch: () => Response.json({ jobs: [{ name: "test fm-daw 1/6", conclusion: null, steps: [] }, { name: "test fm-daw 2/6", conclusion: "failure", steps: [] }] }) });
+  try {
+    const started = Date.now();
+    const env = { ...process.env, GITHUB_STEP_SUMMARY: "", LANE: "test fm-daw 1/6", LANE_POLL_MS: "50", GITHUB_API_URL: api.url.origin, GITHUB_REPOSITORY: "o/r", GITHUB_RUN_ID: "1", GH_TOKEN: "t" };
+    const p = Bun.spawn(["bun", join(import.meta.dir, "ci-test-count.ts"), "sleep 30"], { stdout: "pipe", stderr: "pipe", env });
+    const out = await new Response(p.stdout).text();
+    expect(await p.exited).toBe(1);
+    expect(out).toContain("::error title=stopped::test fm-daw 2/6 failed first, so test fm-daw 1/6 stopped");
+    expect(Date.now() - started).toBeLessThan(10_000);
+  } finally { api.stop(true); }
 });

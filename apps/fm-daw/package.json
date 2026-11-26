@@ -26,6 +26,7 @@
     "@rustybuns/rig": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
+    "@sparkjsdev/spark": "2.2.0",
     "@webaudiomodules/sdk": "0.0.12",
     "react": "19.3.1",
     "react-dom": "19.3.1",

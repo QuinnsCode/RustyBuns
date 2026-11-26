@@ -17,6 +17,8 @@ import { eqosys, hub, type HubView } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar, eqosysKept, saveEqosysAvatar } from "../account.ts";
 import { mountWay } from "../way.ts";
 import { characterDialog } from "./character.ts";
+import { FOLLOW_MS, invitedWords, LiveParty, partyFollow, partyFrom } from "./party.ts";
+import { getJson } from "@rustybuns/util/http";
 import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, loadSetup, remember, roomId, saveRecent, saveSetup, studios } from "./door.ts";
 import { sideways, studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
@@ -44,6 +46,7 @@ import { type Answer, BODY_HZ, DRUM_KEYS, blendShot, body, cameraPose, orbitPose
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
 import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
+import { VenueSplat } from "./venue-splat.ts";
 import { SYSTEMS, system } from "@rustybuns/gear";
 import { rigCards } from "./rig-cards.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
@@ -68,7 +71,7 @@ import { badge, dropBadge } from "./badge.ts";
 import { prop, chaseSteps, tickProps } from "./props.ts";
 import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { doorways } from "./doors.ts";
-import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
+import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Look, type Quality } from "./look.ts";
 import { gearKit, gearKitLook } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
@@ -179,7 +182,9 @@ function buildRoom() {
   const ceil = new THREE.Mesh(metreUV(new THREE.PlaneGeometry(w, d)), surface(made.ceiling, def.colors.ceiling));
   ceil.rotation.x = Math.PI / 2; ceil.position.y = h;
   // out under the sky (open-air.ts draws the ground to the horizon): no floor, ceiling or outside walls here
-  if (!def.outdoor) scene.add(floor, ceil);
+  // a captured venue (venue-splat.ts) is its own floor, ceiling and outside walls
+  const shell = !def.outdoor && !def.venue;
+  if (shell) scene.add(floor, ceil);
   // a room with decks but no PA of its own gets a stack either side of the DJ table (pa-room.ts); open air draws its own
   // indoors, the stacks the builder placed (the room's own pa) in its rig, else a club's sub-and-top either side of the
   // decks (out of doors the rig is open-air.ts's)
@@ -187,7 +192,7 @@ function buildRoom() {
   else if (!def.outdoor) for (const sp of paSpeakers(def)) scene.add(clubStack(sp.at, sp.yaw));
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
-  for (const wall of [...(def.outdoor ? [] : outside).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
+  for (const wall of [...(shell ? outside : []).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
     const wallMat = surface(wallSurface(wall.material ?? "drywall"), wall.material ? undefined : def.colors.walls);
     for (const p of wallPieces(wall, 0.12)) {
       const isGlass = "glass" in wall && wall.glass;
@@ -407,9 +412,20 @@ function thing(s: Spot): THREE.Group {
   }
   return g;
 }
-useKit(gearKit(loadQuality()));
-buildRoom();
-const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
+/** The front door draws no studio: walking into a room loads its link, so the door never needs one (#5905). */
+function doorLook(quality: Quality): Look {
+  renderer.setClearColor(0x0d0e10);
+  renderer.clear();
+  return {
+    quality, render() {}, resize: (w, h) => { renderer.setSize(w, h, false); renderer.clear(); },
+    state: () => ({ quality, lights: 0, shadows: 0, post: [], tone: "none", exposure: 1, drawCalls: 0, triangles: 0, fps: 0, ground: 0, env: "room" }),
+  };
+}
+if (here) { useKit(gearKit(loadQuality())); buildRoom(); }
+// a real venue round the room (#5933), fetched only when the room has one
+const venue = new VenueSplat(scene, renderer);
+if (here) void venue.show(def.venue);
+const picture = !here ? doorLook(loadQuality()) : def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
 // the subs' cones pump on the beat while the band plays
 const pumpSubs = subCones([scene]);
 /** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
@@ -424,7 +440,7 @@ const drawnLook = (id: number | "me") => drawn.get(id)?.avatar ?? null;
 let watched: THREE.Vector3 | null = null;
 // step dust off the floor: thick on an open-air room's sand, a faint scuff indoors
 // out of doors, a crowd on the dance floor facing the stacks, dancing to the groove (dancers.ts)
-const dancers = def.outdoor ? new Dancers(def, loadQuality() === "low" ? 6 : 12) : null; // fewer on a phone
+const dancers = here && def.outdoor ? new Dancers(def, loadQuality() === "low" ? 6 : 12) : null; // fewer on a phone
 if (dancers) scene.add(dancers.group);
 const dust = new Dust(scene, def.outdoor ? 1.6 : 0.6, `#${new THREE.Color(def.colors.floor).lerp(new THREE.Color("#d8cbb4"), 0.6).getHexString()}`);
 const palm = new THREE.Vector3();
@@ -922,7 +938,7 @@ function keepBuilt(p: Project) {
   if (!here) return;
   const key = SESH_BUILT(here.room);
   // the sesh has no build of its own now: forget the old one, so "yours" is this browser's room again
-  if (p.studio !== "yours" || !p.built) { try { localStorage.removeItem(key); } catch { /* no storage */ } return; }
+  if (partyOwner || p.studio !== "yours" || !p.built) { try { localStorage.removeItem(key); } catch { /* no storage */ } return; }
   const json = JSON.stringify(p.built);
   try { if (localStorage.getItem(key) !== json) localStorage.setItem(key, json); } catch { /* still walk into it */ }
   // already in "yours" but a different build: reload into the sesh's (walkOver handles coming from another studio)
@@ -932,7 +948,8 @@ function keepBuilt(p: Project) {
 /** The sesh's studio isn't this page's: walk into the one the leader picked (a beat later, so the leader's move goes out first). */
 let movingTo: string | null = null;
 function walkOver(p: Project) {
-  const to = here && follow(location.origin, here, p.studio);
+  // a party's room follows its owner's stage (followParty), not a leader's move
+  const to = here && !partyOwner && follow(location.origin, here, p.studio);
   if (!to || movingTo) return;
   movingTo = to;
   flash = { text: `Moving to ${studios().find((x) => x.id === p.studio)?.name ?? "another studio"}`, until: performance.now() + 2000 };
@@ -1271,6 +1288,25 @@ void startMidi({
   panic: releaseAll, bend(x) { overlay.wheels.midi(x); }, cc(n, v) { if (n === 1) overlay.wheels.mod = v; }, devices() {},
 });
 
+// ---- a party's join link (#5963): the owner's live party, asked every few seconds; a scene switch walks everyone over ----
+const partyOwner = here ? partyFrom(location.search) : null;
+let partyLive: LiveParty | null = null;
+async function followParty() {
+  if (!partyOwner || movingTo) return;
+  // nothing live (404) or offline: stay in the room you're in
+  const live = await getJson(`${location.origin}/party/${partyOwner}`, LiveParty).catch(() => null);
+  if (!live) return;
+  const was = partyLive?.performer;
+  partyLive = live;
+  if (was !== live.performer) door();
+  const to = partyFollow(location.href, live, picked);
+  if (!to || movingTo) return;
+  movingTo = to;
+  flash = { text: `${live.performer} is up: moving to their setup`, until: performance.now() + 2000 };
+  setTimeout(() => location.replace(to), 300);
+}
+if (partyOwner) { void followParty(); setInterval(() => { if (document.visibilityState === "visible") void followParty(); }, FOLLOW_MS); }
+
 // ---- the front door ----
 function door() {
   const out = !signedIn() && eq.canSignIn();
@@ -1279,7 +1315,7 @@ function door() {
   $("door-room").hidden = out || !here;
   const invited = $("invited");
   invited.hidden = !here;
-  invited.textContent = here ? `You're invited to ${here.name || here.room}.` : "";
+  invited.textContent = here ? partyLive ? invitedWords(partyLive, Date.now()) : `You're invited to ${here.name || here.room}.` : "";
   $("sign-in").textContent = here ? "Sign in and walk in" : "Sign in with eqosys";
   if (here) $("room-title").textContent = here.name || here.room;
   $("room-studio-name").textContent = def.name;
@@ -1565,7 +1601,7 @@ function frame(now: number) {
   picture.render(camera);
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+if (here) requestAnimationFrame(frame); // the front door has no room to draw or walk in
 // the menu's lists are sideways rows of cards, like the studios: a wheel or a drag scrolls them, touch swipes
 for (const id of ["rooms", "invites", "friends", "people"]) { $(id).classList.add("cards"); sideways($(id)); }
 menu();
@@ -1576,7 +1612,7 @@ const harness = {
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, setup: loadSetup(), look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
-    gear: atWall.state(jam), lanterns: lit.state(jam), levels: harness.levels() }),
+    gear: atWall.state(jam), lanterns: lit.state(jam), venue: venue.state, levels: harness.levels() }),
   /** What you hear (levels.ts): MUSIC and CROWD as set and as their buses play, each person's level, and each of their lines as heard now. */
   levels: () => {
     const at = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw }), peers = [...jam.others.keys()];
@@ -1598,7 +1634,7 @@ const harness = {
   gearClick: () => atWall.click(jam),
   /** Let go of the cable in your hand (G). */
   gearDrop: () => atWall.letGo(),
-  /** A new sound wall module in your hands (K's list), by kind: seq, vco, vcf, vca, env, lfo, mix, out, noise, keys, bbd. */
+  /** A new sound wall module in your hands (K's list), by kind: seq, vco, vcf, vca, env, lfo, mix, out, noise, keys, bbd, ladder. */
   gearBring: (kind: string) => atWall.bring(jam, kind),
   /** The sound wall at the gear wall: what the sesh's patch makes of it and, with the speakers up, what each module is doing. */
   wall: async () => { const { spec, ...heard } = atWall.wall(), s = await wallLine?.state() ?? null; return { heard: { ...heard, modules: spec.modules.map((m) => m.id), cables: spec.cables }, modules: s?.modules ?? null, load: s?.load ?? null }; },

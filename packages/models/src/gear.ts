@@ -98,14 +98,14 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "cavity"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
  * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
- * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat) and violet (its cabinets' dark violet paint). */
+ * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -118,6 +118,7 @@ export function gearLook(): GearLook {
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
     horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8),
+    cavity: new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.9, envMapIntensity: 0.16 }),
   };
 }
 
@@ -1542,13 +1543,19 @@ function facets(slot: GearSlot, rings: Facet[], m: THREE.Matrix4, out = false): 
   const ring = ([z, a, c, k, y = 0, x = 0]: Facet) => [[a, -c + k], [a, c - k], [a - k, c], [-a + k, c], [-a, c - k], [-a, -c + k], [-a + k, -c], [a - k, -c]]
     .map(([u, v]) => new THREE.Vector3(u + x, v + y, z));
   const rows = rings.map(ring), pos: number[] = [];
-  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
-    const n = b.clone().sub(a).cross(c.clone().sub(a));
-    pos.push(...((n.z >= 0) !== out ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
+  // each triangle faces in toward the horn's axis between its two rings, leaning forward: a steep wall's two halves
+  // then never turn opposite ways (a flat flange ring has no inward, and the lean faces it forward)
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, axis: THREE.Vector2) => {
+    const n = b.clone().sub(a).cross(c.clone().sub(a)).normalize(), p = a.clone().add(b).add(c).divideScalar(3);
+    const inward = new THREE.Vector3(axis.x - p.x, axis.y - p.y, 0).normalize().setZ(0.3);
+    pos.push(...((n.dot(inward) >= 0) !== out ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
   };
-  for (let i = 0; i + 1 < rows.length; i++) for (let j = 0; j < 8; j++) {
-    const k = (j + 1) % 8, [a, b] = [rows[i], rows[i + 1]];
-    tri(a[j], a[k], b[k]); tri(a[j], b[k], b[j]);
+  for (let i = 0; i + 1 < rows.length; i++) {
+    const [, , , , y0 = 0, x0 = 0] = rings[i], [, , , , y1 = 0, x1 = 0] = rings[i + 1], axis = new THREE.Vector2((x0 + x1) / 2, (y0 + y1) / 2);
+    for (let j = 0; j < 8; j++) {
+      const k = (j + 1) % 8, [a, b] = [rows[i], rows[i + 1]];
+      tri(a[j], a[k], b[k], axis); tri(a[j], b[k], b[j], axis);
+    }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -1684,9 +1691,11 @@ function res2Pieces(): Record<string, Build> {
   // ---- mid horn: a rolled lip at the mouth, then the facets back to the throat round the plug
   const zt = f - 0.24, tipA = mm(154), drR = mm(77);
   const lip = ring8(0, mcy, f - 0.002, mA + 0.012, mC + 0.012), mouth = ring8(0, mcy, f - 0.016, mA, mC);
-  const midRing = ring8(0, mcy, f - 0.11, mm(186), mm(108), mm(135), mm(108));
+  // three bands of facets, as the photo's walls fold: the corners pulled in faster than the mids, so each wall breaks
+  // into long triangles at the mouth and diamonds halfway in
+  const bands = [ring8(0, mcy, f - 0.06, mm(203), mm(126), mm(178), mm(122)), ring8(0, mcy, f - 0.14, mm(178), mm(100), mm(110), mm(98))];
   const throat = ring8(0, mcy, zt, tipA, drR, mm(54), drR);
-  mid.pieces.push(ringWalls("horn", [lip, mouth]), ringWalls("horn", [mouth, midRing]), ringWalls("horn", [midRing, throat]));
+  mid.pieces.push(ringWalls("horn", [lip, mouth]), ringWalls("horn", [mouth, ...bands, throat]));
   // the throat's back, round the driver: a flat dark face closing the hexagon the walls end on
   mid.pieces.push(frontPlate("grime", throat.map((v) => [v.x, v.y]), [Array.from({ length: 20 }, (_, i) => [Math.cos((i / 20) * Math.PI * 2) * drR, mcy + Math.sin((i / 20) * Math.PI * 2) * drR])], zt + 0.004, 0.006));
 
@@ -1709,7 +1718,9 @@ function res2Pieces(): Record<string, Build> {
 
   // ---- bass horn: the mouth to the floor, its walls closing on the throat, the strut, a bracket, the corner fillets
   const by0 = t, by1 = top(551), ty0 = top(811), ty1 = top(655), tA = mm(141.5), bdeep = 0.36;
-  bass.pieces.push(frustum("violet", [-pw, pw, by0, by1], [-tA, tA, ty0, ty1], f - 0.004, bdeep));
+  // the walls painted violet near the mouth, going to the near-black of a deep hollow two fifths in, as the light dies
+  const mouthB = [-pw, pw, by0, by1], throatB = [-tA, tA, ty0, ty1], k = 0.4, part = mouthB.map((v, i) => v + (throatB[i]! - v) * k);
+  bass.pieces.push(frustum("violet", mouthB, part, f - 0.004, bdeep * k), frustum("cavity", part, throatB, f - 0.004 - bdeep * k, bdeep * (1 - k)));
   bass.pieces.push(box("knob", [tA * 2, ty1 - ty0, 0.006], [0, (ty0 + ty1) / 2, f - 0.004 - bdeep - 0.003]));
   bass.pieces.push(rod("violet", [0, by0, f - 0.04], [0, ty1, f - 0.004 - bdeep + 0.02], 0.012, 6));
   bass.pieces.push(box("metal", [0.028, 0.05, 0.006], [0.02, (ty0 + by0) / 2 + 0.03, f - 0.2], { bevel: 0.002 }));
