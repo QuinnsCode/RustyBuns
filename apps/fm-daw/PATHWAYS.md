@@ -29,7 +29,7 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 **The build order** (visual plan: https://claude.ai/artifact/EvSXowEP4iSpRvfjL5zEs5): 0. this regroup;
 1. the Event Planner outdoors, sound that travels the way it does in the weather and over the ground
    ([below](#out-of-doors-the-air-the-ground-and-the-land)); 2. the landing page, which shows that off;
-3. The Event opened straight from a plan; 4. Q Builder's loop (scope a net, remake it in tscircuit, retest);
+3. The Event opened straight from a plan; 4. Q Builder's loop (scope a net, remake it in tscircuit, retest: `/builder.html`, #6021);
 5. a lesson in every sector, and QDAW's song mode.
 
 ## 1. LEARN: Learn the setup
@@ -43,15 +43,16 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 4. Finish, and the lesson's rig stays as their own room to keep playing in.
 
 **Works today:**
-- Three setup lessons, started from the `?` card's "Learn to set it up" row (`src/studio/lessons.ts`, [#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)): plug a guitar through a pedal into an amp and its cab; patch a sound wall voice (VCO, VCF, VCA, Q Out); set up a small PA (two powered speakers placed apart and aimed at the room's middle, a mic through a mixer, powered on mixer first). All with your hands at the gear wall, on the sesh's own patch. A card at the top left ticks each step off as the gear says so and, when something is in the way, says what and why (straight into the amp, the filter's CV, gain too hot, a speaker facing the wall, a thump). Leave any time; what you built stays. The steps run on `packages/gear`'s checker (`steps.ts`), the one Sound Guy Simulator's first-minute hints use, and the PA's switch-on order is the catalog's own `thumps`.
+- Three setup lessons, started from the `?` card's "Learn to set it up" row (`src/studio/lessons.ts`, [#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)): plug a guitar through a pedal into an amp and its cab; patch a sound wall voice (VCO, VCF, VCA, Q Out); set up a small PA (two powered speakers placed apart and aimed at the room's middle, a mic through a mixer, powered on mixer first). All with your hands at the gear wall, on the sesh's own patch. A card at the top left ticks each step off as the gear says so and, when something is in the way, says what and why (straight into the amp, the filter's CV, gain too hot, a speaker facing the wall, a thump). A small warm cone floats over the jack, knob or box the next step is about and moves on as each step goes green; with a cable in your hand it points at where the cable goes ([#6086](https://github.com/QuinnsCode/RustyBuns/issues/6086); `qjam.lesson()` returns its `mark` and `marker`). Leave any time; what you built stays. The steps run on `packages/gear`'s checker (`steps.ts`), the one Sound Guy Simulator's first-minute hints use, and the PA's switch-on order is the catalog's own `thumps`.
 - A fourth, "Know your plugs: XLR" ([#6029](https://github.com/QuinnsCode/RustyBuns/issues/6029)): the mic into the mixer, the mixer into a powered speaker's combo input A, its thru on to the next speaker. Each step reads the connector off `@rustybuns/util/connectors`, the same list Sound Guy Simulator plugs by (what it carries, its pins), and an XLR out into an out is refused with why (an out is male, an in female).
+- A class card for the teacher (**L**, `src/studio/class.ts`, [#6087](https://github.com/QuinnsCode/RustyBuns/issues/6087)): everyone in the jam room, the lesson each is in, a dot per step done, the step they are on and what is in their way, live. Whoever is stuck comes first. A class is the people in one room: the teacher sends the room's link, and nobody needs an account beyond what the jam room already asks.
 - A fifth, "Run an amp rack: power apart from audio" ([#6030](https://github.com/QuinnsCode/RustyBuns/issues/6030)): a power distro, a mixer, a rolling amp rack and two passive 15" tops. Mains go on cables of their own: a cord from the distro into the rack's blue powerCON and the mixer's IEC, and a box whose cord isn't in stays dark with its switch up. The mixer's outs into the amp's XLR inputs, a speakON from each amp channel to a speaker. Then keep the mains off the signal: carry the mixer out front and its cord from the distro lies along its XLRs, so the step asks you to move the distro until the cords leave them at an angle. Power on mixer first, amp last, or it thumps. Every jack in the PA kits now has its real socket from `@rustybuns/util/connectors`, and a cable only goes between sockets that carry the same thing: an XLR out into a speakON, or an amp's speaker line into a powered speaker's combo, is refused in the connector list's words.
 - The jam room's "What you can do here" card (`?`, `src/studio/help.ts`) and the key strip: what each key does where you stand.
 - The studio builder's Why line and ring time per seat (`/rooms.html`): change a wall's material and hear and see the room change.
 - The sound wall's build sheets explain each module in plain words (`B` in the gear room, [WALL.md](WALL.md)).
 - Sound Guy Simulator (`apps/load-in`) already teaches load-in, cabling and aiming speakers as a game, level by level.
 
-**Missing:** lessons past the first four (gain-staging a desk, why a room rings; speakON, powerCON and IEC lessons wait for typed cables in the room, with power run apart from audio, [#6030](https://github.com/QuinnsCode/RustyBuns/issues/6030)), a marker over the gear the next step is about, and a teacher's view of a class's progress. The lessons need the sesh's gear room, so a page with no World (plain `vite`) can't take them.
+**Missing:** lessons past the first four (gain-staging a desk, why a room rings; speakON, powerCON and IEC lessons wait for typed cables in the room, with power run apart from audio, [#6030](https://github.com/QuinnsCode/RustyBuns/issues/6030)). The lessons need the sesh's gear room, so a page with no World (plain `vite`) can't take them.
 
 ## 2. BUILD: QDAW
 
@@ -192,8 +193,8 @@ No wave solver: a fair try at the physics from the standards.
 
 ## 6. BUILD: Q Amps and Q Builder
 
-Q Amps is playing it (step 1, and the speaker boxes on `/speakers.html`); Q Builder is opening it up (steps 2 to 6).
-Both start on Q Amp today; Q Builder gets a page of its own with its scope.
+Q Amps is playing it (step 1, and the speaker boxes on `/speakers.html`); Q Builder is opening it up (steps 2 to 7).
+Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/QuinnsCode/RustyBuns/issues/6021)): the clip pedals' boards (Q Fuzz, Q Drive, Q Dist) with a scope and the remake. The build sheet and the kit zip are still on Q Amp (B on a pedal).
 
 **Who:** a guitarist or synth DIYer who wants to hear a pedal or a module, change its parts, and solder the real one.
 
@@ -204,20 +205,27 @@ Both start on Q Amp today; Q Builder gets a page of its own with its scope.
    value (a step up or down, the nearest part you can buy). The bench plays it with the knob down, centred and up
    first, and turns a change away with the reason if it won't solve. Your parts stay with that pedal.
 3. Bring your own board: drop a tscircuit board's circuit JSON on Q Amp's floor; the bench checks it solves, then it is the fourth pedal.
-4. Build it: B opens the build sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
+4. Scope it (`/builder.html`): click a trace on the schematic, or a net in the list, and the scope shows the volts there while
+   the riff plays through the circuit (and at its loudest note when nothing plays), with how far it swings and how
+   much of the time it sits at its peak: swap the fuzz's diodes to ground for germanium and that net clips at 0.26 V
+   instead of 0.5, flatter. Remake and retest writes your parts into the board (`<board>-yours.tsx`, tscircuit
+   source with your values and diode part numbers, and its circuit JSON), plays the same riff through the remake and
+   your board, and says whether they match, and how far yours is from the stock board (`src/circuit/builder.ts`).
+5. Build it: B opens the build sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
    number for every part), the front panel and a plain-words build sheet (`src/kit/`). `bom.csv` and `order.csv`
    carry your parts. A change is always a value in the same holes, so the Gerbers stay the stock board's, and the
    sheet says so.
-5. Order it: send the Gerbers to a fab, upload `order.csv` to a parts shop.
-6. Close the loop: record the built board, play the same riff through the sim, compare.
+6. Order it: send the Gerbers to a fab, upload `order.csv` to a parts shop.
+7. Close the loop: record the built board, play the same riff through the sim, compare.
 
-**Works today:** steps 1 to 4. Step 5 is by hand with the files from step 4.
+**Works today:** steps 1 to 5. Step 6 is by hand with the files from step 5. The scope runs the built-in riff through the
+circuit on its own thread, not your guitar through Q Amp's audio thread, and only the clip pedals are on `/builder.html`.
 
 **Missing:**
 - Changing the layout or a footprint (a new part, a bigger cap) happens in the repo (`circuits/<board>.tsx`, then
   `bun scripts/boards.ts <board>`), not in the app. tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
 - A board dropped on the bench plays and turns its knobs, but has no board view yet, so its parts can't be changed in the app.
-- No board has been built yet, so step 6 has never run. A prototype order is the owner's call, with its price.
+- No board has been built yet, so step 7 has never run. A prototype order is the owner's call, with its price.
 - Selling kits or built boards needs owner decisions first (compliance, the hardware licence, price per board: [ANALOG.md](ANALOG.md#8-from-the-screen-to-your-hands)).
 
 ## The front door

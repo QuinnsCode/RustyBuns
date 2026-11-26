@@ -27,7 +27,7 @@ export type Cam = "shoulder" | "first";
  *  walk with (V), back when you stand up; a seat always puts you in first person. */
 export interface Me { x: number; z: number; y: number; vy: number; yaw: number; pitch: number; seat: string | null; cam: Cam; walkCam: Cam }
 /** Someone else in the room, from their live line: where they are, their seat, who they look like, the notes they hold. */
-export interface Other { at: [number, number]; hop: number; yaw: number; seat: string | null; avatar: Avatar | null; name: string; held: Set<string> }
+export interface Other { at: [number, number]; hop: number; yaw: number; seat: string | null; avatar: Avatar | null; name: string; held: Set<string>; lesson: Extract<Live, { t: "lesson" }> | null }
 /** `away`: who on the live line is in the sesh's gear room (src/room/), not this room: they have no body here. */
 export interface Jam { def: StudioDef; me: Me; others: Map<number, Other>; away: Set<number> }
 /** `brisk`: Shift held, a speed walk. */
@@ -226,7 +226,7 @@ export function body(j: Jam): Live {
 
 function other(j: Jam, from: number): Other {
   let o = j.others.get(from);
-  if (!o) j.others.set(from, (o = { at: [j.def.door.at[0], j.def.door.at[1]], hop: 0, yaw: j.def.door.yaw, seat: null, avatar: null, name: "", held: new Set() }));
+  if (!o) j.others.set(from, (o = { at: [j.def.door.at[0], j.def.door.at[1]], hop: 0, yaw: j.def.door.yaw, seat: null, avatar: null, name: "", held: new Set(), lesson: null }));
   return o;
 }
 
@@ -244,6 +244,7 @@ export function hear(j: Jam, from: number, e: Live) {
     return;
   }
   if (e.t === "wear") { const o = other(j, from); o.avatar = e.avatar; o.name = e.name; return; }
+  if (e.t === "lesson") { other(j, from).lesson = e; return; }
   if (e.t === "on") other(j, from).held.add(`${e.track}:${e.midi}`);
   else if (e.t === "off") j.others.get(from)?.held.delete(`${e.track}:${e.midi}`);
 }

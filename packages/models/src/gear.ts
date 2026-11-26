@@ -77,6 +77,7 @@ export const GEAR_SIZES = {
   "skeletal-mid-high": [0.484, 0.447, 0.357],
   "skeletal-mid": [0.458, 0.307, 0.357],
   "sculpted-3way": [0.8539, 0.6712, 0.6599],
+  "sculpted-3way-lh": [0.8539, 0.6712, 0.6599],
   "arc-sub-18": [0.6568, 0.55, 0.6952],
   "amp-rack-12u": [0.6, 1.05, 0.75],
   "generator-100kva": [1.3, 2.0, 3.6],
@@ -2389,7 +2390,8 @@ function hornShell(rim: number, lip: number, rt: number, len: number, k: number,
  * 671.2 x 659.9 mm) and spec sheet (TD10745). No cabinet: three moulded fibreglass conical horns bolted to a steel
  * frame, each driver in a round can behind its horn, gloss teal (a custom colour; Void's own are red, black and white).
  * Seen from the front, right-handed: the 12" LF horn on the left, the 8" MF on the right, the 1.5" HF above, between
- * them. Measured off the front and side views (about 10 mm):
+ * them. `hand` -1 is the left-handed one (Air-Motion-Line-Drawing-LH), the same box mirrored left to right with the
+ * same connector plate. Measured off the front and side views (about 10 mm):
  * - lf horn: rim 537 across, lip 485, throat 220, centre 268 from the left and 269 up; it runs back to its can, 380
  *   across and 246 deep, whose back is the box's back
  * - mf horn: rim 299, lip 257, throat 134, centre 703 from the left and 269 up, 229 long; can 282 across, 190 deep
@@ -2401,8 +2403,8 @@ function hornShell(rim: number, lip: number, rt: number, len: number, k: number,
  * - cables: the armoured hoses from the HF unit to the LF and MF cans
  * - badge: the plain oval on the HF horn, where the real one carries the maker's name
  */
-function airMotionPieces(): Record<string, Build> {
-  const [w, , d] = GEAR_SIZES["sculpted-3way"], f = d / 2, mm = (v: number) => v / 1000, X = (fromLeft: number) => mm(fromLeft) - w / 2;
+function airMotionPieces(hand: 1 | -1): Record<string, Build> {
+  const [w, , d] = GEAR_SIZES["sculpted-3way"], f = d / 2, mm = (v: number) => v / 1000, X = (fromLeft: number) => hand * (mm(fromLeft) - w / 2);
   const P = (): Build => ({ pieces: [], marks: [] }), plane = f - 0.006; // the horns' mouths; their rims stand 6 mm in front
   const lf = P(), mf = P(), hf = P(), cans = P(), plug = P(), frame = P(), jack = P(), cables = P(), badge = P();
   // x, y, rim, lip, throat, length, flare power, can radius, can depth, segments
@@ -2425,14 +2427,14 @@ function airMotionPieces(): Record<string, Build> {
   const px = X(510), pz = -0.1, foot = 0.0125;
   frame.pieces.push(box("knob", [0.04, 0.5 - foot, 0.04], [px, (0.5 + foot) / 2, pz], { bevel: 0.003 }));
   frame.pieces.push(box("knob", [0.16, 0.008, 0.16], [px, foot + 0.004, pz], { bevel: 0.002 }));
-  const arms: [THREE.Vector3Tuple, THREE.Vector3Tuple][] = [[[px, 0.3, pz], [0.03, 0.3, -0.14]], [[px, 0.27, pz], [0.165, 0.27, -0.02]], [[px, 0.49, pz], [X(583), 0.465, 0.15]]];
+  const arms: [THREE.Vector3Tuple, THREE.Vector3Tuple][] = [[[px, 0.3, pz], [hand * 0.03, 0.3, -0.14]], [[px, 0.27, pz], [hand * 0.165, 0.27, -0.02]], [[px, 0.49, pz], [X(583), 0.465, 0.15]]];
   for (const [a, b] of arms)
     frame.pieces.push(rod("knob", a, b, 0.012));
   mark(frame, "grab", [px, 0.51, pz]);
   mark(frame, "pole-cup", [px, foot, pz], [0, -1, 0]);
   socketPanel(jack, "sculpted-3way", "bottom", [px, foot, pz], [0.12, 0.08]);
   // the hoses from the HF unit to the two cans, each in two runs
-  const hoses: THREE.Vector3Tuple[][] = [[[X(583), 0.465, 0.13], [0.06, 0.45, -0.02], [-0.08, 0.44, -0.16]], [[X(583) + 0.02, 0.465, 0.12], [0.22, 0.43, 0.06], [0.24, 0.4, 0.03]]];
+  const hoses: THREE.Vector3Tuple[][] = [[[X(583), 0.465, 0.13], [hand * 0.06, 0.45, -0.02], [hand * -0.08, 0.44, -0.16]], [[X(583) + hand * 0.02, 0.465, 0.12], [hand * 0.22, 0.43, 0.06], [hand * 0.24, 0.4, 0.03]]];
   for (const run of hoses)
     for (let i = 0; i + 1 < run.length; i++) cables.pieces.push(rod("metal", run[i]!, run[i + 1]!, 0.006));
   badge.pieces.push(box("badge", [0.046, 0.002, 0.018], [X(583), mm(541) - 0.094, plane - 0.02], { rot: [0.95, 0, 0] }));
@@ -2440,8 +2442,23 @@ function airMotionPieces(): Record<string, Build> {
 }
 
 /**
+ * A sub built `w` wide and `d` deep stood on its skids: every piece lifted `skid`, and two runners that tall under it,
+ * front to back, `inset` in from each side. The box keeps its published height with the skids inside it, so the body is
+ * `skid` shorter than its sheet's, and a box stacks on the skids' top cup as the catalog's height says.
+ */
+function onSkids(pieces: Record<string, Build>, skid: number, w: number, d: number, inset: number): Record<string, Build> {
+  for (const b of Object.values(pieces)) {
+    for (const p of b.pieces) p.geo.translate(0, skid, 0);
+    for (const m of b.marks) m.at = [m.at[0], m.at[1] + skid, m.at[2]];
+  }
+  const skids: Build = { pieces: [], marks: [] };
+  for (const s of [-1, 1]) skids.pieces.push(box("rubber", [0.05, skid, d - 0.04], [s * (w / 2 - inset), skid / 2, 0], { bevel: Math.min(0.003, skid / 3) }));
+  return { ...pieces, skids };
+}
+
+/**
  * The triple 21 is Void's Incubus Sub, built from its spec sheet's drawings (TD10760, 1479 x 696 x 1218 mm; 703.5 on
- * its skids, which the model leaves off so a box stacks on it at 696): three 21" in a hybrid horn bandpass, 18 mm birch
+ * its 7.5 mm skids, which the model keeps inside the 696, so a box stacks on it there): three 21" in a hybrid horn bandpass, 18 mm birch
  * in a black textured coat, red aluminium braces. Measured off the front, side, rear and plan views (about 10 mm):
  * - cabinet: the shell open at the front, and the two dividers 168 in from each end
  * - horn walls: the main mouth, 1107 between the dividers, its two walls running back from the dividers to the grille
@@ -2455,7 +2472,7 @@ function airMotionPieces(): Record<string, Build> {
  * The real box has the maker's name on both horn walls; the model's are plain.
  */
 function incubusPieces(): Record<string, Build> {
-  const [w, h, d] = GEAR_SIZES["triple-21-sub"], t = 0.018, f = d / 2, cy = h / 2, ih = h - 2 * t, mm = (v: number) => v / 1000;
+  const [w, full, d] = GEAR_SIZES["triple-21-sub"], skid = 0.0075, h = full - skid, t = 0.018, f = d / 2, cy = h / 2, ih = h - 2 * t, mm = (v: number) => v / 1000;
   const P = (): Build => ({ pieces: [], marks: [] }), cab = P(), walls = P(), grille = P(), braces = P(), slots = P(), handles = P(), jack = P(), hw = P();
   well(cab, "coat", [w, h, d], d - t, t);
   const xd = w / 2 - mm(177); // the dividers' middles
@@ -2501,12 +2518,12 @@ function incubusPieces(): Record<string, Build> {
   socketPanel(jack, "triple-21-sub", "back", [0, cy, -f - 0.008], [mm(72), mm(144)]);
   for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([a, b]) => [a! * (w / 2 - mm(54)), b! * (f - mm(54))]).concat([[-1, 1], [1, 1], [-1, -1], [1, -1]].map(([a, b]) => [a! * mm(63), b! * (f - mm(54))])))
     hw.pieces.push(disc("cavity", mm(30), 0.004, "y", [x!, h - 0.0015, z!], 12));
-  return { cabinet: cab, "horn-walls": walls, grille, braces, slots, handles, jacks: jack, hardware: hw };
+  return onSkids({ cabinet: cab, "horn-walls": walls, grille, braces, slots, handles, jacks: jack, hardware: hw }, skid, w, d, mm(180));
 }
 
 /**
  * The arc sub is Void's Arcline 118, built from its spec sheet's drawings (TD10753, 656.8 x 550 x 695.2 mm; 671.8 over
- * its corner fittings, 708 over the bowed grille, 565 on skids, which the model leaves off): one 18" in a ported
+ * its corner fittings, 708 over the bowed grille, 565 on 15 mm skids, which the model keeps inside the 550): one 18" in a ported
  * multi-ply box, a textured black coat. Measured off the front, side, plan and rear views (about 5 mm):
  * - cabinet: the shell, its front baffle cut for the driver and the port
  * - grille: one perforated sheet over the whole front, 17 in from each edge, bowed 12.8 out at the middle, a bar
@@ -2519,7 +2536,7 @@ function incubusPieces(): Record<string, Build> {
  * The badge on the grille, where the real one carries the maker's mark, is plain.
  */
 function arcline118Pieces(): Record<string, Build> {
-  const [w, h, d] = GEAR_SIZES["arc-sub-18"], t = 0.018, mm = (v: number) => v / 1000, X = (fromLeft: number) => mm(fromLeft) - w / 2;
+  const [w, full, d] = GEAR_SIZES["arc-sub-18"], skid = 0.015, h = full - skid, t = 0.018, mm = (v: number) => v / 1000, X = (fromLeft: number) => mm(fromLeft) - w / 2;
   const P = (): Build => ({ pieces: [], marks: [] }), cab = P(), grille = P(), driver = P(), port = P(), handles = P(), fittings = P(), jack = P();
   const bow = mm(12.8), zf = d / 2 - bow - 0.004, zc = (zf - d / 2) / 2, dc = zf + d / 2, cy = h / 2;
   const arc = (x: number) => d / 2 - bow * (x / (w / 2)) ** 2;
@@ -2548,7 +2565,7 @@ function arcline118Pieces(): Record<string, Build> {
   const jx = w / 2 - mm(408); // 408 from the left seen from behind
   plate(jack, mm(68), mm(177), [jx, mm(163), -d / 2 - 0.004]);
   socketPanel(jack, "arc-sub-18", "back", [jx, mm(163), -d / 2 - 0.008], [mm(68), mm(177)]);
-  return { cabinet: cab, grille, driver, port, handles, fittings, jacks: jack };
+  return onSkids({ cabinet: cab, grille, driver, port, handles, fittings, jacks: jack }, skid, w, d, mm(80));
 }
 
 /** A stage's 12U rack: a tall case on casters, three amps in the rails, the inputs and two rows of speaker outs behind. */
@@ -2990,7 +3007,7 @@ const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "stack-mid-high": res2Pieces, "stack-mid-bass": f215Pieces,
   "horn-sub-21": () => binPieces("horn-sub-21", F221), "horn-sub-18": () => binPieces("horn-sub-18", F218), "horn-sub-24": f124Pieces, "infra-sub-18": ib218Pieces,
   "skeletal-mid-high": () => skeletalPieces("skeletal-mid-high"), "skeletal-mid": () => skeletalPieces("skeletal-mid"),
-  "sculpted-3way": airMotionPieces, "triple-21-sub": incubusPieces, "arc-sub-18": arcline118Pieces,
+  "sculpted-3way": () => airMotionPieces(1), "sculpted-3way-lh": () => airMotionPieces(-1), "triple-21-sub": incubusPieces, "arc-sub-18": arcline118Pieces,
   "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
   "top-15-passive": jrx215Pieces, "wedge-12-passive": prx412mPieces, "line-array-box": a12Pieces,
   "top-12-powered": () => k2Pieces("top-12-powered"), "fill-8-powered": () => k2Pieces("fill-8-powered"), "sub-18": ks118Pieces, "wedge-12": cp12Pieces, "line-array-10": la108Pieces,
@@ -3045,6 +3062,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "skeletal-mid-high": whole("skeletal-mid-high"),
   "skeletal-mid": whole("skeletal-mid"),
   "sculpted-3way": whole("sculpted-3way"),
+  "sculpted-3way-lh": whole("sculpted-3way-lh"),
   "arc-sub-18": whole("arc-sub-18"),
   "amp-rack-12u": ampRack12,
   "generator-100kva": siteGenerator,

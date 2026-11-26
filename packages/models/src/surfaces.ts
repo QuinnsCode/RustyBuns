@@ -71,9 +71,9 @@ export const SURFACES = {
   coat: { dir: "plastic", tile: 0.35, tint: 0x8c8c8c, roughness: 1, metalness: 0, color: true, normalScale: 0.45, wear: { chip: 0x6a6866, stipple: 1.4, scuff: 0.45, matte: 0.82, speck: 1 } },
   /** A line array box's side cheeks: an olive-grey pebble-coat panel (flat colour, no photo map), set off against the black shell. */
   cheek: { dir: "plastic", tile: 0.35, tint: 0x3a3c33, roughness: 0.92, metalness: 0, normalScale: 0.8, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.3, matte: 0.75, speck: 1, fleck: 0.5 } },
-  /** A dance-stack horn's lining: pale painted fibreglass in a satin finish (flat colour, the plastic's fine relief),
+  /** A dance-stack horn's lining: near-white painted fibreglass with a soft sheen (as the Res2 photo shows it) (flat colour, the plastic's fine relief),
    * greyed where hands and road dust have rubbed it, scuffed where the boxes are stacked. */
-  horn: { dir: "plastic", tile: 0.35, tint: 0x565b60, roughness: 0.6, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
+  horn: { dir: "plastic", tile: 0.35, tint: 0x6c7176, roughness: 0.42, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
   /** The same lining deep in a horn's throat, where no rag reaches: greyed and browned with road dust, matte. */
   grime: { dir: "plastic", tile: 0.35, tint: 0x403f37, roughness: 0.9, metalness: 0, normalScale: 0.3, wear: { chip: 0x3e3b33, stipple: 0.8, scuff: 0.4, matte: 0.7, speck: 1 } },
   /** A dance stack's cabinets: a deep red-leaning violet over birch in a coarse textured coat (the strong pebble a
