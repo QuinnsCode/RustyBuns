@@ -37,8 +37,8 @@ import { ConflictSavedCounter } from "./stats.ts";
 import { lintedMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { sha256 as sha } from "./util.ts";
-import { apply, empty, MAX_OPS, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type FileCommit, type FileCommitted, type FileTexts, type MergeReply, type Op, type Resolve } from "./lines.ts";
-import type { Live, Rule } from "./policy.ts";
+import { apply, empty, MAX_OPS, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type FileCommit, type FileCommitted, type FileTexts, type MergeReply, type Op } from "./lines.ts";
+import type { Live } from "./policy.ts";
 import { pad10 } from "./util.ts";
 
 /** `writers`: everyone whose edits since the file's last commit this one carries (a hosted deploy asks about others', deploy.ts). */

@@ -48,7 +48,7 @@ async function namedFeatures(z: ZoneSpec): Promise<{ name: string; kind: Landmar
     if (r.ok) {
       const j = Overpass(await r.json());
       // USGS "unnamed geyser" codes (UNNG-MGB-9) make poor signposts.
-      return j.elements.filter((e) => !/^UNNG/.test(e.tags.name)).map((e) => {
+      return j.elements.filter((e) => !e.tags.name.startsWith("UNNG")).map((e) => {
         const t = e.tags;
         const kind: Landmark["kind"] = t.natural === "peak" ? "peak" : t.natural === "geyser" ? "geyser" : t.natural === "waterfall" || t.waterway === "waterfall" ? "falls"
           : t.natural === "spring" || t.natural === "hot_spring" ? "spring" : t.natural === "arch" ? "arch" : t.natural === "cave_entrance" ? "cave" : "view";

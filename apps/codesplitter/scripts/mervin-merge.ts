@@ -326,6 +326,7 @@ if (import.meta.main) {
   }
   const dir = resolve(arg("pause-dir") ?? join(top, ".mervin"));
   const live = args.includes("--live") ? dir : undefined;
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- events() reads only the board and verdicts of a Round; this plan has no round yet
   const planned = events({ board, verdicts } as unknown as Round);
   if (live) for (const e of planned) if (e.kind === "round" || e.kind === "hold" || (e.kind === "wave" && e.wave === 1)) emitTo(live, e);
   if (!args.includes("--go")) { say("plan only; add --go to put wave 1 on the merge train"); process.exit(0); }

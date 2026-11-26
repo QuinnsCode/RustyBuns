@@ -74,7 +74,6 @@ let HOME = { eye: new THREE.Vector3(0, 1.7, 6.4), target: new THREE.Vector3(0, 1
 const PICK_SPREAD_DEG = 1.1;
 const WRONG_PICK_COST = 5;
 const DOTS_PER_SHOT = 260;      // a shot lights this many points, scanner-style
-const SHOT_SPREAD_DEG = 7;      // how wide the scan fans out
 
 let shots = 0;            // this round
 let missions = 0;         // solo rounds played, for the dossier's mission number

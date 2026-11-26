@@ -12,7 +12,7 @@ import { type World } from "../sim.ts";
 import { heatColour } from "./dive-bar-view.ts";
 import {
   COMPOUND, FEEDERS, FEEDS, FENCE_LIMIT, FENCE_Z, FIELD, HOUSES, HOUSE_LIMIT, LEGS, LIFT, MIX_LIMIT, PASS, STAGES, STAGE_KEYS, TARGET, TRADERS, WINDOW,
-  type Heat, type Show, type StageKey, awgName, clockAt, crowdSpot, crowdState, face, feeder, festivalState, heat, lift, master, phase, rig, run, scores, show, snake, subs,
+  type Heat, type Show, type StageKey, clockAt, crowdSpot, crowdState, face, feeder, festivalState, heat, lift, master, phase, rig, run, scores, show, snake, subs,
 } from "./festival.ts";
 import { crowdOf, letIn } from "../crowd/crowd.ts";
 import { MAX_BIG, crowdView } from "../crowd/crowd-view.ts";

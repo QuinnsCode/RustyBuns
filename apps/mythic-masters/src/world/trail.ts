@@ -9,7 +9,7 @@ import { REGIONS, type Region } from "../regions.ts";
 import { NIGHT, TIER_LEVEL, tierOf } from "../tiers.ts";
 import coarse from "./coarse.json";
 import { nightLevel, sectionPick } from "./seed.ts";
-import { ARENA_R, arenaOf, buildWorld, COLS, dry, heightAt, neighbours, ownerAt, OWNER, regionAt, ROWS, STEP, walk, type WalkEvent, type Walker, type Wild } from "./world.ts";
+import { ARENA_R, arenaOf, buildWorld, COLS, dry, ownerAt, OWNER, regionAt, ROWS, STEP, walk, type WalkEvent, type Walker, type Wild } from "./world.ts";
 
 /** The world's ground, built once here for the trails and handed to view.ts. */
 export const WORLD = buildWorld(coarse);

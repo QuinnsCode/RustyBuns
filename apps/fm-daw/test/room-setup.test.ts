@@ -4,27 +4,12 @@
 // What's checked is the front door and the link it walks you to, so the room itself is never loaded: its navigation is
 // stopped (CDP Fetch) and the link read off it, and the front door stays up. Each front-door load costs ~20 s in software
 // GL (~37 s before low quality lit four cans, not sixteen), so the test loads it three times, not once per step (#5893).
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite, until } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab, until } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 
 setDefaultTimeout(240_000); // makes and walks into rooms in software GL, from a fresh browser
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const t = Date.now();
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
-  console.log(`room-setup: chrome and vite up in ${Date.now() - t} ms`);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser();
 
 test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after, and Settings changes it", async () => {
   const t0 = Date.now();

@@ -13,7 +13,7 @@
 
 import { roadster as sharedRoadster, type RoadsterLook } from "@rustybuns/models";
 import * as THREE from "three";
-import { ORCHARD_HEIGHT, shapeOf, structureOf, WATCH_HEIGHT, type CodeMap, type RepoSnapshot, type Structure, type Stuff } from "../sim/codemap.ts";
+import { ORCHARD_HEIGHT, shapeOf, WATCH_HEIGHT, type CodeMap, type RepoSnapshot, type Structure, type Stuff } from "../sim/codemap.ts";
 import { contourStep } from "@rustybuns/terrain";
 import type { Stage } from "../sim/director.ts";
 import type { Game, GameEvent } from "../sim/game.ts";
@@ -726,11 +726,6 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     m.castShadow = true;
     if (edged) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), edgeInk));
     return m;
-  };
-  /** A side profile, (along, up) pairs from the nose back, pushed out wide across the car. */
-  const profile = (pts: [number, number][], wide: number) => {
-    const shape = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(-z, y)));
-    return new THREE.ExtrudeGeometry(shape, { depth: wide, bevelEnabled: false }).rotateY(Math.PI / 2).translate(-wide / 2, 0, 0);
   };
   // The rocket roadster is packages/models in paper and ink, turned to face -z like everything here,
   // with a wing on struts that stands up as it picks up speed and a gun behind the cockpit. Each of

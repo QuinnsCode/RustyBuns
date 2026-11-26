@@ -275,7 +275,7 @@ export function readRun(out: string, report: string, files: { path: string; line
     mark(attr("file") ?? "", Number(attr("line")), bad ? "fail" : "pass");
   }
   for (const frame of out.replace(/\x1b\[[0-9;]*m/g, "").split("\n").filter((l) => /^\s*at\s/.test(l)))
-    for (const m of frame.matchAll(/([\w@.\/-]+\.[cm]?[jt]sx?):(\d+)(?::\d+)?/g)) mark(m[1]!, Number(m[2]), "fail");
+    for (const m of frame.matchAll(/([\w@./-]+\.[cm]?[jt]sx?):(\d+)(?::\d+)?/g)) mark(m[1]!, Number(m[2]), "fail");
   return { marks, passed, failed };
 }
 

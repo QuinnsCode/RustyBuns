@@ -5,6 +5,24 @@
   "categories": { "correctness": "error" },
   "rules": {
     "no-unused-expressions": "off",
+    // `_name` marks a value kept on purpose; `{ drop, ...rest }` is how we leave a field out.
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_", "destructuredArrayIgnorePattern": "^_", "ignoreRestSiblings": true }],
+    // Merge-clash records carry a `{ first, then }` field; none of them is awaited.
+    "unicorn/no-thenable": "off",
+    // ANSI and control-character stripping is on purpose.
+    "no-control-regex": "off",
+    // `sock = this` in socket handlers that hand the socket to inner callbacks.
+    "typescript/no-this-alias": "off",
+    // `new Array(n).fill(0)` is a plain sized array here.
+    "unicorn/no-new-array": "off",
+    // Most hits spread a typed array or a string into a real array on purpose; dropping the spread breaks them (#5894).
+    "unicorn/no-useless-spread": "off",
+    // `x * 0` keeps a unit or a sign in maths code on purpose.
+    "oxc/erasing-op": "off",
+    // The fdlibm constants in dmath.ts are written to full precision on purpose.
+    "no-loss-of-precision": "off",
+    // `do { ... } while (true)` loops that break from inside.
+    "no-constant-condition": "off",
     "oxc/no-accumulating-spread": "error",
     "anti-slop/no-chained-type-assertions": "error",
     "anti-slop/no-reduce-accumulator-copy": "error",
@@ -21,5 +39,6 @@
       }
     }
   ],
-  "ignorePatterns": ["**/.rustybuns/dev/**", "**/wasm-pkg/**", "scripts/lint/anti-slop/**"]
+  // .rustybuns/ is written by the rustybuns CLI, not by hand.
+  "ignorePatterns": ["**/.rustybuns/**", "**/wasm-pkg/**", "scripts/lint/anti-slop/**"]
 }

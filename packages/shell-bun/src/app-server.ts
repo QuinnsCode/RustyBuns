@@ -129,6 +129,7 @@ export async function appServer(o: AppServerOptions): Promise<AppServer> {
     up.onerror = null;
     // What the shell bridges: a 101 with the browser's end (Bun's own Response won't take a 101).
     const res = { status: 101, webSocket: browser, headers: new Headers(up.protocol ? { "sec-websocket-protocol": up.protocol } : {}) };
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- a 101 with a webSocket is what the shell bridges; Bun's own Response won't take a 101
     return res as unknown as Response;
   }
 

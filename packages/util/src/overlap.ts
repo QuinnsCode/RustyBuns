@@ -11,8 +11,8 @@ export const GENERATED = [/(^|\/)bun\.lock$/, /(^|\/)package-lock\.json$/, /(^|\
  */
 export function taskFiles(task: string, paths: string[]): string[] {
   const out = new Set<string>();
-  for (const raw of task.match(/[\w@.\/-]+/g) ?? []) {
-    const word = raw.replace(/^\.\//, "").replace(/[.\/-]+$/, "");
+  for (const raw of task.match(/[\w@./-]+/g) ?? []) {
+    const word = raw.replace(/^\.\//, "").replace(/[./-]+$/, "");
     if (!/[./]/.test(word)) continue;
     const hits = paths.filter((p) => p === word || p.endsWith(`/${word}`));
     if (hits.length === 1) out.add(hits[0]!);

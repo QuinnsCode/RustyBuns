@@ -106,7 +106,7 @@ const gap = (k: Block, x: number, z: number) => Math.hypot(Math.max(0, Math.abs(
 // Everything solid on the deck that isn't the floor: the blocks dressed as bulkheads, crates and
 // consoles, the hull rim with its windows, the gantries and the floor markings. Returns the per-frame light pulse.
 export function buildStation({ scene, b, r, inst, put, done, trail, shiftAt }: Ctx) {
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3(), col = new THREE.Color();
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
   const place = (x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, ry = 0) => m.compose(p.set(x, y, z), q.setFromAxisAngle(UP, ry), k.set(sx, sy, sz));
   const solid = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {

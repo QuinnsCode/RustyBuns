@@ -7,7 +7,7 @@
 //
 //   POST /api/orgs/:org/seed {n}   (owner+, n ≤ 100000)
 
-import { error, json, need, type D1Statement, type Env, type Row } from "./env.ts";
+import { json, need, type D1Statement, type Env, type Row } from "./env.ts";
 import { int, maybe, obj, said } from "@rustybuns/util/guard";
 import type { Ctx } from "./orgs.ts";
 

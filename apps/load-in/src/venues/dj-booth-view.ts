@@ -16,7 +16,7 @@ const sum = (m: Mix) => Object.values(m.gain).reduce((s, g) => s + g, 0);
 import { rig } from "./dive-bar.ts";
 import type { Answer, World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
-import { type DeckSound, type Decks, type Mix, PITCH_RANGE, TRACK_BEATS, bpmOf, deckSound, load, mix, newDecks, play, setCross, setFader, setPitch, tickDecks, trackName } from "../audio/decks.ts";
+import { type DeckSound, type Mix, PITCH_RANGE, TRACK_BEATS, bpmOf, deckSound, load, mix, newDecks, play, setCross, setFader, setPitch, tickDecks, trackName } from "../audio/decks.ts";
 import { FM_DAW, fetchBounce, seshOf } from "../audio/sesh-track.ts";
 
 /** FM DAW, where a deck's seshes come from: `?fm=<origin>` for a local one. */

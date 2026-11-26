@@ -5,7 +5,7 @@
 //
 // The skirt is a ring of upright blobs on a cone, merged by `blend` into one fluted skin; the hood is a fan of `horn`
 // ribs behind the head with a `web` between each and the next (`scallop` cuts the serrated leaf edge).
-import { type Blob, type Ell, type N, type Part, type V, add, bone, f4, chain, mul, norm, onSkin, pair, write } from "../set-a/upright/lib.ts";
+import { type Blob, type Ell, type N, type Part, type V, bone, f4, chain, mul, norm, onSkin, pair, write } from "../set-a/upright/lib.ts";
 
 type Look = {
   note: string;

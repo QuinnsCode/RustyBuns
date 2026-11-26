@@ -63,7 +63,7 @@ export const APPS: Record<string, App> = {
   "elysia-example":    { test: "bun test test", boot: true },
   "elysia-conduit":    { test: "bun test ./test", drop: false },   // ./: "test" alone is a name filter and would run their src/ unit tests, which need their .env
   "example":           { boot: true, drop: false },
-  "fm-daw":            { test: "bun test test", shards: 6, prep: "bun run build:native", perOs: true, check: true, boot: true }, // 6: a lane of its browser tests runs ~2 min (#5919)
+  "fm-daw":            { test: "bun test test", shards: 10, prep: "bun run build:native", perOs: true, check: true, boot: true }, // 10: a lane of its browser tests runs ~2 min, one journey a file (#5919, #5922)
   "cron-swanson":      { test: "bun test test", drop: false },
   "hemyviz":           { test: "bun test test", drop: false },
   "test-swarm":        { test: "bun test test", drop: false },

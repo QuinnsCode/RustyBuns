@@ -1,6 +1,6 @@
 // #644: the guards of live/floorguard.ts (built to server/rb-floorguard.js), in the handler every agent-to-agent
 // path lands in: the MCP tools, the office-workers command and a bare curl to the hook port.
-import { commandOf, MUSE_WRITE_HOOK, shellCommand, WRITE_HOOK } from "../askfirst/hook.ts";
+import { MUSE_WRITE_HOOK, shellCommand, WRITE_HOOK } from "../askfirst/hook.ts";
 import { ASK_MS } from "../live/floorguard.ts";
 import { once } from "./once.ts";
 

@@ -95,7 +95,8 @@ export function prompts(owner: string, name: string) {
 }
 
 if (import.meta.main) {
-  const args = Object.fromEntries(process.argv.slice(2).reduce<string[][]>((a, v, i, all) => (v.startsWith("--") ? [...a, [v.slice(2), all[i + 1] ?? ""]] : a), []));
+  const argv = process.argv.slice(2);
+  const args = Object.fromEntries(argv.flatMap((v, i) => (v.startsWith("--") ? [[v.slice(2), argv[i + 1] ?? ""]] : [])));
   let saved: { url?: string; token?: string } = {};
   try { saved = JSON.parse(readFileSync(`${process.env.XDG_CONFIG_HOME ?? `${process.env.HOME}/.config`}/codesplitter/config.json`, "utf8")); } catch {}
   const url = args.url ?? process.env.CODESPLITTER_URL ?? saved.url;

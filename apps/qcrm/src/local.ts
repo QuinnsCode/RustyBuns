@@ -30,6 +30,7 @@ export async function local(extra: Partial<Env> = {}) {
     headers.set("origin", ORIGIN);
     return handleApi(new Request(ORIGIN + path, { ...init, headers }), env as Env);
   };
+  // oxlint-disable-next-line anti-slop/no-widen-then-assert -- the local twins stand in for Cloudflare's bindings, whose types they don't share
   return Object.assign(call, { env: env as Env, close() { stopHooks(); rmSync(loaderDir, { recursive: true, force: true }); } });
 }
 

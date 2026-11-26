@@ -6,7 +6,7 @@
 //
 // An app's bindings come from its rustybuns.config.ts (the Dockerfile and its context folder). A binding is
 // touched when the diff is inside its context, or in the CLI's generator (packages/cli/src/gen/).
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appDir, appDirs } from "./app-dirs.ts";

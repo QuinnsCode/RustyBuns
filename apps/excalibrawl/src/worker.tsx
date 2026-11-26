@@ -37,6 +37,7 @@ const app = defineApp([
     const q = new URL(request.url).searchParams;
     const setup = q.get("setup") as keyof typeof SETUPS;
     if (!(setup in SETUPS) || !q.get("prompt")) return Response.json({ setups: SETUPS }, { status: 400 });
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Workers AI's generated types and the lab's narrow run() describe the same binding differently
     const ai = env.AI as unknown as { run(model: string, input: unknown): Promise<unknown> };
     return Response.json(await runLab(ai, setup, q.get("prompt")!, Math.min(36, Number(q.get("turns")) || 24)));
   }),

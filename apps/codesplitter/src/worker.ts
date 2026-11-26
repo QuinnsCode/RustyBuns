@@ -14,7 +14,7 @@ import { sshKeyRoutes } from "./ssh-keys.ts";
 import { sshRemoteRoutes } from "./ssh-remote.ts";
 import { chartRoutes, serveChart, sweepCharts } from "./charts.ts";
 import { rankOf } from "./policy.ts";
-import { FileCommitted, FileTexts, fromText, text, type Doc } from "./lines.ts";
+import { FileCommitted, FileTexts, fromText, text } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
   artifactsFor,
@@ -272,7 +272,6 @@ import {
   TRUTHS,
   turnRoute,
   upstreamRemote,
-  type Truth,
 } from "./mirror.ts";
 import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";

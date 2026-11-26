@@ -88,7 +88,7 @@ import { COOP_MS, HURT_FULL } from "./net/party.ts";
 import { COLOURS, css as hueCss, firstColour, wornColour } from "./world/hues.ts";
 import { invitedBy, joinParty, openParty, partyCode, signInToJoin } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
-import { ARENA, foeOf, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
+import { ARENA, foeOf, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match } from "./sim.ts";
 import { lockCamera } from "./lock-camera.ts";
 import { tsSim, wasmSim, type Live, type Sim } from "./sim-wasm.ts";
 import simWasm from "./sim.wasm?url";

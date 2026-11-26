@@ -6,7 +6,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import { atan2, cos, hypot, sin } from "./dmath.ts";
 import type { Bot } from "./bot.ts";
-import { ARENA, IDLE, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, IDLE, type Fighter, type Input } from "./sim.ts";
 
 export type Opening = "read" | "guard" | "knee";
 /** The share of rounds each opening is picked for. */

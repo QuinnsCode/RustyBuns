@@ -88,7 +88,7 @@ export function parseReviews(csv: string): Album[] {
 }
 
 /** The file name a transcript goes under: "Artist - Title.txt", minus characters file systems dislike. */
-export const transcriptName = (a: Pick<Album, "artist" | "title">) => `${a.artist} - ${a.title}`.replace(/[\/\\:*?"<>|]/g, "").trim() + ".txt";
+export const transcriptName = (a: Pick<Album, "artist" | "title">) => `${a.artist} - ${a.title}`.replace(/[/\\:*?"<>|]/g, "").trim() + ".txt";
 
 const MAX_TAKE = 160;
 
