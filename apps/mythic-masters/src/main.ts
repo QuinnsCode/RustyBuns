@@ -1716,6 +1716,16 @@ function draw(m: Match, alpha: number) {
   const want = camMode === "side"
     ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - (dz / d) * side, (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + (dx / d) * side) // you on the left, as the bars are
     : new THREE.Vector3().copy(lockCamera(me.pos, them.pos, me.b, them.b));
+  // A body going off the ring falls to ARENA.fallKo: the camera rises over the lip as it drops and stands out over the
+  // drop, looking down at it, rather than following it under the pitch, where all you see is the ring's underside, or
+  // staying over the ring, where the lip hides it (#5732 round 12).
+  const low = me.pos.y < them.pos.y ? me : them, fr = Math.hypot(low.pos.x, low.pos.z);
+  if (low.pos.y < 0 && fr > ARENA.radius) {
+    const wr = Math.hypot(want.x, want.z) || 1;
+    if (wr < fr) { want.x *= fr / wr; want.z *= fr / wr; }
+    want.y = Math.max(want.y, CAM_FLOOR - low.pos.y * 1.5);
+  }
+  want.y = Math.max(want.y, CAM_FLOOR);
   camera.position.lerp(want, clamp(alpha * 6, 0, 1));
   // a hit shakes the camera, hardest on the tick it lands
   shake *= Math.exp(-9 * alpha);
@@ -1730,6 +1740,8 @@ function draw(m: Match, alpha: number) {
   const aim = camMode === "side" ? 0.5 : 0.58, chest = 0.3 + tall * 0.35;
   camera.lookAt(me.pos.x + dx * aim, me.pos.y + (them.pos.y - me.pos.y) * aim + chest, me.pos.z + dz * aim);
 }
+/** The lowest the fight camera stands: over the ring's top (y 0), and higher by about the drop of a body below it. */
+const CAM_FLOOR = 1.2;
 
 /** A fight is over: a keeper's or a mythic's end, a bind or the whole line-up down holds still on a freeze frame
  * first, then the result. */
@@ -2471,6 +2483,14 @@ Object.assign(window, {
       if (!m) return null;
       const f = m.f[side], a = Math.atan2(f.pos.z, f.pos.x) || Math.PI, r = ARENA.radius + f.b.radius * 0.6;
       Object.assign(f, { pos: { x: Math.cos(a) * r, y: -0.6, z: Math.sin(a) * r }, vel: { x: 0, y: 0.5, z: 0 }, onGround: false, state: "free", act: null, drop: 0, fresh: true });
+      return view(f);
+    },
+    /** Knocks fighter `side` off the ring for good: just past the lip, thrown outward, stunned through the drop and with
+     * its jumps and rising strike spent, so it falls to a ring-out in about a second (the combat climb's ring-out shot). */
+    fall: (side: 0 | 1 = 0) => {
+      if (!m) return null;
+      const f = m.f[side], a = Math.atan2(f.pos.z, f.pos.x) || Math.PI, r = ARENA.radius + f.b.radius + 0.4;
+      Object.assign(f, { pos: { x: Math.cos(a) * r, y: 0.4, z: Math.sin(a) * r }, vel: { x: Math.cos(a) * 3, y: 2, z: Math.sin(a) * 3 }, onGround: false, flying: false, state: "stun", stun: 120, act: null, airJumps: 0, rise: false });
       return view(f);
     },
     /** Where fighter `side`'s puppet has its feet and hips right now, in the world (null before its model loads). */
