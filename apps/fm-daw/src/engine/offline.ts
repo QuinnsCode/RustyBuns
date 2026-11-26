@@ -1,5 +1,5 @@
 // Render the current project without the audio thread: bounce and bench.
-import { sendTrackEq, type FmEngine } from "./engine.ts";
+import { sendTrackEq, type FmEngine, type Tap } from "./engine.ts";
 import { renderPattern } from "./sequencer.ts";
 import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
@@ -14,6 +14,7 @@ import { AmpInserts } from "../amp/insert.ts";
 import type { AmpSettings } from "../amp/messages.ts";
 import { faderGain, RigReturn, shapeStage, UNITY } from "../mixer.ts";
 import { InsertReturns, sides } from "./insert-return.ts";
+import { Ducks } from "./duck.ts";
 
 /**
  * A bounce's web effects (#5551), in two passes. `tap`: each FM track with an Insert (no amp) is tapped out of the
@@ -82,7 +83,11 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
     else { const b = fx?.back?.(t); if (b) rets.set(t, sides(b)); }
   }
   const tapped = (t: number) => amps.has(t) || fxTap?.has(t) || rets.has(t);
-  const tapping = amps.any || !!fxTap?.size || rets.size > 0, returns = new InsertReturns();
+  // the sidechain on what the engine doesn't play (clips, plugins): the track each ducks under is tapped, a copy
+  const ducks = new Ducks(sampleRate);
+  ducks.set((t, i) => p.tracks[t]?.params[i] ?? 0);
+  const tapOf = (t: number): Tap => tapped(t) || (ducks.source(t) ? "listen" : false);
+  const tapping = amps.any || !!fxTap?.size || rets.size > 0 || ducks.any, returns = new InsertReturns();
   const hears = audible(p), beats = loopBeats(p);
   const ret = p.desk?.aux2 ?? { fader: UNITY, mute: false };
   const rig = aux2 && !ret.mute && p.tracks.some((t) => t.params[P.SEND2] > 0) ? new RigReturn(sampleRate, aux2) : null;
@@ -103,10 +108,11 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   // where each param is as the groove plays: a lane on a plugin track's Level, Pan or Send moves its strip
   const now = p.tracks.map((t) => [...t.params]);
   const param = (t: number, i: number) => now[t]?.[i] ?? 0;
-  const strip = { gain: (t: number) => (hears[t] ? param(t, P.GAIN) * masterGain : 0), pan: (t: number) => param(t, P.PAN), send: (t: number) => param(t, P.SEND) };
+  const duck = (t: number) => ducks.gain(t);
+  const strip = { gain: (t: number) => (hears[t] ? param(t, P.GAIN) * masterGain : 0), pan: (t: number) => param(t, P.PAN), send: (t: number) => param(t, P.SEND), duck };
   let at = 0;
-  const all = renderPattern(route.any ? route.wrap(engine, (t, i, v) => { const row = now[t]; if (row) row[i] = v; }) : engine, sampleRate, (frames + late) / sampleRate, (seq) => {
-    p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); engine.setTap(ti, tapped(ti)); });
+  const all = renderPattern(route.any || ducks.any ? route.wrap(engine, (t, i, v) => { const row = now[t]; if (row) row[i] = v; }) : engine, sampleRate, (frames + late) / sampleRate, (seq) => {
+    p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); engine.setTap(ti, tapOf(ti)); });
     // each track's Shape plays from the first sample, not fading in
     if (p.tracks.some((t) => t.eq)) { p.tracks.forEach((t, ti) => { if (t.eq) sendTrackEq(engine, ti, t.eq, []); }); engine.panic(); }
     seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(audible(p)); seq.setVoiceless(voiceless(p));
@@ -114,7 +120,8 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
     seq.setEqAuto(p.eqAuto ?? []);
     seq.onEq = (i, v) => { const d = withEqLane(played, i, v); if (d !== played) { played = d; eq.set(d); } };
   }, send, (block, n, taps) => {
-    if (deck.any || tapping) amps.mix(deck, block, n, (at / sampleRate) * (p.bpm / 60), p.bpm, beats, (t) => hears[t], masterGain, true, undefined, taps);
+    if (ducks.any && taps) { ducks.set(param); ducks.run(taps, n); }
+    if (deck.any || tapping) amps.mix(deck, block, n, (at / sampleRate) * (p.bpm / 60), p.bpm, beats, (t) => hears[t], masterGain, true, undefined, taps, undefined, duck);
     if (rig && send2) {
       for (let f = 0; f < n; f++) bus[f] = (send2[(at + f) * 2] + send2[(at + f) * 2 + 1]) * 0.5;
       rig.process(bus, wet, n);

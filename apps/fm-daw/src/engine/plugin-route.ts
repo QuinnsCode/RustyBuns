@@ -25,7 +25,11 @@ const SMOOTH = 0.002;
 export interface PluginAsk { track: number; frames: number; events: PluginEvent[] }
 
 /** A plugin track's strip, read once a block: its level (fader, mute and master: 0..1), PAN (-1..1) and SEND (0..1). */
-export interface Strip { gain(t: number): number; pan(t: number): number; send(t: number): number }
+export interface Strip {
+  gain(t: number): number; pan(t: number): number; send(t: number): number;
+  /** The track's sidechain gain a frame this block (src/engine/duck.ts), when it ducks under another. */
+  duck?(t: number): Float32Array | undefined;
+}
 
 interface Lane {
   /** Notes and slider moves not asked with yet; `at` is the route's clock when each was played. */
@@ -199,9 +203,11 @@ export class PluginRoute {
         if (l.at >= b.length) { l.blocks.shift(); l.at = 0; }
       }
       if (n && l.eq.live()) l.eq.insert(dry, n);
+      const duck = strip.duck?.(t);
       for (let f = 0; f < n; f++) {
         l.level += (target - l.level) * SMOOTH;
-        const a = dry[2 * f] * l.level, c = dry[2 * f + 1] * l.level;
+        const g = duck ? l.level * duck[f] : l.level;
+        const a = dry[2 * f] * g, c = dry[2 * f + 1] * g;
         out[2 * f] += a;
         out[2 * f + 1] += c;
         if (heard?.track === t) heard.into[f] = (a + c) * 0.5;

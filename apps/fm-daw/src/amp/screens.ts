@@ -1,8 +1,8 @@
 // The stage screens: what the amp is doing, drawn from one FFT of the output.
 // Spectrum (bars, 40 Hz up to 25 kHz or the top of the sample rate), Analog (the
 // same range as a glowing phosphor trace that leaves a trail), Scope (the wave
-// itself, held still on a rising zero crossing), and Focus (three zoomed bands:
-// low mids, mids, highs).
+// itself, held still on a rising zero crossing; or, with a scope on a pedal's net,
+// that net's volts from the audio thread), and Focus (three zoomed bands: low mids, mids, highs).
 
 export type ScreenMode = "spectrum" | "analog" | "scope" | "focus";
 export const MODES: { id: ScreenMode; label: string }[] = [
@@ -12,8 +12,8 @@ export const MODES: { id: ScreenMode; label: string }[] = [
   { id: "focus", label: "Focus" },
 ];
 
-/** One analyser read, shared by every screen this frame. */
-export interface Frame { db: Float32Array; wave: Float32Array; sampleRate: number }
+/** One analyser read, shared by every screen this frame; `net`: a scope's volts on a pedal's net, newest last, and its name. */
+export interface Frame { db: Float32Array; wave: Float32Array; sampleRate: number; net?: { volts: Float32Array; label: string } }
 
 export const F_MIN = 40;
 export const topHz = (sampleRate: number) => Math.min(25_000, sampleRate / 2);
@@ -137,7 +137,17 @@ export class Screen {
   }
 
   private scope(g: CanvasRenderingContext2D, fr: Frame, w: number, h: number) {
-    const wave = fr.wave, span = Math.min(wave.length >> 1, Math.round(fr.sampleRate * 0.04)); // 40 ms across
+    // On a net: its volts around their middle, the trace filling the screen at the window's peak.
+    let wave = fr.wave, label = "";
+    if (fr.net) {
+      const v = fr.net.volts;
+      let hi = -Infinity, lo = Infinity;
+      for (const x of v) { if (x > hi) hi = x; if (x < lo) lo = x; }
+      const mid = (hi + lo) / 2, half = Math.max(1e-3, (hi - lo) / 2);
+      wave = v.map((x) => (x - mid) / half);
+      label = `${fr.net.label}  ${lo.toFixed(2)} to ${hi.toFixed(2)} V`;
+    }
+    const span = Math.min(wave.length >> 1, Math.round(fr.sampleRate * 0.04)); // 40 ms across
     // Hold it still: the last rising zero crossing that leaves a full span after it.
     let start = wave.length - span - 1;
     for (let i = wave.length - span - 1; i > wave.length - 2 * span; i--) if (wave[i - 1] < 0 && wave[i] >= 0) { start = i; break; }
@@ -155,6 +165,7 @@ export class Screen {
     g.shadowBlur = 0;
     g.fillStyle = "rgba(255, 201, 77, 0.7)"; g.font = "10px 'IBM Plex Mono', ui-monospace, monospace";
     g.fillText("4 ms / div", 6, h - 6);
+    if (label) g.fillText(label, 6, 14);
   }
 
   private focus(g: CanvasRenderingContext2D, fr: Frame, w: number, h: number) {

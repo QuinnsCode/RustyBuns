@@ -259,6 +259,17 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 
 /* patch: small choices, perform panel */
 .seg.mini button { padding: 3px 7px; font-size: .78rem; }
+.seg button svg { display: block; }
+/* song mode's slots: each pattern its own tint, so A A B A reads at a glance */
+.song .pat { min-width: 26px; color: var(--ink); }
+.song .pat.p0 { background: color-mix(in srgb, #e8833a 35%, var(--raised)); }
+.song .pat.p1 { background: color-mix(in srgb, #3a9be8 35%, var(--raised)); }
+.song .pat.p2 { background: color-mix(in srgb, #5cc46a 35%, var(--raised)); }
+.song .pat.p3 { background: color-mix(in srgb, #c45cc0 35%, var(--raised)); }
+.song .pat.p4 { background: color-mix(in srgb, #e8cf3a 35%, var(--raised)); }
+.song .pat.p5 { background: color-mix(in srgb, #3ad3c8 35%, var(--raised)); }
+.song .pat.p6 { background: color-mix(in srgb, #e85a5a 35%, var(--raised)); }
+.song .pat.p7 { background: color-mix(in srgb, #9a8ae8 35%, var(--raised)); }
 .fader > .seg { grid-column: 2 / 4; justify-self: start; }
 .fader select { min-width: 0; padding: 2px 4px; background: var(--raised); border: 1px solid var(--edge); border-radius: 4px; }
 .perform { display: grid; grid-template-columns: auto auto 1fr; gap: 12px 18px; align-items: start; padding: 12px 14px; background: var(--panel); border: 1px solid var(--edge); border-top: 3px solid var(--track); border-radius: 6px; }
