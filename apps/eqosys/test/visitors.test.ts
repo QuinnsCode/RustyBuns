@@ -5,11 +5,11 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { handle } from "../src/handle.ts";
-import { markStaff, tally, visitorsOf } from "../src/visitors.ts";
-import { asks, boot, PARK, PASSWORD } from "./kit.ts";
+import { markStaff, ROWS_PER_ADDRESS, tally, visitorsOf } from "../src/visitors.ts";
+import { asks, boot, limiter, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
-const { conf, call } = await boot();
+const { conf, call } = await boot({ VISIT_LIMIT: limiter(30) });
 const PLAY = "https://rustybuns-playground.notryanquinn.workers.dev";
 const CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36";
 const browser = (ip: string, ua = CHROME) => ({ "cf-connecting-ip": ip, "user-agent": ua, "sec-fetch-mode": "no-cors", "sec-fetch-site": "cross-site" });
@@ -57,4 +57,23 @@ test("real people are the browsers that tapped; scripts, crawlers, forged beacon
   const { Home } = await import("../src/app/pages.tsx");
   const html = renderToStaticMarkup(createElement(Home, { counts: new Map(), t0: 0, me: { id: "1", email: "boss@example.com", name: "Boss" } as never, mine: undefined, hub: null, everyone: [], unlocks: new Map(), tab: "visitors", visitors: v }));
   expect(html.length).toBeGreaterThan(0);
+});
+
+test("one address can't fill the table: beacons slow to 30 a minute, and new callers past the day's cap aren't kept", async () => {
+  // A script sends beacons as fast as it can from one address: the 31st is turned away; another address is not.
+  const flood = browser("198.51.100.20");
+  for (let i = 0; i < 30; i++) expect((await visit(flood, PLAY, { site: "playground" }))!.status).toBe(204);
+  expect((await visit(flood, PLAY, { site: "playground" }))!.status).toBe(429);
+  expect((await visit(browser("198.51.100.21"), PLAY, { site: "playground" }))!.status).toBe(204);
+
+  // It makes up a new browser for every request: one address keeps at most ROWS_PER_ADDRESS rows a day, and those keep counting.
+  const ip = "198.51.100.22";
+  const rows = async () => (await conf.DB.prepare("SELECT COUNT(*) AS n, SUM(hits) AS hits FROM visits WHERE ua LIKE '%fake/%'").first<{ n: number; hits: number }>())!;
+  for (let i = 0; i < ROWS_PER_ADDRESS + 20; i++) await page(browser(ip, `${CHROME} fake/${i}`));
+  expect((await rows()).n).toBe(ROWS_PER_ADDRESS);
+  await page(browser(ip, `${CHROME} fake/0`));
+  expect((await rows()).hits).toBe(ROWS_PER_ADDRESS + 1);
+  // A neighbour at another address is still counted.
+  await page(browser("198.51.100.23", `${CHROME} fake/x`));
+  expect((await rows()).n).toBe(ROWS_PER_ADDRESS + 1);
 });
