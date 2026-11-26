@@ -87,7 +87,7 @@ const list: Gear[] = [
   {
     id: "top-15-passive",
     what: '15" two-way passive speaker',
-    size: box(0.45, 0.72, 0.42),
+    size: box(0.46, 0.699, 0.432),
     kg: 27,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 99, maxSpl: 130, ratedWatts: 500, ohms: 8, coverage: { h: 90, v: 50 }, lowCut: 45, highCut: 20000, rearLoss: 18 },
@@ -178,7 +178,7 @@ const list: Gear[] = [
     // Hung, not stood: one element of a flown line array, too heavy for one person (two carry it, or a crew).
     id: "line-array-box",
     what: "line array element, powered",
-    size: box(1.0, 0.32, 0.55),
+    size: box(1.118, 0.33, 0.495),
     kg: 75,
     jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
     speaker: { sensitivity: 100, maxSpl: 138, ratedWatts: 1000, ohms: null, coverage: { h: 100, v: 12 }, lowCut: 60, highCut: 18000, rearLoss: 25 },
@@ -223,7 +223,7 @@ const list: Gear[] = [
   {
     id: "wedge-12-passive",
     what: '12" passive floor monitor',
-    size: box(0.6, 0.35, 0.42),
+    size: box(0.574, 0.41, 0.487),
     kg: 18,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 97, maxSpl: 126, ratedWatts: 400, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 65, highCut: 20000, rearLoss: 20 },

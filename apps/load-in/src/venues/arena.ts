@@ -20,7 +20,7 @@ const DOCK_Z = 53;
 
 /** The boxes come off the truck stacked four high on the dock; the subs and the crew wait beside them. */
 const boxes: Item[] = Array.from({ length: 16 }, (_, k) => ({
-  key: `box-${k + 1}`, gear: BOX, x: -10 + Math.floor(k / 4) * 1.4, y: (k % 4) * 0.32, z: DOCK_Z, rot: 0,
+  key: `box-${k + 1}`, gear: BOX, x: -10 + Math.floor(k / 4) * 1.4, y: (k % 4) * catalog(BOX).size.h, z: DOCK_Z, rot: 0,
 }));
 
 export const ARENA: Level = {
