@@ -44,6 +44,7 @@ import { type Answer, BODY_HZ, DRUM_KEYS, blendShot, body, cameraPose, orbitPose
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
 import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
+import { VenueSplat } from "./venue-splat.ts";
 import { SYSTEMS, system } from "@rustybuns/gear";
 import { rigCards } from "./rig-cards.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
@@ -179,7 +180,9 @@ function buildRoom() {
   const ceil = new THREE.Mesh(metreUV(new THREE.PlaneGeometry(w, d)), surface(made.ceiling, def.colors.ceiling));
   ceil.rotation.x = Math.PI / 2; ceil.position.y = h;
   // out under the sky (open-air.ts draws the ground to the horizon): no floor, ceiling or outside walls here
-  if (!def.outdoor) scene.add(floor, ceil);
+  // a captured venue (venue-splat.ts) is its own floor, ceiling and outside walls
+  const shell = !def.outdoor && !def.venue;
+  if (shell) scene.add(floor, ceil);
   // a room with decks but no PA of its own gets a stack either side of the DJ table (pa-room.ts); open air draws its own
   // indoors, the stacks the builder placed (the room's own pa) in its rig, else a club's sub-and-top either side of the
   // decks (out of doors the rig is open-air.ts's)
@@ -187,7 +190,7 @@ function buildRoom() {
   else if (!def.outdoor) for (const sp of paSpeakers(def)) scene.add(clubStack(sp.at, sp.yaw));
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
-  for (const wall of [...(def.outdoor ? [] : outside).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
+  for (const wall of [...(shell ? outside : []).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
     const wallMat = surface(wallSurface(wall.material ?? "drywall"), wall.material ? undefined : def.colors.walls);
     for (const p of wallPieces(wall, 0.12)) {
       const isGlass = "glass" in wall && wall.glass;
@@ -417,6 +420,9 @@ function doorLook(quality: Quality): Look {
   };
 }
 if (here) { useKit(gearKit(loadQuality())); buildRoom(); }
+// a real venue round the room (#5933), fetched only when the room has one
+const venue = new VenueSplat(scene, renderer);
+if (here) void venue.show(def.venue);
 const picture = !here ? doorLook(loadQuality()) : def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
 // the subs' cones pump on the beat while the band plays
 const pumpSubs = subCones([scene]);
@@ -1584,7 +1590,7 @@ const harness = {
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, setup: loadSetup(), look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
-    gear: atWall.state(jam), lanterns: lit.state(jam), levels: harness.levels() }),
+    gear: atWall.state(jam), lanterns: lit.state(jam), venue: venue.state, levels: harness.levels() }),
   /** What you hear (levels.ts): MUSIC and CROWD as set and as their buses play, each person's level, and each of their lines as heard now. */
   levels: () => {
     const at = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw }), peers = [...jam.others.keys()];
