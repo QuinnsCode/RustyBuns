@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ask, brief, canMerge, pick, hitRate, needless, parseRound, parseRow, roundOf, roundsHit, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
-import { addHits, ownersOf, reach, rowOf, wrongOf } from "../scripts/mervin-live.ts";
+import { addHits, ownersOf, reach, rowOf, stalls, wrongOf } from "../scripts/mervin-live.ts";
+import type { Pr } from "../../../scripts/pr.ts";
 import { local as boot } from "./app-kit.ts";
 
 const row = (pr: number, extra: Partial<BoardRow> = {}): BoardRow => ({ pr, head: `h${pr}`, ci: "pass", tiers: { certain: 1 }, files: 1, clashes: [], ...extra });
@@ -55,6 +56,42 @@ describe("mervin-live", () => {
     expect(reach(["bun.lock"], ["a", "b", "c"], uses)).toEqual({ own: [], blast: ["a", "b", "c"] });
     expect(reach(["packages/shared/i.ts", "apps/c/y.ts"], ["a", "b", "c"], uses)).toEqual({ own: ["c"], blast: ["a", "b", "c"] });
   });
+  test("a head with no checks for 10 minutes is marked on the board, and its worker is told once (#5838)", async () => {
+    const now = Date.parse("2026-11-26T12:00:00Z"), ago = (min: number) => new Date(now - min * 60_000).toISOString();
+    const full = (number: number, head: string, author: string, at: string): Pr => ({ number, title: "t", url: "u", state: "OPEN", isDraft: false, mergeable: "", mergeStateStatus: "BLOCKED", baseRefName: "main", headRefName: `b${number}`, headRefOid: head, statusCheckRollup: [], commits: [{ committedDate: at, authors: [{ name: author }] }] });
+    const heads: Record<string, [number, string, string]> = { bot: [7, "rustybuns-after", ago(15)], miss: [8, "Ryan Quinn", ago(15)], fresh: [9, "Ryan Quinn", ago(3)], ok: [10, "Ryan Quinn", ago(15)] };
+    const viewed: number[] = [];
+    const deps = {
+      headAt: (sha: string) => Date.parse(heads[sha]![2]),
+      view: async (n: number) => { viewed.push(n); const [sha, [, who, at]] = Object.entries(heads).find(([, h]) => h[0] === n)!; return full(n, sha, who, at); },
+      runs: async () => [],
+    };
+    const prs = [
+      { number: 7, headRefOid: "bot", statusCheckRollup: [] }, { number: 8, headRefOid: "miss", statusCheckRollup: [{ name: "deploy", conclusion: "SUCCESS" }] },
+      { number: 9, headRefOid: "fresh", statusCheckRollup: [] }, { number: 10, headRefOid: "ok", statusCheckRollup: [{ name: "typecheck", status: "IN_PROGRESS" }] },
+    ];
+    const owners = new Map([[7, "pixel"], [8, "bolt"], [9, "rex"]]), known = new Map<string, string>();
+    const first = await stalls(prs, owners, known, deps, now);
+    expect([...first.marks]).toEqual([[7, "after-bot push, no checks will come: push one commit"], [8, expect.stringContaining("GitHub miss (#2828)")]]);
+    expect(first.tell.map((t) => [t.name, t.pr])).toEqual([["pixel", 7], ["bolt", 8]]);
+    expect(viewed).toEqual([7, 8]); // the fresh head and the one with a typecheck run cost no gh call
+    const again = await stalls(prs, owners, known, deps, now + 60_000);
+    expect([again.marks.size, again.tell.length, viewed.length]).toEqual([2, 0, 2]); // same heads: still marked, nobody told twice
+
+    const call = await boot({ GH_CLI: "off" });
+    const post = (url: string, body: unknown) => call("ana", url, { method: "POST", body: JSON.stringify(body) });
+    await post("/api/login", { name: "ana" });
+    await post("/api/repos", { name: "r" });
+    const stage = { pr: 7, head: "bot", base: "b", ci: "none" as const, files: [] };
+    const row7 = rowOf(stage, { main: "m", at: "", stages: [stage], written: [], skipped: [], clashes: [] }, owners, undefined, first.marks.get(7));
+    expect((await post("/api/repos/ana/r/board", { main: "m", prs: [row7, row(11, { ci: "none" })] })).status).toBe(201);
+    const b = await (await call("ana", "/api/repos/ana/r/board")).json() as { prs: BoardRow[]; mergeable: number[] };
+    expect(b.prs.find((p) => p.pr === 7)?.stall).toBe("after-bot push, no checks will come: push one commit");
+    expect(b.mergeable).toEqual([11]);
+    const one = await (await call("ana", "/api/repos/ana/r/board?pr=7")).json() as { blocking: string[] };
+    expect(one.blocking).toEqual(["no checks on its head: after-bot push, no checks will come: push one commit"]);
+  });
+
   test("owners from office-workers, a PR number or URL", () => {
     expect([...ownersOf([{ name: "pixel", pr: 12 }, { name: "bolt", pr: "https://github.com/o/r/pull/34" }, { name: "idle" }])]).toEqual([[12, "pixel"], [34, "bolt"]]);
   });

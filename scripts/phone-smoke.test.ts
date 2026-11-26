@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromeStartMs, launchChrome, load, openTab } from "./chrome.ts";
-import { analyze, appStatus, board, mergeReports, pageAudit, shardOf, type Audit, type Control } from "./phone-smoke-lib.ts";
+import { analyze, appStatus, board, mergeReports, pageAudit, settledAudit, shardOf, type Audit, type Control } from "./phone-smoke-lib.ts";
 
 const ctl = (label: string, o: Partial<Control> = {}): Control => ({ tag: "button", label, x: 10, y: 10, w: 100, h: 40, shown: true, obscured: false, ...o });
 const page = (controls: Control[], o: Partial<Audit> = {}): Audit => ({ vw: 375, vh: 667, scrollW: 375, viewportMeta: true, textLen: 200, canvases: 0, controls, ...o });
@@ -99,3 +99,22 @@ test("the audit calls a button covered when something sits on it, not when its l
     expect(covered).toEqual(["Help"]);
   } finally { chrome.stop(); }
 }, chromeStartMs + 30_000); // past Chrome's own start-or-explain budget, so a stall on a cold CI runner says why (#4915)
+
+test("a menu that comes in after the load is waited for, not called gone", async () => {
+  const chrome = await launchChrome();
+  try {
+    const tab = await openTab(chrome.cdp, { w: 375, h: 667 }, true);
+    const html = `<!doctype html><meta name=viewport content="width=device-width"><p>Title</p>
+      <script>setTimeout(() => document.body.insertAdjacentHTML("beforeend", "<button>Single</button><button>Multi</button>"), 1500)</script>`;
+    await load(chrome.cdp, tab, `data:text/html,${encodeURIComponent(html)}`, 100);
+    const laptop = page([ctl("Single"), ctl("Multi")]);
+    const phone = await settledAudit(() => tab.eval<Audit>(`(${pageAudit})()`), laptop);
+    expect(kinds(analyze(phone, laptop))).not.toContain("missing-vs-desktop");
+  } finally { chrome.stop(); }
+}, chromeStartMs + 30_000);
+
+test("an app that ran out of time keeps the phones it finished, as a warning", () => {
+  const fine = { phone: "Pixel 8", w: 412, h: 915, findings: [] };
+  expect(appStatus({ app: "slow", phones: [fine], unfinished: "gave up after 5 minutes: 1 of 9 phones looked at" })).toBe("warn");
+  expect(appStatus({ app: "slow", phones: [{ ...fine, findings: [{ kind: "covered", sev: "error", detail: "x" }] }], unfinished: "x" })).toBe("error");
+});

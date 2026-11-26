@@ -79,7 +79,9 @@ export function venueSrc(link: string): string | null {
   return VENUE_SRC.test(src) ? src : null;
 }
 const XYZ = (v: unknown): [number, number, number] => { const [x, y, z] = arr(num(-50, 50), 3, { min: 3 })(v); return [x, y, z]; };
-const VENUE: Guard<Venue> = obj({ src: str(300, { re: VENUE_SRC }), scale: num(0.05, 100), at: XYZ, yaw: num(-7, 7) });
+/** A captured ground's heights (@rustybuns/gear groundMap): at most 32 samples a side. */
+const LAND = obj({ x0: num(-500, 500), z0: num(-500, 500), cell: num(0.05, 50), cols: int(2, 32), h: arr(num(-200, 200), 32 * 32, { min: 4 }) });
+const VENUE: Guard<Venue> = obj({ src: str(300, { re: VENUE_SRC }), scale: num(0.05, 100), at: XYZ, yaw: num(-7, 7), land: opt(LAND) });
 
 /** A studio from the wire or this browser's storage, checked. */
 export const Studio: Guard<StudioDef> = obj({
@@ -197,6 +199,8 @@ export type Edit =
   | { t: "field"; tempC?: number; humidity?: number; ground?: Ground }
   | { t: "bank"; at: [number, number]; yaw: number; len: number; h: number }
   | { t: "unbank"; index: number }
+  | { t: "moveBank"; index: number; at: [number, number] }
+  | { t: "turnBank"; index: number; yaw: number }
   | { t: "venue"; venue: Venue | null };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
@@ -232,6 +236,8 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("field"), tempC: opt(TEMP_C), humidity: opt(HUMIDITY), ground: opt(oneOf(GROUNDS)) }),
   obj({ t: tag("bank"), ...BANK }),
   obj({ t: tag("unbank"), index: int(0, MAX_BANKS - 1) }),
+  obj({ t: tag("moveBank"), index: int(0, MAX_BANKS - 1), at: XZ }),
+  obj({ t: tag("turnBank"), index: int(0, MAX_BANKS - 1), yaw: BANK.yaw }),
   obj({ t: tag("venue"), venue: nul(VENUE) }),
 ];
 
@@ -496,6 +502,14 @@ export function edit(def: StudioDef, e: Edit): Built {
       if (e.humidity !== undefined) air.humidity = e.humidity;
       out.air = air;
       if (e.ground) out.ground = e.ground;
+      break;
+    }
+    case "moveBank": case "turnBank": {
+      const b = next.outdoor?.banks?.[e.index];
+      if (!b) return no("there is no such bank");
+      if (e.t === "moveBank") b.at = e.at;
+      // kept within a turn either way, as the guard takes it back
+      else b.yaw = Math.atan2(Math.sin(e.yaw), Math.cos(e.yaw));
       break;
     }
     case "bank": case "unbank": {

@@ -11,7 +11,9 @@ test.skipIf(!chromePath())("a first fight teaches move, jump, attack, guard and 
   const [chrome, vite] = await Promise.all([launchChrome(), startVite(new URL("..", import.meta.url).pathname)]);
   try {
     const tab = await openTab(chrome.cdp, { w: 1280, h: 720 }, false, true);
-    const go = (path: string) => load(chrome.cdp, tab, new URL(path, vite.url).href, 1500);
+    // The coach is the page's state and its card, not its pixels: `draw=0&quality=low` plays the fight without drawing it, so
+    // software GL on a CI runner never holds the main thread a minute compiling and drawing the arena (#5930).
+    const go = (path: string) => load(chrome.cdp, tab, new URL(`${path}&draw=0&quality=low`, vite.url).href, 1500);
     const coach = () => tab.eval<Coach | null>("mythicMasters.state()?.tutorial ?? null");
     /** Waits for `ok`, an expression over the page's coach `c`. */
     const until = (what: string, ok: string, ms = 60_000) =>

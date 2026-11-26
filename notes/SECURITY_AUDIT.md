@@ -540,7 +540,24 @@ Round 13 fixed the report notes, round 15 the knock gate, and the iOS kit's sock
 
 ### Still open
 
-- In #5590, where the next round starts: the edge call cap for code mode, the token id in the audit log, anonymous read tokens in the log, and `/api/account/delete` on an app's token (an owner's call). MANUAL RUN QuinnsCode/rustybuns-manual#116 stays open.
+- In #5590, done in round 17 below.
+
+## Round 17, November 26: what round 16 left (#5590)
+
+Source only, overnight while the owner was away. Nothing was deployed.
+
+### Fixed in this round
+
+- **The audit log names which token** (low, codeSplitter). A row said a request signed in with a token or OAuth (`via`) but not which one. It has a `token` column now (the `api_tokens` id; an OAuth grant's tokens are rows there too), set where the request is identified (`viaToken` in `audit.ts`), and an `edit.ts` sub-request carries the outer request's. The log, the export and the API's `AuditEntry` show it (`audit.test.ts`, `edit.test.ts`).
+
+### Kept on purpose (no work, so the next round doesn't reopen them)
+
+- **Anonymous Artifacts read tokens for public repos aren't named in the log.** There is no person and no token row to name, and a read of a public repo changes nothing the log is for (who can get in).
+- **`/api/account/delete` on any app's ten-minute token** (eqosys). Kept as the design: the in-app flow confirms first, the token is short-lived and the app's own, and a re-auth or one-use ticket would change the iOS kit (`Eqosys.swift`) too, which needs Bob. Decided overnight in the owner's place (#6060); hardening is one issue away if the owner wants it.
+
+### Still open
+
+- The code-mode call cap on the edge (`limits.subRequests`) waits on step 5 of MANUAL RUN QuinnsCode/rustybuns-manual#76. If the edge doesn't count a binding's RPC call as a subrequest, count per run in a Durable Object. MANUAL RUN QuinnsCode/rustybuns-manual#116 stays open.
 
 ## Round 18c, November 26: Qollab
 

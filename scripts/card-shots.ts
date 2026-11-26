@@ -24,6 +24,16 @@ const root = resolve(import.meta.dir, "..");
 const hp = "/?level=yosemite-falls&spawn=creek%20halfpipe";
 const battle = (q: string) => `/?battle=1&${q}`;
 const clash = (a: string, b: string, skin: string) => `/?a=${a}&b=${b}&skin=${skin}`;
+/** A page script that gives Cron Swanson a few jobs through its API, then reloads to draw them. */
+const cronJobs = `Promise.all(${JSON.stringify([
+  { app: "qcrm", name: "Back up the CRM", why: "In case the database eats itself", tags: ["backup"], cadence: { kind: "daily", time: "03:00" }, action: { kind: "webhook", url: "https://qcrm.example.com/api/cron/backup", method: "POST" } },
+  { app: "qcrm", name: "Daily digest", why: "Who to ring today", tags: ["email"], cadence: { kind: "daily", time: "14:00" }, action: { kind: "webhook", url: "https://qcrm.example.com/api/cron/digest", method: "POST" } },
+  { app: "eqosys", name: "Ping the sign-in page", tags: [], cadence: { kind: "every", minutes: 60 }, action: { kind: "webhook", url: "https://eqosys.example.com/api/health", method: "GET" } },
+  { app: "eqosys", name: "Prune old sessions", tags: [], cadence: { kind: "daily", time: "09:00" }, action: { kind: "elsewhere", by: "Cloudflare cron" } },
+  { app: "home", name: "Water the plants", tags: [], cadence: { kind: "daily", time: "20:00" }, action: { kind: "remind" } },
+  { app: "skate-tech-park", name: "Check the leaderboard", tags: [], cadence: { kind: "weekly", time: "18:00", days: [0, 1, 2, 3, 4, 5, 6] }, action: { kind: "remind" } },
+  { app: "qntbr", name: "Renew the domain", why: "It lapsed once", tags: ["money"], cadence: { kind: "yearly", time: "09:00", month: 3, day: 1 }, action: { kind: "remind" } },
+].map((j) => ({ tz: "UTC", ...j })))}.map((j) => fetch("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(j) }))).then(() => location.reload())`;
 
 /** One slide: where to open, how long the scene needs (ms), then a click ("text:Solo" or a selector; `press` makes it a real
  * mouse press, for a page that starts its sound only on one), a script, or a held mouse. */
@@ -64,6 +74,11 @@ export const APPS: Record<string, AppShots> = {
   "starter-game": { shots: [{ name: "round", path: "/", wait: 4000, js: "starterGame.start()" }] },
   "hello-world": { shots: [{ name: "home", path: "/", wait: 3000 }] },
   eqosys: { serve: { cmd: ["bun", "scripts/preview-home.tsx", "--serve"], port: "PORT" }, shots: [{ name: "library", path: "/", wait: 3000 }, { name: "sign-in", path: "/login", wait: 3000 }] },
+  // Qollab has no page of its own: its friends and party, as eqosys draws them for a made-up player.
+  qollab: { serve: { cmd: ["bun", "../eqosys/scripts/preview-home.tsx", "--serve"], port: "PORT" }, shots: [{ name: "friends", path: "/?tab=friends", wait: 3000 }] },
+  // An empty database in memory (and none of the owner's settings), given a week of jobs before the shot.
+  "cron-swanson": { serve: { cmd: ["sh", "-c", "CRON_SWANSON_DB=:memory: CRON_SWANSON_TOKEN= CRON_SWANSON_OWNER= CRON_SWANSON_RELAY= CRON_SWANSON_NTFY= exec bun src/main.ts"], port: "PORT" }, shots: [{ name: "jobs", path: "/", wait: 2000, js: cronJobs }] },
+  hemyviz: { serve: { cmd: ["sh", "-c", "exec bun src/main.ts --demo --port $PORT"], port: "PORT" }, shots: [{ name: "demo", path: "/", wait: 5000 }] },
   playground: { serve: { public: true }, shots: [{ name: "home", path: "/", wait: 4000 }] },
   codesplitter: { serve: { live: "https://codesplitter.notryanquinn.workers.dev/" }, shots: [{ name: "home", path: "/", wait: 5000 }] },
   // The QNTBR site lives in another repo; eqosys lists it, so its card is shot from the live page.
