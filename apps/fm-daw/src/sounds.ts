@@ -3,7 +3,7 @@
 // patch on the same two voices (src/engine/params.ts), so they're this repo's
 // own and both engines play them alike. Loading one keeps the track's pan.
 import { P } from "./engine/params.ts";
-import { patch } from "./presets.ts";
+import { keepDuck, patch } from "./presets.ts";
 import { KEYS_VOICES } from "./studio/keys-voice.ts";
 import { BOX_BASS, MONO_BASS } from "./studio/mono-bass.ts";
 
@@ -114,9 +114,9 @@ export const SOUNDS: Sound[] = [
   S("Bass-line box", "Bass", BOX_BASS),
 ];
 
-/** A sound on a track: its patch, with the track's pan kept. */
+/** A sound on a track: its patch, with the track's pan and sidechain kept. */
 export function loadSound(params: number[], s: Sound): number[] {
   const next = s.params.slice();
   next[P.PAN] = params[P.PAN];
-  return next;
+  return keepDuck(params, next);
 }

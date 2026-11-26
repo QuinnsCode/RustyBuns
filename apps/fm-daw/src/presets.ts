@@ -151,8 +151,19 @@ export function demoProject(): Project {
   return { v: 1, bpm: 118, swing: 0.12, space: 0.15, squash: 0, eq: flatEq(), bars, tracks };
 }
 
-/** Random but tame: levels and feedback capped, envelopes short-ish, gain kept. */
+/** Random but tame: levels and feedback capped, envelopes short-ish, gain and the sidechain kept (where it sits in the mix). */
 export function randomPatch(kind: "drum" | "synth", keep: number[], rnd: () => number = Math.random): number[] {
+  return keepDuck(keep, freshPatch(kind, keep, rnd));
+}
+
+/** A new sound on a track that keeps the track's sidechain: what it ducks under, and how far. */
+export function keepDuck(was: number[], next: number[]): number[] {
+  next[P.DUCK_FROM] = was[P.DUCK_FROM] ?? 0;
+  next[P.DUCK] = was[P.DUCK] ?? 0;
+  return next;
+}
+
+function freshPatch(kind: "drum" | "synth", keep: number[], rnd: () => number): number[] {
   const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
   if (keep[P.MODE] >= 0.5) {
     // analog stays analog: a tame cutoff, resonance and drive, slow LFOs

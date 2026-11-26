@@ -1145,7 +1145,7 @@ export function App() {
               onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
               onTrust={() => pump.current?.trust(selected, proj.current)} />
             {t.plugin.web && insertPanel}</>
-          ) : <><PatchEditor track={t} color={color} head={<>{trackSound}{insertPick}</>}
+          ) : <><PatchEditor track={t} color={color} duck={{ names: project.tracks.map((x) => x.name), self: selected }} head={<>{trackSound}{insertPick}</>}
             onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
             onRandom={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: randomPatch(x.kind, x.params) } : x)) } })}
