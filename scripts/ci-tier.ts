@@ -7,7 +7,7 @@
 // A tier 3 change runs alone; tiers 0 and 1 may share a run (see `stackable`). `testWaves` and `bisect` are how Mervin's
 // `--stack` uses that (#5476). `dial` is the trust dial: whether an agent has earned a run of only the tests it changed.
 import { homedir } from "node:os";
-import { bool, check, num, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { bool, check, num, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 
 export type Tier = 0 | 1 | 2 | 3 | 4;
 
@@ -61,8 +61,9 @@ export function tierLine(files: string[]): string {
 
 // The trust dial (#5477): each agent's builder runs per tier, one JSON line each, on this Mac beside the valve. An agent
 // with a clean streak on tier 0 or 1 gets only the tests it changed; a new agent, or one that just failed, gets the whole
-// suite. Trust is earned and lost here only: GitHub's checks stay the merge gate either way.
-export const Verdict = obj({ who: str(200), tier: num(0, 4), passed: bool(), at: num(0, 1e15) });
+// suite. GitHub's checks stay the merge gate either way, but a red GitHub `apps` run on a worker's PR costs trust too
+// (#5605): `bun run pr` writes it down once, keyed by its Actions run (`run`), so a red the builder never saw still counts.
+export const Verdict = obj({ who: str(200), tier: num(0, 4), passed: bool(), at: num(0, 1e15), run: opt(str(40)) });
 export type Verdict = Of<typeof Verdict>;
 export const trustFile = () => process.env.BUILDER_TRUST ?? `${homedir()}/.rustybuns/trust.jsonl`;
 /** How many clean runs in a row, inside the window, earn the targeted run. */
@@ -83,6 +84,13 @@ export function dial(history: Verdict[], who: string, tier: Tier, now = Date.now
 export async function recordVerdict(v: Verdict) {
   const file = Bun.file(trustFile());
   await Bun.write(file, ((await file.exists()) ? await file.text() : "") + JSON.stringify(v) + "\n");
+}
+
+/** Writes `v` down unless its Actions run is already there; true when it was new. */
+export async function learn(v: Verdict): Promise<boolean> {
+  if (v.run && (await readVerdicts()).some((h) => h.run === v.run)) return false;
+  await recordVerdict(v);
+  return true;
 }
 
 export async function readVerdicts(): Promise<Verdict[]> {
