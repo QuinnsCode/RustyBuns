@@ -12,8 +12,10 @@
 
 **How to use:** a new fight starts every hour; open the page to watch it live.
 Between fights, pick an old fight and play it back turn by turn.
+Post a prompt you want drawn under "Pick the next fight"; the one with the most reactions this hour is the next live fight.
+React to a fight or a prompt with fire, funny or dead.
 
-**Account:** not needed.
+**Account:** not needed to watch. Posting and reacting take an [eqosys](https://eqosys.qntbr.com) account (Sign in, top right); it opens beside the page, so the fight keeps playing.
 
 The Rusty Buns port of [excalibrawl.com](https://excalibrawl.com). The original had GPT-4.1 mini write JSON draw ops through AI Gateway. Here the fighters are on Workers AI, and the starter's auth, Stripe and orgs are gone. A cron starts a fight on the hour, viewers watch it live, and every finished fight is a replay in R2.
 
@@ -25,6 +27,10 @@ The hours alternate between two matchups (`MATCHUPS` in `src/arena.ts`), with si
 - **Pen vs pen, Clef refs**: GPT-OSS 20B (blind) and Llama 4 Scout (can look) write [the pen](#the-pen). A pen turn is up to 8 lines, so a pen fighter plays every third turn: 8 turns in a fight.
 
 When a fight ends, Clef judges each side once, from a picture of its half: how clearly it shows the prompt (likeness) and how well it's made (craft), 0 to 4 each, as in the [bake-off](#bake-off). The best total wins. The replay shows a trophy on the winner, with the scores as the tooltip. The rasterizer draws text in a small 5×7 bitmap font, so Clef can read a title or a label.
+
+## Prompt posts and reactions
+
+Through eqosys's Qollab (`apps/eqosys/QOLLAB.md`, "Posts and reactions"), from `src/board.ts`, `src/app/Board.tsx` and `src/app/account.ts`. A signed-in person posts a prompt (`kind: "prompt"`, no ref, one line up to 80 characters) and reacts to a prompt (`post:<id>`) or to the fight in the arena, live or replay (`fight:<id>`): one icon a thing, as on What Would Fantano Say. On the hour the cron reads the last hour's prompts signed out (`sort=top&since=`), takes the most reacted (newest on a tie), and falls back to the list in `src/engine/prompts.ts` when nobody posted or eqosys is away. A prompt posted after the hour turned waits for the next fight. Anyone signed in can report a prompt (the flag); eqosys's studio hides it.
 
 ## The plan
 

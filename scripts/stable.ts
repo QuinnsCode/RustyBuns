@@ -1,8 +1,8 @@
 // The stable ring (notes/RELEASE_RINGS.md step 7, #4494). stable.yml runs it on Monday after deps-doctor:
 // it picks the newest commit whose ring/daily run and the two dailies after it were all green (three green days),
 // writes release notes from the squash titles since the last `v*` tag, and opens one `MANUAL RUN:` taste issue for
-// `bun run manual` (or moves last week's open one to the new pick). The owner pushes the `v` tag and approves npm, as
-// before. With no such commit yet (the daily ring, #4493, hasn't run three days in a row) it says so and exits 0.
+// `bun run manual` (or moves last week's open one to the new pick). The owner pushes the `v` tag on that pick and
+// approves npm; npm-publish.yml sets the tag's version at pack time (#4528). With no such commit yet (the daily ring, #4493, hasn't run three days in a row) it says so and exits 0.
 //
 //   bun scripts/stable.ts <head sha>          pick, write notes, open or update the issue
 //   bun scripts/stable.ts <head sha> --dry    print the pick and the issue body; file nothing
@@ -33,6 +33,16 @@ export function nextVersion(v: string): string {
   return `${m[1]}.${m[2]}.${Number(m[3]) + 1}`;
 }
 
+const parts = (v: string) => (/^(\d+)\.(\d+)\.(\d+)$/.exec(v) ?? []).slice(1).map(Number);
+const newer = (a: string, b: string) => { const [x, y] = [parts(a), parts(b)]; for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (x[i] ?? 0) > (y[i] ?? 0); return false; };
+
+/** The version this release ships as. npm-publish.yml takes it from the tag (#4528), so main's packages/*\/package.json
+ *  trail the tags: the next patch after the last `v*` tag, unless main's packages already name a newer one. */
+export function releaseVersion(tag: string | undefined, packages: string): string {
+  const last = tag?.replace(/^v/, "");
+  return !last || newer(packages, last) ? packages : nextVersion(last);
+}
+
 /** A squash title without its issue and PR numbers: in an issue body each `#N` would post a reference on that issue
  *  or PR every week. "x (Part of #4) (#5)" -> "x". The compare link above the notes reaches every PR. */
 export function bare(title: string): string {
@@ -55,14 +65,14 @@ export function releaseNotes(titles: string[], max = 300): string {
 }
 
 /** The MANUAL RUN taste issue's body. */
-export function issueBody(o: { repo: string; sha: string; tag?: string; version: string; next: string; titles: string[] }): string {
+export function issueBody(o: { repo: string; sha: string; tag?: string; next: string; titles: string[] }): string {
   const short = o.sha.slice(0, 7);
   const since = o.tag ? `since ${o.tag}` : "so far";
   const compare = o.tag ? `https://github.com/${o.repo}/compare/${o.tag}...${o.sha}` : `https://github.com/${o.repo}/commits/${o.sha}`;
   return `**Time:** about 20 minutes. **Steps:**
 
 1. In your checkout: \`git fetch && git switch --detach ${o.sha}\`, then \`bun run manual\` and walk the apps you care about this week.
-2. If it tastes right: bump the packages ${o.version} -> ${o.next} in a PR (\`packages/*/package.json\`, \`bun install\`, the README banner; \`bun scripts/check-release.ts\` checks them), merge it, push the tag \`v${o.next}\` on that commit, and approve the \`npm\` environment as before. The bump lands on top of main, so ${short}...the bump commit is what ships past the soak.
+2. If it tastes right: \`git tag v${o.next} ${o.sha} && git push origin v${o.next}\`, then approve the \`npm\` environment as before. The tag goes on the soaked commit itself and npm-publish.yml sets ${o.next} at pack time, so no bump PR comes first and nothing unsoaked ships.
 3. Answer Yes in the \`bun run manual\` window (comments and closes this). No leaves it open; next Monday's pick moves it.
 
 Picked by the stable ring (\`.github/workflows/stable.yml\`, \`scripts/stable.ts\`): ${short} is the newest commit whose daily run and the two dailies after it were all green. Plan: notes/RELEASE_RINGS.md.
@@ -94,9 +104,9 @@ if (import.meta.main) {
   }
   const tag = (await Bun.$`git describe --tags --abbrev=0 --match ${"v*"} ${sha}`.quiet().nothrow().text()).trim() || undefined;
   const titles = (await Bun.$`git log --first-parent --format=%s ${tag ? `${tag}..${sha}` : sha}`.quiet().text()).split("\n").filter(Boolean);
-  const version = obj({ version: str(40) })(JSON.parse(readFileSync("packages/cli/package.json", "utf8"))).version;
+  const packages = obj({ version: str(40) })(JSON.parse(readFileSync("packages/cli/package.json", "utf8"))).version;
   const title = `${TITLE}, ${sha.slice(0, 7)} (${new Date().toISOString().slice(0, 10)})`;
-  const body = issueBody({ repo, sha, tag, version, next: nextVersion(version), titles });
+  const body = issueBody({ repo, sha, tag, next: releaseVersion(tag, packages), titles });
   if (dry) {
     console.log(`${title}\n\n${body}`);
     process.exit(0);

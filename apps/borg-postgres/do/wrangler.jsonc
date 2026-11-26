@@ -1,5 +1,5 @@
-// Local spike only (`wrangler dev`): stock PGlite needs 128 MB of WASM memory, a whole DO's limit, so this
-// doesn't deploy as is. See README.md.
+// Local spike (`wrangler dev`). PGlite fits a DO's 128 MB now (64 MB of WASM memory, memory.ts); saving, the wire
+// protocol and the binding are still to do before previews use it. See README.md.
 {
   "name": "pg-do-spike",
   "main": "src/worker.ts",

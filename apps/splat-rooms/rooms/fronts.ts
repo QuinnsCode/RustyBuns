@@ -4,7 +4,9 @@
 // A red tab marks the side that should be the front. A model showing its back or side there needs a `turn`.
 // It also measures each model and names any whose catalog size is off by more than 10 cm, since layouts
 // keep furniture apart by those sizes.
-import { join, resolve } from "node:path";
+import { cpSync, rmSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { queued } from "../../../scripts/blender-queue.ts";
 import { parseArgs } from "node:util";
 import { arr, num } from "@rustybuns/util/guard";
 import { runBlender } from "@rustybuns/cli/blender";
@@ -13,6 +15,13 @@ import { inBatches, model } from "./polyhaven.ts";
 
 const { values: args } = parseArgs({
   options: { theme: { type: "string" }, ids: { type: "string" }, out: { type: "string", default: "fronts.png" } },
+});
+// On the office Mac the whole run is a Blender queue job on the builder Mac (scripts/blender-queue.ts): the sheet is
+// drawn inside the tree (rooms/out/, ignored) and copied to --out once it is back.
+const want = resolve(args.out!), inTree = join(import.meta.dir, "out", basename(want));
+await queued([dirname(inTree)], {
+  args: [...(args.theme ? ["--theme", args.theme] : []), ...(args.ids ? ["--ids", args.ids] : []), "--out", relative(process.cwd(), inTree)],
+  then: () => { if (want !== inTree) { cpSync(inTree, want); rmSync(inTree); } console.log(`-> ${want}`); },
 });
 const themes = args.theme ? [THEMES[args.theme]] : Object.values(THEMES);
 if (themes.some((t) => !t)) throw new Error(`no theme "${args.theme}"; have ${Object.keys(THEMES).join(", ")}`);

@@ -1,9 +1,10 @@
 // Band night as a crew does it: mics and the DI on their marks, each into the stage box, the snake to the desk, then a
 // line check with the band. A clean night passes; a dead cable and a crossed pair are found by ear and fixed (a spare
-// swapped in, a repatch at the stage box); the bass DI's hum goes with its ground lift.
+// swapped in, a repatch at the stage box); the bass DI's hum goes with its ground lift, and a power cord laid along a
+// mic cable hums until it is moved.
 import { expect, test } from "bun:test";
 import type { Fault, KeyedCable } from "@rustybuns/gear";
-import { BAND_NIGHT, INPUTS, ZONES, check, faultsFor, jobs, judge, night, show } from "../src/venues/band-night.ts";
+import { BAND_NIGHT, INPUTS, type LaidCable, ZONES, check, faultsFor, jobs, judge, night, show } from "../src/venues/band-night.ts";
 import { type World, newWorld } from "../src/sim.ts";
 
 /** The stage set: each mic and the DI on its mark, the stage box at the stage's edge, the desk and the fan at the back. */
@@ -75,4 +76,30 @@ test("each night seeds one to three faults, the same ones for the same seed", ()
   // The stage plot fits the stage, and the 30 m snake reaches from it to the mix position.
   for (const l of INPUTS) expect(l.mark.z).toBeLessThanOrEqual(ZONES.stage.z1);
   expect(Math.hypot(ZONES.desk.x1, ZONES.desk.z1)).toBeLessThan(30);
+});
+
+/** Rope points 0.2 m apart on the floor from one spot to another, as a laid cable's rope lies. */
+const lay = (x0: number, z0: number, x1: number, z1: number) => {
+  const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.2);
+  return Array.from({ length: n + 1 }, (_, i) => ({ x: x0 + ((x1 - x0) * i) / n, y: 0.006, z: z0 + ((z1 - z0) * i) / n }));
+};
+
+test("a power cord laid along vocal 1's mic cable hums on its channel; moved apart, or crossed square, it stops", () => {
+  const w = setUp([]);
+  night(w).phantom = true;
+  // Vocal 1's cable runs from its mark to the stage box; a power cord from the stage wall lies 15 cm beside it.
+  const mic = { ...xlr("xlr-e", "vox-1", 5), path: lay(0.3, 2.75, -1, 2.7) };
+  const runs = (path: ReturnType<typeof lay>): LaidCable[] => [
+    ...patch().filter((r) => r.key !== "xlr-e"), mic,
+    { key: "power-stage", kind: "power", lengthM: 5, from: ["stage-wall", "power-out-1"], to: ["bass-amp", "power-in"], path },
+  ];
+
+  const beside = runs(lay(0.2, 2.9, -0.9, 2.85));
+  expect(check(w, beside, on, 5)).toMatchObject({ on: 5, sound: "hum", ok: false });
+  expect(night(w).last?.why).toContain("Run them apart");
+  expect(show(w, beside, on).pass).toBe(false);
+
+  // A metre away, or across it at a right angle: clean again, and the other channels never hummed.
+  expect(lineCheck(w, runs(lay(0.2, 1.75, -0.9, 1.7))).map((h) => h.sound)).toEqual(INPUTS.map(() => "clean"));
+  expect(check(w, runs(lay(-0.4, 2.0, -0.4, 3.5)), on, 5)?.sound).toBe("clean");
 });

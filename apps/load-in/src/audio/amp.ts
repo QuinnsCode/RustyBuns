@@ -1,11 +1,10 @@
 // The guitarist's amp at the show, and the guitar baked through it. At soundcheck you stand at the amp and set its five
 // knobs (Gain, Bass, Mid, Treble, Master, 0 to 10); `bakeGuitar` runs the guitar's clean stem (stems.ts, a DI) through
-// the amp's circuit (packages/gear `@rustybuns/gear/circuit`): three 12AX7 stages with the Gain pot ahead of the
-// second, the passive bass/mid/treble stack, a push-pull power stage and a closed-back 4x12 heard through a mic. The
-// netlists are the same textbook stages as FM DAW's triode and tone boards (apps/fm-daw/circuits), written as parts
-// here so Load In doesn't import another app. It is heavy (a Newton solve per tube per sample, four times
-// oversampled), so the page runs it in a worker (amp-worker.ts). Plain data, no DOM.
-import { DEFAULT_MIC, type Netlist, type RigSpec, runRig } from "@rustybuns/gear/circuit";
+// the amp's circuit. The amp is Q Brit 3, one of Qollab Studio's Q Amp heads, from the kit both games share
+// (`@rustybuns/gear/circuit` heads.ts): three 12AX7 stages with the Gain pot ahead of the second, the passive
+// bass/mid/treble stack, a push-pull power stage and a closed-back 4x12 heard through a mic. It is heavy (a Newton solve
+// per tube per sample, four times oversampled), so the page runs it in a worker (amp-worker.ts). Plain data, no DOM.
+import { type RigSpec, head, headRig, runRig } from "@rustybuns/gear/circuit";
 import { clamp } from "@rustybuns/util";
 import { Bad, type Guard, type Of, int, num, obj } from "@rustybuns/util/guard";
 
@@ -38,62 +37,12 @@ export function turnKnob(a: AmpKnobs, knob: AmpKnob, by: number): void {
   a[knob] = clamp(Math.round((a[knob] + by) * 2) / 2, 0, 10);
 }
 
-/** One 12AX7 stage: coupling cap and grid leak, grid stopper, plate load from B+, cathode resistor and bypass cap. */
-function triode(rk: number, ck: number, cc = 22e-9): Netlist {
-  return {
-    input: "in",
-    output: "plate",
-    parts: [
-      { kind: "C", a: "in", b: "g0", farads: cc },
-      { kind: "R", a: "g0", b: "gnd", ohms: 1e6 },
-      { kind: "R", a: "g0", b: "grid", ohms: 68e3 },
-      { kind: "Triode", p: "plate", g: "grid", k: "cath" },
-      { kind: "R", a: "cath", b: "gnd", ohms: rk },
-      ...(ck > 0 ? [{ kind: "C" as const, a: "cath", b: "gnd", farads: ck }] : []),
-      { kind: "R", a: "bplus", b: "plate", ohms: 100e3 },
-      { kind: "V", a: "bplus", b: "gnd", volts: 300 },
-    ],
-  };
-}
+/** The guitarist's head: Qollab Studio's Q Brit 3. */
+export const SHOW_HEAD = head("brit");
 
-/** The passive tone stack: the treble pot's two halves at the output, the bass and mid pots log taper. Knobs 0 to 10. */
-function toneStack(bass: number, mid: number, treble: number): Netlist {
-  const pot = (k: number) => clamp(k / 10, 0.001, 0.999);
-  const tr = pot(treble), b = pot(bass) ** 2, m = pot(mid) ** 2;
-  return {
-    input: "in",
-    output: "out",
-    parts: [
-      { kind: "C", a: "in", b: "t", farads: 470e-12 },
-      { kind: "R", a: "t", b: "out", ohms: (1 - tr) * 220e3 },
-      { kind: "R", a: "out", b: "low", ohms: tr * 220e3 },
-      { kind: "R", a: "in", b: "slope", ohms: 33e3 },
-      { kind: "C", a: "slope", b: "low", farads: 22e-9 },
-      { kind: "C", a: "slope", b: "mid", farads: 22e-9 },
-      { kind: "R", a: "low", b: "mid", ohms: b * 1e6 },
-      { kind: "R", a: "mid", b: "gnd", ohms: m * 25e3 },
-      { kind: "R", a: "out", b: "gnd", ohms: 1e6 },
-    ],
-  };
-}
-
-/** The Gain knob's pot: log taper, never quite off. */
-const gainPot = (gain: number) => 0.02 + 0.98 * (gain / 10) ** 2;
-
-/** The amp at these knobs, as a rig. */
+/** The amp at these knobs, as a rig: Q Brit 3 with no hiss and no tremolo. */
 export function ampRig(k: AmpKnobs): RigSpec {
-  return {
-    inputVolts: 0.5,
-    links: [
-      { net: triode(2.7e3, 0.68e-6), gain: 1 },
-      { net: triode(10e3, 0), gain: gainPot(k.gain) },
-      { net: triode(820, 0.68e-6), gain: 0.8 },
-      { net: toneStack(k.bass, k.mid, k.treble) },
-    ],
-    power: 1.5 * (0.25 + 0.15 * k.master),
-    output: { pairs: 1, sag: 250, load: 8 },
-    cab: DEFAULT_MIC,
-  };
+  return headRig(SHOW_HEAD, { ...k, noise: 0, rate: 0, depth: 0 });
 }
 
 const rms = (x: Float32Array) => {

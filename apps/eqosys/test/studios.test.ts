@@ -55,6 +55,13 @@ test("QNTBR is the owner's business studio with every app; a teammate makes thei
   expect((await run("eq_studio_add", { studio: "qntbr", email: "boss@example.com", role: "maker" }, { cookie: ada.cookie })).status).toBe(403);
   expect((await studios({ cookie: boss.cookie }))[0]!.people.map((p) => [p.name, p.role])).toEqual([["Boss", "owner"], ["Ada", "maker"]]);
 
+  // An admin can't change an owner's role (that would be the way round "only an owner takes out an owner"), nor the last owner their own.
+  expect(await add(boss, "ada@example.com", "admin")).toBe("/?tab=studio");
+  expect(await add(ada, "boss@example.com")).toBe("/?tab=studio&e=studio");
+  expect(await add(boss, "boss@example.com")).toBe("/?tab=studio&e=studio");
+  expect((await studios({ cookie: boss.cookie }))[0]!.people.map((p) => [p.name, p.role])).toEqual([["Boss", "owner"], ["Ada", "admin"]]);
+  expect(await add(boss, "ada@example.com")).toBe("/?tab=studio");
+
   const hers = await studios({ cookie: ada.cookie });
   expect(hers.map((s) => [s.name, s.kind, s.role])).toEqual([["Ada Works", "team", "owner"], ["QNTBR", "business", "maker"]]);
   expect(hers.find((s) => s.id === "qntbr")!.members).toBe(2);
