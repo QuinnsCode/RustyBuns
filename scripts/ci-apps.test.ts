@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { APPS, dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
+import { APPS, dropSample, laneCommands, sharedCode, slowRun, sparseDirs } from "./ci-apps.ts";
 import { appDir } from "./app-dirs.ts";
 
 // A docs-only PR under packages/ used to run every app's suite (PR #5404: 4635 tests for a skill file).
@@ -87,4 +87,19 @@ test("a full run puts every sub-minute suite with nothing to build or boot in a 
   // A long suite still gets its lanes; a tiny one with a native build gets one job, not three builds.
   expect(rows.filter((r) => r.app === "mythic-masters").length).toBe(3);
   expect(rows.filter((r) => r.app === "auto-rig").length).toBe(1);
+});
+
+// #5783: codeSplitter's tour smoke runs in CI, but only on a PR that changes what it walks (the page, the strip, the script).
+test("codeSplitter's tour smoke runs only when the page, the feature strip or the script changes", () => {
+  const cs = APPS.codesplitter!, tour = "bun scripts/tour-smoke.ts";
+  const cases: [string[], boolean, string][] = [
+    [["apps/codesplitter/src/client.html"], false, tour],
+    [["apps/codesplitter/src/features/order.txt"], false, tour],
+    [["apps/codesplitter/scripts/tour-smoke.ts"], false, tour],
+    [["apps/codesplitter/src/worker.ts", "apps/codesplitter/test/a.test.ts"], false, ""],
+    [["scripts/ci-apps.ts"], true, tour], // its row changed
+    [["apps/two-fronts/src/client.html"], false, ""],
+  ];
+  for (const [changed, row, want] of cases) expect([changed, slowRun(cs, changed, row)]).toEqual([changed, want]);
+  expect(slowRun(APPS["two-fronts"]!, ["apps/two-fronts/src/client.html"], true)).toBe("");
 });

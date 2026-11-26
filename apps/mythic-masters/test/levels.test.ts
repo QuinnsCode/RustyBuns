@@ -1,5 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { START_LEVEL, SECTIONS } from "../src/journey.ts";
+import { baseLevel, START_LEVEL, SECTIONS, sectionLevel } from "../src/journey.ts";
+import { setTravel } from "../src/world/world.ts";
 import { levels, lineup, pace, route, stones } from "../scripts/levels.ts";
 
 setDefaultTimeout(30_000);
@@ -29,4 +30,13 @@ test("the levels card: five checks on the road from region 1, each a rate with i
   expect(card.total).toBeCloseTo(card.checks.reduce((t, c) => t + c.points, 0), 2);
   // the same seeds play the same fights
   expect(levels(1, ["hodag"]).checks.map((c) => c.rate)).toEqual(card.checks.map((c) => c.rate));
+});
+
+test("levels follow the road: each trail on it starts at the level of the boss before it, whoever is in the line-up", () => {
+  setTravel([{ archetype: "tank", fields: ["grove"] }]); // no flier, no swimmer: the gates hold for the game, not for the road
+  try {
+    const road = route();
+    expect(road).toEqual([1, 2, 3, 5, 4, 6, 7, 8]);
+    for (let i = 1; i < road.length; i++) expect(baseLevel(road[i]!)).toBe(sectionLevel(road[i - 1]!, SECTIONS - 1));
+  } finally { setTravel(null); }
 });

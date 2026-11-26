@@ -32,9 +32,11 @@ function said(e: ReplayEntry | undefined): string {
   return d.action === "add" ? `${d.size >= 3 ? "big " : d.size < 1 ? "tiny " : ""}${d.color} ${d.shape}` : `${d.action} ${d.target ?? ""}`.trim();
 }
 
-/** Paint the fight into `arena` and the replay list into `replays`. Returns the cleanup. */
-export function watch(arena: HTMLElement | null, replays: HTMLElement | null, next?: HTMLElement | null): () => void {
+/** Paint the fight into `arena` and the replay list into `replays`; `onShow` hears which fight is up (null for the sample). Returns the cleanup. */
+export function watch(arena: HTMLElement | null, replays: HTMLElement | null, next?: HTMLElement | null, onShow?: (id: string | null) => void): () => void {
   if (!arena || !replays) return () => {};
+  let shown: string | null | undefined;
+  const show = (id: string | null) => { if (id !== shown) { shown = id; onShow?.(id); } };
   let closed = false;
   let match: (LiveMatch & { log: ReplayEntry[] }) | null = null;
   let replay: { m: Replay; label: string; turn: number; timer: ReturnType<typeof setInterval> } | null = null;
@@ -73,6 +75,7 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null, ne
       idle();
     }, every) };
     replay = r;
+    show(m.id === SAMPLE_ID ? null : m.id);
     return r;
   };
   const playReplay = async (id: string, label = "replay") => {
@@ -120,7 +123,7 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null, ne
         void loadReplays().then(() => playReplay(msg.id, "last fight"));
         return;
       }
-      if (match) draw(match, match.log, match.turn, "live");
+      if (match) { show(match.id); draw(match, match.log, match.turn, "live"); }
     };
     ws.onopen = () => (wait = 1000);
     ws.onclose = () => setTimeout(() => connect(Math.min(wait * 2, 30_000)), wait);

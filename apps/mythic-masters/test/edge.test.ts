@@ -9,12 +9,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { jwksOf, newKey, sign } from "@rustybuns/util/token";
 import { APP } from "../src/account.ts";
+import { sectionLevel } from "../src/journey.ts";
 import { Online } from "../src/net/online.ts";
 import { decodeServer, type ServerMsg } from "../src/net/party.ts";
 import { serveEdge, wranglerPath, type Edge } from "../scripts/edge.ts";
 
 setDefaultTimeout(90_000); // wrangler dev starts workerd for the Worker and its Region
 const edges: Edge[] = [];
+/** Region 5's first keeper stands at its section's level, which follows the road (#5973). */
+const KEEPER_LV = sectionLevel(5, 0);
 const stops: (() => unknown)[] = [];
 afterAll(async () => { for (const s of stops) s(); for (const e of edges) await e.stop(); });
 
@@ -85,7 +88,7 @@ describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
     expect(heard(bo, "p").at(-1)).toMatchObject({ d: { r: 5, x: 138000, l: "hodag" } });
     expect(heard(bo, "bye")).toEqual([]);
     // She walks up to her region's first stone: Bo hears the den is hers.
-    ada.send({ e: "den", den: "keeper:5:0", c: "loveland-frogman", lv: 34, ago: 0, n: 0 });
+    ada.send({ e: "den", den: "keeper:5:0", c: "loveland-frogman", lv: KEEPER_LV, ago: 0, n: 0 });
     await until("Bo hears the den", () => heard(bo, "den").length === 1);
 
     // Four more fill the room to six; a seventh is told it is full.
@@ -115,7 +118,7 @@ describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
     expect(wakes(edge).at(-1)).toBe(2); // Ada and Bo, rebuilt from their sockets
     expect(bo.pongs).toBeGreaterThan(pongs + 5);
     expect(heard(dee, "all")[0]).toMatchObject({ players: expect.arrayContaining([expect.objectContaining({ name: "Ada Lovelace", p: expect.objectContaining({ x: 138000, l: "hodag" }) })]) });
-    ada.send({ e: "fought", c: "loveland-frogman", lv: 34, won: true, bound: true, s: 3 });
+    ada.send({ e: "fought", c: "loveland-frogman", lv: KEEPER_LV, won: true, bound: true, s: 3 });
     await until("Bo hears her fight", () => heard(bo, "fought").length === 1);
     expect(heard(bo, "fought")[0]).toMatchObject({ c: "loveland-frogman", won: true, bound: true });
   });

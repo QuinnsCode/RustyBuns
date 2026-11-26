@@ -134,8 +134,9 @@ export class TakeDeck {
   has(track: number) { return !!this.slots[track]?.length; }
 
   /** Add `frames` of the takes into interleaved stereo `out`, the transport at `pos` beats when the block starts. */
-  mix(out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number) {
-    for (let t = 0; t < this.slots.length; t++) if (audible(t)) this.play(t, out, 2, frames, pos, bpm, loopBeats, gain);
+  /** `duck`: a track's sidechain gain a frame this block (src/engine/duck.ts), when it ducks under another. */
+  mix(out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number, duck?: (t: number) => Float32Array | undefined) {
+    for (let t = 0; t < this.slots.length; t++) if (audible(t)) this.play(t, out, 2, frames, pos, bpm, loopBeats, gain, duck?.(t));
   }
 
   /** Add `frames` of one track's take into mono `out` (its Amp insert plays it from there). */
@@ -143,11 +144,11 @@ export class TakeDeck {
     this.play(track, out, 1, frames, pos, bpm, loopBeats, gain);
   }
 
-  private play(track: number, out: Float32Array, chans: 1 | 2, frames: number, pos: number, bpm: number, loopBeats: number, gain: number) {
-    for (const c of this.slots[track] ?? []) this.clip(c, out, chans, frames, pos, bpm, loopBeats, gain);
+  private play(track: number, out: Float32Array, chans: 1 | 2, frames: number, pos: number, bpm: number, loopBeats: number, gain: number, duck?: Float32Array) {
+    for (const c of this.slots[track] ?? []) this.clip(c, out, chans, frames, pos, bpm, loopBeats, gain, duck);
   }
 
-  private clip(c: DeckClip, out: Float32Array, chans: 1 | 2, frames: number, pos: number, bpm: number, loopBeats: number, gain: number) {
+  private clip(c: DeckClip, out: Float32Array, chans: 1 | 2, frames: number, pos: number, bpm: number, loopBeats: number, gain: number, duck?: Float32Array) {
     const beatsPerFrame = bpm / 60 / this.sr, takePerBeat = (60 / bpm) * TAKE_RATE, { pcm } = c;
     const from = c.from ?? 0, to = Math.min(c.to ?? pcm.length, pcm.length), fadeIn = from > 0, fadeOut = to < pcm.length;
     for (let f = 0; f < frames; f++) {
@@ -158,6 +159,7 @@ export class TakeDeck {
       let v = (a + ((pcm[j + 1] ?? a) - a) * (x - j)) * gain;
       if (fadeIn && x - from < CLIP_FADE_FRAMES) v *= (x - from) / CLIP_FADE_FRAMES;
       if (fadeOut && to - x < CLIP_FADE_FRAMES) v *= (to - x) / CLIP_FADE_FRAMES;
+      if (duck) v *= duck[f];
       out[f * chans] += v;
       if (chans === 2) out[f * 2 + 1] += v;
     }

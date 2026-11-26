@@ -7,9 +7,12 @@ import { DAY, hourAt } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
 import { DEAD_MS, Region } from "../src/edge/region.ts";
+import { sectionLevel } from "../src/journey.ts";
 import type { RoomSocket } from "@rustybuns/util/room";
 
 setDefaultTimeout(20_000);
+/** Region 5's first keeper stands at its section's level, which follows the road (#5973). */
+const KEEPER_LV = sectionLevel(5, 0);
 const party = serveParty();
 afterAll(() => party.stop());
 
@@ -70,22 +73,22 @@ describe("two friends in one region", () => {
     ada.met("120,48", "hodag", 7); // 25 km off: no such den near her, so nothing to hear and nothing to report against
     ada.met("keeper:5:0", "jersey-devil", 99); // her region's stone, but not its keeper
     await Bun.sleep(1100); // the room's rate limit, after the catch-up above
-    ada.met("keeper:5:0", "loveland-frogman", 34); // its keeper, at its level
+    ada.met("keeper:5:0", "loveland-frogman", KEEPER_LV); // its keeper, at its level
     await until(() => heard.includes("Bo: Ada at loveland-frogman keeper:5:0"));
     expect(heard.some((l) => l.includes("120,48") || l.includes("jersey-devil"))).toBe(false);
-    ada.fought("loveland-frogman", 34, true, false, 90);
+    ada.fought("loveland-frogman", KEEPER_LV, true, false, 90);
     await Bun.sleep(1100);
-    ada.fought("loveland-frogman", 34, true, false, 3);
+    ada.fought("loveland-frogman", KEEPER_LV, true, false, 3);
     await until(() => heard.includes("Bo: Ada beat loveland-frogman"));
     // Her line-up's next beast fights the same den: believed again, once that fight has had time to happen.
-    ada.fought("loveland-frogman", 34, false, false, 3);
+    ada.fought("loveland-frogman", KEEPER_LV, false, false, 3);
     await Bun.sleep(1100);
-    ada.fought("loveland-frogman", 34, false, false, 3);
+    ada.fought("loveland-frogman", KEEPER_LV, false, false, 3);
     await until(() => heard.includes("Bo: Ada lost to loveland-frogman"));
     // A lie about the stone forgets the real fight before it: another report of that one is no longer believed.
     ada.met("keeper:5:0", "jersey-devil", 99);
     await Bun.sleep(1100);
-    ada.fought("loveland-frogman", 34, true, false, 3);
+    ada.fought("loveland-frogman", KEEPER_LV, true, false, 3);
     await Bun.sleep(300);
     expect(heard.filter((l) => l.startsWith("Bo: Ada beat") || l.startsWith("Bo: Ada lost"))).toHaveLength(2);
     // She jumps 3 km off and back, faster than anyone walks (a page saying it is somewhere it isn't). Bo still sees where
@@ -95,7 +98,7 @@ describe("two friends in one region", () => {
     await until(() => [...bo.ghosts.values()][0]?.pose.x === 168000);
     await Bun.sleep(250); ada.update(5, 13800, 5550, 0, "hodag", performance.now()); // 50 m from the stone, not beside Bo
     const doubted = heard.length;
-    ada.met("keeper:5:0", "loveland-frogman", 34); ada.hunt("5.13900.5600", 0); ada.life("pick", "197,79");
+    ada.met("keeper:5:0", "loveland-frogman", KEEPER_LV); ada.hunt("5.13900.5600", 0); ada.life("pick", "197,79");
     await Bun.sleep(1100); ada.update(5, 13422, 5527, 0, "hodag", performance.now()); // the campfire 386 m off
     expect(heard.slice(doubted).filter((l) => l.includes("hunt"))).toEqual([]);
     ada.hunt("5.13900.5600", 0);
@@ -148,14 +151,14 @@ describe("two friends in one region", () => {
     for (let i = 1; i <= 21; i++) { await Bun.sleep(210); cy!.update(5, 14600 - (800 * i) / 21, 5550, 0, "hodag", performance.now()); }
     await until(() => cyAt() === 138000); // 50 m from the stone, not beside Di
     on.set("5.13900.5600", 0);
-    cy!.met("keeper:5:0", "loveland-frogman", 34); cy!.hunt("5.13900.5600", 0);
+    cy!.met("keeper:5:0", "loveland-frogman", KEEPER_LV); cy!.hunt("5.13900.5600", 0);
     await Bun.sleep(300);
     expect(since()).toEqual([]); // Di sees where she is, but the room vouches for neither the stone nor the contract
     // A second tab while the first is still open: the room's doubt carries over to it.
     asCy();
     cy!.update(5, 13801, 5550, 0, "hodag", performance.now());
     await until(() => cy.status === "in" && cyAt() === 138010);
-    cy!.met("keeper:5:0", "loveland-frogman", 34);
+    cy!.met("keeper:5:0", "loveland-frogman", KEEPER_LV);
     await Bun.sleep(300);
     expect(since()).toEqual([]);
     // She walks to the campfire 380 m off, a place the game sends you: trusted again, and her page tells the contract.
@@ -219,7 +222,7 @@ describe("two friends in one region", () => {
     await Bun.sleep(250); ed.update(5, 13800, 5550, 0, "hodag", performance.now()); // 800 m at once: the room stops vouching for him
     await until(() => [...fi.ghosts.values()][0]?.pose.x === 138000);
     on.set("5.13900.5600", 0);
-    ed.met("keeper:5:0", "loveland-frogman", 34); ed.hunt("5.13900.5600", 0);
+    ed.met("keeper:5:0", "loveland-frogman", KEEPER_LV); ed.hunt("5.13900.5600", 0);
     await Bun.sleep(300);
     expect(since()).toEqual([]);
     // Ed stands still at the stone; Fi walks over at a jog. Once she is beside him the room trusts him again: his page
@@ -228,7 +231,7 @@ describe("two friends in one region", () => {
     await until(() => since().includes("Fi: Ed hunt 5.13900.5600 0"));
     expect(since()).toContain("Fi: Ed at loveland-frogman keeper:5:0");
     // His fight there, timed from when he walked in, is believed.
-    ed.fought("loveland-frogman", 34, true, false, 4);
+    ed.fought("loveland-frogman", KEEPER_LV, true, false, 4);
     await until(() => since().includes("Fi: Ed beat loveland-frogman"));
     ed.close(); fi.close();
   });

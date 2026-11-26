@@ -131,7 +131,7 @@ export function check(schema: Schema, v: unknown, at = "", out: string[] = []): 
 }
 
 /** Makes a stub of the worker's CSBridge entrypoint for one caller; worker.ts sets it on the edge (under Bun there is none). */
-export const edge: { stub?: (props: unknown) => unknown } = {};
+export const edge: { stub?: (props: unknown) => object | undefined } = {};
 
 /** The caller a binding answers as: where to call back, with which token, what that token may use, and the address the MCP call came from (its calls count against it). */
 export interface CSProps { origin: string; auth: string; scope?: string; ip?: string }
@@ -161,7 +161,7 @@ export async function answer(tools: Tool[], run: (t: Tool, args: ToolArgs) => Pr
 export const toolArgs = (v: unknown): ToolArgs => (isRecord(v) ? v : {});
 
 /** Run `code` over `tools` as the caller (`run` makes each call), in a Worker of its own. */
-export function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: ToolArgs) => Promise<ToolAnswer>, input?: unknown, edge?: unknown): Promise<Ran> {
+export function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: ToolArgs) => Promise<ToolAnswer>, input?: unknown, edge?: object): Promise<Ran> {
   // On the edge the binding is a stub of the worker's own CSBridge entrypoint (a plain object can't be an env binding there);
   // under Bun, where the local loader runs the program in-process, an object will do.
   return runProgram(loader, code, {

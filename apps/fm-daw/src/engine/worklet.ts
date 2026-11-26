@@ -12,6 +12,7 @@ import { Squash } from "./squash.ts";
 import { TRACKS, NPARAMS, P } from "./params.ts";
 import { PluginRoute } from "./plugin-route.ts";
 import { InsertReturns } from "./insert-return.ts";
+import { Ducks } from "./duck.ts";
 import { TAKE_RATE, TakeCapture, TakeDeck } from "../take.ts";
 import { SOUND_FRAMES, gridBeatAt } from "../clock.ts";
 import { AmpInserts } from "../amp/insert.ts";
@@ -66,6 +67,9 @@ class FmProcessor extends AudioWorkletProcessor {
   private deck = new TakeDeck(TRACKS, sampleRate);
   private capture = new TakeCapture(sampleRate);
   private amps = new AmpInserts(TRACKS, sampleRate);
+  /** The sidechain on what the engine doesn't play (clips, plugins, players' lines): each track's gain a frame, from the engine's tap of the one it ducks under. */
+  private ducks = new Ducks(sampleRate);
+  private duck = (t: number) => this.ducks.gain(t);
   /** The input heard through the armed track's amp: off until the player turns it on. */
   private monitor = false;
   private armed = -1;
@@ -129,7 +133,8 @@ class FmProcessor extends AudioWorkletProcessor {
   private inserts = new Set<number>();
   /** What comes back from those effects (the fifth input, two channels a track): panned and sent here, under the master. */
   private returns = new InsertReturns();
-  private returnStrip = { gain: () => this.master, pan: (t: number) => this.strip.pan(t), send: (t: number) => this.strip.send(t) };
+  // a web plugin track's return ducks here; a web effect's FM track was ducked in the engine, before its tap
+  private returnStrip = { gain: () => this.master, pan: (t: number) => this.strip.pan(t), send: (t: number) => this.strip.send(t), duck: (t: number) => (this.plugins.has(t) ? this.ducks.gain(t) : undefined) };
   /** A plugin track's Shape on its return (#5641), as the bounce's plugin route plays it (an FM voice's is in the engine, before its tap). */
   private returnEq: (TsEq | null)[] = Array.from({ length: TRACKS }, () => null);
   private shaped = { dry: new Float64Array(256), l: new Float32Array(128), r: new Float32Array(128) };
@@ -196,7 +201,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "latency": this.outLatency = m.seconds; this.setLatency(); break;
       case "on": s.liveOn(m.track, m.midi, m.vel, m.rec ?? true); break;
       case "off": s.liveOff(m.track, m.midi); break;
-      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.plugins.allOff(); this.space.reset(); this.squash.reset(); this.eq.reset(); this.sendDelay?.reset(); break;
+      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.ducks.reset(); this.plugins.allOff(); this.space.reset(); this.squash.reset(); this.eq.reset(); this.sendDelay?.reset(); break;
       case "bend": s.liveBend(m.track, m.semis); break;
       case "repeat": s.setRepeat(m.beats); break;
       case "move": s.move(m.track, m.i, m.v, m.was); break;
@@ -256,6 +261,7 @@ class FmProcessor extends AudioWorkletProcessor {
     gain: (t: number) => this.fader(t) * this.master,
     pan: (t: number) => this.params[t * NPARAMS + P.PAN],
     send: (t: number) => this.params[t * NPARAMS + P.SEND],
+    duck: this.duck,
   };
 
   /** Each plugin track down its strip into the mix and the Space send, then asks the host for what comes next. */
@@ -298,10 +304,13 @@ class FmProcessor extends AudioWorkletProcessor {
     if (this.far.length < frames) this.far = new Float32Array(frames);
     for (const r of this.remotes.values()) {
       if ((r.track >= 0 && (this.muted[r.track] || this.amps.has(r.track)))) continue;
-      const id = this.deskOf.get(r.peer), strip = id === undefined ? undefined : this.deskIn.get(id);
-      if (strip) { r.line.mix(strip, frames, beat0, bpf, this.master); this.deskFed = true; continue; }
+      const id = this.deskOf.get(r.peer), strip = id === undefined ? undefined : this.deskIn.get(id), duck = this.ducks.gain(r.track);
+      if (strip && !duck) { r.line.mix(strip, frames, beat0, bpf, this.master); this.deskFed = true; continue; }
       this.far.fill(0, 0, frames);
       r.line.mix(this.far, frames, beat0, bpf, this.master);
+      // a player on a track that ducks under another dips with it, onto their channel or straight in
+      if (duck) for (let f = 0; f < frames; f++) this.far[f] *= duck[f];
+      if (strip) { for (let f = 0; f < frames; f++) strip[f] += this.far[f]; this.deskFed = true; continue; }
       for (let f = 0; f < frames; f++) { this.buf[f * 2] += this.far[f]; this.buf[f * 2 + 1] += this.far[f]; }
     }
   }
@@ -404,7 +413,11 @@ class FmProcessor extends AudioWorkletProcessor {
   /** A track out of the engine's sum: through its amp, or out to its web effect. */
   private tapped(t: number) { return this.amps.has(t) || this.inserts.has(t); }
   /** A track's tap in the engine: out of the sum, a copy while its Shape is open, or none. */
-  private tapOf(t: number): Tap { return this.tapped(t) || (t === this.listenTrack ? "listen" : false); }
+  private tapOf(t: number): Tap { return this.tapped(t) || (t === this.listenTrack || this.ducks.source(t) ? "listen" : false); }
+  /** What each track ducks under, as its params are now (a lane may move them): a track something ducks under gets a copy tapped. */
+  private syncDucks() {
+    if (this.ducks.set((t, i) => this.params[t * NPARAMS + i])) for (let t = 0; t < TRACKS; t++) this.engine.setTap(t, this.tapOf(t));
+  }
 
   /** Which channel's sound goes to the third output (src/ui/audio.ts `heard`). */
   private listen(at: ShapeAt | null) {
@@ -513,11 +526,13 @@ class FmProcessor extends AudioWorkletProcessor {
       const pos = this.seq.pos, playing = this.seq.playing, abs0 = this.seq.abs;
       const bpf = (this.seq.bpm / 60 / sampleRate) * this.seq.rate;
       // with no amp or web effect on any track, and no track's Shape open, no taps: every track stays in the engine's sum
-      const taps = this.amps.any || this.inserts.size || this.listenTrack >= 0 ? this.taps : undefined;
+      this.syncDucks();
+      const taps = this.amps.any || this.inserts.size || this.listenTrack >= 0 || this.ducks.any ? this.taps : undefined;
       this.seq.process(this.buf, frames, this.send, taps, this.rig ? this.send2 : undefined);
+      if (taps && this.ducks.any) this.ducks.run(taps, frames);
       const hear = this.monitor && this.armed >= 0 && this.amps.has(this.armed) ? { track: this.armed, input: this.downmix(inputs[0], frames) } : undefined;
       this.blockBeat = abs0; this.blockBpf = bpf;
-      this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined);
+      this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined, this.duck);
       this.mixRemote(frames, abs0, bpf);
       this.tap = inputs[2]?.length ? inputs[2] : null;
       this.heard.fill(0, 0, frames);

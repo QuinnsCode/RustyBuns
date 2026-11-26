@@ -136,15 +136,20 @@ export function officeTriage(
   };
 }
 
-/** What watchStalls needs of a floor's workers (the office's WorkerManager): their rows, and typing a prompt into one, or waking it with one. */
+/** What watchStalls needs of a floor's workers (the office's WorkerManager): their rows, raw keys into one's terminal,
+ * and typing a prompt into one, or waking it with one. */
 export interface StallFloor {
   id: string;
   workers?: {
     list(): { id: string; name: string; worktree?: { path?: string }; pr?: unknown }[];
+    write?(id: string, data: string, by?: string): void;
     prompt(id: string, text: string, by?: string): string | undefined;
     resume?(id: string, text: string): string | undefined;
   };
 }
+
+/** How long after the Escape that interrupts a hung turn the carry-on prompt is typed: Claude Code needs a moment to drop the request. */
+export const INTERRUPT_MS = 1500;
 
 /** The office worker a session is, by its worktree's folder name (.agent-office/worktrees/<name>). */
 export function workerOf(c: Context, floors: Iterable<StallFloor>) {
@@ -154,15 +159,23 @@ export function workerOf(c: Context, floors: Iterable<StallFloor>) {
   return undefined;
 }
 
-/** One stall, acted on: a worker is told to carry on (woken with it if it stopped); any other session is named for a person. */
-export function carryOn(s: Stall, floors: Iterable<StallFloor>, toast: (floor: StallFloor | undefined, message: string) => void) {
+/** One stall, acted on: a worker is told to carry on (woken with it if it stopped); any other session is named for a person.
+ * A hung turn in a live process is interrupted first (Escape into its terminal, #4311): typed on its own, the prompt would
+ * only queue behind the request that never returns. `later` runs the prompt once the interrupt has landed. */
+export function carryOn(s: Stall, floors: Iterable<StallFloor>, toast: (floor: StallFloor | undefined, message: string) => void,
+  later: (f: () => void) => void = (f) => void setTimeout(f, INTERRUPT_MS)) {
   const found = workerOf(s, floors);
   if (!found?.floor.workers) return toast(undefined, `${s.message} Nothing in the office types into that session: look at it.`);
   const { floor, w } = found, workers = found.floor.workers;
   if (s.kind === "quiet" && w.pr) return; // a worker with a PR linked is waiting on it, not owing work (#4306)
-  let err = workers.prompt(w.id, CARRY_ON, "the office");
-  if (err === "Worker is not running" && workers.resume) err = workers.resume(w.id, CARRY_ON);
-  toast(floor, err ? `${s.message} Telling ${w.name} to carry on failed: ${err}` : `${s.message} Told ${w.name} to carry on.`);
+  const tell = (how: string) => {
+    let err = workers.prompt(w.id, CARRY_ON, "the office");
+    if (err === "Worker is not running" && workers.resume) [err, how] = [workers.resume(w.id, CARRY_ON), "Woke"];
+    toast(floor, err ? `${s.message} Telling ${w.name} to carry on failed: ${err}` : `${s.message} ${how} ${w.name} to carry on.`);
+  };
+  if (s.kind !== "hung" || !workers.write) return tell("Told");
+  workers.write(w.id, "\x1b", "the office"); // a dead process has no terminal: the write is dropped and the prompt below wakes it
+  later(() => tell("Interrupted the hung request and told"));
 }
 
 /** Every `everyMs`, Dexter's stall watch over the live sessions (#4306): each new stall acted on once (carryOn). The office starts it once. */
