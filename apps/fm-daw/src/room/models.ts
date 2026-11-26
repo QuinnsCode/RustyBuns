@@ -5,7 +5,9 @@
 // pedal wall and the sound wall's case and modules (each panel labelled as its drill template is) are drawn here. Each model is built at its STUDIO_GEAR size, its own frame as room.ts has it (bottom
 // centre at the origin, front +z), and the jack rings and knob caps go where room.ts aims.
 import * as THREE from "three";
-import { gear, gearLook, type GearLook, stompbox } from "@rustybuns/models/gear";
+import { GEAR_SIZES, gear, gearLook, type GearId, type GearLook, stompbox } from "@rustybuns/models/gear";
+
+const isModel = (id: string | undefined): id is GearId => !!id && Object.hasOwn(GEAR_SIZES, id);
 import type { Face, GearDef, Vec3 } from "./room.ts";
 import { PEDAL_WALL, RACK } from "./room.ts";
 import { CASE } from "./frame.ts";
@@ -253,8 +255,9 @@ export function gearModel(g: GearDef): GearModel {
   } else if (g.kind === "desk") {
     desk(group, w, h, d);
   } else if (g.kind === "pa") {
-    // the setup lesson's small PA: Sound Guy Simulator's own boxes (a condenser's body stands in for the vocal mic)
-    group.add(shared(gear(g.pa === "mic-dynamic" ? "mic-condenser" : g.pa === "mixer-small" ? "mixer-small" : "top-12-powered"), g.size));
+    // the setup lessons' PA and amp rack: Sound Guy Simulator's own boxes (a condenser's body stands in for the vocal mic)
+    const id = g.pa === "mic-dynamic" ? "mic-condenser" : g.pa;
+    group.add(shared(gear(isModel(id) ? id : "top-12-powered"), g.size));
   } else {
     // the shared guitar, stood on its end
     group.add(shared(gear("guitar"), g.size));
