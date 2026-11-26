@@ -103,7 +103,7 @@ describe("mervin-live", () => {
     ] });
     const stage = { pr: 7, head: "h", base: "b", ci: "fail" as const, failing: ["typecheck", "apps", "lint"], files: [] };
     const board = { main: "m", at: "", stages: [stage], written: [], skipped: [], clashes: [] };
-    expect(rowOf(stage, board, new Map(), undefined, main).ester!.map((v) => [v.test, v.owner, v.prs])).toEqual([
+    expect(rowOf(stage, board, new Map(), undefined, undefined, main).ester!.map((v) => [v.test, v.owner, v.prs])).toEqual([
       ["typecheck", "main", undefined], ["apps", "wait", undefined], ["lint", "own", [7]],
     ]);
     expect(mainChecksOf("not json").size).toBe(0);
