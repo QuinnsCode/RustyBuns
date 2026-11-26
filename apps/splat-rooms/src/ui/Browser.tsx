@@ -105,7 +105,8 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
         <div className="hud bezel">
           <label className="chk"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> all boxes</label>
           <button className="mini" onClick={() => viewer.current?.frameRoom()}>frame room</button>
-          <span className="dim small">drag orbit · shift-drag pan · wheel zoom · click to select · F frames the room</span>
+          <span className="dim small hud-hint">drag orbit · shift-drag pan · wheel zoom · click to select · F frames the room</span>
+          <span className="dim small hud-hint-short">drag · tap to select</span>
         </div>
         {status && <div className="status">{status}</div>}
         {selObj && (

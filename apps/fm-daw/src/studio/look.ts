@@ -456,10 +456,10 @@ function ground(renderer: THREE.WebGLRenderer, scene: THREE.Scene, group: THREE.
   const cam = new THREE.OrthographicCamera(-w / 2, w / 2, d / 2, -d / 2, 0.01, reach + 0.02);
   cam.position.y = -0.02; // just under the floor, so a box standing on it is seen by its underside, not clipped
   cam.rotation.x = Math.PI / 2; // looking up from the floor, so the undersides of what stands on it are what it sees
-  // black, its alpha how near the floor it is, falling off as a square so only what's close casts much
+  // black, its alpha how near the floor it is, falling off as k^1.5 (round 13: a square left the shade under stands and legs thin)
   const depth = new THREE.MeshDepthMaterial({ side: THREE.DoubleSide });
   depth.onBeforeCompile = (s) => {
-    s.fragmentShader = s.fragmentShader.replace("gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );", "float k = 1.0 - fragCoordZ; gl_FragColor = vec4( vec3( 0.0 ), k * k );");
+    s.fragmentShader = s.fragmentShader.replace("gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );", "float k = 1.0 - fragCoordZ; gl_FragColor = vec4( vec3( 0.0 ), pow( k, 1.5 ) );");
   };
   const was = { target: renderer.getRenderTarget(), alpha: renderer.getClearAlpha(), color: renderer.getClearColor(new THREE.Color()), bg: scene.background, over: scene.overrideMaterial, shadows: renderer.shadowMap.autoUpdate };
   // the glass casts nothing, and what lies flat on the floor (the floor, a rug) is the floor
@@ -493,7 +493,7 @@ function ground(renderer: THREE.WebGLRenderer, scene: THREE.Scene, group: THREE.
   for (const o of hidden) o.visible = true;
   quad.dispose(); depth.dispose(); b.dispose();
   // the tight line is dark; the wide shade is lighter, since the downlights and the bounce still reach under things
-  for (const [rt, opacity] of [[tight, 1], [a, 0.95]] as const) {
+  for (const [rt, opacity] of [[tight, 1], [a, 1]] as const) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shade(rt.texture, opacity));
     m.rotation.x = -Math.PI / 2; m.scale.y = -1; m.position.y = 0.002; m.name = "ground";
     group.add(m);
@@ -749,7 +749,14 @@ function windows(def: StudioDef, group: THREE.Group) {
   const sheenMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xdfe9f0).multiplyScalar(0.12), map: sheen, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   const edgeGlass = new THREE.MeshStandardMaterial({ color: "#5f8f7c", roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55 });
   // black, so it adds only what it reflects; the room's own environment (baked in dress()) and the cans' highlights
-  glassFace ??= new THREE.MeshPhysicalMaterial({ color: "#000", roughness: 0.04, metalness: 0, specularIntensity: 0.3, envMapIntensity: 8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  glassFace ??= (() => {
+    const m = new THREE.MeshPhysicalMaterial({ color: "#000", roughness: 0.04, metalness: 0, specularIntensity: 0.3, envMapIntensity: 8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    // a can mirrored in the pane came back past the bloom's threshold and, through the camera's blur, as a big halo over
+    // the kit (round 13): what each pane adds stops well under the threshold (the panes add up where they overlap)
+    m.onBeforeCompile = (s) => { s.fragmentShader = s.fragmentShader.replace("#include <opaque_fragment>", "#include <opaque_fragment>\ngl_FragColor.rgb = min(gl_FragColor.rgb, vec3(0.3));"); };
+    m.customProgramCacheKey = () => "glass-face-capped";
+    return m;
+  })();
   const seam = new THREE.MeshStandardMaterial({ color: "#a9b3ae", roughness: 0.3, metalness: 0, transparent: true, opacity: 0.18 });
   for (const wl of def.walls) {
     if (!wl.glass) continue;
@@ -1329,7 +1336,10 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   shadeGlow ??= canvasTex(64, (g) => {
     for (let y = 0; y < 64; y++) { const t = Math.abs(y / 63 - 0.5) * 2, k = 0.55 + 0.45 * t * t; g.fillStyle = `rgb(${Math.round(255 * k)},${Math.round(236 * k)},${Math.round(206 * k)})`; g.fillRect(0, y, 64, 1); }
   }, true);
-  const shadeMat = new THREE.MeshStandardMaterial({ color: "#8f7150", emissive: "#ff9e4a", emissiveMap: shadeGlow, emissiveIntensity: 0.6, roughness: 0.95, side: THREE.DoubleSide });
+  // unlit (round 13): the bulb's own lights sit 20 cm inside it, lit the cloth past the bloom's threshold and threw a
+  // halo round the lamp no lens makes. The cloth glows by its map alone, bright but under the bloom, and the lights
+  // inside light only the room.
+  const shadeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color("#ffb87a").multiplyScalar(1.3), map: shadeGlow, side: THREE.DoubleSide });
   const pole = surface("metal", "#2a2724");
   for (const [x, z] of practicals(def)) {
     const lamp = new THREE.Group(); lamp.name = "floor-lamp"; lamp.position.set(x, 0, z);
@@ -1408,6 +1418,12 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       o.userData.looked = true;
       const glow = typeof o.userData.glow === "number" ? o.userData.glow : 0;
       const mat = o.material;
+      // a lamp's shade (glowing and open, so seen from both sides) is unlit (round 13): the bulb's light 13 cm inside it lit
+      // the cloth past the bloom's threshold, a halo round the lamp no lens makes. It glows by its own colour, under the bloom.
+      if (glow > 0 && mat instanceof THREE.MeshStandardMaterial && mat.side === THREE.DoubleSide) {
+        o.material = new THREE.MeshBasicMaterial({ color: mat.color.clone().multiplyScalar(1 + 1.2 * glow), map: mat.map, side: THREE.DoubleSide });
+        return;
+      }
       if (glow > 0 && mat instanceof THREE.MeshStandardMaterial) {
         o.material = mat.clone();
         if (o.material instanceof THREE.MeshStandardMaterial) { if (mat.emissive.getHex() === 0) o.material.emissive.copy(mat.color); /* a screen is dark glass lit by its own colour: keep it */ o.material.emissiveIntensity = 2 * glow; o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; } // a lit bulb is solid light, even one made of glass
