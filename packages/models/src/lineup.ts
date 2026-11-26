@@ -9,7 +9,8 @@
 //   Target 7/10, scored as other climbs are (the last score plus half a fresh judge's gain).
 // - Ids, jacks and grabs stay, so Load In and Qollab Studio keep working. A size changes only to the product's
 //   published dimensions: put them in `published` (gear.test.ts holds GEAR_SIZES to them) and say so in the PR.
-// The order: Funktion-One, Turbosound, Void, then QSC and JBL. A row with no `product` is still to pick, in its issue.
+// The order: Funktion-One, Turbosound, Void, then QSC and JBL. The three boxes none of those make were the owner's
+// picks (#5961, 2026-11-25): Danley for the synergy horn and the tapped horn, Marshall for the guitar cab.
 import type { GearId } from "./gear.ts";
 
 export type Maker = "Funktion-One" | "Turbosound" | "Void" | "QSC" | "JBL" | "Danley" | "Marshall";
@@ -47,5 +48,5 @@ export const LINEUP: Partial<Record<GearId, LineupRow>> = {
   "line-array-box": { maker: "JBL", product: "VTX A12", published: [1.118, 0.33, 0.495], issue: 5960 },
   "synergy-horn": { maker: "Danley", product: "SH50", published: [0.711, 0.711, 0.647], issue: 5961 },
   "tapped-horn-18": { maker: "Danley", product: "TH118", published: [0.572, 1.016, 0.724], issue: 5961 }, // the drawing's 28.5 in deep (the sheet's metric line says 734)
-  "cab-4x12": { maker: null, issue: 5961 },
+  "cab-4x12": { maker: "Marshall", product: "1960A", published: [0.77, 0.755, 0.365], issue: 5961 },
 };

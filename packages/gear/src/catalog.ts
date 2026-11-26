@@ -121,8 +121,8 @@ const list: Gear[] = [
   {
     id: "cab-4x12",
     what: "guitar speaker cabinet",
-    size: box(0.76, 0.76, 0.36),
-    kg: 40,
+    size: box(0.77, 0.755, 0.365),
+    kg: 36.5,
     jacks: { "speaker-in": 1 },
     speaker: { sensitivity: 100, maxSpl: 124, ratedWatts: 240, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 80, highCut: 5000, rearLoss: 12 },
   },

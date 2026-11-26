@@ -37,7 +37,7 @@ export const GEAR_SIZES = {
   "sub-18": [0.52, 0.638, 0.784],
   "wedge-12": [0.515, 0.375, 0.453],
   "amp-head": [0.7, 0.27, 0.25],
-  "cab-4x12": [0.76, 0.76, 0.36],
+  "cab-4x12": [0.77, 0.755, 0.365],
   "amp-rack-4u": [0.6, 0.4, 0.65],
   "mixer-small": [0.4, 0.1, 0.35],
   "generator-7kva": [0.7, 0.6, 0.55],
@@ -489,16 +489,63 @@ function ampHead(): Build {
   return b;
 }
 
-function cab4x12(): Build {
-  const [w, h, d] = GEAR_SIZES["cab-4x12"], b: Build = { pieces: [], marks: [] };
-  b.pieces.push(box("tolex", [w, h - 0.015, d], [0, 0.015 + (h - 0.015) / 2, 0], { bevel: 0.02 }));
-  b.pieces.push(box("grille", [w - 0.07, h - 0.08, 0.01], [0, h / 2, d / 2 - 0.003], { bevel: 0.003 }));
-  for (const x of [-1, 1]) b.pieces.push(...handle("rubber", [x * w / 2, h * 0.62, 0], x > 0 ? "x" : "-x", 0.16, 0.012));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.015, 0.015, "y", [x * (w / 2 - 0.05), 0.0075, z * (d / 2 - 0.05)], 6));
-  b.pieces.push(box("panel", [0.12, 0.08, 0.008], [0, h * 0.3, -d / 2 - 0.002]));
-  jacks(b, ["speaker-in"], "back", [0, h * 0.3, -d / 2 - 0.006], [0, 0, 0]);
-  mark(b, "grab", [w / 2 + 0.012, h * 0.62, 0], [1, 0, 0]);
-  return b;
+/** The guitar cab's angled front: it stands upright to `bend` (metres up) and leans back `setback` by the top. */
+export const CAB_SLANT = { bend: 0.378, setback: 0.1 } as const;
+
+/**
+ * The guitar cab, as the Marshall 1960A angled 4x12 is published (770 wide, 755 tall, 365 deep, 36.5 kg, four 12"
+ * behind the cloth) and photographed by its maker (front, three-quarter, back), piece by piece, no maker's name or
+ * model plate. The sheet gives only the outside, so the front's bend (half way up) and its 100 mm lean back by the
+ * top are read off the three-quarter photo. Metres from the cab's centre line, floor and front.
+ * - cabinet: the tolex-covered box in its side profile, upright below the bend, leaning back above it
+ * - grille: the black basketweave cloth in two panels (upright, leaning), inside a 35 mm tolex frame at the sides
+ *   and 30 at the top and bottom
+ * - piping: the white piping round the cloth's edge
+ * - corners: the eight black corner protectors, a brass screw in each front one
+ * - hardware: a recessed dish handle in each side, two strip handles on the top, the back's screws and its jack
+ *   plate high in the middle
+ */
+function cab1960aPieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["cab-4x12"], P = pieceBuild, cab = P(), grille = P(), piping = P(), corners = P(), hw = P();
+  const f = d / 2, zb = -d / 2, { bend: yb, setback: s } = CAB_SLANT, lean = Math.atan2(s, h - yb), fx = mm(35), fy = mm(30);
+  // the front's z at height y, and a point `out` proud of it
+  const zf = (y: number) => (y <= yb ? f : f - (s * (y - yb)) / (h - yb));
+  const front = (x: number, y: number, out: number): THREE.Vector3Tuple => [x, y + (y > yb ? out * Math.sin(lean) : 0), zf(y) + out * (y > yb ? Math.cos(lean) : 1)];
+
+  cab.pieces.push(prism("tolex", [[f, 0], [f, yb], [f - s, h], [zb, h], [zb, 0]], w, 0, 0.01));
+
+  // the cloth: upright from the frame's bottom to the bend, then leaning to the frame's top
+  const gw = w - 2 * fx, upH = (h - fy - yb) / Math.cos(lean);
+  grille.pieces.push(box("grille", [gw, yb - fy, 0.004], [0, (yb + fy) / 2, f + 0.001]));
+  grille.pieces.push(box("grille", [gw, upH, 0.004], front(0, (yb + h - fy) / 2, 0.001), { rot: [-lean, 0, 0] }));
+  // the piping round the cloth's edge, and the plain plate low on the left where the real one carries its model name
+  const ring: [number, number][] = [[-gw / 2, fy], [gw / 2, fy], [gw / 2, yb], [gw / 2, h - fy], [-gw / 2, h - fy], [-gw / 2, yb]];
+  ring.forEach(([x, y], i) => { const [x2, y2] = ring[(i + 1) % ring.length]!; piping.pieces.push(rod("ink", front(x, y, 0.004), front(x2, y2, 0.004), 0.0032, 6)); });
+  piping.pieces.push(box("plug", [mm(60), mm(22), 0.003], front(-gw / 2 + mm(45), fy + mm(26), 0.004), { bevel: 0.001 }));
+
+  // corners: a protector over each of the eight corners, 3 mm proud, the front ones with a brass screw
+  const c = mm(50), k = c / 2 - mm(3);
+  for (const x of [-1, 1]) for (const [y, z] of [[k, f - k], [h - k, f - s - k], [k, zb + k], [h - k, zb + k]]) {
+    corners.pieces.push(box("knob", [c, c, c], [x * (w / 2 - k), y, z], { bevel: mm(6) }));
+    if (z > 0) corners.pieces.push(disc("plug", mm(5), 0.002, "z", [x * (w / 2 - mm(14)), y, zf(y) + mm(3) + 0.001], 8));
+  }
+
+  // hardware: the side dish handles (a black dish, the bar across it), the top's strip handles, the back's screws and plate
+  for (const s2 of [-1, 1]) {
+    const x = s2 * (w / 2 + 0.0015), y = h * 0.62, z = mm(-20);
+    hw.pieces.push(box("knob", [0.003, mm(190), mm(120)], [x, y, z], { bevel: 0.001 }));
+    hw.pieces.push(box("cavity", [0.004, mm(150), mm(85)], [s2 * (w / 2 + 0.002), y, z], { bevel: 0.001 }));
+    hw.pieces.push(rod("metal", [s2 * (w / 2 - 0.004), y - mm(60), z], [s2 * (w / 2 - 0.004), y + mm(60), z], 0.009, 8));
+  }
+  for (const x of [-1, 1]) hw.pieces.push(box("knob", [mm(45), 0.004, mm(140)], [x * mm(300), h + 0.001, (zb + f - s) / 2], { bevel: 0.001 }));
+  for (const x of [-1, -0.5, 0, 0.5, 1]) for (const y of [0.04, h - 0.04]) hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [x * (w / 2 - 0.04), y, zb - 0.001], 8));
+  for (const x of [-1, 1]) for (const y of [0.25, 0.5, 0.75]) hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [x * (w / 2 - 0.04), y * h, zb - 0.001], 8));
+  hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [0, h * 0.4, zb - 0.001], 8));
+  hw.pieces.push(box("knob", [mm(120), mm(75), 0.008], [0, h * 0.83, zb - 0.004], { bevel: 0.002 }));
+  for (const x of [-1, 1]) for (const y of [-1, 1]) hw.pieces.push(disc("plug", mm(4), 0.002, "z", [x * mm(48), h * 0.83 + y * mm(26), zb - 0.009], 8));
+  jacks(hw, ["speaker-in"], "back", [0, h * 0.83, zb - 0.008], [0, 0, 0]);
+  mark(hw, "grab", [w / 2 + 0.012, h * 0.62, mm(-20)], [1, 0, 0]);
+  return { cabinet: cab, grille, piping, corners, hardware: hw };
 }
 
 /** A rolling rack: a case on casters with its front lid off, two power amps in the rails. */
@@ -2665,7 +2712,7 @@ const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
   "top-15-passive": jrx215Pieces, "wedge-12-passive": prx412mPieces, "line-array-box": a12Pieces,
   "top-12-powered": () => k2Pieces("top-12-powered"), "fill-8-powered": () => k2Pieces("fill-8-powered"), "sub-18": ks118Pieces, "wedge-12": cp12Pieces, "line-array-10": la108Pieces,
-  "synergy-horn": sh50Pieces, "tapped-horn-18": th118Pieces,
+  "synergy-horn": sh50Pieces, "tapped-horn-18": th118Pieces, "cab-4x12": cab1960aPieces,
 };
 
 /** A box built piece by piece, every piece merged into one build. */
@@ -2681,7 +2728,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "sub-18": whole("sub-18"),
   "wedge-12": whole("wedge-12"),
   "amp-head": ampHead,
-  "cab-4x12": cab4x12,
+  "cab-4x12": whole("cab-4x12"),
   "amp-rack-4u": ampRack,
   "mixer-small": mixer,
   "generator-7kva": generator,

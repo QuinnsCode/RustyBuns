@@ -5,7 +5,7 @@
 // View only: the sim never reads it. The models (@rustybuns/models/gear) have no UVs, so the grille and cloth are
 // drawn in the shader from each mesh's own coordinates.
 import * as THREE from "three";
-import type { GearLook } from "@rustybuns/models/gear";
+import { CAB_SLANT, type GearLook } from "@rustybuns/models/gear";
 
 /** A grille's weave, drawn in its own metres: "steel" is round holes on a 7 mm grid, "cloth" a basket weave. */
 function patterned(m: THREE.MeshStandardMaterial, kind: "steel" | "cloth") {
@@ -171,8 +171,11 @@ function marks(id: string, size: number[], stencil?: string): Mark[] {
       const lo = 0.08, backTop = -d / 2 + 0.07, dz = backTop - d / 2, dy = h - lo, len = Math.hypot(dz, dy), t = 0.2, out = 0.012;
       return [{ text: "RUSTY", style: "badge", width: 0.2, at: [w * 0.25, lo + dy * t + (-dz / len) * out, d / 2 + dz * t + (dy / len) * out], tilt: Math.atan2(-dz, dy) - Math.PI / 2 }];
     }
-    case "cab-4x12":
-      return [{ text: "Rusty", style: "script", width: 0.3, at: [-w * 0.24, h * 0.84, d / 2 + 0.002] }];
+    case "cab-4x12": {
+      // on the front's upper half, which leans back above the bend
+      const { bend, setback } = CAB_SLANT, lean = Math.atan2(setback, h - bend), y = h * 0.8, out = 0.006;
+      return [{ text: "Rusty", style: "script", width: 0.3, at: [-w * 0.24, y + out * Math.sin(lean), d / 2 - (setback * (y - bend)) / (h - bend) + out * Math.cos(lean)], tilt: -lean }];
+    }
     case "amp-head":
       return [{ text: "Rusty", style: "script", width: 0.24, at: [0, h * 0.62, (d - 0.03) / 2 + 0.002] }];
     case "amp-rack-4u":
