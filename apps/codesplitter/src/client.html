@@ -1517,7 +1517,7 @@ async function wireAudit(el, path, showRepo) {
   el.innerHTML = rows.length ? `<div class="list">${rows.map((a) => `<div class="row" style="flex-wrap:nowrap;font-size:12px" title="${esc(new Date(a.at).toLocaleString())}">
       <span style="flex:1;min-width:0">${a.actor ? `<a href="#/u/${esc(a.actor)}">@${esc(a.actor)}</a>` : "someone"} ${esc(AUDIT_SAID[a.action] ?? a.action)}
       ${[a.target, a.detail].filter(Boolean).map((x) => `<code>${esc(x)}</code>`).join(" ")}${showRepo && a.repo ? ` <span class="muted">in ${esc(a.owner)}/${esc(a.repo)}</span>` : ""}
-      <span class="muted">· ${esc(a.via)}${a.country ? ` · ${esc(a.country)}` : ""}</span></span><span class="when">${ago(a.at)}</span></div>`).join("")}</div>`
+      <span class="muted">· ${esc(a.via)}${a.token ? ` <code>${esc(a.token)}</code>` : ""}${a.country ? ` · ${esc(a.country)}` : ""}</span></span><span class="when">${ago(a.at)}</span></div>`).join("")}</div>`
     : '<span class="muted" style="font-size:12px">Nothing yet.</span>';
 }
 const app = $("#app");
@@ -5203,7 +5203,7 @@ const views = {
     const live = only ? null : await api(`/repos/${owner}/${repo}/board`).catch(() => null);
     const board = live?.prs.length ? `<div class="muted" data-board style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${(() => { const r = live.rounds; return r?.of ? ` <span title="Recorded with this repo's consent: files that landed exactly as Mervin wrote them, over ${r.rounds} merge rounds${r.ci ? `. CI took ${Math.round(r.ci.median / 60)}m a PR (longest ${Math.round(r.ci.max / 60)}m)` : ""}${r.needless?.length ? `. Held for nothing: ${r.needless.map((n) => `#${n}`).join(" ")}` : ""}${r.kinds?.length ? `. Wrong most: ${esc(r.kinds.map((k) => `${k.kind} ${k.wrong}`).join(", "))}` : ""}${r.wrongs.length ? `. Wrong: ${esc(r.wrongs.map((w) => w.path).join(", "))}` : ""}">${icon("target")}${Math.round(100 * r.exact / r.of)}% hit (${r.exact} of ${r.of})</span>` : ""; })()}${live.prs.map((p) => {
       const stuck = !live.mergeable.includes(p.pr);
-      return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), tierNote(p.tiers), p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
+      return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stall ? `no checks: ${p.stall}` : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), tierNote(p.tiers), p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(p.stall ? "triangle-alert" : stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
     }).join("")}</div>` : "";
     noBranches[`${owner}/${repo}`] = !open.length && !board && !only ? r : null;
     mervinHint(owner, repo);
@@ -5315,7 +5315,8 @@ const views = {
         if (pick) (resolve[f.path] ??= {})[c.line] = pick;
       }
       try {
-        await api(`${base}/${encodeURIComponent(b.name)}/merge`, { resolve, build_ok: !!read(b.name)?.checked });
+        // The branch as this page showed it (#5701): an edit someone made since lands nothing, and the review is read again.
+        await api(`${base}/${encodeURIComponent(b.name)}/merge`, { resolve, build_ok: !!read(b.name)?.checked, hash: b.hash });
         mergeRefused.delete(clashId(owner, repo, b.name));
         if (branchPicked(owner, repo) === b.name) pickBranch(owner, repo, null);
         toast(`Merged ${b.name}. Commit the files to push them to git.`);

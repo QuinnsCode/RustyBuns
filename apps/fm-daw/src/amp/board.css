@@ -47,3 +47,7 @@
 @media (max-width: 560px) { .board-hint { display: none; } .socket-menu { min-width: 0; width: calc(100% - 16px); } }
 /* A page without a global [hidden] rule (the gear room) still hides these. */
 .board-view[hidden], .socket-menu[hidden] { display: none; }
+/* Q Builder's scope: a trace takes a click, and the net it sits on lights up. */
+.board-view.nets .board-art[data-side="schematic"] .sch-trace { cursor: crosshair; }
+.board-view.nets .board-art .sch-trace:hover .sch-trace-path { stroke: #9ee6c0; }
+.board-art .probed .sch-trace-path { stroke: #38bdf8; stroke-width: 3px; filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.8)); }

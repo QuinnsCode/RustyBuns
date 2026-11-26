@@ -74,7 +74,7 @@ function cells(c: CanvasRenderingContext2D, r: R, cols: number, rows: number) {
 export function face(c: CanvasRenderingContext2D, id: string, b: R) {
   c.save();
   c.fillStyle = BODY; c.strokeStyle = EDGE; c.lineWidth = 1.5;
-  if (id !== "sculpted-3way") { c.beginPath(); c.roundRect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h) * 0.04); c.fill(); c.stroke(); }
+  if (!id.startsWith("sculpted-3way")) { c.beginPath(); c.roundRect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h) * 0.04); c.fill(); c.stroke(); }
   const m = inset(b, 0.07);
   switch (id) {
     case "horn-sub-21": cells(c, m, 2, 2); break;
@@ -94,8 +94,9 @@ export function face(c: CanvasRenderingContext2D, id: string, b: R) {
     case "line-array-10": case "line-array-box":
       fill(c, m, "#141418"); cone(c, b.x + b.w * 0.2, b.y + b.h / 2, b.h * 0.3); cone(c, b.x + b.w * 0.8, b.y + b.h / 2, b.h * 0.3);
       flare(c, part(b, 0.36, 0.12, 0.28, 0.76), part(b, 0.46, 0.4, 0.08, 0.2), GOLD); break;
-    case "sculpted-3way": // three round horns, no box: the LF left, the MF right, the HF above between them (its drawing)
-      for (const [x, y, s, col] of [[0.314, 0.599, 0.314, "#1a1a1f"], [0.823, 0.599, 0.175, "#1a1a1f"], [0.683, 0.194, 0.153, GOLD]] as const) {
+    case "sculpted-3way": case "sculpted-3way-lh": // three round horns, no box: the LF left, the MF right, the HF above between them (its drawing); the left-handed one mirrored
+      for (const [u, y, s, col] of [[0.314, 0.599, 0.314, "#1a1a1f"], [0.823, 0.599, 0.175, "#1a1a1f"], [0.683, 0.194, 0.153, GOLD]] as const) {
+        const x = id === "sculpted-3way-lh" ? 1 - u : u;
         c.fillStyle = BODY; c.beginPath(); c.arc(b.x + b.w * x, b.y + b.h * y, b.w * s, 0, Math.PI * 2); c.fill(); c.stroke();
         c.fillStyle = MOUTH; c.beginPath(); c.arc(b.x + b.w * x, b.y + b.h * y, b.w * s * 0.9, 0, Math.PI * 2); c.fill();
         c.fillStyle = col; c.beginPath(); c.arc(b.x + b.w * x, b.y + b.h * y, b.w * s * 0.3, 0, Math.PI * 2); c.fill();

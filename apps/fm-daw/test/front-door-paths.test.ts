@@ -23,7 +23,7 @@ const FIRST: Record<PathId, { ready: string; back: string }> = {
   instruments: { ready: "!!window.qdecks && qdecks.start().library.length >= 2", back: "#qs-back" },
   planner: { ready: "!!window.qrooms && !!qrooms.state()", back: "#qs-back" },
   amps: { ready: "!!window.qamp && !!qamp.state().amp", back: "#qs-way a[data-to=paths]" },
-  builder: { ready: "!!window.qamp && !!qamp.state().amp", back: "#qs-way a[data-to=paths]" },
+  builder: { ready: "!!window.qbuilder && !!qbuilder.state().probe", back: "#qs-way a[data-to=paths]" },
 };
 
 test.skipIf(!hasChrome)("each card opens on its first step and leads back", async () => {

@@ -1217,6 +1217,157 @@ function used(def: StudioDef, group: THREE.Group, taken: Record<Side, [number, n
 }
 
 /**
+ * Where the floor's clutter goes (strewn()): the free boards nearest `near`, on a 0.3 m grid, clear of every seat and
+ * instrument, the walls, the door's way in and what was already put down (`kept`, each a point and how far it reaches).
+ */
+export function freeFloor(def: StudioDef, near: [number, number], reach: number, kept: [number, number, number][]): [number, number] | null {
+  const { w, d } = def.size, clear = (x: number, z: number) => {
+    if (Math.abs(x) > w / 2 - 0.5 - reach || Math.abs(z) > d / 2 - 0.5 - reach || floorAt(def, x, z) > 0) return false;
+    if (Math.hypot(x - def.door.at[0], z - def.door.at[1]) < 0.5 + reach) return false;
+    if (def.walls.some((wl) => toSegment([x, z], wl.from, wl.to) < 0.4 + reach)) return false;
+    if (kept.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr + reach)) return false;
+    return def.spots.every((s) => {
+      const b = thingBox(s);
+      return Math.hypot(x - s.at[0], z - s.at[1]) > 0.75 + reach && Math.hypot(x - b.cx, z - b.cz) > Math.max(b.hw, b.hd) + 0.35 + reach;
+    });
+  };
+  let best: [number, number] | null = null, far = Infinity;
+  for (let x = -w / 2; x <= w / 2; x += 0.3) for (let z = -d / 2; z <= d / 2; z += 0.3) {
+    const dist = Math.hypot(x - near[0], z - near[1]);
+    if (dist < far && clear(x, z)) { far = dist; best = [x, z]; }
+  }
+  return best;
+}
+
+/**
+ * What a band leaves on the floor between the kit and the keys (round 15): a pedalboard with its patch leads and two
+ * instrument leads wandering off it, a guitar's hard case laid flat, and a vocal mic on a stand whose XLR runs down the
+ * pole and across the boards to its spare length coiled on the floor. A room with no kit or no keys keeps a clear floor.
+ */
+function strewn(def: StudioDef, group: THREE.Group) {
+  const { w, d } = def.size, drums = def.spots.find((s) => s.kind === "drums"), keys = def.spots.find((s) => s.kind === "keys");
+  if (w > 16 || d > 16 || !drums || !keys) return;
+  const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 41 + ch.charCodeAt(0)) | 0, 15));
+  // between the two players, a step behind the drummer's back (the way the band faces is toward the kit's front)
+  const back: [number, number] = [Math.sin(drums.yaw), Math.cos(drums.yaw)];
+  const near: [number, number] = [(drums.at[0] + keys.at[0]) / 2 + back[0] * 1.2, (drums.at[1] + keys.at[1]) / 2 + back[1] * 1.2];
+  const kept: [number, number, number][] = [];
+  const put = (reach: number, off: [number, number]) => {
+    const p = freeFloor(def, [near[0] + off[0], near[1] + off[1]], reach, kept);
+    if (p) kept.push([p[0], p[1], reach]);
+    return p;
+  };
+  const rubber = surface("rubber", "#0e0f11"), chrome = surface("chrome", "#c8cacd"), black = surface("metal", "#17181a");
+  const stuff = new THREE.Group(); stuff.name = "strewn";
+  const lead = (pts: THREE.Vector3[], r = 0.0036) => stuff.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 10, r, 6), rubber));
+  /** A lead lying on the boards from (x, z) toward `to`, kicked about on the way: `n` bends, the last one short of it. */
+  const wander = (x: number, z: number, to: [number, number], n: number, sway: number) => {
+    const pts: THREE.Vector3[] = [];
+    const nx = -(to[1] - z), nz = to[0] - x, nl = Math.hypot(nx, nz) || 1;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, s = Math.sin(t * Math.PI) * (rnd() - 0.5) * sway;
+      pts.push(new THREE.Vector3(x + (to[0] - x) * t + (nx / nl) * s, 0.0042, z + (to[1] - z) * t + (nz / nl) * s));
+    }
+    return pts;
+  };
+  /** A jack plug lying at the end of a lead, pointing along it. */
+  const plug = (p: THREE.Vector3, from: THREE.Vector3, xlr = false) => {
+    const g = new THREE.Group(); g.position.copy(p); g.rotation.y = Math.atan2(p.x - from.x, p.z - from.z);
+    const boot = new THREE.Mesh(new THREE.CylinderGeometry(xlr ? 0.011 : 0.007, 0.004, 0.035, 10).rotateX(Math.PI / 2), xlr ? chrome : black); boot.position.set(0, xlr ? 0.011 : 0.007, 0.017);
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(xlr ? 0.0105 : 0.0032, xlr ? 0.0105 : 0.0032, xlr ? 0.03 : 0.03, 10).rotateX(Math.PI / 2), chrome); tip.position.set(0, xlr ? 0.011 : 0.007, xlr ? 0.05 : 0.048);
+    g.add(boot, tip); stuff.add(g);
+  };
+
+  // the pedalboard: a sloped black frame, felt on top, six pedals in a row patched one to the next, the power under it
+  const pb = put(0.4, [0.3, 0.15]);
+  if (pb) {
+    const g = new THREE.Group(); g.position.set(pb[0], 0, pb[1]); g.rotation.y = Math.atan2(-back[0], -back[1]) + Math.PI + (rnd() - 0.5) * 0.5;
+    const deck = new THREE.Group(); deck.rotation.x = 0.1; deck.position.y = 0.035; g.add(deck);
+    deck.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.028, 0.32), black), 0, 0, 0), at(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.004, 0.3), surface("cloth", "#1f2023")), 0, 0.016, 0));
+    g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.05, 0.02), black), 0, 0.025, -0.15), at(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.09), surface("metal", "#2c2e31")), 0.1, 0.018, -0.1));
+    const colors = ["#cfc6ae", "#34483a", "#9ea3a8", "#2a3a55", "#a8582e", "#5a2828"];
+    const knob = surface("plastic", "#141416"), led = new THREE.MeshStandardMaterial({ color: "#200", emissive: "#ff3a2a", emissiveIntensity: 2.2 });
+    const jacks: [number, number][] = [];
+    for (let i = 0; i < 6; i++) {
+      const big = i === 0, pw = big ? 0.09 : 0.072, x = -0.25 + i * 0.1 + (big ? -0.008 : 0), z = (i % 2 ? 0.035 : -0.025) + (rnd() - 0.5) * 0.02;
+      const p = new THREE.Group(); p.position.set(x, 0.018, z); p.rotation.y = (rnd() - 0.5) * 0.06; deck.add(p);
+      p.add(at(new THREE.Mesh(new RoundedBoxGeometry(pw, 0.04, 0.12, 2, 0.006), surface("metal", colors[i]!)), 0, 0.02, 0));
+      for (const [kx, kz] of big ? [[0, -0.03]] : [[-0.02, -0.035], [0.02, -0.035], [0, -0.008]]) p.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0085, 0.013, 12), knob), kx!, 0.046, kz!));
+      p.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0065, 0.012, 10), chrome), 0, 0.046, 0.032), at(new THREE.Mesh(new THREE.SphereGeometry(0.003, 6, 4), led), 0, 0.041, 0.012));
+      jacks.push([x, z]);
+    }
+    // patch leads between neighbours, arcing over the gap at the pedals' sides
+    for (let i = 0; i < 5; i++) {
+      const [ax, az] = jacks[i]!, [bx, bz] = jacks[i + 1]!, y = 0.054;
+      const pts = [new THREE.Vector3(ax + 0.035, y, az - 0.04), new THREE.Vector3((ax + bx) / 2, y + 0.022, (az + bz) / 2 - 0.05), new THREE.Vector3(bx - 0.035, y, bz - 0.04)];
+      deck.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.0028, 5), rubber));
+    }
+    stuff.add(flatten(g));
+    // the leads in and out: off the board's ends and across the boards, one to the keys' side, one loose with its plug
+    g.updateMatrixWorld(true);
+    const end = (sx: number) => new THREE.Vector3(sx, 0.012, 0).applyMatrix4(g.matrixWorld);
+    const a = end(0.33), b = end(-0.33);
+    const inLead = wander(a.x, a.z, [keys.at[0] + (rnd() - 0.5) * 0.4, keys.at[1] + back[1] * 0.3], 7, 0.5);
+    inLead[0]!.y = 0.03; lead(inLead);
+    const loose: [number, number] = [b.x + (b.x - a.x) * 1.4 + (rnd() - 0.5) * 0.3, b.z + (b.z - a.z) * 1.4 + (rnd() - 0.5) * 0.3];
+    const outLead = wander(b.x, b.z, loose, 5, 0.6);
+    outLead[0]!.y = 0.03; lead(outLead);
+    plug(outLead.at(-1)!, outLead.at(-2)!);
+  }
+
+  // a guitar's hard case laid flat: a moulded outline (two bouts, a waist, the neck, the head) in black tolex, latches down one side
+  const gc = put(0.45, [-0.6, 0.25]);
+  if (gc) {
+    const bout = (y: number, cy: number, r: number) => (Math.abs(y - cy) < r ? Math.sqrt(r * r - (y - cy) ** 2) : 0);
+    const half = (y: number) => Math.max(bout(y, 0, 0.215), bout(y, 0.37, 0.17), y > 0.08 && y < 0.3 ? 0.158 : 0, y > 0.4 && y < 0.98 ? 0.07 : 0, y >= 0.98 ? 0.088 : 0);
+    const shape = new THREE.Shape(), ys: number[] = [];
+    for (let y = -0.213; y <= 1.1; y += 0.02) ys.push(y);
+    ys.forEach((y, i) => (i ? shape.lineTo(half(y), y) : shape.moveTo(half(y), y)));
+    for (const y of [...ys].reverse()) shape.lineTo(-half(y), y);
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.022, bevelSize: 0.018, bevelSegments: 3, curveSegments: 4 });
+    geo.rotateX(-Math.PI / 2); geo.translate(0, 0.022, 0);
+    const g = new THREE.Group(); g.position.set(gc[0], 0, gc[1]); g.rotation.y = Math.PI / 2 + 0.35 + (rnd() - 0.5) * 0.4;
+    g.add(new THREE.Mesh(metreUV(geo), surface("tolex", "#111214")));
+    // the seam where lid meets base, and the latches and handle on the treble side
+    const seam = new THREE.ExtrudeGeometry(shape, { depth: 0.006, bevelEnabled: true, bevelThickness: 0, bevelSize: 0.021, bevelSegments: 1, curveSegments: 4 });
+    seam.rotateX(-Math.PI / 2); g.add(at(new THREE.Mesh(seam, surface("rubber", "#050506")), 0, 0.072, 0));
+    for (const y of [-0.05, 0.25, 0.62]) {
+      const l = at(new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.04), chrome), half(y) + 0.036, 0.075, -y);
+      g.add(l);
+    }
+    const handle = at(new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.01, 6, 14, Math.PI), rubber), 0.21, 0.075, -0.2); handle.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+    g.add(handle);
+    stuff.add(flatten(g));
+  }
+
+  // a vocal mic on a straight stand, its XLR clipped down the pole, across the boards, and the spare coiled on the floor
+  const ms = put(0.3, [0.6, -0.55]), coil = ms && put(0.3, [-0.1, -0.45]);
+  if (ms && coil) {
+    const g = new THREE.Group(); g.position.set(ms[0], 0, ms[1]); g.rotation.y = Math.atan2(keys.at[0] - ms[0], keys.at[1] - ms[1]);
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.135, 0.018, 24), black), 0, 0.009, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.95, 8), black), 0, 0.48, 0));
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.05, 10), rubber), 0, 0.95, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.42, 8), chrome), 0, 1.18, 0));
+    const mic = new THREE.Group(); mic.position.set(0, 1.4, 0.02); mic.rotation.x = 1.1; g.add(mic);
+    mic.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.014, 0.13, 14), black), 0, -0.02, 0), at(new THREE.Mesh(new THREE.SphereGeometry(0.027, 14, 10), surface("grille", "#9a9ca0")), 0, 0.07, 0));
+    stuff.add(flatten(g));
+    // down the pole on the side away from the player, off the base and out to the coil
+    const t = Math.atan2(keys.at[0] - ms[0], keys.at[1] - ms[1]), ox = -Math.sin(t) * 0.018, oz = -Math.cos(t) * 0.018;
+    const run = wander(ms[0] + ox * 7, ms[1] + oz * 7, coil, 6, 0.7);
+    lead([new THREE.Vector3(ms[0] + ox, 1.36, ms[1] + oz), new THREE.Vector3(ms[0] + ox, 0.9, ms[1] + oz), new THREE.Vector3(ms[0] + ox, 0.3, ms[1] + oz), new THREE.Vector3(ms[0] + ox * 4, 0.03, ms[1] + oz * 4), ...run], 0.0042);
+    // the coil: five loose loops that don't sit on each other quite, the end with its plug lying out of it
+    const pts: THREE.Vector3[] = [], turns = 5;
+    for (let i = 0; i <= turns * 18; i++) {
+      const a = (i / 18) * Math.PI * 2, r = 0.17 + Math.sin(a * 0.6) * 0.025 + (i / (turns * 18)) * 0.03;
+      pts.push(new THREE.Vector3(coil[0] + Math.cos(a) * r + (i / 90) * 0.05, 0.005 + (i / (turns * 18)) * 0.03, coil[1] + Math.sin(a) * r * 0.92));
+    }
+    lead(pts, 0.0042);
+    const last = pts.at(-1)!, out = new THREE.Vector3(last.x + 0.25, 0.0045, last.z + 0.12);
+    lead([last, new THREE.Vector3((last.x + out.x) / 2, 0.012, (last.z + out.z) / 2 + 0.04), out], 0.0042);
+    plug(out, last, true);
+  }
+  group.add(flatten(stuff));
+}
+
+/**
  * Where the ceiling's downlights go in a room `w` by `d` metres: a grid of cans, at most three each way. In a room
  * of a normal size the outer ones sit about a metre off the walls, as an installer sets them, so each throws a scallop
  * of light down its wall; a hall too big for nine cans keeps them evenly spread instead.
@@ -1283,6 +1434,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   windows(def, group);
   lived(def, group);
   used(def, group, taken);
+  strewn(def, group);
   scene.add(new THREE.HemisphereLight(0xf4efe8, 0x4a3a2e, 0.42)); // the bounce that reaches the tops of the walls
 
   // downlights in the ceiling (cans()), each a warm spot with a soft edge; on high the ones nearest the middle throw shadows

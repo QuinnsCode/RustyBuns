@@ -40,6 +40,9 @@ export default defineConfig({
     REPORT_LIMIT: { type: "ratelimit", namespaceId: "8204", simple: { limit: 5, period: 60 } },
     // Where eq_execute programs run (src/codemode.ts): a Worker with no network that calls the tools through a bridge.
     LOADER: { type: "worker_loader" },
+    // Browser Run (Chromium): a studio game's page run once when it is sent for review, for the `runs` and `answers` checks
+    // (src/browse.ts). Workers Paid includes 10 browser hours a month, then $0.09 an hour; a check is under 20 s.
+    BROWSER: { type: "browser" },
     BETTER_AUTH_SECRET: { type: "secret", op: "op://eqosys/better-auth/password" },
     BETTER_AUTH_URL: { type: "var", value: "https://eqosys.qntbr.com" },
     SUPER_ADMIN_EMAIL: { type: "secret", op: "op://eqosys/admin/password", optional: true },

@@ -6,7 +6,7 @@
 //
 //   bun run issue 2952
 //   bun run issue 2952 3046 --full
-import { arr, check, num, obj, str } from "../packages/util/src/guard.ts";
+import { arr, check, num, obj, opt, str } from "../packages/util/src/guard.ts";
 
 const text = (max: number) => str(max, { min: 0, dflt: "" });
 const who = obj({ login: text(100) });
@@ -15,7 +15,7 @@ export const Issue = obj({
   labels: arr(obj({ name: text(100) }), 100, { drop: true }),
   assignees: arr(who, 100, { drop: true }),
   closedByPullRequestsReferences: arr(obj({ number: num(1, 1e9) }), 100, { drop: true }),
-  comments: arr(obj({ author: who, createdAt: text(40), body: text(200_000) }), 1000, { drop: true }),
+  comments: arr(obj({ author: who, createdAt: text(40), body: text(200_000), authorAssociation: opt(text(40)) }), 1000, { drop: true }),
 });
 export type Issue = ReturnType<typeof Issue>;
 export const FIELDS = "number,title,state,url,createdAt,updatedAt,body,author,labels,assignees,closedByPullRequestsReferences,comments";

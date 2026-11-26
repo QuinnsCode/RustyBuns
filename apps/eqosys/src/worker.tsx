@@ -169,7 +169,7 @@ export default {
     const conf = e();
     ctx.waitUntil(lapseSeats(conf, async (studio, user) => {
       const sid = conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-      if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: user })}`));
+      if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: user, sid })}`));
     }));
   },
 };

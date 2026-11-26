@@ -9,6 +9,7 @@ import { FACTION } from "../factions/engine.ts";
 import { BELIEVERS } from "../believers.ts";
 import { POCKETS } from "../pockets.ts";
 import { HUNTS } from "../world/hunts.ts";
+import { POIS } from "../world/poi.ts";
 import { KINDS, Story, WANTS, type Kind, type Placed, type Story as StoryT } from "./model.ts";
 import { gameArcs, PLAYABLE, regionOf, roadOrder } from "./infer.ts";
 
@@ -88,6 +89,11 @@ export function checkStory(json: unknown): Report {
     }
     if (b.kind === "unlock" && !b.opens) problems.push(`beat ${b.id}: an unlock beat says what it opens`);
     if (b.status === "built" && !b.game && b.at.startsWith("region:")) problems.push(`beat ${b.id}: built, so pin it to the place that plays it (not a whole region)`);
+    if (b.tape && b.status === "built") {
+      const m = /^section:(\d+):(\d+)$/.exec(b.at), t = b.tape;
+      if (!m) problems.push(`beat ${b.id}: a tape is found on a trail, so pin it to a section (section:n:k)`);
+      else if (!(POIS.get(Number(m[1])) ?? []).some((p) => p.k === Number(m[2]) && p.play?.title === t.title)) problems.push(`beat ${b.id}: no unmarked tape is left in ${b.at} to play it`);
+    }
     if (/\bwizard/i.test(b.text + b.title)) problems.push(`beat ${b.id}: there is no wizard; the Book is the voice`);
   }
 

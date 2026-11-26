@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { arr, check, num, obj, opt, rec, str, type Guard, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
-import { blockerMark } from "../apps/agent-office/ester/blockers.ts";
+import { blockerMark, inert } from "../apps/agent-office/ester/blockers.ts";
 import { appDir, appDirs, appOf as appOfPath } from "./app-dirs.ts";
 
 const REPO = "QuinnsCode/RustyBuns", WORKFLOWS = ["apps.yml", "typecheck.yml"];
@@ -431,10 +431,10 @@ export function issuesFor(blockers: Blocker[], existing: Issue[], cap = 5): { ti
     if (existing.some((i) => i.body.includes(dayMark) || (i.state === "OPEN" && i.body.includes(mark)))) continue;
     if (out.length >= cap) break;
     out.push({
-      title: `CI: ${b.test.replace(/\s+/g, " ").slice(0, 120)} failed on ${b.prs.length} PRs on ${b.day}`,
+      title: `CI: ${inert(b.test).replace(/\s+/g, " ").slice(0, 120)} failed on ${b.prs.length} PRs on ${b.day}`,
       body: [
         `The same test failed on ${b.prs.length} pull requests on ${b.day} (${b.first.slice(11, 16)} to ${b.last.slice(11, 16)} UTC), ${b.untouched} of them PRs that changed nothing it tests. That is main broken or a flaky test, and every open PR in its reach stays red until it is fixed.`,
-        "", "```", b.test.slice(0, 1000), "```", "",
+        "", "```", inert(b.test).slice(0, 1000), "```", "",
         `PRs: ${b.prs.map((p) => (typeof p === "number" ? `#${p}` : `\`${p}\``)).join(", ")}`,
         `Runs: ${b.runs.slice(0, 10).map((r) => `https://github.com/${REPO}/actions/runs/${r}`).join(" ")}`,
         "", "Fix it on main (or skip the flake and file it), then close this. Opened by `bun scripts/ci-report.ts --file` (ci-blockers.yml).",

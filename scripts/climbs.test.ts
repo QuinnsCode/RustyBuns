@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { board, hire, isClimb, movedTo, next, score, target, type Climb } from "./climbs.ts";
+import { board, hire, isClimb, movedTo, next, score, target, teamOnly, type Climb } from "./climbs.ts";
+
+test("a stranger's comment moves no score and takes no climb off the board", () => {
+  const rows = ["OWNER", "NONE", "CONTRIBUTOR", "COLLABORATOR", ""].map((authorAssociation) => ({ authorAssociation }));
+  expect(teamOnly(rows).map((r) => r.authorAssociation)).toEqual(["OWNER", "COLLABORATOR"]);
+});
 
 test("a round's Score line sets the score and target; without one the last x/10 is a guess", () => {
   const rows: [string, string[], number | null, number | null, boolean][] = [

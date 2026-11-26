@@ -17,6 +17,8 @@ export interface BoardRow {
   owner?: string;
   /** For a PR touching package.json, bun.lock or packages/: the apps and PRs it reaches. */
   blast?: { apps: string[]; prs: number[] };
+  /** Its head has had no typecheck or apps check for 10 minutes (#5838): why, in plain words, and what to do. */
+  stall?: string;
 }
 
 /** How often each tier's files landed exactly as the sandbox wrote them, after real merges (`--score`). */
@@ -128,6 +130,7 @@ export function whyNot(row: BoardRow, rows: BoardRow[]): string[] {
   for (const c of row.clashes) if (c.main) why.push(`clashes with main on ${c.kind} ${c.key}`);
   if (row.ci === "fail") why.push(`its own CI is red${row.failing?.length ? ` (${row.failing.join(", ")})` : ""}`);
   if (row.ci === "pending") why.push("its CI is still running");
+  if (row.stall) why.push(`no checks on its head: ${row.stall}`);
   if (row.tiers.card) why.push(`${row.tiers.card} file${row.tiers.card === 1 ? "" : "s"} Mervin asks about (cards)`);
   return why;
 }
@@ -212,5 +215,6 @@ export function parseRow(x: unknown): BoardRow | string {
     ...(Number.isInteger(r.stackedOn) && { stackedOn: r.stackedOn }),
     ...(typeof r.owner === "string" && { owner: r.owner.slice(0, 100) }),
     ...(r.blast && { blast: r.blast }),
+    ...(typeof r.stall === "string" && r.stall && { stall: r.stall.slice(0, 200) }),
   };
 }
