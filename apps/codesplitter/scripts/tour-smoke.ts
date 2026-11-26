@@ -19,7 +19,9 @@ const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i 
 const CHROME = arg("chrome") ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const call = await local({ GH_CLI: "off" });
-if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();
+// Always build: an old dist/client served against new source fails in ways that look unrelated (#6166), and
+// build.ts reads too many files (src/, packages/util, packages/ui) for a timestamp check to catch them all.
+await Bun.$`bun run build.ts`.quiet();
 const shell = serve({ port: 0, assets: "dist/client", runWorkerFirst: ["/api"], reporter: { escaped: () => {} } as any });
 shell.mount(worker as any, call.env);
 
