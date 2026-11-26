@@ -1,7 +1,7 @@
 // The relay between an agent in a terminal and the page in a browser, with a fake page on the other end of the
 // socket: what an agent's HTTP and MCP calls get back, and what happens when no page is open.
 import { describe, expect, test } from "bun:test";
-import { linksFor, Relay } from "../src/relay.ts";
+import { fromPage, linksFor, Relay } from "../src/relay.ts";
 
 const links = linksFor("http://localhost:4799", "testroom0001");
 
@@ -59,4 +59,14 @@ describe("an agent over MCP", () => {
     expect(bad.result.isError).toBe(true);
     expect((await rpc("resources/list")).error.code).toBe(-32601);
   });
+});
+
+// Only a page this server served may hold a room: another site that learned the link can't take the agent's calls.
+test.each([
+  ["this site's page", "http://localhost:4799", true],
+  ["another site", "https://evil.example", false],
+  ["no Origin at all", null, false],
+])("the page socket from %s", (_, origin, ok) => {
+  const headers = new Headers(origin ? { origin } : {});
+  expect(fromPage(new Request("http://localhost:4799/api/r/testroom0001/socket", { headers }))).toBe(ok);
 });

@@ -104,7 +104,34 @@ const blockView = Def.fragment((h, b: Block) => {
   }
 });
 
-const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
+/** The picture at the top of the dock: agent, relay, this page, in a row. Each agent call sends a dot down the wires
+ *  (keyed by the call, so a new call starts it again), green when the page took it and red when it said no. */
+const how = Def.fragment((h, online: boolean, last: typeof Logged.Type | undefined) => {
+  const dot = (n: number) => last && h.i.class("pulse", `w${n}`, last.error !== null && "bad").key(`p${last.call}-${n}`).attr("aria-hidden", "true");
+  const node = (lit: unknown, name: string, does: string) => h.div.class("node", Boolean(lit) && "lit").children(h.b(name), h.span(does));
+  return h.section.class("how").attr("aria-label", "How it works").children(
+    h.div.class("flow", online && "on").children(
+      node(last, "Agent", "asks"),
+      h.div.class("wire").children(dot(1)),
+      node(online, "Relay", "carries"),
+      h.div.class("wire").children(dot(2)),
+      node(true, "Page", "checks"),
+    ),
+    h.ol.class("steps").children(
+      h.li("You tell your agent what page you want."),
+      h.li("Each change it makes travels through the relay to this tab."),
+      h.li("This page checks the change, shows it, and tells the agent how it went."),
+    ),
+    h.p.class("safe").children(
+      h.b("Is it safe? "),
+      "Your agent can only change what's on this page: words, colors, links and blocks. Each change is checked first, so a bad color or a link that isn't https is turned away. Nothing here can reach your computer or your files. ",
+      h.b("The link is the key: "),
+      "anyone who has it can edit this page, so give it only to your own agents.",
+    ),
+  );
+});
+
+const initials =(name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 
 export const ProfilePageNoDeps = Def.make({
   init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null }),
@@ -141,6 +168,7 @@ export const ProfilePageNoDeps = Def.make({
         ...page.blocks.map((b) => blockView(h, b)),
       ),
       h.aside.class("dock").children(
+        how(h, online, log.find((l) => l.call > 0)),
         h.h3("Connect your agent"),
         h.p.class("status", online && "on").attr("role", "status").children(online ? "Ready: any agent can reach this page now." : "Connecting to the relay…"),
         h.div.class("door").children(

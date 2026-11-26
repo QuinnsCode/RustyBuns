@@ -3,7 +3,7 @@
 // is the page's socket; /tools and /mcp are the agents' doors. `bun run deploy`.
 import { type RoomCtx, type RoomSocket, Sockets } from "@rustybuns/util/room";
 import { json } from "@rustybuns/util/http";
-import { linksFor, Relay } from "../relay.ts";
+import { fromPage, linksFor, Relay } from "../relay.ts";
 import { ROOM } from "../tools.ts";
 
 interface Stub { fetch(r: Request): Promise<Response> }
@@ -49,6 +49,7 @@ export class Room {
     if (!r) return json({ error: "not a room" }, 404);
     if (r.rest === "/socket") {
       if (req.headers.get("Upgrade") !== "websocket") return json({ error: "this is the page's socket" }, 426);
+      if (!fromPage(req)) return json({ error: "only this site's page may hold the room" }, 403);
       return this.sockets.upgrade({ at: Date.now() }).response;
     }
     return this.relay.http(req, r.rest, linksFor(url.origin, r.room));
