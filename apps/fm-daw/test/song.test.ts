@@ -59,7 +59,7 @@ test("automation follows the patterns: a filter sweep and a Shape move drawn in 
   let p = sanitize({ ...loop(), eq: flatEq().map((_, i) => (i === 0 ? { kind: "bell", f: 1000, g: 0, q: 0.707, slope: 12, on: true } : null)) })!;
   world.webSocketMessage(a, JSON.stringify({ t: "init", project: p }));
   const send = (op: unknown) => { const o = decodeOp(op)!; p = apply(p, o); world.webSocketMessage(a, JSON.stringify({ t: "op", op: o })); };
-  const sweep = (from: number, lo = 0.2, hi = 0.9) => [[from, lo], [from + 3, hi]];
+  const sweep = (from: number, lo = 0.2, hi = 0.9): [number, number][] => [[from, lo], [from + 3, hi]];
 
   send({ t: "auto", track: 0, lanes: [{ i: P.CUTOFF, pts: sweep(0) }] }); // a sweep on the loop, before song mode
   send({ t: "song", chain: [0, 1, 0] });                                  // it becomes A's: the new B has none
