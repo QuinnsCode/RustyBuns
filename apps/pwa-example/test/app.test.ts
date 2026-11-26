@@ -45,7 +45,7 @@ afterAll(() => { server?.stop(true); chrome?.stop(); });
 const state = () => tab.eval<State>("pocketDice.state()");
 /** Waits for `ok`, an expression over the page's state `s`, and hands back that state. */
 async function until(what: string, ok: string) {
-  await waitFor(tab, what, `(() => { const s = pocketDice.state(); return ${ok}; })()`, 15_000, "pocketDice.state()", 250);
+  await waitFor(tab, what, `Promise.resolve(pocketDice.state()).then((s) => ${ok})`, 15_000, "pocketDice.state()", 250);
   return state();
 }
 
