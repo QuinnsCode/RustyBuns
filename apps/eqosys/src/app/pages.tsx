@@ -53,7 +53,6 @@ export const MESSAGES: Record<string, string> = {
   sso: "Your company's sign-in didn't go through. Start again from here.",
   ssomail: "Your company's sign-in didn't say your email is verified, so it can't sign you in here.",
   ssodomain: "Your company signed you in with an email off its domain, so it can't sign you in here.",
-  ssotaken: "An account with that email was made another way. Sign in with it as usual.",
   ssoform: "Check the company sign-in: an https issuer that answers OpenID discovery, a client id, and the company's own mail domain (not public mail).",
   ssoclash: "Another studio already signs in that domain. If it's your company's, add the TXT record shown under Company sign-in to it, then save again.",
   ssoonly: "Your company signs that email in here. Use Sign in through your company.",
