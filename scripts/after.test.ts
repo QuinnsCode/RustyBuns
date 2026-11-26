@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Runs } from "./pr.ts";
+import { lineMerge } from "../apps/codesplitter/scripts/shadow.ts";
 import { type AfterPr, type Gh, type Head, NO_CHECKS, type PrState, KICK_MESSAGE, pass } from "./after.ts";
 
 setDefaultTimeout(30_000);
@@ -62,7 +63,7 @@ test.each(pushes)("a PR that says merge after #9 waits while #9 is open, then ge
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-// Main's conflicts a machine can settle are settled and pushed; a real one still stops for a person. The first two are
+// Main's conflicts Mervin's line merge settles are pushed; a real one still stops for a person. The first two are
 // #5997 (fm-daw README) and #5983 (GEAR_SIZES) from 2026-11-25.
 const A = "- **Live line:** everything in the room edits one groove.", NEW = "- **Takes:** record a loop and keep it.", B = "- **Private seshes:** set a room code.";
 const HIGH = '  "stack-mid-high": [0.6, 0.9, 0.5],', BASS = '  "stack-mid-bass": [0.75, 0.75, 0.85],';
@@ -94,18 +95,19 @@ test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want })
     const said: string[] = [];
     const gh: Gh = { open: () => [pr], state: () => "MERGED", comment: (_, t) => { said.push(t); }, setBody: (_, b) => { pr.body = b; }, head: () => { throw new Error("no head"); }, runs: () => [], closedBlockers: () => [] };
     const before = ok(origin, "rev-parse", "mine");
-    const out = pass(gh, (...a) => run(ci, ...a), { token: true, mergiraf: false });
+    const out = pass(gh, (...a) => run(ci, ...a), { token: true, lineMerge });
     if (want === null) {
       expect(out).toEqual([`#12 conflicts with main in ${file}: commented`]);
       expect(ok(origin, "rev-parse", "mine")).toBe(before);
       expect(pr.body).toStartWith("Main conflicts after #9");
+      expect(said[0]).toContain(`- \`${file}\`: Mervin left 1 card`);
       return;
     }
     expect(out).toEqual(["#12 merged main in and pushed (settled its conflicts)"]);
     expect(ok(origin, "show", `mine:${file}`)).toBe(want);
     expect(ok(origin, "rev-list", "--parents", "-1", "mine").trim().split(" ")).toHaveLength(3);
     expect(said).toHaveLength(1);
-    expect(said[0]).toContain(`- \`${file}\`: `);
+    expect(said[0]).toContain(`- \`${file}\``);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

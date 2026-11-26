@@ -2,10 +2,10 @@
 // the PR body when other open PRs change the same files. Each pass reads every open PR with that line; once every PR it
 // names has merged (or closed), it merges `main` into the branch and pushes, so the branch is current with what it
 // waited on and CI runs on the result. The line then reads `Merged main in after #12, #34`, so the next pass skips it.
-// When main doesn't merge clean, `settle` tries each conflicted file: mergiraf (when it's on PATH), then two line
-// rules (a Markdown bullet one side only grew, rows of an object or array each side changed apart). When every file
-// settles it commits, pushes and says in a comment which files and how. Otherwise (a card: a person must choose) it
-// pushes nothing, comments on the PR with the files and tags its author, and the line reads `Main conflicts after #12, #34`.
+// When git's merge of main conflicts, each conflicted file goes through Mervin's line merge (`lineMerge` in
+// apps/codesplitter/scripts/shadow.ts, loaded at run time since it needs the packages installed). When he settles every
+// file it commits, pushes and names them in a comment. Otherwise (a card: a person must choose) it pushes nothing,
+// comments on the PR with each file and Mervin's cards and tags its author, and the line reads `Main conflicts after #12, #34`.
 //
 //   bun scripts/after.ts [--dry]
 //
@@ -34,8 +34,7 @@
 // Issues closed more than UNBLOCK_DAYS ago are left alone. Merging then goes on in each PR's `Merge after` order as it
 // goes green, as before.
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { arr, bool, check, int, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
@@ -85,8 +84,8 @@ export const KICK_MESSAGE = "Start CI (after-bot push started no checks)";
 const MERGED_LINE = /^merged main in after #\d+/im;
 const flagMark = (sha: string) => `<!-- after:unchecked ${sha} -->`;
 
-/** `mergiraf: false` settles conflicts with the line-level rules alone (tests, so the answer doesn't hang on PATH). */
-export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; mergiraf?: boolean }
+/** `lineMerge`: Mervin's, which settles git's conflicts; without it every conflict goes to a person. */
+export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; lineMerge?: LineMerge | null }
 
 /** A `Merged main in after` PR whose head is still the bot's: has it CI, and if not, start it (token) or flag it once (no token). Null when the head is someone else's. */
 function ciCheck(gh: Gh, git: Git, pr: AfterPr, o: Required<PassOpts>): string | null {
@@ -137,107 +136,21 @@ export const marked = (body: string, to: string) => body.replace(LINE, (all) => 
 /** What a PR is told when the runner's push starts no checks (#5733). */
 export const NO_CHECKS = 'main is merged in, but this push starts no checks (#5733). Push one commit of your own on top: `git commit --allow-empty -m "Start CI" && git push`';
 
-/** A conflicted file settled without a person: its merged text and how it got there. */
-export interface Settled { text: string; how: string }
-
-const MARKER = /^(?:<{7}|\|{7}|={7}|>{7})(?: |$)/m;
-
 /**
- * Settles one file's merge conflict when a machine can: mergiraf's structural merge first (when it's on PATH and
- * `mergiraf` isn't false), then two line-level cases in `git merge-file --diff3`'s hunks. Markdown bullet hunks: a
- * bullet one side only grew (its text starts with the other's) keeps the longer, and a bullet only one side added is
- * kept. A TS/JS/JSON hunk of object or array rows where each side changed different rows keeps each side's own.
- * Null when any hunk is a real conflict (the same line changed two ways, a bullet one side dropped).
+ * Mervin's line merge of one file (`lineMerge` in apps/codesplitter/scripts/shadow.ts): clean with its text, or the
+ * cards he left. Passed in rather than imported, since it needs the repo's packages installed (the CLI loads it).
  */
-export function settle(path: string, base: string, ours: string, theirs: string, opts: { mergiraf?: boolean } = {}): Settled | null {
-  const dir = mkdtempSync(join(tmpdir(), "after-settle-"));
-  try {
-    const [b, o, t, m] = ["base", "ours", "theirs", "merged"].map((n) => join(dir, n)) as [string, string, string, string];
-    writeFileSync(b, base); writeFileSync(o, ours); writeFileSync(t, theirs);
-    if (opts.mergiraf !== false && Bun.which("mergiraf")) {
-      const r = Bun.spawnSync(["mergiraf", "merge", b, o, t, "-p", path, "-o", m], { stdout: "ignore", stderr: "ignore" });
-      if (r.exitCode === 0) {
-        const text = readFileSync(m, "utf8");
-        if (!MARKER.test(text)) return { text, how: "mergiraf's structural merge" };
-      }
-    }
-    const d = Bun.spawnSync(["git", "merge-file", "-p", "--diff3", "-L", "ours", "-L", "base", "-L", "theirs", o, b, t], { stdout: "pipe", stderr: "ignore" });
-    if (d.exitCode < 0 || d.exitCode > 127) return null;
-    const hunk = /\.md$/i.test(path) ? bullets : /\.(?:[cm]?[jt]sx?|jsonc?)$/i.test(path) ? rows : null;
-    if (!hunk) return null;
-    const out: string[] = [], lines = d.stdout.toString().split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i] !== "<<<<<<< ours") { out.push(lines[i]!); continue; }
-      const side: string[][] = [[], [], []];
-      let k = 0;
-      for (i++; i < lines.length && lines[i] !== ">>>>>>> theirs"; i++) {
-        if (lines[i] === "||||||| base" || lines[i] === "=======") k++;
-        else side[k]!.push(lines[i]!);
-      }
-      const done = hunk(side[0]!, side[1]!, side[2]!);
-      if (!done) return null;
-      out.push(...done);
-    }
-    const text = out.join("\n");
-    if (MARKER.test(text)) return null;
-    return { text, how: hunk === rows ? "kept each side's own row" : "kept the longer bullet and each side's new ones" };
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-}
+export type LineMerge = (path: string, base: string, main: string, branch: string, attributes?: string) =>
+  { clean: boolean; text: string | null; conflicts: { lint?: string }[] };
 
-const ROW = /^\s*["']?[\w$-]+["']?\s*:|,\s*(?:\/\/.*)?$/;
-
-/** Same rows on all three sides, each changed by at most one: each side's own change. */
-function rows(o: string[], b: string[], t: string[]): string[] | null {
-  if (o.length !== b.length || t.length !== b.length) return null;
-  const out: string[] = [];
-  for (let i = 0; i < b.length; i++) {
-    const [x, y, z] = [o[i]!, b[i]!, t[i]!];
-    const line = x === y ? z : z === y || z === x ? x : null;
-    if (line === null || (line !== y && !ROW.test(line))) return null;
-    out.push(line);
-  }
-  return out;
-}
-
-const BULLET = /^\s*[-*] \S/;
-/** `a` is `b`, or `b` with more after it. */
-const grows = (a: string, b: string) => a === b || (a.startsWith(b) && /^\s/.test(a.slice(b.length)));
-const kin = (a: string, b: string) => grows(a, b) || grows(b, a);
-
-/** Whole bullets on every side: grown bullets keep the longer, new ones stay; null when a side dropped or rewrote one. */
-function bullets(o: string[], b: string[], t: string[]): string[] | null {
-  if (![...o, ...b, ...t].every((l) => BULLET.test(l))) return null;
-  const pair = new Map<number, number>(), taken = new Set<number>();
-  for (let i = 0; i < o.length; i++) {
-    const js = t.flatMap((x, j) => (kin(o[i]!, x) ? [j] : []));
-    if (js.length > 1 || (js.length && taken.has(js[0]!))) return null;
-    if (js.length) { pair.set(i, js[0]!); taken.add(js[0]!); }
-  }
-  // Every base bullet must live on in both sides, as one pair; a side's lone bullet must be new.
-  for (const x of b) {
-    const i = o.findIndex((y) => kin(y, x));
-    if (i < 0 || !pair.has(i) || !kin(t[pair.get(i)!]!, x)) return null;
-  }
-  for (let i = 0; i < o.length; i++) if (!pair.has(i) && b.some((x) => kin(o[i]!, x))) return null;
-  for (let j = 0; j < t.length; j++) if (!taken.has(j) && b.some((x) => kin(t[j]!, x))) return null;
-  const out: string[] = [];
-  let j = 0;
-  for (let i = 0; i < o.length; i++) {
-    const p = pair.get(i);
-    if (p === undefined) { out.push(o[i]!); continue; }
-    if (p < j) return null; // the two sides moved bullets past each other
-    for (; j < p; j++) if (!taken.has(j)) out.push(t[j]!);
-    const was = b.find((x) => kin(o[i]!, x)), x = o[i]!, y = t[p]!;
-    out.push(was === x ? y : was === y ? x : x.length >= y.length ? x : y);
-    j = p + 1;
-  }
-  for (; j < t.length; j++) if (!taken.has(j)) out.push(t[j]!);
-  return out;
-}
+/** What one conflicted file came to: Mervin's clean text, or why a person must choose in it. */
+type Settled = { f: string; text: string } | { f: string; text: null; why: string };
+/** The file a card line (`` `path`: why ``) is about. */
+const fileOf = (line: string) => line.slice(1, line.indexOf("`", 1));
 
 /** One pass over the open PRs; answers one line per PR it looked at. `token`: pushes run CI (AFTER_TOKEN is set). */
 export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
-  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, mergiraf: true, ...opts }, { dry, token } = o;
+  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, lineMerge: null, ...opts }, { dry, token } = o;
   const out: string[] = [];
   const must = (...a: string[]) => {
     const r = git(...a);
@@ -266,9 +179,9 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
         gh.setBody(pr.number, marked(pr.body, "Merged main in after"));
         pushed(pr, settled, settled ? " (settled its conflicts)" : "");
       } else {
-        gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch. A person must choose in:\n\n${files.map((f) => `- \`${f}\``).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`);
+        gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch, not even through Mervin's line merge. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`);
         gh.setBody(pr.number, marked(pr.body, "Main conflicts after"));
-        out.push(`#${pr.number} conflicts with main in ${files.join(", ")}: commented`);
+        out.push(`#${pr.number} conflicts with main in ${files.map(fileOf).join(", ")}: commented`);
       }
     } catch (e) { out.push(`#${pr.number} failed: ${e instanceof Error ? e.message : String(e)}`); }
   }
@@ -290,8 +203,8 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
         const { conflicts: files, settled } = mergeMain(pr, `the fix for #${issue.number}`);
         if (!files.length) pushed(pr, `${unblockMark(issue.number)}\nThe test that held this PR red (${b!.test}) is fixed on main (#${issue.number} closed), so main is merged in and its checks rerun on the fix.${settled ? `\n\n${settled}` : ""}`, ` after blocker #${issue.number}`);
         else {
-          gh.comment(pr.number, `${unblockMark(issue.number)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue.number}), but main no longer merges clean into this branch. A person must choose in:\n\n${files.map((f) => `- \`${f}\``).join("\n")}\n\nMerge main in (or rebase) and push.`);
-          out.push(`#${n} conflicts with main in ${files.join(", ")} after blocker #${issue.number}: commented`);
+          gh.comment(pr.number, `${unblockMark(issue.number)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue.number}), but main no longer merges clean into this branch, not even through Mervin's line merge. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push.`);
+          out.push(`#${n} conflicts with main in ${files.map(fileOf).join(", ")} after blocker #${issue.number}: commented`);
         }
       } catch (e) { out.push(`#${n} failed: ${e instanceof Error ? e.message : String(e)}`); }
     }
@@ -310,20 +223,29 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
       return { conflicts: [], settled: "" };
     }
     const files = must("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
-    const stage = (n: number, f: string) => { const r = git("show", `:${n}:${f}`); return r.code === 0 ? r.out : null; };
-    const done = files.map((f) => {
-      const [b, mine, main] = [1, 2, 3].map((n) => stage(n, f));
-      return { f, s: b === null || mine === null || main === null ? null : settle(f, b, mine, main, { mergiraf: o.mergiraf }) };
-    });
-    if (done.some((d) => !d.s)) {
+    const done = files.map((f) => mervin(f));
+    if (done.some((d) => d.text === null)) {
       git("merge", "--abort");
-      return { conflicts: files, settled: "" };
+      return { conflicts: done.map((d) => d.text === null ? `\`${d.f}\`: ${d.why}` : `\`${d.f}\`: Mervin settled it`), settled: "" };
     }
     const root = must("rev-parse", "--show-toplevel").trim();
-    for (const { f, s } of done) { writeFileSync(join(root, f), s!.text); must("add", "--", f); }
+    for (const { f, text } of done) { writeFileSync(join(root, f), text!); must("add", "--", f); }
     must("commit", "-q", "--no-edit");
     must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
-    return { conflicts: [], settled: `Main conflicted with this branch, and the runner (scripts/after.ts) settled it itself:\n\n${done.map(({ f, s }) => `- \`${f}\`: ${s!.how}`).join("\n")}\n\nLook these over; a real conflict (one line changed two ways) still stops for a person.` };
+    return { conflicts: [], settled: `git's merge of main conflicted, and Mervin's line merge (apps/codesplitter/scripts/shadow.ts) settled every file:\n\n${files.map((f) => `- \`${f}\``).join("\n")}` };
+  }
+  /** One conflicted file through Mervin's line merge, from the index's three stages (1 base, 2 the branch, 3 main). */
+  function mervin(f: string): Settled {
+    if (!o.lineMerge) return { f, text: null, why: "Mervin's line merge didn't load (are the packages installed?)" };
+    const stage = (n: number) => { const r = git("show", `:${n}:${f}`); return r.code === 0 ? r.out : null; };
+    const [base, branch, main] = [stage(1), stage(2), stage(3)];
+    if (base === null || branch === null || main === null) return { f, text: null, why: "one side added or deleted it" };
+    if ([base, branch, main].some((s) => s.includes("\0"))) return { f, text: null, why: "a binary file" };
+    const attrs = git("show", "origin/main:.gitattributes");
+    const r = o.lineMerge(f, base, main, branch, attrs.code === 0 ? attrs.out : "");
+    if (r.clean && r.text !== null) return { f, text: r.text };
+    const lint = r.conflicts.flatMap((c) => c.lint ? [c.lint] : []);
+    return { f, text: null, why: `Mervin left ${r.conflicts.length} card${r.conflicts.length === 1 ? "" : "s"}${lint.length ? ` (${[...new Set(lint)].join("; ")})` : ""}` };
   }
   /** Says a push happened: with the token its checks run; without, one comment with the fix (and `note`, if any). */
   function pushed(pr: AfterPr, note: string, tail = "") {
@@ -367,7 +289,11 @@ export const ghCli: Gh = {
 if (import.meta.main) {
   help(import.meta.path);
   const git: Git = (...a) => sh(["git", ...a]);
-  const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true" };
+  // Mervin's line merge needs the repo's packages; a checkout without them still runs, sending every conflict to a person.
+  let lineMerge: LineMerge | null = null;
+  try { lineMerge = (await import("../apps/codesplitter/scripts/shadow.ts")).lineMerge; }
+  catch (e) { console.log(`::warning::Mervin's line merge didn't load, so conflicts go to a person: ${e instanceof Error ? e.message : String(e)}`); }
+  const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true", lineMerge };
   const lines = pass(ghCli, git, opts);
   console.log(lines.length ? lines.join("\n") : "no open PR says merge after, and no fixed blocker holds one");
   // A pass that pushed looks again a few minutes on, so a head that got no CI is started or flagged now, not next hour.
