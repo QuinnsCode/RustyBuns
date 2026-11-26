@@ -3,7 +3,7 @@
 // cable, switch the speaker on. Null once there's nothing obvious left, and the venue's own card takes over. A list of
 // steps on @rustybuns/gear's checker, the one Qollab Studio's setup lessons use.
 import { gear, nextOf, type Step } from "@rustybuns/gear";
-import { heldItem, type World } from "./sim.ts";
+import { heldItem, type Item, type World } from "./sim.ts";
 import { inHand, type Cables } from "./cables/cables.ts";
 import { hasSwitch, type Switches } from "./audio/hear.ts";
 import { strikeState, striking } from "./strike.ts";
@@ -35,11 +35,21 @@ const switchedOff = ({ w, c, on }: At) => {
   return w.items.find((i) => hasSwitch(i.gear) && !on.has(i.key) && !(cabled.has(i.key) && gear(i.gear).speaker?.ohms));
 };
 
+// Speakers go up first where the level has stands for them: a top (a box that plays highs, not a sub) not yet on one,
+// while a stand stands empty. The nearest to you, so the first view's own speakers are the first job.
+const isTop = (i: Item) => !i.hung && (gear(i.gear).speaker?.highCut ?? 0) > 500;
+const stands = (w: World) => w.items.filter((i) => i.gear === "stand-tripod" && i.key !== w.held?.key);
+const over = (s: Item, i: Item) => s !== i && i.y > 0.9 && Math.hypot(s.x - i.x, s.z - i.z) < 0.45;
+const nearest = (w: World, list: Item[]) => list.sort((a, b) => Math.hypot(a.x - w.you.x, a.z - w.you.z) - Math.hypot(b.x - w.you.x, b.z - w.you.z))[0];
+const freeStand = (w: World) => nearest(w, stands(w).filter((s) => !w.items.some((i) => isTop(i) && over(s, i))));
+const bareTop = ({ w }: At) => freeStand(w) && nearest(w, w.items.filter((i) => isTop(i) && i.key !== w.held?.key && !stands(w).some((s) => over(s, i))));
+
 /** Each step is done while its job doesn't apply: the first one that does is what to do next. */
 const FIRST_MINUTE: Step<At>[] = [
-  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w) },
+  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : isTop(h) && freeStand(w) ? "Set it on the stand: F" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? freeStand(w)?.key : undefined; } },
   { job: "Plug it in: look at a jack and press F", done: ({ c }) => !inHand(c) },
   { job: (s) => `Bring the ${callName(s.w, s.c, outdoors(s)!.key)} in`, done: (s) => !outdoors(s), key: (s) => outdoors(s)?.key },
+  { job: "Put a speaker on a stand: F to lift it", done: (s) => !bareTop(s), key: (s) => bareTop(s)?.key },
   { job: "Take a cable from the cable case: F", done: ({ c }) => !c.caseKey || c.runs.some((r) => "plug" in r.a || "plug" in r.b), key: ({ c }) => c.caseKey ?? undefined },
   { job: (s) => `Switch on the ${callName(s.w, s.c, switchedOff(s)!.key)}: look at it, press P`, done: (s) => !switchedOff(s), key: (s) => switchedOff(s)?.key },
 ];

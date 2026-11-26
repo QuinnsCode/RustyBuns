@@ -50,3 +50,19 @@ test("at a venue with doors, L strike waits for the doors to open", () => {
   expect(idlePrompt(w, c, on, { doors: true, open: false })).toBe("");
   expect(idlePrompt(w, c, on, { doors: true, open: true })).toBe("L strike and load out");
 });
+
+test("in the dive bar the first job is the speakers in front of you, then the cable case", () => {
+  const w = newWorld(DIVE_BAR), c = newCables(w), on = new Set<string>(), next = () => nextStep(w, c, on);
+  expect(next()).toEqual({ text: "Put a speaker on a stand: F to lift it", key: "top-r" });
+  walkWith(w, c, -0.4, 11.2);
+  w.you.yaw = 0;
+  expect(pickUp(w, "top-r")).toEqual({ ok: true });
+  expect(next()).toEqual({ text: "Set it on the stand: F", key: "stand-r" });
+  // Both tops up on their stands (the dive bar's settle puts a top on the pole it is set over).
+  for (const [top, stand] of [["top-r", "stand-r"], ["top-l", "stand-l"]] as const) {
+    w.held = null;
+    const s = w.items.find((i) => i.key === stand)!;
+    Object.assign(w.items.find((i) => i.key === top)!, { x: s.x, z: s.z, y: 1.2 });
+  }
+  expect(next()).toEqual({ text: "Take a cable from the cable case: F", key: "case-1" });
+});
