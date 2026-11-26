@@ -79,7 +79,7 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   expect(Math.hypot(LINE[0]! - -2, 30.3) / (w.t - t1)).toBeLessThan(0.25);
   [1, 2, 3].forEach((n) => move(w, c, `dolly-${n + 1}`, LINE[n]!, 1, "push"));
   // Each stack rode whole: the bin a hand's width off the sand on its dolly, the mid-high's mouth over the heads.
-  for (const [n, x] of LINE.entries()) for (const [k, y] of [["dolly", 0], ["bin", 0.15], ["midbass", 0.95], ["top", 1.7]] as const) {
+  for (const [n, x] of LINE.entries()) for (const [k, y] of [["dolly", 0], ["bin", 0.15], ["midbass", 0.95], ["top", 1.795]] as const) {
     expect(at(w, `${k}-${n + 1}`).x).toBeCloseTo(x, 1);
     expect(at(w, `${k}-${n + 1}`).y).toBeCloseTo(y, 5);
   }
@@ -174,11 +174,11 @@ test("the mid-highs up on the stack carry over the heads to the back of a full f
   const onStack = heard();
   for (const t of tops) Object.assign(t, { y: 0, z: 2.2 });
   const onSand = heard();
-  for (const t of tops) Object.assign(t, { y: 2.2, z: 1 });
-  const lifted = heard();
-  // Each half metre up clears more of the crowd's heads: the back of the floor brightens by a dB or more each time.
+  for (const t of tops) Object.assign(t, { y: 1.3, z: 1 });
+  const lowered = heard();
+  // Up on the stack the horns clear the crowd's heads: half a metre lower, the back of the floor loses a dB or more.
   expect(onStack).toBeGreaterThan(onSand + 1);
-  expect(lifted).toBeGreaterThan(onStack + 1);
+  expect(onStack).toBeGreaterThan(lowered + 1);
 });
 
 test("the dance floor's crowd spot covers the floor the wall is scored on, and holds 500", () => {

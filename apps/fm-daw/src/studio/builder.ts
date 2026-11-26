@@ -2,8 +2,8 @@
 // Each edit hands back the new studio, or the same one and why not, so a studio is never left half built: a seat
 // out through a wall, a booth sticking out of the room. An edit is data (checked by `Edit`), so a sesh or an agent's
 // tool can send them like the room's other ops later.
-import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
-import { PROP_KINDS, propBlocks, propBox, thingBox, type Prop, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
+import { arr, Bad, bool, check, int, nul, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
+import { PROP_KINDS, propBlocks, propBox, thingBox, type Prop, type Side, type Spot, type SpotKind, type StudioDef, type Venue, type Wall } from "./room.ts";
 import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
@@ -59,6 +59,22 @@ export const DECOR_KINDS = Object.keys(DECOR) as DecorKind[];
 export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books" | "drumMachine" | "modular" | "monitor" | "wedge" | "riser" | "van" | "firePit";
 
 
+/**
+ * Where a venue's splat may come from: a capture hosted on ShareSplat (apps/sharesplat, its `Hosted.src`). A join link
+ * carries the studio, so anyone's page would fetch this; one known host keeps a link from pointing guests anywhere.
+ */
+export const VENUE_SRC = /^https:\/\/sharesplat\.notryanquinn\.workers\.dev\/s\/[0-9a-f]{20}\.spz$/;
+/** The splat behind any link ShareSplat hands out (the file, its product page `/p/<id>`, or the embed `?src=/s/<id>.spz`), or null. */
+export function venueSrc(link: string): string | null {
+  let u: URL;
+  try { u = new URL(link.trim()); const inner = u.searchParams.get("src"); if (inner) u = new URL(inner, u); } catch { return null; }
+  const id = /^\/(?:s\/([0-9a-f]{20})\.spz|p\/([0-9a-f]{20}))$/.exec(u.pathname);
+  const src = id ? `${u.origin}/s/${id[1] ?? id[2]}.spz` : "";
+  return VENUE_SRC.test(src) ? src : null;
+}
+const XYZ = (v: unknown): [number, number, number] => { const [x, y, z] = arr(num(-50, 50), 3, { min: 3 })(v); return [x, y, z]; };
+const VENUE: Guard<Venue> = obj({ src: str(300, { re: VENUE_SRC }), scale: num(0.05, 100), at: XYZ, yaw: num(-7, 7) });
+
 /** A studio from the wire or this browser's storage, checked. */
 export const Studio: Guard<StudioDef> = obj({
   id: ID, name: str(60, { min: 1 }), about: opt(str(400)),
@@ -78,6 +94,7 @@ export const Studio: Guard<StudioDef> = obj({
   gear: opt(obj({ at: XZ, yaw: num(-7, 7) })),
   bass: opt(oneOf(["mono", "box"] as const)),
   keys: opt(oneOf(POLY_KINDS)),
+  venue: opt(VENUE),
   pa: opt(obj({ stacks: STACKS, rig: opt(oneOf(SYSTEM_IDS)), mono: opt(bool()) })),
   outdoor: opt(obj({
     stacks: STACKS,
@@ -136,7 +153,7 @@ export type Surface = "floor" | "ceiling" | Side;
  * up again (`door`), take one down (`unwall`), and `turn` a seat an eighth of a turn at a time. Out of doors the PA
  * tool puts a `stack` of the rig's boxes down (facing the floor's middle unless told), moves it (`moveStack`), aims
  * it (`aimStack`: its yaw, its tops' splay, a line array's pins) or takes it away (`unstack`), and `generator` picks
- * the set that feeds the rig ("auto": the smallest that holds).
+ * the set that feeds the rig ("auto": the smallest that holds). `venue` lays the room out inside a captured real place, or null takes it away.
  */
 export type Edit =
   | { t: "size"; w: number; d: number; h: number }
@@ -167,7 +184,8 @@ export type Edit =
   | { t: "moveStack"; index: number; at: [number, number] }
   | { t: "aimStack"; index: number; yaw?: number; splay?: number; pins?: number[] }
   | { t: "unstack"; index: number }
-  | { t: "generator"; set: GeneratorId | "auto" };
+  | { t: "generator"; set: GeneratorId | "auto" }
+  | { t: "venue"; venue: Venue | null };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
   obj({ t: tag("size"), w: num(SIZE.w[0], SIZE.w[1]), d: num(SIZE.d[0], SIZE.d[1]), h: num(SIZE.h[0], SIZE.h[1]) }),
@@ -199,6 +217,7 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("aimStack"), index: int(0, MAX_STACKS - 1), yaw: opt(num(-7, 7)), splay: opt(num(-1, 1)), pins: opt(PINS) }),
   obj({ t: tag("unstack"), index: int(0, MAX_STACKS - 1) }),
   obj({ t: tag("generator"), set: oneOf([...GENERATOR_IDS, "auto"] as const) }),
+  obj({ t: tag("venue"), venue: nul(VENUE) }),
 ];
 
 /** The shortest inside wall, and a doorway's width, metres. */
@@ -453,6 +472,9 @@ export function edit(def: StudioDef, e: Edit): Built {
       if (e.set === "auto") delete g.set; else g.set = e.set;
       break;
     }
+    case "venue":
+      if (e.venue) next.venue = e.venue; else delete next.venue;
+      break;
     case "turn": {
       const sp = next.spots.find((x) => x.id === e.id);
       if (!sp) return no(`there is no spot ${e.id}`);

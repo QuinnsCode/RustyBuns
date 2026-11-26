@@ -15,7 +15,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";
-import { boothMiddle, builtLink, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, type Surface, yours, YOURS } from "./builder.ts";
+import { boothMiddle, builtLink, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, type Surface, venueSrc, yours, YOURS } from "./builder.ts";
 import { BuildView, type Hit, type WallsMode } from "./build-view.ts";
 import { footprint, gearPlace } from "./gear-wall.ts";
 import type { Side, SpotKind, StudioDef } from "./room.ts";
@@ -26,7 +26,7 @@ import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { GENERATOR_IDS, gear as sheet, gearList, gearListText, powerPlan, stackWidth, SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
 import { arrivals, paSpeakers, rigPlan, rigStacks, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
-import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
 import { partySync } from "./party-sync.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
@@ -228,6 +228,7 @@ let tool: Tool = "move", placing: SpotKind = "keys", view: "3d" | "plan" = "3d",
 const canvas = $("view") as HTMLCanvasElement;
 let build: BuildView | null = null;
 try { build = new BuildView(canvas); } catch { view = "plan"; /* no WebGL: the blueprint only */ }
+if (build) build.venue.onChange = (s) => { if (s.state === "drawn" || s.state === "failed") renderParty(); };
 /** Walls snap to a 25 cm grid, seats and booths to 10 cm. */
 const quarter = (v: number) => Math.round(v * 4) / 4;
 const tenth = (v: number) => Math.round(v * 10) / 10;
@@ -705,12 +706,25 @@ function partyDo(d: Done): boolean {
   render();
   return d.ok;
 }
+/** The open party's venue (#5933): a ShareSplat capture of the real place, round every scene, and how it sits. */
+function venueRows(): string {
+  const v = room.venue, drawn = build?.venue.state;
+  const note = !v ? "Put the place online with ShareSplat (a walk round it, every wall), paste its link here, and every scene is laid out inside it."
+    : drawn?.state === "failed" ? `The capture would not load: ${drawn.why}` : drawn?.state === "loading" ? "Loading the capture" : "Every scene stands in this venue. Size, height and turn line it up with the seats.";
+  return `<h2>Venue</h2>
+      <div class="row"><label>ShareSplat link<input id="venue-link" value="${esc(v?.src ?? "")}" placeholder="https://sharesplat.notryanquinn.workers.dev/p/..."></label></div>
+      <div class="row"><label>Size<input id="venue-scale" type="number" step="0.1" min="0.05" max="100" value="${v?.scale ?? 1}"></label><label>Height (m)<input id="venue-y" type="number" step="0.1" min="-50" max="50" value="${v?.at[1] ?? 0}"></label><label>Turn (deg)<input id="venue-yaw" type="number" step="15" value="${Math.round(((v?.yaw ?? 0) * 180) / Math.PI)}"></label></div>
+      <div class="row"><button type="button" id="venue-set">${v ? "Update venue" : "Use venue"}</button>${v ? `<button type="button" id="venue-drop">No venue</button>` : ""}</div>
+      <p class="hint">${esc(note)}</p>`;
+}
 /** The live party's join link, for anyone on any device: its own room, carrying the scene on stage; null signed out. */
 function joinLink(): string | null {
   const p = parties.parties.find((q) => q.id === parties.live), on = liveStudio(parties);
   if (!owner || !p || !on) return null;
   const u = new URL(builtLink(location.origin, on, partyRoom(owner, p.id)));
   u.searchParams.set("name", p.name);
+  // the jam page asks the owner's store what's on stage, so a scene switch reaches everyone in the room (#5963)
+  u.searchParams.set("party", owner);
   return u.href;
 }
 /** A <input type="datetime-local"> value and back: empty is open now. */
@@ -736,6 +750,7 @@ function renderParty() {
       <ul class="scenes">${p.scenes.map((s) => `<li><button type="button" data-scene="${s.id}" aria-pressed="${s.id === p.scene}">${esc(s.performer)}</button><span class="hint">${s.studio.spots.length} seat${s.studio.spots.length === 1 ? "" : "s"}</span>${p.scenes.length > 1 ? x(`data-scene-drop="${s.id}"`, `Take ${s.performer}'s scene out`) : ""}</li>`).join("")}</ul>
       <div class="row"><label>Next performer<input id="scene-name" maxlength="40"></label><button type="button" id="scene-add">Add scene</button></div>
       ${p.scenes.length > 1 ? `<div class="row"><button type="button" id="scene-all">Everyone at once</button></div>` : ""}
+      ${venueRows()}
       <h2>Versions</h2>
       <div class="row"><label>What changed<input id="version-note" maxlength="80"></label><button type="button" id="version-save">Save version</button></div>
       ${p.versions.length ? `<ul class="versions">${[...p.versions].reverse().map((v) => `<li><span>v${v.n}${v.note ? ` ${esc(v.note)}` : ""} <small class="hint">${esc(whenWords(v.at))}</small></span><button type="button" data-restore="${v.n}">Bring back</button></li>`).join("")}</ul>` : `<p class="hint">No versions saved yet. Every one you save stays.</p>`}`;
@@ -754,6 +769,12 @@ function renderParty() {
   document.getElementById("scene-add")?.addEventListener("click", () => partyDo(addScene(parties, val("scene-name"), room)));
   document.getElementById("scene-all")?.addEventListener("click", () => partyDo(everyone(parties)));
   document.getElementById("version-save")?.addEventListener("click", () => partyDo(saveVersion(parties, val("version-note"), Date.now())));
+  document.getElementById("venue-set")?.addEventListener("click", () => {
+    const src = venueSrc(val("venue-link")), num = (id: string, d: number) => Number.isFinite(parseFloat(val(id))) ? parseFloat(val(id)) : d;
+    partyDo(src ? setVenue(parties, { src, scale: num("venue-scale", 1), at: [room.venue?.at[0] ?? 0, num("venue-y", 0), room.venue?.at[2] ?? 0], yaw: (num("venue-yaw", 0) * Math.PI) / 180 })
+      : { ok: false, store: parties, why: "That isn't a ShareSplat link: paste the link it gave you when you put the capture online" });
+  });
+  document.getElementById("venue-drop")?.addEventListener("click", () => partyDo(setVenue(parties, null)));
 }
 $("party").addEventListener("click", (e) => {
   const t = e.target instanceof Element ? e.target.closest<HTMLElement>("button") : null, d = t?.dataset;
@@ -821,13 +842,19 @@ const harness = {
     state: () => {
       const p = openParty(parties);
       return {
-        open: p ? { id: p.id, name: p.name, when: p.when, scene: p.scene, scenes: p.scenes.map((s) => ({ id: s.id, performer: s.performer, seats: s.studio.spots.length })), versions: p.versions.map((v) => ({ n: v.n, note: v.note })) } : null,
+        open: p ? { id: p.id, name: p.name, when: p.when, scene: p.scene, scenes: p.scenes.map((s) => ({ id: s.id, performer: s.performer, seats: s.studio.spots.length })), versions: p.versions.map((v) => ({ n: v.n, note: v.note })), venue: room.venue ?? null, drawn: build?.venue.state ?? null } : null,
         live: parties.live ?? null, parties: parties.parties.map((q) => q.id),
         /** Your owner key once your eqosys account answered (null: this browser's parties alone), and the live party's join link. */
         owner, join: joinLink(),
       };
     },
     make: (name: string, when: number | null = null) => ({ ok: partyDo(makeParty(parties, name, when, room)), why }),
+    /** Lay every scene out in a captured venue (any ShareSplat link), or none. */
+    venue: (link: string | null, place: { scale?: number; at?: [number, number, number]; yaw?: number } = {}) => {
+      const src = link === null ? null : venueSrc(link);
+      if (link !== null && !src) return { ok: false, why: "not a ShareSplat link" };
+      return { ok: partyDo(setVenue(parties, src ? { src, scale: place.scale ?? 1, at: place.at ?? [0, 0, 0], yaw: place.yaw ?? 0 } : null)), why };
+    },
     open: (id?: string) => ({ ok: partyDo(open(parties, id)), why }),
     drop: (id: string) => ({ ok: partyDo(dropParty(parties, id)), why }),
     live: (on = true) => ({ ok: partyDo(goLive(parties, on ? parties.open ?? null : null)), why }),

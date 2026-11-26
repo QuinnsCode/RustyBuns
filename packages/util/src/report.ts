@@ -77,9 +77,11 @@ export function mountReportButton(host: ReportHost, parent: HTMLElement = docume
 const CONTROL = "button,input,select,textarea,a[href],[role=button],[data-eq-clear]";
 
 /**
- * The flag's corner is where a game's chat keeps its Send button, so it lifts (`--eq-lift` on the root, which moves the
- * corner up without making it the box a phone's fixed form sheet sits in) just clear of any control under it, as the
- * page scrolls, resizes or changes. If there is no room above, it stays in its corner.
+ * The flag's corner is where a game's chat keeps its Send button. On a phone, a place a panel keeps for it (`data-eq-flag`,
+ * the spaces header's end) takes it while that place is on screen: the place is sized to the flag and the flag moves onto it
+ * (`--eq-lift` and `--eq-shift` on the root, which move the corner without making it the box a phone's fixed form sheet sits
+ * in). Otherwise it lifts just clear of any control under it, as the page scrolls, resizes or changes; with no room above it
+ * stays in its corner.
  */
 function keepClear(root: HTMLElement, flag: HTMLElement): () => void {
   // Every control the flag's box touches, by its box: a hit test would miss a Send button that is resting (pointer-events: none).
@@ -92,10 +94,23 @@ function keepClear(root: HTMLElement, flag: HTMLElement): () => void {
     return null;
   };
   let queued = 0;
+  const phone = matchMedia("(max-width:600px)");
+  const dock = () => {
+    const slot = phone.matches ? document.querySelector<HTMLElement>("[data-eq-flag]") : null;
+    if (!slot) return false;
+    const w = `${flag.offsetWidth}px`, h = `${flag.offsetHeight}px`;
+    if (slot.style.width !== w || slot.style.height !== h) Object.assign(slot.style, { width: w, height: h });
+    const at = slot.getBoundingClientRect(), f = flag.getBoundingClientRect();
+    if (!at.width || at.top < 8 || at.bottom > innerHeight - 8) return false;
+    root.style.setProperty("--eq-lift", `${Math.round(f.bottom - at.bottom)}px`);
+    root.style.setProperty("--eq-shift", `${Math.round(f.right - at.right)}px`);
+    return true;
+  };
   const place = () => {
     queued = 0;
     root.style.removeProperty("--eq-lift");
-    if (!flag.offsetWidth) return;
+    root.style.removeProperty("--eq-shift");
+    if (!flag.offsetWidth || dock()) return;
     let lift = 0;
     for (let pass = 0; pass < 4; pass++) {
       const hit = under(flag.getBoundingClientRect());
