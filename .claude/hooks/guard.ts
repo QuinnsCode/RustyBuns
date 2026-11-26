@@ -23,6 +23,7 @@ const SAFE_ENV = new Set([".env.schema", ".env.example"]);
 const READERS = new Set(["cat", "head", "tail", "less", "more", "bat", "grep", "rg", "egrep", "fgrep", "sed", "awk",
   "source", ".", "cp", "base64", "xxd", "od", "strings", "nl", "sort", "uniq", "cut", "jq", "diff", "tac", "open",
   "ln", "mv", "tar", "zip", "gzip", "rsync", "scp", "install", "curl", "wget", "tee", "xargs", "split",
+  "paste", "column", "rev", "hexdump", "comm",
   "bun", "node", "deno", "python", "python3", "ruby", "perl", "php", "sh", "bash", "zsh"]);
 // Credential files outside the repo that every agent, running as you, could otherwise read: the gh login,
 // npm and wrangler tokens, the agent CLIs' own logins, ssh and cloud keys.
@@ -40,10 +41,12 @@ const ONE_LINERS = new Set(["bun", "node", "deno", "python", "python3", "ruby", 
  */
 export const officeData = (abs: string) => /\/\.agent-office\/(?!worktrees(\/|$))/.test(abs) || abs.endsWith("/.agent-office");
 
+const atHome = (p: string) => p.replace(/^(~|\$HOME)(?=\/|$)/, homedir());
+
 export function secretPath(p: string, cwd = process.cwd()): boolean {
   // a glob that would reach one (`.env*`, `.en[v]`, `.e''nv`) is read as the plainest name it covers
-  const abs = resolve(cwd, p.replace(/^~(?=\/|$)/, homedir()).replace(/['"\\]/g, "").replace(/\[(.)[^\]]*\]/g, "$1").replace(/[*?]/g, ""));
-  const name = basename(abs);
+  const abs = resolve(cwd, atHome(p).replace(/['"\\]/g, "").replace(/\[(.)[^\]]*\]/g, "$1").replace(/[*?]/g, ""));
+  const name = basename(abs).toLowerCase(); // the Mac's disk takes `.ENV` for `.env`
   if (name === ".env" || (name.startsWith(".env.") && !SAFE_ENV.has(name))) return true;
   if (name.startsWith(".dev.vars")) return true;
   if (/^\/proc\/[^/]+\/environ$/.test(abs)) return true;
@@ -64,13 +67,77 @@ export function segments(cmd: string): string[][] {
     .filter((s) => s.length);
 }
 
-// Drop `FOO=1`, `sudo`, `env [opts] FOO=1` etc. in front of the real command.
+// The index past the `)` that closes the `(` at `open`, or the end.
+function closing(s: string, open: number): number {
+  for (let i = open, depth = 0; i < s.length; i++) {
+    if (s[i] === "(") depth++;
+    else if (s[i] === ")" && --depth === 0) return i;
+  }
+  return s.length;
+}
+
+// The second reading, of whole words: a quoted value, `{owner}`, `${VAR}` or `$(...)` stays inside its word (what a
+// `$(...)` runs is a command of its own), a backslash at a line's end joins the lines, and a heredoc's body is left
+// to the rough split above. Both are checked, so neither's mistakes let a command through.
+export function words(cmd: string): string[][] {
+  const out: string[][] = [], heredocs: string[] = [];
+  const s = cmd.replace(/\\\r?\n/g, "");
+  let seg: string[] = [], word = "", open = false, quote = "";
+  const end = () => { if (open) seg.push(word); word = ""; open = false; };
+  const cut = () => { end(); if (seg.length) out.push(seg); seg = []; };
+  const add = (x: string) => { word += x; open = true; };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!, next = s[i + 1];
+    if (quote === "'") { if (c === "'") quote = ""; else add(c); continue; }
+    if (c === "\\") { add(s[++i] ?? ""); continue; }
+    if ((c === "$" && next === "(") || (c === "`" && s.indexOf("`", i + 1) > 0)) {
+      const from = c === "`" ? i + 1 : i + 2, to = c === "`" ? s.indexOf("`", i + 1) : closing(s, i + 1);
+      out.push(...words(s.slice(from, to)));
+      add("$_"); i = to; continue;
+    }
+    if (c === "$" && next === "{" && s.indexOf("}", i) > 0) { const k = s.indexOf("}", i); add("$" + s.slice(i + 2, k)); i = k; continue; }
+    if (quote) { if (c === quote) quote = ""; else add(c); continue; }
+    if (c === "'" || c === '"') { quote = c; open = true; continue; }
+    if (c === "<" && next === "<") {
+      const doc = /^<<-?[ \t]*(['"]?)([\w.-]+)\1/.exec(s.slice(i));
+      if (doc) { heredocs.push(doc[2]!); i += doc[0].length - 1; continue; }
+      add("<<<"); i += 2; continue;
+    }
+    if (c === "#" && !open) { const k = s.indexOf("\n", i); i = (k < 0 ? s.length : k) - 1; continue; }
+    if (c === "\n") {
+      cut();
+      for (const d of heredocs.splice(0)) {
+        const m = new RegExp(`^\\t*${d.replaceAll(".", "\\.")}$`, "m").exec(s.slice(i + 1));
+        i = m ? i + m.index + m[0].length : s.length;
+      }
+      continue;
+    }
+    if (";|&()".includes(c) || ("{}".includes(c) && !open && /^[\s;]?$/.test(next ?? ""))) { cut(); continue; }
+    if (/\s/.test(c)) end();
+    else add(c);
+  }
+  cut();
+  return out;
+}
+
+// Words that stand in front of a command without being it.
+const KEYWORDS = new Set(["then", "do", "else", "elif", "if", "while", "until", "!"]);
+const PREFIXES = new Set(["sudo", "command", "exec", "time", "nohup", "bunx", "npx", ...KEYWORDS]);
+
+// Drop `FOO=1`, `sudo`, `then`, `timeout 60`, `env [opts] FOO=1` etc. in front of the real command.
 function strip(t: string[]): { rest: string[]; bareEnv: boolean } {
   let i = 0;
   for (;;) {
     const w = t[i];
     if (w === undefined) break;
-    if (/^\w+=/.test(w) || ["sudo", "command", "exec", "time", "nohup", "bunx", "npx"].includes(w)) { i++; continue; }
+    if (/^\w+=/.test(w) || PREFIXES.has(w)) { i++; continue; }
+    if (w === "nice") { i += t[i + 1] === "-n" ? 3 : 1; continue; }
+    if (w === "timeout" || w === "gtimeout") {
+      i++;
+      while (t[i]?.startsWith("-")) i += /^-[sk]$/.test(t[i]!) ? 2 : 1;
+      i++; // the duration
+      continue;
+    }
     if (w === "env") {
       i++;
       while (t[i] !== undefined && (t[i]!.startsWith("-") || /^\w+=/.test(t[i]!))) i += t[i] === "-u" ? 2 : 1;
@@ -81,6 +148,9 @@ function strip(t: string[]): { rest: string[]; bareEnv: boolean } {
   }
   return { rest: t.slice(i), bareEnv: false };
 }
+
+// The repo's tags (.github/rulesets/tags.json), which `git push origin v1.2.3` names without saying `tag`.
+const TAG_NAME = /^v\d+\.\d+|-v\d+\.\d+|^contest-submission$/;
 
 function gitPush(t: string[], cwd: string, branchOf: BranchOf): string | null {
   let i = 1, dir = cwd;
@@ -105,8 +175,9 @@ function gitPush(t: string[], cwd: string, branchOf: BranchOf): string | null {
     if (r === "tag" || r.includes("refs/tags/")) return "push a tag";
     if (r.startsWith(":")) return "delete a remote branch";
     if (r.startsWith("+")) return "force push (+refspec)";
-    const dst = (r.includes(":") ? r.slice(r.indexOf(":") + 1) : r).replace(/^refs\/heads\//, "");
+    const dst = (r.includes(":") ? r.slice(r.indexOf(":") + 1) : r).replace(/^(refs\/)?heads\//, "");
     if (MAIN.has(dst) || (dst === "HEAD" && MAIN.has(current() ?? ""))) return "push to main";
+    if (TAG_NAME.test(dst)) return "push a tag";
   }
   return null;
 }
@@ -117,13 +188,24 @@ function gitShared(t: string[]): string | null {
   while (t[i]?.startsWith("-")) i += t[i] === "-C" || t[i] === "-c" ? 2 : 1;
   const [sub, a] = [t[i], t[i + 1]];
   if (sub === "worktree" && (a === "remove" || a === "prune")) return `git worktree ${a} (the office sends workers home)`;
-  if (sub === "branch" && t.slice(i + 1).some((x) => x === "-D" || (x === "--force" && t.includes("--delete"))))
-    return "force-delete a branch (git branch -d deletes a merged one)";
+  if (sub === "branch") {
+    const flags = t.slice(i + 1).filter((x) => x.startsWith("-"));
+    const short = (f: string) => flags.some((x) => /^-[a-zA-Z]+$/.test(x) && x.includes(f));
+    if (short("D") || ((flags.includes("--delete") || short("d")) && (flags.includes("--force") || short("f"))))
+      return "force-delete a branch (git branch -d deletes a merged one)";
+  }
+  if (sub === "remote" && ["set-url", "remove", "rm", "rename"].includes(a ?? "")) return `git remote ${a} (every worktree pushes to the shared remotes)`;
   if (t.some((x) => /^core\.hookspath/i.test(x))) return "change the shared git hooks";
   // config keys that run a command in every worktree (fsmonitor, pager, external diff, filters, ssh, credential helpers), or pull in a file
   if (sub === "config" && !t.slice(i + 1).some((x) => /^(--get|--get-all|--get-regexp|-l|--list|--show-origin|--unset)/.test(x)) &&
     t.slice(i + 1).some((x) => /^(core\.(fsmonitor|pager|editor|sshcommand|askpass|gitproxy)|diff\.external|difftool\.|mergetool\.|filter\.|credential\.|include(if)?\.|alias\.|sequence\.editor|gpg\.program|ssh\.)/i.test(x)))
     return "set a git config key that runs a command in every worktree (the office shares one .git)";
+  // keys that repoint a remote or run a program on merge or fetch: reading one is fine, so only with a value
+  if (sub === "config") {
+    const k = t.findIndex((x, j) => j > i && /^(merge\..+\.driver|remote\..+\.(url|pushurl|receivepack|uploadpack)|url\..+\.(insteadof|pushinsteadof)|core\.attributesfile|protocol\.)/i.test(x));
+    const value = k < 0 ? undefined : t[k + 1];
+    if (value !== undefined && !/^(-|\d?>)/.test(value) && !t.some((x) => /^--(get|unset)/.test(x))) return `set ${t[k]} in the shared .git/config`;
+  }
   return null;
 }
 
@@ -133,16 +215,20 @@ function tokenGrab(c: string, t: string[]): string | null {
   if (c === "git" && t.includes("credential") && t.some((x) => x === "fill" || x === "get")) return "read git's stored credentials";
   if (c === "git" && t.some((x) => /^credential-(osxkeychain|store|cache|manager)/.test(x)) && t.some((x) => x === "get")) return "read git's stored credentials";
   if (c === "security" && t.some((x) => /^(find|dump)-/.test(x))) return "read the keychain";
+  if (c === "gh" && t[1] === "config" && t[2] === "get" && t.includes("oauth_token")) return "print the GitHub token (gh config get oauth_token)";
   return null;
 }
 
 // gh calls that change who can merge, what gates a merge, or where secrets go. The owner makes these.
-const GH_ADMIN = /\/(rulesets|protection|environments|secrets|variables|collaborators|hooks|keys|releases|merges|contents|git\/tags)(\/|$)|^repos\/[^/]+\/[^/]+$/;
+const GH_ADMIN = /\/(rulesets|protection|environments|secrets|variables|collaborators|hooks|keys|releases|merges|contents|git\/tags|pending_deployments|deployment_protection_rule|permissions|transfer)(\/|$)|^repos\/([^/]+\/[^/]+|\$[^/]*)$/;
 // Writes that move main or make a tag through the API, around the git guard above, and dispatching a release workflow.
 const GH_REFS = /\/git\/refs\/(heads\/(main|master)|tags)(\/|$)|\/(desktop-drop|npm-publish)[^/]*\/dispatches$/;
 function ghAdmin(t: string[]): string | null {
-  const [, a1, a2] = t;
+  // `gh -R owner/repo release create` is `gh release create`
+  const [, a1, a2] = t.filter((x, k) => !["-R", "--repo"].includes(x) && !["-R", "--repo"].includes(t[k - 1] ?? "") && !x.startsWith("--repo="));
   if (a1 === "pr" && a2 === "merge" && t.includes("--admin")) return "gh pr merge --admin";
+  if (a1 === "pr" && (a2 === "merge" || a2 === "close") && t.some((x) => x.startsWith("--delete-branch") || /^-[smr]*d[smr]*$/.test(x)))
+    return "delete a PR's remote branch (--delete-branch)";
   // A PR on another PR's branch closes unmerged when that one merges and its branch is deleted: every PR goes on main.
   if (a1 === "pr" && (a2 === "create" || a2 === "edit")) {
     const k = t.findIndex((x) => x === "--base" || x === "-B");
@@ -156,30 +242,48 @@ function ghAdmin(t: string[]): string | null {
   if (a1 === "workflow" && (a2 === "disable" || (a2 === "run" && t.some((x) => /desktop-drop|npm-publish/.test(x)))))
     return `gh workflow ${a2} of a release workflow`;
   if (a1 === "api") {
-    const path = t.slice(2).find((x) => !x.startsWith("-") && /\//.test(x))?.replace(/^\//, "").replace(/\?.*/, "") ?? "";
+    // the endpoint by its shape: a header like `Accept: application/vnd.github+json` has a slash too
+    const args = t.slice(2).map((x) => x.replace(/^https:\/\/api\.github\.com/, "").replace(/^\//, "").replace(/\?.*/, ""));
+    const path = args.find((x) => /^(repos|orgs|user)(\/|$)/.test(x)) ?? args.find((x) => !x.startsWith("-") && x.includes("/")) ?? "";
     const m = t.findIndex((x) => x === "-X" || x === "--method");
     const method = (m >= 0 ? t[m + 1] : t.find((x) => /^(-X|--method=)\w+/.test(x))?.replace(/^(-X|--method=)/, "")) ?? "";
     const writes = (method && method.toUpperCase() !== "GET") || t.some((x) => /^(-f|-F|--field|--raw-field|--input)/.test(x));
     if (writes && (GH_ADMIN.test(path) || GH_REFS.test(path))) return `gh api write to ${path}`;
     if (writes && path.endsWith("/git/refs") && t.some((x) => /^ref=refs\/(tags\/|heads\/(main|master)$)/.test(x))) return `gh api write to ${path}`;
+    if (method.toUpperCase() === "DELETE" && /\/git\/refs\//.test(path)) return `gh api delete of ${path}`;
     // GraphQL has no path to check: a mutation can do all of the above
-    if (t[2] === "graphql" && t.some((x) => /\bmutation\b/.test(x))) return "gh api graphql mutation";
+    if (t.includes("graphql") && t.some((x) => /\bmutation\b/.test(x))) return "gh api graphql mutation";
   }
   return null;
 }
 
-function checkBash(cmd: string, cwd: string, branchOf: BranchOf): string | null {
+function checkBash(cmd: string, cwd: string, branchOf: BranchOf, depth = 0): string | null {
   const segs = segments(cmd);
   // An interpreter one-liner that dumps the whole environment (grepping the source for `process.env` is fine).
   // The split above cuts the one-liner at its parentheses, so the command runs it and the whole text is searched.
   const oneLiner = segs.some((seg) => { const t = strip(seg).rest; return ONE_LINERS.has(basename(t[0] ?? "")) && t.some((x) => /^-(e|p|c|-eval|-print)$/.test(x)); });
   if (oneLiner && ENV_DUMP.test(cmd)) return "print the environment (a one-liner dumping process.env / os.environ)";
-  for (const seg of segs) {
-    const { rest: t, bareEnv } = strip(seg);
-    if (bareEnv) return "print the environment (env)";
-    if (!t[0]) continue;
+  for (const view of [segs, words(cmd)]) {
+    // a `cd` moves where the names after it are read from
+    let dir = cwd;
+    for (const seg of view) {
+      const { rest: t, bareEnv } = strip(seg);
+      if (bareEnv) return "print the environment (env)";
+      if (!t[0]) continue;
+      if (t[0] === "cd" && t[1]) { dir = resolve(dir, atHome(t[1])); continue; }
+      // `sh -c '...'` runs its text
+      const script = /^(ba|z|da)?sh$/.test(basename(t[0])) ? t[t.findIndex((x) => /^-[a-z]*c$/.test(x)) + 1] : undefined;
+      const inner = script !== undefined && script !== t[0] && depth < 3 ? checkBash(script, dir, branchOf, depth + 1) : null;
+      const why = inner ?? checkCommand(t, dir, branchOf);
+      if (why) return why;
+    }
+  }
+  return null;
+}
+
+function checkCommand(t: string[], cwd: string, branchOf: BranchOf): string | null {
     // `/usr/bin/env` is `env`.
-    const c = t[0].includes("/") && t[0] !== "." ? basename(t[0]) : t[0], [, a1, a2] = t;
+    const c = t[0]!.includes("/") && t[0] !== "." ? basename(t[0]!) : t[0]!, [, a1, a2] = t;
     if (c === "env" && t.slice(1).every((x) => x.startsWith("-") || /^\w+=/.test(x))) return "print the environment (env)";
     if (c === "printenv") return "print the environment (printenv)";
     if (c === "export" && (!a1 || a1 === "-p")) return "print the environment (export)";
@@ -198,14 +302,17 @@ function checkBash(cmd: string, cwd: string, branchOf: BranchOf): string | null 
     if (t.slice(1).some((x) => /\.git\/hooks(\/|$)/.test(x))) return "change the shared git hooks";
     // Writes into the office's own data (its prompts, queue, worker list and the hook scripts other workers run): `> file`, tee, cp's target.
     const outs = t.slice(1).filter((x, k) => x.startsWith(">") || t[k] === ">" || t[k] === ">>" || c === "tee" || (["cp", "mv", "ln", "install", "rsync"].includes(c) && k === t.length - 2)).map((x) => x.replace(/^>+/, ""));
-    const o = outs.find((x) => x && !x.startsWith("-") && officeData(resolve(cwd, x.replace(/^~(?=\/|$)/, homedir()))));
+    const o = outs.find((x) => x && !x.startsWith("-") && officeData(resolve(cwd, atHome(x))));
     if (o) return `write into the office's data (${o})`;
-    // A reader's file arguments (curl's `@file` too), and any `< file` redirect.
-    const inputs = t.slice(1).filter((x, k) => READERS.has(c) || x.startsWith("<") || t[k] === "<").map((x) => x.replace(/^[<@]+/, ""));
-    const f = inputs.find((x) => x && !x.startsWith("-") && secretPath(x, cwd));
+    const sharedConfig = (x: string) => x.endsWith(".git/config");
+    if (outs.some(sharedConfig) || (c === "sed" && t.some((x) => /^-[a-zA-Z]*i/.test(x)) && t.some(sharedConfig))) return "change the shared git config";
+    // A reader's file arguments, and any `< file` redirect. The file may sit inside its word: curl's `-d@file` and
+    // `-F x=@file`, grep's `--include=.env*`. A word with spaces is a script or a message; the rough split reads those.
+    const named = (x: string) => x.replace(/^(--(include|glob|data[\w-]*)=|-[dFT](?=@)|[\w.-]+=(?=@))/, "").replace(/^[<@]+/, "");
+    const inputs = t.slice(1).filter((x, k) => READERS.has(c) || x.startsWith("<") || t[k] === "<").map(named);
+    const f = inputs.find((x) => x && !x.startsWith("-") && !/\s/.test(x) && secretPath(x, cwd));
     if (f) return `read ${f}`;
-  }
-  return null;
+    return null;
 }
 
 // Tests and builds, run here: `bun test`, `bun run test|build`, `vite build`, `cargo build|test`. `bun run builder ...`
@@ -229,7 +336,7 @@ export function heavy(cmd: string, cwd: string, root: string, shut: boolean): st
     if (t[0] === "bun" && t[1] === "run" && t[2] === "builder" && t[3] === "on") return "the valve is the owner's: only they open it (`bun run builder on`)";
     if (heavyRun(t)) {
       // The command as typed (bunx kept), less any FOO=1 in front, which the builder would run as a command.
-      const typed = seg.slice(seg.findIndex((x) => !/^\w+=/.test(x)));
+      const typed = seg.slice(seg.findIndex((x) => !/^\w+=/.test(x) && !KEYWORDS.has(x)));
       return `the builder valve is shut, so tests and builds don't run on this Mac. Send it to the builder: \`bun run builder run ${relative(root, dir) || "."} ${typed.join(" ")}\` (it waits while the builder is off)`;
     }
   }
@@ -370,10 +477,13 @@ const gitBranch: BranchOf = (cwd) => {
   return r.exitCode === 0 ? r.stdout.toString().trim() : null;
 };
 
+// The tools that run a shell command: Monitor takes one like Bash does.
+const SHELLS = new Set(["Bash", "Monitor"]);
+
 export function check(input: HookInput, branchOf: BranchOf = gitBranch): string | null {
   const cwd = input.cwd ?? process.cwd();
   const ti = input.tool_input ?? {};
-  if (input.tool_name === "Bash") return checkBash(String(ti.command ?? ""), cwd, branchOf);
+  if (SHELLS.has(input.tool_name)) return checkBash(String(ti.command ?? ""), cwd, branchOf);
   const p = ti.file_path ?? ti.path;
   if ((input.tool_name === "Read" || input.tool_name === "Grep") && typeof p === "string" && secretPath(p, cwd)) return `read ${p}`;
   // Grep's glob can name the file its path doesn't: `--glob .env` over the repo
@@ -390,7 +500,7 @@ if (import.meta.main) {
   const hire = hireTask(input.tool_name, input.tool_input ?? {});
   const short = hire && thin(hire.task, hire.issue);
   if (short && hire && firstTry(hire.task)) { console.error(`Turned away once by .claude/hooks/thin-hire.ts: ${short}.`); process.exit(2); }
-  if (input.tool_name === "Bash") {
+  if (SHELLS.has(input.tool_name)) {
     const cwd = input.cwd ?? process.cwd();
     const shut = valveOf((() => { try { return readFileSync(valveFile(), "utf8"); } catch { return ""; } })()) === "off";
     const root = shut ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--show-toplevel"], { stderr: "ignore" }).stdout.toString().trim() : "";
@@ -399,7 +509,7 @@ if (import.meta.main) {
     const blender = blenderLaunch(String(input.tool_input?.command ?? ""));
     if (blender) { console.error(`Blocked by .claude/hooks/guard.ts: ${blender}.`); process.exit(2); }
   }
-  if (input.tool_name === "Bash") {
+  if (SHELLS.has(input.tool_name)) {
     const cwd = input.cwd ?? process.cwd(), cmd = String(input.tool_input?.command ?? "");
     const top = /\b(cat|sed)\b/.test(cmd) ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--show-toplevel"], { stderr: "ignore" }).stdout.toString().trim() : "";
     const wide = top ? wideRead(cmd, cwd, top) : null;

@@ -238,7 +238,7 @@ test.each<[string, boolean]>([
 const NOW = 1_800_000_000_000;
 const shot = (over: Partial<Shot>): Shot => ({
   now: NOW, serving: NOW - 5_000, slots: [{ name: "slot-1", sha: "1a2b3c4d5e6f" }, { name: "slot-2", sha: "9f8e7d6c5b4a" }],
-  locks: [], runs: [], waiting: [], done: [], batt: { onPower: true, pct: 100 }, procs: [], ...over,
+  locks: [], runs: [], waiting: [], done: [], batt: { onPower: true, pct: 100 }, procs: [], blender: [], ...over,
 });
 const busy = (lockAge: number, logAge: number, cmd = "bun test test") => ({
   locks: [{ slot: "slot-1", at: NOW - lockAge }],
@@ -289,9 +289,18 @@ test("the board reads a builder folder, and a pipe gets one line per start, stal
     `  101   01:02 zsh -c ${job}`, `  102   01:01 zsh -c ${job}`, // the pipe's fork has the same command line
     "  103   00:01 /usr/sbin/cron", `  104 1-00:00:03 zsh -c ${remoteScript({ dir: "builder" }, "nc -l 4444")}`,
   ].join("\n") + "\n");
-  const read = async () => view(parseShot(await Bun.$`sh -c ${GATHER}`.cwd(dir).env({ ...process.env, PS: `cat ${dir}/ps.txt` }).text()));
+  // the Blender queue: one job running, one done; and this test holds Bob's one Blender
+  const add = { who: "quill", dir: "apps/mythic-masters", py: true, cmd: ["blender/closeups.py", "a.glb"], out: ["."], minutes: 60, sha: "a".repeat(40) };
+  await Bun.write(`${dir}/blender/queue.jsonl`, [
+    { id: "a-1", at: 1, add }, { id: "a-1", at: 2, state: "running" }, { id: "b-2", at: 3, add: { ...add, who: "nib" } }, { id: "b-2", at: 4, state: "done", code: 0 },
+  ].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  await Bun.write(`${dir}/home/blender.lock/pid`, String(process.pid));
+  const read = async () => view(parseShot(await Bun.$`sh -c ${GATHER}`.cwd(dir).env({ ...process.env, PS: `cat ${dir}/ps.txt`, RUSTYBUNS_HOME: `${dir}/home` }).text()));
 
   const first = await read();
+  expect(first.shot.blender.map((j) => [j.id, j.who, j.state])).toEqual([["a-1", "quill", "running"]]);
+  expect(first.shot.blenderHolder).toStartWith(`${process.pid} `);
+  expect(board(first, { width: 120, color: false, frame: 0 })).toContain("quill blender/closeups.py a.glb");
   expect(first.slots.map((s) => [s.name, s.busy, s.sha.slice(0, 8), s.run?.who, s.run?.last, s.jobs.map((j) => [j.pid, j.dir, j.cmd])])).toEqual([
     ["slot-1", true, "1a2b3c4d", "pixel", "(pass) deals > saves", [[101, "apps/qcrm", "bun test test"]]],
     ["slot-2", false, "ffffffff", undefined, undefined, []],

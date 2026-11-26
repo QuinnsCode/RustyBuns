@@ -9,10 +9,11 @@
 //           asks "are you sure?" and then for the Worker's name; no terminal, or `--adopt-existing`
 //           (which answers yes for a script), decides it otherwise.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { workerName, type RustyBunsConfig } from "./config.ts";
 import { protectedNames } from "./protect.ts";
+import { sharedStateBase } from "./state.ts";
 
 export interface IsolationFlags { fresh: boolean; adoptExisting: boolean; ephemeral?: boolean; real?: boolean }
 
@@ -49,6 +50,23 @@ export function adoptedNames(cfg: Pick<RustyBunsConfig, "name" | "bindings" | "t
   return names;
 }
 
+/** Whether the stage's saved state records a name the config adopts. A destroy deletes what the state records,
+ *  whatever `--fresh` says on this run, so such a stage is asked about like any ADOPT destroy. */
+export function stateHoldsAdopted(cfg: RustyBunsConfig, projectDir: string, stage: string): boolean {
+  const names = adoptedNames(cfg).map((n) => JSON.stringify(n.slice(n.indexOf(" ") + 1)));
+  if (!names.length) return false;
+  const shared = sharedStateBase(projectDir);
+  return [join(projectDir, ".alchemy", "state"), ...(shared ? [join(shared, "state")] : [])].some((base) => {
+    const dir = join(base, cfg.name, stage);
+    if (!existsSync(dir)) return false;
+    return readdirSync(dir, { recursive: true, withFileTypes: true }).some((f) => {
+      if (!f.isFile()) return false;
+      const text = readFileSync(join(f.parentPath, f.name), "utf8");
+      return names.some((n) => text.includes(n));
+    });
+  });
+}
+
 const hasWorkerState = (projectDir: string, app: string, stage: string) =>
   existsSync(join(projectDir, ".alchemy", "state", app, stage, "Worker.json"));
 
@@ -75,7 +93,7 @@ export function adoptProblem(sub: string, cfg: RustyBunsConfig, projectDir: stri
   if (!names.length || flags.adoptExisting) return null;
   if (sub === "destroy") {
     return `this is ADOPT mode, so a destroy deletes the resources it took over, which may be real ones: ${destroyed(cfg).join(", ")}. ` +
-      `Pass --adopt-existing if that is what you want, or --fresh to run against fresh resources only.`;
+      `Pass --adopt-existing if that is what you want. (--fresh is enough only for a stage that was made with --fresh.)`;
   }
   if (sub === "deploy" && !hasWorkerState(projectDir, cfg.name, stage)) {
     return `stage ${stage} has never been deployed from here, and this is ADOPT mode: it would take over whatever already has these names: ${names.join(", ")}. ` +

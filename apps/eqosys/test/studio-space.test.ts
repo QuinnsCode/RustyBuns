@@ -8,6 +8,7 @@ import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
 import { Hub, type HubState } from "../src/qollab/hub.ts";
 import { Space } from "../src/qollab/space.ts";
+import { joinStudio } from "../src/sso.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -148,6 +149,44 @@ test("a guest in a studio's space: in by its invite, only #general, no powers, l
   await until(() => g.gone() === "removed from the studio");
   expect(await g.c.mine()).toEqual([]);
   // One of the studio's own joining by the invite gets no guest row.
-  expect(await a.c.join(fresh)).toEqual({ id: made.id, name: "Bolt" });
+  const now = (await a.c.mine())!.find((s) => s.id === made.id)!.invite!;
+  expect(await a.c.join(now)).toEqual({ id: made.id, name: "Bolt" });
   a.c.close();
+});
+
+test("out of the studio leaves no way back into its space: not the invite held, a private channel, or having made it", async () => {
+  const dee = await signUp("Dee"), ed = await signUp("Ed"), fay = await signUp("Fay");
+  const studio = (await run("eq_studio_make", { name: "Crate", kind: "team" }, { token: dee.token })).body.result!.id!;
+  for (const [email, role] of [["ed@example.com", "admin"], ["fay@example.com", "maker"]] as const)
+    expect((await run("eq_studio_add", { studio, email, role }, { cookie: dee.cookie })).status).toBe(200);
+  // Ed, an admin, makes the space.
+  const d = member(dee.token), e = member(ed.token), f = member(fay.token);
+  const made = (await e.c.makeForStudio(studio, "Crate"))!;
+  const invite = async () => (await d.c.mine())!.find((s) => s.id === made.id)!.invite!;
+  const held = (await e.c.mine())![0]!.invite!;
+  d.open(made.id);
+  await until(() => d.runs());
+  d.c.privateChannel("pay");
+  await until(() => d.channels().includes("pay"));
+  d.c.allow("pay", fay.id);
+
+  for (const email of ["ed@example.com", "fay@example.com"]) expect((await run("eq_studio_remove", { studio, email }, { cookie: dee.cookie })).status).toBe(200);
+  expect(await e.c.join(held)).toBeNull();
+
+  // Back as guests, by an invite handed to them since: no private channel, and a kick takes out even the one who made the space.
+  expect(await f.c.join(await invite())).not.toBeNull();
+  f.open(made.id);
+  await until(() => f.role() === "guest" && f.channels().length > 0);
+  expect(f.channels()).toEqual(["general"]);
+  expect(await e.c.join(await invite())).not.toBeNull();
+  e.open(made.id);
+  await until(() => e.role() === "guest");
+  d.c.kick(ed.id);
+  await until(() => e.gone() === "removed from the space");
+  expect(await e.c.mine()).toEqual([]);
+
+  // A guest whose company sign-in seats them in the studio keeps no guest row behind the seat.
+  await joinStudio(conf, { studio, role: "maker", sub: "x", email: "fay@example.com", name: "Fay", ask: null }, fay.id);
+  expect(await conf.DB.prepare("SELECT 1 AS y FROM space_members WHERE space_id = ? AND user_id = ?").bind(made.id, fay.id).first("y")).toBeNull();
+  d.c.close(); f.c.close();
 });

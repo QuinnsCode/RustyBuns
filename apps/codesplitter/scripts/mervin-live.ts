@@ -17,7 +17,8 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { order, run, score, TIERS, type Board, BoardPrs, type Stage } from "./mervin-board.ts";
+import { order, run, score, TIERS, type Board, type BoardPr, BoardPrs, type Stage } from "./mervin-board.ts";
+import { noCi, runsOn, STALL_AFTER, stallOf, view, type Pr, type Runs } from "../../../scripts/pr.ts";
 import { writeTree } from "./shadow.ts";
 import { needless, roundOf, type BoardRow, type Hits, type Round } from "../src/board.ts";
 import { help } from "../../../scripts/help.ts";
@@ -37,15 +38,42 @@ export function reach(files: string[], apps: string[], uses: Record<string, stri
 }
 
 /** One stage as the board's row. `owners` maps a PR number to the worker that owns it. */
-export function rowOf(s: Stage, board: Board, owners: Map<number, string>, blast?: BoardRow["blast"]): BoardRow {
+export function rowOf(s: Stage, board: Board, owners: Map<number, string>, blast?: BoardRow["blast"], stall?: string): BoardRow {
   const c = Object.fromEntries(TIERS.map((t) => [t, s.files.filter((f) => f.tier === t).length]));
   return {
     pr: s.pr, head: s.head, ci: s.ci ?? "none", tiers: c, files: s.files.length,
     clashes: board.clashes.filter((x) => x.prs.includes(s.pr)).map((x) => ({ kind: x.kind, key: x.key, with: x.prs.filter((n) => n !== s.pr), ...(x.main && { main: true }) })),
     ...(s.title && { title: s.title }), ...(s.failing?.length && { failing: s.failing }),
-    ...(s.stackedOn && { stackedOn: s.stackedOn }), ...(owners.has(s.pr) && { owner: owners.get(s.pr) }), ...(blast && { blast }),
+    ...(s.stackedOn && { stackedOn: s.stackedOn }), ...(owners.has(s.pr) && { owner: owners.get(s.pr) }), ...(blast && { blast }), ...(stall && { stall }),
   };
 }
+
+/** How the board looks closer at a PR: its head's commit time (git, local), its full view and its head's Actions runs (gh). */
+export interface StallDeps { headAt: (sha: string) => number | null; view: (n: number) => Promise<Pr>; runs: (sha: string) => Promise<Runs> }
+
+/** The PRs whose head has gone STALL_AFTER seconds with no typecheck or apps check (#5838): the board's line for each,
+ *  and the owners to tell, once per head (`known` keeps each marked "pr:head" and its line across passes, so a head is
+ *  looked at closer once). Only a PR with no CI check whose head is old enough is looked at, so a pass costs no gh calls
+ *  when every head has its checks. */
+export async function stalls(prs: BoardPr[], owners: Map<number, string>, known: Map<string, string>, deps: StallDeps, now = Date.now()) {
+  const marks = new Map<number, string>(), tell: { name: string; pr: number; line: string }[] = [];
+  for (const p of prs) {
+    const at = noCi(p.statusCheckRollup ?? []) ? deps.headAt(p.headRefOid) : null;
+    if (at === null || now - at < STALL_AFTER * 1000) continue;
+    const key = `${p.number}:${p.headRefOid}`;
+    if (known.has(key)) { marks.set(p.number, known.get(key)!); continue; }
+    const pr = await deps.view(p.number).catch(() => null);
+    const line = pr && pr.headRefOid === p.headRefOid ? stallOf(pr, now, await deps.runs(p.headRefOid)) : null;
+    if (!line) continue;
+    known.set(key, line); marks.set(p.number, line);
+    const name = owners.get(p.number);
+    if (name) tell.push({ name, pr: p.number, line });
+  }
+  return { marks, tell };
+}
+
+/** What the worker is told about its PR's stalled head. */
+export const stallPrompt = (pr: number, line: string) => `Mervin's board: PR #${pr}'s head has had no typecheck or apps check for ${STALL_AFTER / 60} minutes: ${line}. Fix it on your own branch (bun run pr ${pr} --no-wait says more).`;
 
 /** PR number to worker, from `office-workers list --json` (any array of {name, pr}, the pr a number or a URL). */
 export function ownersOf(workers: unknown): Map<number, string> {
@@ -102,12 +130,21 @@ if (import.meta.main) {
 
   let seen = "", kept: Board | null = null, keptRows: BoardRow[] = [], keptDir = "", posted = new Map<number, string>();
   const hits: Hits = {};
+  const stalled = new Map<string, string>(); // "pr:head" marked for missing checks, its worker told once (#5838)
   const pass = async () => {
     sh(["git", "fetch", "origin", "main", "--quiet"], top);
     const prs = BoardPrs(JSON.parse(sh(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,statusCheckRollup"], top) || "[]"));
     for (const p of prs) if (sh(["git", "cat-file", "-e", `${p.headRefOid}^{commit}`], top) === null) sh(["git", "fetch", "origin", `pull/${p.number}/head`, "--quiet"], top);
     const main = sh(["git", "rev-parse", mainRef], top)!.trim();
-    const fp = main + prs.map((p) => `${p.number}:${p.headRefOid}:${p.statusCheckRollup?.map((c) => c.conclusion ?? c.status).join(",") ?? ""}`).join(";");
+    const workers = arg("workers") ? JSON.parse(await Bun.file(arg("workers")!).text()) : JSON.parse(sh(["office-workers", "list", "--json"]) || "[]");
+    const owners = ownersOf(workers);
+    const headAt = (sha: string) => { const t = Date.parse(sh(["git", "log", "-1", "--format=%cI", sha], top)?.trim() ?? ""); return Number.isNaN(t) ? null : t; };
+    const { marks, tell } = await stalls(prs, owners, stalled, { headAt, view, runs: runsOn });
+    for (const t of tell) {
+      if (dry) console.log(`would tell ${t.name}: ${stallPrompt(t.pr, t.line)}`);
+      else if (sh(["office-workers", "tell", t.name, "--prompt", stallPrompt(t.pr, t.line)]) === null) console.error(`could not tell ${t.name} about #${t.pr}`);
+    }
+    const fp = [...marks.keys()].join(",") + main + prs.map((p) => `${p.number}:${p.headRefOid}:${p.statusCheckRollup?.map((c) => c.conclusion ?? c.status).join(",") ?? ""}`).join(";");
     if (fp === seen) return;
     seen = fp;
 
@@ -133,8 +170,6 @@ if (import.meta.main) {
         }
       }
     }
-    const workers = arg("workers") ? JSON.parse(await Bun.file(arg("workers")!).text()) : JSON.parse(sh(["office-workers", "list", "--json"]) || "[]");
-    const owners = ownersOf(workers);
     const { board, tree } = run(top, main, order(prs));
 
     const apps = (sh(["git", "ls-tree", "--name-only", main, "apps/"], top) ?? "").split("\n").filter(Boolean).map((a) => a.replace(/^apps\//, ""));
@@ -153,7 +188,7 @@ if (import.meta.main) {
     const rows = board.stages.map((s) => {
       const r = reaches.get(s.pr)!;
       const blast = r.blast ? { apps: r.blast, prs: board.stages.filter((o) => o.pr !== s.pr && reaches.get(o.pr)!.own.some((a) => r.blast!.includes(a))).map((o) => o.pr) } : undefined;
-      return rowOf(s, board, owners, blast);
+      return rowOf(s, board, owners, blast, marks.get(s.pr));
     });
     const changed = rows.filter((r) => posted.get(r.pr) !== JSON.stringify(r));
     const drop = [...posted.keys()].filter((n) => !rows.some((r) => r.pr === n));

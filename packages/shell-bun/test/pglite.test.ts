@@ -24,7 +24,13 @@ test("pglite: migrations apply once, and a Postgres client connects over the wir
   open.push(h);
   expect(said).toContain("[PG] migrate 0000_users.sql");
   expect(said).toContain("[PG] migrate 20240102_posts");
-  expect(h.connectionString).toBe(`postgres://postgres:postgres@127.0.0.1:${h.port}/postgres`);
+  expect(h.connectionString).toBe(`postgres://postgres:${h.password}@127.0.0.1:${h.port}/postgres`);
+
+  // another user on the machine can reach the port, but not with the old fixed password or a guess (#6243)
+  for (const pw of ["postgres", h.password.slice(1)]) {
+    const wrong = new SQL(`postgres://postgres:${pw}@127.0.0.1:${h.port}/postgres`, { max: 1, connectionTimeout: 5 });
+    try { expect(await wrong`SELECT 1`.then(() => "in", (e: Error) => e.message)).toContain("password authentication failed"); } finally { await wrong.close(); }
+  }
 
   // Bun.SQL's defaults, named prepared statements included, as against Hyperdrive (#1145)
   const sql = new SQL(h.connectionString, { max: 4 });
@@ -63,11 +69,11 @@ test("pglite: the data dir outlives a restart, and applied migrations don't run 
 });
 
 /** A bare wire-protocol connection, for what Bun.SQL doesn't speak (COPY). */
-async function wire(port: number) {
+async function wire(h: PgliteHyperdrive) {
   const enc = new TextEncoder(), dec = new TextDecoder();
   let buf = new Uint8Array(0);
   let wake = () => {};
-  const sock = await Bun.connect({ hostname: "127.0.0.1", port, socket: { data(_s, d) {
+  const sock = await Bun.connect({ hostname: "127.0.0.1", port: h.port, socket: { data(_s, d) {
     const b = new Uint8Array(buf.length + d.length); b.set(buf); b.set(d, buf.length); buf = b; wake();
   } } });
   const frame = (type: string, text = "") => {
@@ -92,6 +98,8 @@ async function wire(port: number) {
   const startup = enc.encode("\0\0\0\0\0\x03\0\0user\0postgres\0database\0postgres\0\0");
   new DataView(startup.buffer).setInt32(0, startup.length);
   sock.write(startup);
+  await until("R");   // the password prompt
+  sock.write(frame("p", `${h.password}\0`));
   await until("Z");
   return {
     send: (...m: [string, string?][]) => { for (const [t, s] of m) sock.write(frame(t, s)); },
@@ -102,7 +110,7 @@ async function wire(port: number) {
 
 test("pglite: COPY FROM STDIN streams in while other connections carry on (#1150)", async () => {
   const h = open.at(-1)!;
-  const a = await wire(h.port), b = await wire(h.port);
+  const a = await wire(h), b = await wire(h);
   try {
     await a.query("CREATE TABLE nums (n int)");
     a.send(["Q", "COPY nums FROM STDIN\0"]);

@@ -7,7 +7,7 @@ import { genericOAuth } from "better-auth/plugins";
 import { join } from "node:path";
 import { handle } from "../src/handle.ts";
 import { challengeOf, members } from "../src/members.ts";
-import { boot, ORIGIN, PASSWORD } from "./kit.ts";
+import { asks, boot, ORIGIN, PASSWORD } from "./kit.ts";
 import { newKey } from "@rustybuns/util/token";
 import { check, obj, opt, str } from "@rustybuns/util/guard";
 
@@ -103,6 +103,18 @@ test("a native app: its own scheme, a refresh token it keeps, signing out, and d
   const kept = check(Tokens, (await post({ grant_type: "authorization_code", code: new URL(cont.to).searchParams.get("code")!, code_verifier: verifier, scope: "offline_access" })).body)!;
   expect((await call("/api/account/delete", { bearer: kept.access_token, json: {} })).res.status).toBe(200);
   expect((await post({ grant_type: "refresh_token", refresh_token: kept.refresh_token! })).body).toMatchObject({ error: "invalid_grant" });
+});
+
+test("a web client's refresh token ends with a sign-out on eqosys, as a game page's does", async () => {
+  const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
+  // Its code went to an https address, so what it keeps is a page's, not a native app's.
+  const a = await asks("park-hide-seek", "https://park-hide-seek.notryanquinn.workers.dev");
+  const up = await call("/do/signup", { form: { ...a.form, name: "Ada", email: "ada@example.com", password: PASSWORD } });
+  const token = (o: Record<string, string>) => call("/oauth/token", { form: { client_id: "park-hide-seek", ...o } }).then((r) => r.res.json() as Promise<{ refresh_token?: string; error?: string }>);
+  const got = await token({ grant_type: "authorization_code", code: new URL(up.to).searchParams.get("code")!, code_verifier: a.verifier, scope: "openid offline_access" });
+  expect(got.refresh_token).toBeTruthy();
+  await call("/do/logout", { form: {}, cookie: up.cookie });
+  expect((await token({ grant_type: "refresh_token", refresh_token: got.refresh_token! })).error).toBe("invalid_grant");
 });
 
 test("an OpenID ask that isn't right goes nowhere it names", async () => {
