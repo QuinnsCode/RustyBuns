@@ -62,6 +62,32 @@ export function deadScratch(names: string[], repos: Repo[]): string[] {
   });
 }
 
+/**
+ * The scratch folders (by name) of worktrees still on disk that no worker sits at (`live`: the absolute paths in use).
+ * A worker sent home with work main lacks keeps its worktree, and its scratch stayed with it (#4798: a 2.9 GB log in
+ * one). A name some seated worktree could own (`nibble-1-apps` may be `nibble-1`'s subfolder) stays.
+ */
+export function keptScratch(names: string[], repos: Repo[], live: string[]): string[] {
+  const seated = new Set(live.map((p) => path.resolve(p)));
+  return names.filter((name) => {
+    let matched = false;
+    for (const r of repos) {
+      const prefix = `${slug(path.join(r.dir, WORKTREES))}-`;
+      if (!name.startsWith(prefix) || !r.trees) continue;
+      const rest = name.slice(prefix.length);
+      for (const t of r.trees) {
+        if (rest !== slug(t) && !rest.startsWith(`${slug(t)}-`)) continue;
+        if (seated.has(path.resolve(r.dir, WORKTREES, t))) return false;
+        matched = true;
+      }
+    }
+    return matched;
+  });
+}
+
+/** A kept worktree's scratch folder goes once nothing in it has changed for this long (a landed worker at rest may be steered again). */
+export const SCRATCH_IDLE_MIN = 24 * 60;
+
 async function treesOf(dir: string): Promise<string[] | undefined> {
   try { return await readdir(path.join(dir, WORKTREES)); } catch { return undefined; }
 }
@@ -88,8 +114,11 @@ export interface Swept {
   bytes: number;
 }
 
-/** Removes (`go`) or lists the scratch folders of `repos`' worktrees that are gone. Never throws. */
-export async function sweepScratch(repoDirs: string[], go: boolean, base = scratchBase()): Promise<Swept> {
+/**
+ * Removes (`go`) or lists the scratch folders of `repos`' worktrees that are gone, and with `live` (the worktree paths in
+ * use) those of worktrees kept on disk that nobody sits at, once idle `SCRATCH_IDLE_MIN`. Never throws.
+ */
+export async function sweepScratch(repoDirs: string[], go: boolean, base = scratchBase(), live?: string[], idleMin = SCRATCH_IDLE_MIN): Promise<Swept> {
   let names: string[];
   try { names = await readdir(base); } catch { return { paths: [], bytes: 0 }; }
   const repos = await Promise.all(repoDirs.map(async (dir) => ({ dir, trees: await treesOf(dir) })));
@@ -98,6 +127,15 @@ export async function sweepScratch(repoDirs: string[], go: boolean, base = scrat
     const p = path.join(base, name);
     try { if ((await lstat(p)).isDirectory()) paths.push(p); } catch {}
   }
+  const kept: string[] = [];
+  for (const name of live ? keptScratch(names, repos, live) : []) {
+    const p = path.join(base, name);
+    try { if (!(await lstat(p)).isDirectory()) continue; } catch { continue; }
+    // anything written in it lately (a log still growing, a session at rest) keeps it
+    if (await run(["find", p, "-mmin", `-${idleMin}`, "-print", "-quit"])) continue;
+    paths.push(p);
+    kept.push(p);
+  }
   const sizes = await duKb(paths);
   let bytes = 0;
   for (const p of paths) {
@@ -105,7 +143,7 @@ export async function sweepScratch(repoDirs: string[], go: boolean, base = scrat
       // look again just before: a worker hired since the listing may have made this worktree
       const name = path.basename(p);
       const again = await Promise.all(repoDirs.map(async (dir) => ({ dir, trees: await treesOf(dir) })));
-      if (!deadScratch([name], again).length) continue;
+      if (!(kept.includes(p) ? keptScratch([name], again, live ?? []) : deadScratch([name], again)).length) continue;
       try { await rm(p, { recursive: true, force: true }); } catch { continue; }
     }
     bytes += (sizes.get(p) ?? 0) * 1024;
@@ -266,12 +304,12 @@ export async function sweepFloor(dir: string, live?: string[]): Promise<string> 
     const h = await sweepHalfGone(dir, true);
     const hr = live ? await sweepHalfRemoved(dir, live, true) : { paths: [], bytes: 0 };
     // Claude names the folder from the path as the worker was started, which may or may not have its symlinks resolved
-    const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true);
+    const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true, scratchBase(), live && [...live, ...live.map((p) => { try { return realpathSync(p); } catch { return p; } })]);
     const m = live ? await sweepBuilt(dir, live, true) : { paths: [], bytes: 0 };
     const said = [
       h.paths.length && `${h.paths.length} half-deleted worktree folder${h.paths.length === 1 ? "" : "s"}`,
       hr.paths.length && `${hr.paths.length} half-removed worktree${hr.paths.length === 1 ? "" : "s"}`,
-      r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees`,
+      r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone or empty desks`,
       m.paths.length && `${m.paths.length} node_modules and build folder${m.paths.length === 1 ? "" : "s"} in worktrees nobody works in`,
     ].filter(Boolean);
     return said.length ? `🧹 Swept ${said.join(", ")}, ${gb(h.bytes + hr.bytes + r.bytes + m.bytes)} freed` : "";
