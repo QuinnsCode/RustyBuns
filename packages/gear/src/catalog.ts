@@ -351,11 +351,11 @@ const list: Gear[] = [
     speaker: { sensitivity: 100, maxSpl: 133, ratedWatts: 1000, ohms: 4, coverage: { h: 50, v: 50 }, lowCut: 37, highCut: 20000, rearLoss: 24 },
   },
   // The tapped horn: one 18" driving both ends of a folded horn; 105 dB half space, 134 continuous and 140 peak, 29 Hz
-  // at -10 dB; 1016 x 734 x 572 mm, 72.5 kg, 4 ohms, wants about 3.4 kW.
+  // at -10 dB; 572 wide, 1016 tall, 724 deep (22.5 x 40 x 28.5 in on its drawing), 72.5 kg, 4 ohms, wants about 3.4 kW.
   {
     id: "tapped-horn-18",
     what: '18" tapped horn sub',
-    size: box(0.734, 1.016, 0.572),
+    size: box(0.572, 1.016, 0.724),
     kg: 72.5,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 105, maxSpl: 140, ratedWatts: 1700, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 29, highCut: 120, rearLoss: 5 },

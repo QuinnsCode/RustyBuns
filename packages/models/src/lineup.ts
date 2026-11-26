@@ -46,6 +46,6 @@ export const LINEUP: Partial<Record<GearId, LineupRow>> = {
   "wedge-12-passive": { maker: "JBL", product: "PRX412M", published: [0.574, 0.41, 0.487], issue: 5960 },
   "line-array-box": { maker: "JBL", product: "VTX A12", published: [1.118, 0.33, 0.495], issue: 5960 },
   "synergy-horn": { maker: "Danley", product: "SH50", published: [0.711, 0.711, 0.647], issue: 5961 },
-  "tapped-horn-18": { maker: null, issue: 5961 },
+  "tapped-horn-18": { maker: "Danley", product: "TH118", published: [0.572, 1.016, 0.724], issue: 5961 }, // the drawing's 28.5 in deep (the sheet's metric line says 734)
   "cab-4x12": { maker: null, issue: 5961 },
 };

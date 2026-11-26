@@ -75,7 +75,7 @@ export const GEAR_SIZES = {
   "generator-100kva": [1.3, 2.0, 3.6],
   // Desert Gathering's other rigs (packages/gear systems.ts): sizes from the makers' sheets, or typical of the class
   "synergy-horn": [0.711, 0.711, 0.647],
-  "tapped-horn-18": [0.734, 1.016, 0.572],
+  "tapped-horn-18": [0.572, 1.016, 0.724],
   "triple-21-sub": [1.479, 0.696, 1.218],
   "tri-amp-top": [0.574, 0.825, 0.773],
   "tri-amp-bass": [0.574, 0.825, 0.773],
@@ -1759,15 +1759,6 @@ function well(b: Build, skin: GearSlot, [w, h, d]: readonly number[], deep: numb
   for (const y of [t / 2, h - t / 2]) b.pieces.push(box(skin, [w - 2 * t + 0.002, t, d], [0, y, 0], { bevel: 0.006 }));
 }
 
-/** The back of a passive box: a plate with the speaker jacks, rubber feet, a bar handle each side (unless `bars` is off) and the grab. */
-function backAndFeet(b: Build, [w, h, d]: readonly number[], handleY = 0.6, bars = true) {
-  if (bars) for (const s of [-1, 1]) b.pieces.push(...handle("knob", [s * w / 2, h * handleY, -d * 0.1], s > 0 ? "x" : "-x", 0.16, 0.01));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.05)], 0.004));
-  plate(b, w * 0.3, Math.min(0.2, h * 0.2), [0, h * 0.45, -d / 2 - 0.004]);
-  jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.06, h * 0.45, -d / 2 - 0.008], [w * 0.12, 0, 0]);
-  mark(b, "grab", [w / 2 + 0.012, h * handleY, 0], [1, 0, 0]);
-}
-
 /**
  * The synergy horn, as the Danley SH50 is given on its spec sheet (Rev. 202209301629: 711 x 711 x 647 mm, 18 mm
  * Baltic birch in black polyurea, 2 x 12" + 4 x 5" + 1" in one 50 x 50 degree horn) and shown in the maker's
@@ -1846,20 +1837,77 @@ function sh50Pieces(): Record<string, Build> {
 }
 
 /**
- * A tapped horn with one 18": a tall black box, its mouth a wide well across the top of the front, the folded horn's
- * last slanted panel showing inside it; the rest of the front is flat. Loud for its size down to about 30 Hz.
+ * The tapped horn, as the Danley TH118 is drawn on its spec sheet (V3.0, drawing TH118I rev 2, 2017, inches; sheet
+ * Rev. 202209231214) and shown in the maker's renders, piece by piece, no maker's name: a tall box of 18 mm Baltic
+ * birch in black polyurea, 22.5 in (572) wide, 40 (1016) tall and 28.5 (724) deep (the sheet's metric line says 734,
+ * but its drawing and inch line say 28.5). Metres from the box's centre line, floor and front.
+ * - cabinet: the sides, top, bottom, back and the plain front above the mouth, the back's bottom corner cut off on a
+ *   slant (135 in, 230 up, read off the side render) where the casters sit
+ * - mouth: the 20 in (508) tall well across the bottom of the front, dark at its back, the 18" driver standing in it
+ *   on its side, cone to the right, magnet to the left, as the sheet's photo shows it with the grille off
+ * - grille: the perforated steel sheet over the mouth, a black screw each side
+ * - hardware: a bar handle in a 1.72 in slot 19.66 long, 3.12 back from the front, high (4.00 down) and low (5.72 up)
+ *   in each side; a pole cup in each side (13.25 back, 20.50 down) and in the top; two hand pockets in the top at the
+ *   back; the 3/8-16 points (4 top, 4 under, 6 each side, 4 back); the jack plate and label on the back; two casters
  */
-function tappedHorn(): Build {
-  const size = GEAR_SIZES["tapped-horn-18"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.02, mh = 0.34, deep = d * 0.8, front = d / 2;
-  well(b, "coat", size, deep, t);
-  b.pieces.push(box("coat", [w - 2 * t, h - mh - t, 0.02], [0, (h - mh + t) / 2, front - 0.01]));
-  b.pieces.push(box("coat", [w - 2 * t, h - mh - t, deep], [0, (h - mh + t) / 2, front - deep / 2 - 0.01]));
-  // the fold's last panel, slanting up from the mouth's floor to the back
-  const slant = Math.atan2(mh - t * 2, deep);
-  b.pieces.push(box("panel", [w - 2 * t, 0.012, Math.hypot(deep, mh - 2 * t) * 0.98], [0, h - mh / 2, front - deep / 2], { rot: [slant, 0, 0] }));
-  b.pieces.push(...grilleSlab(w - 2 * t - 0.004, mh - t - 0.004, 0.012, h - (mh + t) / 2, front - 0.013, 0.006));
-  backAndFeet(b, size, 0.55);
-  return b;
+function th118Pieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["tapped-horn-18"], P = pieceBuild, cab = P(), mouth = P(), grille = P(), hw = P();
+  const t = mm(18), f = d / 2, zb = -d / 2, inch = (v: number) => v * 0.0254, mh = inch(20), cw = mm(135), ch = mm(230);
+  const side: [number, number][] = [[f, 0], [f, h], [zb, h], [zb, ch], [zb + cw, 0]];
+
+  // cabinet: the two sides in the profile, top, bottom (stopping at the slant), back above the slant, the slant
+  // panel, the front above the mouth
+  for (const s of [-1, 1]) cab.pieces.push(prism("coat", side, t, s * (w / 2 - t / 2), 0.003));
+  cab.pieces.push(box("coat", [w - 2 * t, t, d], [0, h - t / 2, 0]));
+  cab.pieces.push(box("coat", [w - 2 * t, t, d - cw], [0, t / 2, (f + zb + cw) / 2]));
+  cab.pieces.push(box("coat", [w - 2 * t, h - ch - t, t], [0, (h - t + ch) / 2, zb + t / 2]));
+  const slant = Math.atan2(cw, ch);
+  cab.pieces.push(box("coat", [w - 2 * t, Math.hypot(cw, ch), t], [0, ch / 2, zb + cw / 2], { rot: [-slant, 0, 0] }));
+  cab.pieces.push(box("coat", [w - 2 * t, h - mh - t, t], [0, (h - t + mh) / 2, f - t / 2]));
+
+  // mouth: the well under the front, its back 400 in, its roof the fold's floor; the 18" on its side in it
+  const back = mm(400), my = mh / 2;
+  mouth.pieces.push(box("cavity", [w - 2 * t, mh - t, 0.004], [0, (mh + t) / 2, f - back]));
+  mouth.pieces.push(box("coat", [w - 2 * t, t, back], [0, mh - t / 2, f - back / 2]));
+  mouth.pieces.push(...cone(mm(200), mm(120), new THREE.Matrix4().makeTranslation(-mm(40), my, f - mm(210)).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), 20));
+  mouth.pieces.push(disc("metal", mm(85), mm(70), "x", [-mm(200), my, f - mm(210)], 16));
+
+  // grille: the sheet over the mouth inside a thin lip, one black screw each side at half height
+  const gw = w - mm(16), gh = mh - mm(12);
+  grille.pieces.push(...grilleSlab(gw, gh, mm(12), mm(6) + gh / 2, f - mm(13), mm(3)));
+  for (const s of [-1, 1]) grille.pieces.push(...screw([s * (gw / 2 - 0.011), mm(6) + gh / 2, f + 0.001], "z", 0.004, "knob", 6));
+
+  // hardware: the side rails (a slot, a bar in it), the pole cups, the top's pockets, the points, the back, casters
+  const railZ = f - inch(3.12) - inch(19.66) / 2, slotH = inch(1.72);
+  for (const s of [-1, 1]) for (const y of [h - inch(4.0) - slotH / 2, inch(5.72) + slotH / 2]) {
+    hw.pieces.push(box("cavity", [0.004, slotH, inch(19.66)], [s * (w / 2 - 0.0015), y, railZ], { bevel: 0.001 }));
+    hw.pieces.push(rod("metal", [s * (w / 2 - 0.004), y, railZ - inch(19.66) / 2 + 0.02], [s * (w / 2 - 0.004), y, railZ + inch(19.66) / 2 - 0.02], 0.011, 8));
+  }
+  for (const s of [-1, 1]) {
+    hw.pieces.push(disc("rubber", mm(50), 0.006, "x", [s * (w / 2 + 0.001), h - inch(20.5), f - inch(13.25)], 18));
+    hw.pieces.push(disc("cavity", mm(36), 0.008, "x", [s * (w / 2 + 0.0015), h - inch(20.5), f - inch(13.25)], 16));
+  }
+  hw.pieces.push(disc("rubber", mm(50), 0.006, "y", [0, h + 0.001, zb + inch(13.85)], 18), disc("cavity", mm(36), 0.008, "y", [0, h + 0.0015, zb + inch(13.85)], 16));
+  for (const s of [-1, 1]) hw.pieces.push(box("cavity", [mm(110), 0.004, mm(45)], [s * mm(150), h + 0.0004, zb + mm(60)], { bevel: 0.001 }));
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x * (w / 2 - mm(60)), h + 0.0015, z * (d / 2 - mm(60))], 10));
+    hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x * (w / 2 - mm(60)), -0.0005, z > 0 ? f - mm(60) : zb + cw + mm(60)], 10));
+    hw.pieces.push(disc("metal", 0.009, 0.003, "z", [x * (w / 2 - mm(60)), z > 0 ? h - mm(60) : ch + mm(60), zb - 0.0015], 10));
+  }
+  for (const s of [-1, 1]) for (const y of [mm(60), h / 2, h - mm(60)]) for (const z of [f - mm(60), zb + mm(60)])
+    if (!(y < ch && z < 0)) hw.pieces.push(disc("metal", 0.009, 0.003, "x", [s * (w / 2 + 0.0015), y, z], 10));
+  hw.pieces.push(disc("metal", 0.009, 0.003, "x", [w / 2 + 0.0015, ch + mm(60), zb + mm(60)], 10), disc("metal", 0.009, 0.003, "x", [-w / 2 - 0.0015, ch + mm(60), zb + mm(60)], 10));
+  plate(hw, mm(110), mm(240), [-mm(60), h * 0.66, zb - 0.004]);
+  jacks(hw, ["speaker-in", "speaker-out"], "back", [-mm(60), h * 0.66 + mm(60), zb - 0.008], [0, -mm(120), 0]);
+  hw.pieces.push(box("cavity", [mm(70), mm(45), 0.004], [mm(130), h * 0.66, zb - 0.0004], { bevel: 0.001 }));
+  // the casters: a wheel on a fork either side, half out of the slant
+  const nz = -Math.cos(slant), ny = -Math.sin(slant), wz = zb + cw / 2 + nz * mm(20), wy = ch / 2 + ny * mm(20);
+  for (const s of [-1, 1]) {
+    hw.pieces.push(disc("rubber", mm(50), mm(36), "x", [s * (w / 2 - mm(55)), wy, wz], 18));
+    hw.pieces.push(box("metal", [mm(46), mm(30), mm(70)], [s * (w / 2 - mm(55)), ch / 2 - ny * mm(5), zb + cw / 2 - nz * mm(5)], { rot: [-slant, 0, 0] }));
+  }
+  mark(hw, "grab", [w / 2 + 0.012, h - inch(4.0) - slotH / 2, railZ], [1, 0, 0]);
+  return { cabinet: cab, mouth, grille, hardware: hw };
 }
 
 /** A circle's outline [x, y], `n` points counter-clockwise round (x, y). */
@@ -2617,7 +2665,7 @@ const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
   "top-15-passive": jrx215Pieces, "wedge-12-passive": prx412mPieces, "line-array-box": a12Pieces,
   "top-12-powered": () => k2Pieces("top-12-powered"), "fill-8-powered": () => k2Pieces("fill-8-powered"), "sub-18": ks118Pieces, "wedge-12": cp12Pieces, "line-array-10": la108Pieces,
-  "synergy-horn": sh50Pieces,
+  "synergy-horn": sh50Pieces, "tapped-horn-18": th118Pieces,
 };
 
 /** A box built piece by piece, every piece merged into one build. */
@@ -2668,7 +2716,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "amp-rack-12u": ampRack12,
   "generator-100kva": siteGenerator,
   "synergy-horn": whole("synergy-horn"),
-  "tapped-horn-18": tappedHorn,
+  "tapped-horn-18": whole("tapped-horn-18"),
   "triple-21-sub": whole("triple-21-sub"),
   "tri-amp-top": whole("tri-amp-top"),
   "tri-amp-bass": whole("tri-amp-bass"),
