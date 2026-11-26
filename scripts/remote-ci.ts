@@ -222,12 +222,16 @@ export async function claim(b: Builder, rec?: RunRecord): Promise<{ slot: string
 
 // Give the slot back; with its record, mark the run done and keep only the last KEEP finished ones. Without one
 // (a slot claimed and handed back unrun), its record goes.
+// A run that didn't finish (stopped: code 130; lost or cut off: no record) may still be running there: killing the local
+// ssh doesn't end its command on Bob. Its tree ends first, as REAP ends a dead run's, so the next claim never resets
+// the slot under a suite that is still going (#6192).
 export function release(b: Builder, slot: string, rec?: RunRecord) {
   const s = q(slot), id = q(`done/${rec?.started ?? 0}-${slot}`);
+  const end = !rec || rec.code === undefined || rec.code === 130 ? `P="$PWD/"${s} R="$(pwd -P)/"${s}; ${END_TREE}` : "";
   const done = rec ? `printf '%s' ${q(JSON.stringify(rec))} > runs/${id}.json; mv -f runs/${s}.log runs/${id}.log 2>/dev/null; rm -f runs/${s}.json; `
     + `ls -t runs/done/*.json 2>/dev/null | tail -n +${KEEP + 1} | while read -r f; do rm -f "$f" "${"$"}{f%.json}.log"; done; `
     : `rm -f runs/${s}.json runs/${s}.log; `;
-  return stream(remote(b, `${done}rm -f runs/${s}.cut; rmdir locks/${s}`), "release", true);
+  return stream(remote(b, `${end}${done}rm -f runs/${s}.cut; rmdir locks/${s}`), "release", true);
 }
 
 // One push to the builder at a time from this Mac: each is a git pack-objects of up to 440 MB, and seven at once
