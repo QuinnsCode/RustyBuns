@@ -187,3 +187,18 @@ test("the club pair moves as a DJ plays it: the mixer's faders, meters, crossfad
   expect(dp.get("play")!.position.z).toBeGreaterThan(dp.get("cue")!.position.z);
   expect(deck.userData.tempoTravel).toBeGreaterThan(0.08);
 });
+
+// #6064: the left box of an Air Motion pair is Void's left-handed one, and the Void subs stand on their skids.
+test("the left-handed Air Motion is the right-handed one mirrored: its LF horn on the right seen from the front", () => {
+  const lfAt = (id: GearId) => new THREE.Box3().setFromObject(gearPieces(id)!.find((p) => p.name === "lf-horn")!.group).getCenter(new THREE.Vector3()).x;
+  expect(lfAt("sculpted-3way")).toBeLessThan(-0.1);
+  expect(lfAt("sculpted-3way-lh")).toBeCloseTo(-lfAt("sculpted-3way"), 6);
+});
+
+test.each([["triple-21-sub", 0.0075], ["arc-sub-18", 0.015]] as const)("%s stands on %f m skids inside its published height", (id, skid) => {
+  const box = (name: string) => new THREE.Box3().setFromObject(gearPieces(id)!.find((p) => p.name === name)!.group);
+  expect(box("skids").min.y).toBeCloseTo(0, 6);
+  expect(box("skids").max.y).toBeCloseTo(skid, 6);
+  expect(box("cabinet").min.y).toBeCloseTo(skid, 3);
+  expect(new THREE.Box3().setFromObject(gear(id)).max.y).toBeCloseTo(GEAR_SIZES[id][1], 2);
+});

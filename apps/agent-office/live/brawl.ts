@@ -18,6 +18,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { check } from "@rustybuns/util/guard";
+import { every } from "./every.ts";
 import { LiveMessage, Replay, Summaries, type ReplayEntry } from "../../excalibrawl/src/live-wire.ts";
 import { isLinear, type Op, type SkeletonEl } from "../../excalibrawl/src/engine/types.ts";
 
@@ -366,12 +367,11 @@ const titleOf = (m: { prompt: string; fighters: { name: string }[] }, what: stri
 export class FloorBrawl {
   private stage: Stage;
   private curtain: Curtain;
-  private timer?: ReturnType<typeof setInterval>;
+  private halt?: () => void;
   private phase: Phase | "off" = "off";
   private fight: { started: boolean; endedAt?: number; id?: string; m?: { prompt: string; fighters: { name: string }[]; turns: number; turn: number }; log: ReplayEntry[] } = { started: false, log: [] };
   private unlisten?: () => void;
   private slide?: { m: Replay; turn: number; next: number; i: number };
-  private busy = false;
 
   constructor(private board: Board, private feed: Feed, private now: () => number = Date.now) {
     this.stage = new Stage(board);
@@ -382,28 +382,19 @@ export class FloorBrawl {
     // A restart mid-fight: bring the drawing back first; tick puts it away again if it's still fight time.
     if (this.curtain.down) this.curtain.open();
     this.stage.clear();
-    this.timer = setInterval(() => void this.tick(), everyMs);
+    this.halt = every(everyMs, () => this.tick(), { name: "brawl" });
     return this;
   }
 
   stop() {
-    clearInterval(this.timer);
+    this.halt?.();
     this.unlisten?.();
     this.stage.clear();
     if (this.curtain.down) this.curtain.open();
   }
 
+  /** One round: the feed, then whatever the phase needs. */
   async tick() {
-    if (this.busy) return;
-    this.busy = true;
-    try {
-      await this.step();
-    } finally {
-      this.busy = false;
-    }
-  }
-
-  private async step() {
     await this.feed.list();
     if (!this.feed.healthy) return this.enter("off");
     const phase = phaseAt(this.now(), this.fight);

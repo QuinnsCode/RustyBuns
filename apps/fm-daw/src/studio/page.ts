@@ -9,7 +9,7 @@
 // half built. Your room is kept in this browser. The Party panel (Qevent, party.ts) makes a party, gives each performer
 // a scene (the builder edits the one on stage, each scene with its own undo), saves versions that stay, and puts one
 // party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z), delay(x, z),
-// download("list" | "plan"), undo(), redo(), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
+// download("list" | "plan"), undo(), redo(), event(walk?), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
@@ -23,10 +23,10 @@ import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground } from "@rustybuns/gear";
-import { arrivals, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
+import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
+import { arrivals, paBoxes, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
-import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
 import { partySync } from "./party-sync.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
@@ -182,11 +182,12 @@ function render() {
   const [dx, dz] = room.door.at;
   plan.append(el("path", { "data-door": 1, class: "door", d: `M ${dx - 0.3 * scale} ${dz + 0.25 * scale} L ${dx} ${dz - 0.25 * scale} L ${dx + 0.3 * scale} ${dz + 0.25 * scale}`, "stroke-width": 0.06 * scale }));
   // the field's banks: each its foot turned its way, its crest dashed along it
-  for (const b of room.outdoor?.banks ?? []) {
-    const turned = el("g", { transform: `rotate(${(-b.yaw * 180) / Math.PI} ${b.at[0]} ${b.at[1]})` }), wide = Math.max(2, 4 * b.h);
+  for (const [i, b] of (room.outdoor?.banks ?? []).entries()) {
+    const g = el("g", { "data-bank": i }), turned = el("g", { transform: `rotate(${(-b.yaw * 180) / Math.PI} ${b.at[0]} ${b.at[1]})` }), wide = Math.max(2, 4 * b.h);
     turned.append(el("rect", { class: "bank", x: b.at[0] - b.len / 2 - wide / 2, y: b.at[1] - wide / 2, width: b.len + wide, height: wide, rx: wide / 2, "stroke-width": 0.03 * scale }));
     turned.append(el("line", { class: "crest", x1: b.at[0] - b.len / 2, y1: b.at[1], x2: b.at[0] + b.len / 2, y2: b.at[1], "stroke-width": 0.05 * scale }));
-    plan.append(turned);
+    g.append(turned);
+    plan.append(g);
   }
   // the rig's stacks, each its footprint turned its way, and a line out along where its tops aim
   if (roomPa(room)) {
@@ -222,7 +223,7 @@ function render() {
 
 type Tool = "move" | "wall" | "door" | "window" | "booth" | "place" | "decor" | "paint" | "pa" | "turn" | "remove";
 const TOOLS: { id: Tool; name: string; icon: string }[] = [
-  { id: "move", name: "Move: drag a seat, a booth, a piece of furniture, the gear wall or the way in", icon: `<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>` },
+  { id: "move", name: "Move: drag a seat, a booth, a piece of furniture, the gear wall, the way in, a stack or a bank (on the blueprint)", icon: `<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>` },
   { id: "wall", name: "Wall: drag across the floor to put one up", icon: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/>` },
   { id: "door", name: "Doorway: click a wall to knock one through, again to brick it up", icon: `<path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/>` },
   { id: "window", name: "Window: click an outside wall to put a window in it", icon: `<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/><path d="M3 12h18"/>` },
@@ -231,8 +232,8 @@ const TOOLS: { id: Tool; name: string; icon: string }[] = [
   { id: "decor", name: "Decorate: pick a piece from the catalog, click the floor", icon: `<path d="M8 2h8l4 10H4L8 2Z"/><path d="M12 12v6"/><path d="M8 22v-2c0-1.1.9-2 2-2h4a2 2 0 0 1 2 2v2H8Z"/>` },
   { id: "paint", name: "Paint: pick a material, click the floor or a wall", icon: `<rect width="16" height="6" x="2" y="2" rx="2"/><path d="M10 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect width="4" height="6" x="8" y="16" rx="1"/>` },
   { id: "pa", name: "PA: click the ground to stand a stack of the rig there, facing the floor's middle", icon: `<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 6h.01"/><circle cx="12" cy="14" r="4"/><path d="M12 14h.01"/>` },
-  { id: "turn", name: "Turn: click a seat or a piece to turn it an eighth, a stack a twelfth (Shift: back)", icon: `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>` },
-  { id: "remove", name: "Remove: click a seat, a piece, a wall or a booth", icon: `<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>` },
+  { id: "turn", name: "Turn: click a seat or a piece to turn it an eighth, a stack or a bank a twelfth (Shift: back)", icon: `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>` },
+  { id: "remove", name: "Remove: click a seat, a piece, a wall, a booth, a stack or a bank", icon: `<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>` },
 ];
 const icon = (paths: string) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 const NAMES: Record<SpotKind, string> = { keys: "keys", drums: "kit", bass: "bass synth", desk: "desk", booth: "mic", couch: "couch", dj: "decks" };
@@ -242,6 +243,12 @@ const canvas = $("view") as HTMLCanvasElement;
 let build: BuildView | null = null;
 try { build = new BuildView(canvas); } catch { view = "plan"; /* no WebGL: the blueprint only */ }
 if (build) build.venue.onChange = (s) => { if (s.state === "drawn" || s.state === "failed") renderParty(); };
+// a capture's ground, read off its points once it is in, becomes the field's land (pa-room.ts roomField)
+if (build) build.venue.onLand = (src, land) => {
+  const v = room.venue;
+  if (v?.src !== src || v.land) return;
+  if (parties.open ? partyDo(setVenue(parties, { ...v, land })) : apply({ t: "venue", venue: { ...v, land } })) render();
+};
 /** Walls snap to a 25 cm grid, seats and booths to 10 cm. */
 const quarter = (v: number) => Math.round(v * 4) / 4;
 const tenth = (v: number) => Math.round(v * 10) / 10;
@@ -253,7 +260,7 @@ function toRoom(e: PointerEvent): number[] {
 const pointAt = (e: PointerEvent): number[] | null => (view === "3d" ? build?.toRoom(e) ?? null : toRoom(e));
 function hitAt(e: PointerEvent): Hit {
   if (view === "3d") return build?.hit(e) ?? null;
-  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear], [data-wall], [data-prop], [data-door], [data-stack]") : null;
+  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear], [data-wall], [data-prop], [data-door], [data-stack], [data-bank]") : null;
   if (!g) {
     // on the blueprint the floor is the room's rectangle, and an outside wall its edge (within 30 cm of it)
     const [x, z] = toRoom(e), { w, d } = room.size;
@@ -265,10 +272,11 @@ function hitAt(e: PointerEvent): Hit {
   const spot = g.getAttribute("data-spot"), booth = g.getAttribute("data-booth"), wall = g.getAttribute("data-wall"), piece = g.getAttribute("data-prop");
   if (g.hasAttribute("data-door")) return { door: true };
   if (g.hasAttribute("data-stack")) return { stack: Number(g.getAttribute("data-stack")) };
+  if (g.hasAttribute("data-bank")) return { bank: Number(g.getAttribute("data-bank")) };
   return spot ? { spot } : booth ? { booth } : wall !== null ? { wall: Number(wall) } : piece !== null ? { prop: Number(piece) } : { gear: true };
 }
 
-let drag: { kind: "spot" | "booth" | "gear" | "prop" | "door" | "stack"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
+let drag: { kind: "spot" | "booth" | "gear" | "prop" | "door" | "stack" | "bank"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
 let drawing: { from: [number, number]; to: [number, number] } | null = null;
 let orbiting: { x: number; y: number } | null = null;
 
@@ -296,7 +304,13 @@ function act(e: PointerEvent) {
   const p = pointAt(e), h = hitAt(e), at = (p ? [tenth(p[0]), tenth(p[1])] : null) as [number, number] | null;
   why = "";
   if (tool === "move") {
-    if (!h || !("spot" in h || "booth" in h || "gear" in h || "prop" in h || "door" in h || "stack" in h)) return;
+    if (!h || !("spot" in h || "booth" in h || "gear" in h || "prop" in h || "door" in h || "stack" in h || "bank" in h)) return;
+    if ("bank" in h) {
+      const b = room.outdoor?.banks?.[h.bank];
+      if (!b || !p) return;
+      drag = { kind: "bank", id: String(h.bank), from: [...b.at], at: [...b.at], g: [...plan.querySelectorAll<SVGElement>(`[data-bank="${h.bank}"]`)], start: p };
+      return;
+    }
     if ("stack" in h) {
       const st = rigStacks(room)[h.stack];
       stackPicked = h.stack; render();
@@ -340,6 +354,7 @@ function act(e: PointerEvent) {
     if (at && apply({ t: "stack", at })) { stackPicked = (roomPa(room)?.stacks.length ?? 1) - 1; render(); }
   } else if (tool === "turn") {
     if (h && "stack" in h) { const st = roomPa(room)?.stacks[h.stack]; stackPicked = h.stack; if (st) apply({ t: "aimStack", index: h.stack, yaw: st.yaw + (e.shiftKey ? -1 : 1) * Math.PI / 12 }); }
+    else if (h && "bank" in h) { const b = room.outdoor?.banks?.[h.bank]; if (b) apply({ t: "turnBank", index: h.bank, yaw: b.yaw + (e.shiftKey ? -1 : 1) * Math.PI / 12 }); }
     else if (h && "spot" in h) { picked = h.spot; apply({ t: "turn", id: h.spot, by: e.shiftKey ? -1 : 1 }); }
     else if (h && "prop" in h) apply({ t: "turnProp", index: h.prop, by: e.shiftKey ? -1 : 1 });
   } else if (tool === "remove") {
@@ -347,6 +362,7 @@ function act(e: PointerEvent) {
     else if (h && "booth" in h) apply({ t: "unbooth", id: h.booth });
     else if (h && "wall" in h) apply({ t: "unwall", index: h.wall });
     else if (h && "prop" in h) apply({ t: "unprop", index: h.prop });
+    else if (h && "bank" in h) apply({ t: "unbank", index: h.bank });
     else if (h && "stack" in h && apply({ t: "unstack", index: h.stack })) { stackPicked = null; render(); }
   }
   try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* a pointer that already left */ }
@@ -401,6 +417,7 @@ function up(e?: PointerEvent) {
     // a stack moves by what it was dragged: where the room stood it, not where its block drew it
     const stored = d.kind === "stack" ? roomPa(room)?.stacks[Number(d.id)]?.at : undefined;
     if (stored) return void apply({ t: "moveStack", index: Number(d.id), at: [tenth(stored[0] + d.at[0] - d.from[0]), tenth(stored[1] + d.at[1] - d.from[1])] });
+    if (d.kind === "bank") return void apply({ t: "moveBank", index: Number(d.id), at: [d.at[0], d.at[1]] });
     apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : d.kind === "prop" ? { t: "moveProp", index: Number(d.id), at: d.at } : d.kind === "door" ? { t: "moveDoor", at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
   } else if (drawing) {
     const w = drawing; drawing = null;
@@ -772,23 +789,41 @@ function joinLink(): string | null {
   u.searchParams.set("party", owner);
   return u.href;
 }
+/** The Event's room (#6020): the join link signed in, else this browser's own room for the live party, carrying its
+ *  scene on stage. `walk` makes it the client walk-through: the planned PA plays a test set to walk the site by. */
+function eventLink(walk = false): string | null {
+  const p = parties.parties.find((q) => q.id === parties.live), on = liveStudio(parties);
+  if (!p || !on) return null;
+  const u = new URL(joinLink() ?? builtLink(location.origin, on, `event-${p.id}`.slice(0, 64)));
+  u.searchParams.set("name", p.name);
+  if (walk) u.searchParams.set("walk", "1");
+  return u.href;
+}
+/** Open the plan as The Event: live as it stands, in a new tab (a walk-through, or the room itself). */
+function openEvent(walk: boolean): string | null {
+  if (!partyDo(openAsEvent(parties, room.name, room))) return null;
+  const link = eventLink(walk);
+  if (link) window.open(link, "_blank", "noopener");
+  return link;
+}
 /** A <input type="datetime-local"> value and back: empty is open now. */
 const toLocal = (ms: number | null) => ms === null ? "" : new Date(ms - new Date(ms).getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const fromLocal = (v: string) => { const ms = v ? new Date(v).getTime() : NaN; return Number.isFinite(ms) ? ms : null; };
 
 function renderParty() {
   const host = $("party"), p = openParty(parties), x = (attrs: string, name: string) => `<button type="button" class="x" ${attrs} aria-label="${esc(name)}" title="${esc(name)}">${icon(X)}</button>`;
+  const eventButtons = `<button type="button" id="event-open" title="The planned room or field as a jam room, with its PA, guest list and listen link">Open as event</button><button type="button" id="event-walk" title="Walk the site and hear the planned PA before the show">Client walk-through</button>`;
   if (!p) {
     host.innerHTML = `<h2>Party</h2>
       ${parties.parties.length ? `<ul class="parties">${parties.parties.map((q) => `<li><button type="button" data-party-open="${q.id}">${esc(q.name)}</button><span class="hint">${esc(whenWords(q.when))}${q.id === parties.live ? " · live" : ""}</span>${x(`data-party-drop="${q.id}"`, `Take ${q.name} away, with every version`)}</li>`).join("")}</ul>` : ""}
       <div class="row"><label>Name<input id="party-name" maxlength="60" placeholder="Saturday night"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local"></label></div>
-      <div class="row"><button type="button" class="go" id="party-make">Make a party</button></div>
+      <div class="row"><button type="button" class="go" id="party-make">Make a party</button>${eventButtons}</div>
       <p class="hint">Its first scene is the room you have now. Each performer gets a scene of their own.</p>`;
   } else {
     const live = parties.live === p.id, join = joinLink();
     host.innerHTML = `<h2>Party</h2>
       <div class="row"><label>Name<input id="party-rename" maxlength="60" value="${esc(p.name)}"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local" value="${toLocal(p.when)}"></label></div>
-      <div class="row"><button type="button" id="party-live" class="${live ? "go" : ""}" aria-pressed="${live}">${live ? "Live" : "Go live"}</button><button type="button" id="party-close">All parties</button></div>
+      <div class="row"><button type="button" id="party-live" class="${live ? "go" : ""}" aria-pressed="${live}">${live ? "Live" : "Go live"}</button><button type="button" id="party-close">All parties</button>${eventButtons}</div>
       <p class="hint">${live ? "The room people join: Enter walks its scene on stage." : parties.live ? "Another party is live; only one is at a time." : "Not live yet: you can change it before or during the event."}</p>
       ${live ? join ? `<div class="row"><a class="button" id="party-join" href="${esc(join)}" target="_blank" rel="noopener">Join link</a><button type="button" id="party-copy">Copy link</button></div>` : `<p class="hint">Sign in with eqosys on the front door to give it a join link for any device.</p>` : ""}
       <h2>Scenes</h2>
@@ -805,6 +840,8 @@ function renderParty() {
   document.getElementById("party-rename")?.addEventListener("change", () => partyDo(reschedule(parties, { name: val("party-rename") })));
   if (p) document.getElementById("party-when")?.addEventListener("change", () => partyDo(reschedule(parties, { when: fromLocal(val("party-when")) })));
   document.getElementById("party-live")?.addEventListener("click", () => partyDo(goLive(parties, parties.live === p?.id ? null : p?.id ?? null)));
+  document.getElementById("event-open")?.addEventListener("click", () => openEvent(false));
+  document.getElementById("event-walk")?.addEventListener("click", () => openEvent(true));
   document.getElementById("party-close")?.addEventListener("click", () => partyDo(open(parties, undefined)));
   document.getElementById("party-copy")?.addEventListener("click", (e) => {
     const b = e.currentTarget, link = joinLink();
@@ -866,10 +903,10 @@ const harness = {
   pa: () => {
     const map = paMap(), rp = rigPlan(room), field = roomField(room);
     return {
-      stacks: rigStacks(room), picked: stackPicked, map: showMap,
+      stacks: rigStacks(room), picked: stackPicked, map: showMap, sources: paBoxes(room),
       coverage: map ? { ref: +map.ref.toFixed(1), middle: map.middle, mean: +map.stats.mean.toFixed(1), min: +map.stats.min.toFixed(1), max: +map.stats.max.toFixed(1), even: +map.stats.even.toFixed(1) } : null,
       power: rp ? powerPlan(rp) : null,
-      field: field ? { tempC: field.tempC, humidity: field.humidity, ground: field.ground, speed: +speedOfSound(field.tempC).toFixed(1), banks: room.outdoor?.banks ?? [] } : null,
+      field: field ? { tempC: field.tempC, humidity: field.humidity, ground: field.ground, speed: +speedOfSound(field.tempC).toFixed(1), banks: room.outdoor?.banks ?? [], captured: !!room.venue?.land } : null,
     };
   },
   /** The coverage map's level at (x, z) on the floor, dB. */
@@ -903,11 +940,12 @@ const harness = {
       };
     },
     make: (name: string, when: number | null = null) => ({ ok: partyDo(makeParty(parties, name, when, room)), why }),
-    /** Lay every scene out in a captured venue (any ShareSplat link), or none. */
-    venue: (link: string | null, place: { scale?: number; at?: [number, number, number]; yaw?: number } = {}) => {
+    /** Lay every scene out in a captured venue (any ShareSplat link), or none; `land` its ground's heights when they are
+     *  known already (else they are read off the capture once it is in). */
+    venue: (link: string | null, place: { scale?: number; at?: [number, number, number]; yaw?: number; land?: HeightMap } = {}) => {
       const src = link === null ? null : venueSrc(link);
       if (link !== null && !src) return { ok: false, why: "not a ShareSplat link" };
-      return { ok: partyDo(setVenue(parties, src ? { src, scale: place.scale ?? 1, at: place.at ?? [0, 0, 0], yaw: place.yaw ?? 0 } : null)), why };
+      return { ok: partyDo(setVenue(parties, src ? { src, scale: place.scale ?? 1, at: place.at ?? [0, 0, 0], yaw: place.yaw ?? 0, ...(place.land ? { land: place.land } : {}) } : null)), why };
     },
     open: (id?: string) => ({ ok: partyDo(open(parties, id)), why }),
     drop: (id: string) => ({ ok: partyDo(dropParty(parties, id)), why }),
@@ -920,6 +958,8 @@ const harness = {
     save: (note = "") => ({ ok: partyDo(saveVersion(parties, note, Date.now())), why }),
     restore: (n: number) => ({ ok: partyDo(restore(parties, n)), why }),
   },
+  /** Open as event (#6020): the open party (or a new one from this room) goes live; its room's link, `walk` for the client walk-through. */
+  event: (walk = false) => { const ok = partyDo(openAsEvent(parties, room.name, room)); return { ok, why, link: ok ? eventLink(walk) : null }; },
   pick: (id: string) => { picked = id; render(); },
   /** The link into /jam.html (in sesh `sesh`) that carries this room (builder.ts builtLink), for a probe whose browser has none of this page's storage. */
   enter: (sesh?: string) => builtLink(location.origin, room, sesh),

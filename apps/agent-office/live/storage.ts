@@ -15,6 +15,7 @@ import { statfsSync } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { every } from "./every.ts";
 
 const GB = 1024 ** 3;
 /** node_modules is most of the bytes and changes least: it's sized again after this long. */
@@ -118,25 +119,17 @@ export class StorageGuard {
   /** The workers over the cap now. */
   readonly over = new Set<string>();
   private low = false;
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private looking = false;
+  private halt?: () => void;
 
   constructor(private d: Deps) {}
 
   start() {
-    void this.look();
-    this.timer = setInterval(() => void this.look(), this.d.settings().everyMs);
-    this.timer.unref?.();
+    this.halt = every(this.d.settings().everyMs, () => this.look(), { name: "storage guard", first: 0 });
   }
-  stop() { clearInterval(this.timer); }
+  stop() { this.halt?.(); }
 
+  /** One look: the workers over the cap now, and the volume against its floor. */
   async look() {
-    if (this.looking) return;
-    this.looking = true;
-    try { await this.once(); } finally { this.looking = false; }
-  }
-
-  private async once() {
     const { capBytes, floorBytes } = this.d.settings();
     const seats = this.d.seats();
     const free = this.d.free();

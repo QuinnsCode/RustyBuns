@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { parseJson } from "@rustybuns/util/http";
-import { jwksOf, newKey, sign, TokenChecker } from "@rustybuns/util/token";
+import { jwksOf, newKey, peek, sign, TokenChecker } from "@rustybuns/util/token";
 import { APP, Job, JobsReply, NOT_OWNER, Refusal, Run, SIGN_IN } from "../src/api.ts";
 import { api } from "../src/server.ts";
 import { Store } from "../src/store.ts";
@@ -74,12 +74,17 @@ test("a day in the life: make jobs per app, the ticker fires them on the minute,
   expect((await ask("GET", `/api/jobs/${job.id}/runs`)).status).toBe(404);
 });
 
-test("the owner signed in with eqosys gets the jobs; nobody, a stranger or a token for another app gets a 401; scripts keep the bearer", async () => {
-  // A stand-in eqosys: its JWKS, and tokens signed the way eqosys signs them.
+test("the owner signed in with eqosys gets the jobs; nobody, a stranger, an unverified sign-up with the owner's email or a token for another app gets a 401; scripts keep the bearer", async () => {
+  // A stand-in eqosys: its JWKS, its userinfo (is the email verified?), and tokens signed the way eqosys signs them.
+  // The owner's account is verified; "u_squatter" signed up with a password under the owner's email and never verified it.
   const signer = { EQOSYS_SIGNING_KEY: await newKey() };
-  const eq = Bun.serve({ port: 0, fetch: async () => Response.json(await jwksOf(signer)) });
+  const eq = Bun.serve({ port: 0, fetch: async (req) => {
+    if (new URL(req.url).pathname !== "/oauth/userinfo") return Response.json(await jwksOf(signer));
+    const who = peek(req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "");
+    return who ? Response.json({ sub: who.sub, email: who.email, email_verified: who.sub !== "u_squatter" }) : Response.json({ error: "invalid_token" }, { status: 401 });
+  } });
   const iss = eq.url.origin;
-  const tokenFor = async (email: string, app = APP) => (await sign(signer, iss, { user: { id: `u_${email}`, email, name: email }, app, source: app, access: [] }))!;
+  const tokenFor = async (email: string, app = APP, id = `u_${email}`) => (await sign(signer, iss, { user: { id, email, name: email }, app, source: app, access: [] }))!;
   try {
     const call = api(new Store(), { token: "s3cret", owner: { email: "Owner@Example.com", checker: new TokenChecker(iss, APP) } });
     const ask = async (auth?: string) => {
@@ -92,6 +97,7 @@ test("the owner signed in with eqosys gets the jobs; nobody, a stranger or a tok
     expect(await ask("s3cret")).toEqual([200, 0]);
     expect(await ask()).toEqual([401, SIGN_IN]);
     expect(await ask(await tokenFor("someone@example.com"))).toEqual([401, NOT_OWNER]);
+    expect(await ask(await tokenFor("owner@example.com", APP, "u_squatter"))).toEqual([401, NOT_OWNER]);
     expect(await ask(await tokenFor("owner@example.com", "qcrm"))).toEqual([401, SIGN_IN]);
     expect(await ask("nope")).toEqual([401, SIGN_IN]);
   } finally { eq.stop(true); }

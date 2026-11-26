@@ -6,9 +6,10 @@
 // names, an empty HOME, no deploy logins in the environment, and the host in Seatbelt on macOS.
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { buildEnv, emptyHome, hostCommand, hostEnv, withLocalBins } from "./sandbox.ts";
 import { declaredSecrets, fakeSecret, removeCommittedSecrets } from "./fake-secrets.ts";
+import { workspaceRoot } from "./glue/deploy-deps.ts";
 
 export type SmokeStage = "copy" | "install" | "init" | "build" | "boot" | "request" | "works";
 export type SmokeResult = { stage: SmokeStage; mode?: string; status?: number; ms: number; error?: string; kept?: string };
@@ -20,6 +21,28 @@ export function packageManager(dir: string): "bun" | "pnpm" | "yarn" | "npm" {
   for (const [f, pm] of [["bun.lock", "bun"], ["bun.lockb", "bun"], ["pnpm-lock.yaml", "pnpm"], ["yarn.lock", "yarn"], ["package-lock.json", "npm"]] as const)
     if (existsSync(join(dir, f))) return pm;
   return "bun";
+}
+
+/** Copies the app at `src` into `dest`, skipping node_modules, .git, build output and committed secrets. A
+ *  workspace member brings its whole workspace (its siblings and the root lockfile, or `workspace:*` fails to
+ *  resolve): `top` is where the copy installs, `dir` the member's folder in it, where init and the host run. */
+export function copyApp(src: string, dest: string): { top: string; dir: string } {
+  const app = resolve(src), ws = workspaceRoot(app);
+  cpSync(ws ?? app, dest, { recursive: true, filter: (p) => !SKIP.test(p) });
+  removeCommittedSecrets(dest);
+  return { top: dest, dir: ws ? join(dest, relative(ws, app)) : dest };
+}
+
+/** Installs the copy at `top` with the package manager its lockfile names (npm falls back to Bun). */
+export function installApp(top: string, env: Record<string, string>): { ok: boolean; pm: ReturnType<typeof packageManager>; tail: string } {
+  const pm = packageManager(top);
+  const run = (cmd: string[]) => {
+    const p = Bun.spawnSync(cmd, { cwd: top, env, stdout: "pipe", stderr: "pipe", timeout: 600_000 });
+    return { ok: p.exitCode === 0, tail: (p.stdout.toString() + p.stderr.toString()).trim().split("\n").slice(-8).join("\n") };
+  };
+  let r = run(pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : [pm, "install"]);
+  if (!r.ok && pm === "npm") r = run(["bun", "install"]);
+  return { ...r, pm };
 }
 
 /** The config init wrote, with this run's data dir and, for "worker", the app's own Worker build on the desktop. */
@@ -42,13 +65,15 @@ export async function smoke(src: string, o: { keep?: boolean; edgeLike?: boolean
   const say = o.log ?? (() => {});
   const t0 = performance.now(), ms = () => Math.round(performance.now() - t0);
   const root = mkdtempSync(join(tmpdir(), "rb-smoke-"));
-  const dir = join(root, "app"), home = join(root, "home"), data = join(root, "data");
+  const copy = join(root, "app"), home = join(root, "home"), data = join(root, "data");
   mkdirSync(home);
+  let dir = copy;
   const fail = (stage: SmokeStage, error: string, mode?: string): SmokeResult => ({ stage, error, mode, ms: ms(), ...(o.keep ? { kept: dir } : {}) });
   try {
     say("copy: the app without node_modules, .git or any .env");
-    cpSync(resolve(src), dir, { recursive: true, filter: (p) => !SKIP.test(p) });
-    removeCommittedSecrets(dir);
+    const { top, dir: member } = copyApp(src, copy);
+    dir = member;
+    if (top !== dir) say(`copy: the whole workspace, ${relative(top, dir)} in it`);
     if (!existsSync(join(dir, "package.json"))) return fail("copy", `no package.json in ${resolve(src)}`);
 
     // fakes for every secret the app names: enough to boot logged-out, never real
@@ -57,18 +82,20 @@ export async function smoke(src: string, o: { keep?: boolean; edgeLike?: boolean
     const lines = Object.entries(fakes).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
     if (Object.keys(fakes).length) { writeFileSync(join(dir, ".env"), lines); writeFileSync(join(dir, ".dev.vars"), lines); say(`fake secrets: ${Object.keys(fakes).join(" ")}`); }
 
-    const env = withLocalBins({ ...emptyHome(buildEnv(process.env), home), ...fakes }, dir);
+    const base = { ...emptyHome(buildEnv(process.env), home), ...fakes };
+    say(`install: ${packageManager(top)}`);
+    const inst = installApp(top, base);
+    if (!inst.ok) return fail("install", inst.tail);
+    const pm = inst.pm;
+    // after the install, so the member's and the workspace root's node_modules/.bin are both there to find
+    const env = withLocalBins(base, dir);
     const run = (cmd: string[], timeout: number) => {
       const p = Bun.spawnSync(cmd, { cwd: dir, env, stdout: "pipe", stderr: "pipe", timeout });
       const out = p.stdout.toString() + p.stderr.toString();
       return { ok: p.exitCode === 0, out, tail: out.trim().split("\n").slice(-8).join("\n") };
     };
 
-    const pm = packageManager(dir);
-    say(`install: ${pm}`);
-    let s = run(pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : [pm, "install"], 600_000);
-    if (!s.ok && pm === "npm") s = run(["bun", "install"], 600_000);
-    if (!s.ok) return fail("install", s.tail);
+    let s: ReturnType<typeof run>;
 
     // Rusty Buns itself: this checkout when the CLI runs from one, the matching release otherwise
     const checkout = join(dirname(o.cli), "../..");

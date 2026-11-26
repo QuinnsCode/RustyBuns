@@ -75,11 +75,18 @@ export const settled = (pr: Pr, now = Date.now(), runs: Runs = []) => {
 /** How long ago the head commit was made, in seconds. */
 const headAge = (pr: Pr, now: number) => { const t = pr.commits.at(-1)?.committedDate; return t ? (now - Date.parse(t)) / 1000 : 0; };
 /** No typecheck or apps check in the PR's rollup. */
-const unattached = (pr: Pr) => !pr.statusCheckRollup.some((c) => CI.test(c.workflowName ?? "") || CI.test(c.name ?? ""));
+const unattached = (pr: Pr) => noCi(pr.statusCheckRollup);
 /** The GitHub miss (#2828): the head is minutes old, neither the typecheck nor the apps workflow attached a check, and Actions has no run of either on the head SHA (a queued one is a wait, not a miss). */
 export const MISS_AFTER = 120;
-export const missedRun = (pr: Pr, now = Date.now(), runs: Runs = []) =>
-  pr.state === "OPEN" && headAge(pr, now) > MISS_AFTER && unattached(pr) && headRuns(runs) === "none";
+export const missedRun = (pr: Pr, now = Date.now(), runs: Runs = [], after = MISS_AFTER) =>
+  pr.state === "OPEN" && headAge(pr, now) > after && unattached(pr) && headRuns(runs) === "none";
+/** How long a head may go with no typecheck or apps check before Mervin's board marks it and tells its worker (#5838). */
+export const STALL_AFTER = 600;
+/** The board's plain-words line for a head with no checks: no rollup check names CI and no run on it, past STALL_AFTER; null otherwise. */
+export const stallOf = (pr: Pr, now = Date.now(), runs: Runs = []) => !missedRun(pr, now, runs, STALL_AFTER) ? null
+  : botHead(pr) ? "after-bot push, no checks will come: push one commit" : "GitHub miss (#2828): rebase onto origin/main and push --force-with-lease";
+/** No typecheck or apps check in a rollup of named checks (the board's `gh pr list` rows). */
+export const noCi = (rollup: { name?: string; workflowName?: string }[]) => !rollup.some((c) => CI.test(c.workflowName ?? "") || CI.test(c.name ?? ""));
 /** The after workflow's git name (after.yml): its merge-main pushes start no checks while it pushes with the workflow's own token (#5733). */
 export const AFTER_BOT = "rustybuns-after";
 /** The head commit is the after workflow's merge of main. */

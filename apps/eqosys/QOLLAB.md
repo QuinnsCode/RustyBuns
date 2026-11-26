@@ -304,6 +304,27 @@ Skate Tech Park, Park Hide & Seek, Splat Spray and Git Recon run on them. The ga
 
 **Not moved yet:** Mythic Masters' Region (its own ping sweep and full code 4003; its trail state is in flight on #3876), Hippo Tycoon (its Room owns its sockets), and Two Fronts (HTTP seats; account-bound seats are #3826).
 
+## Events ([#6052](https://github.com/QuinnsCode/RustyBuns/issues/6052))
+
+An event belongs to the eqosys account that made it, apart from any one app: a token from any Q app (or eqosys's own pages)
+opens it. Qollab does the coordinating (what, when, where, who, and later the page, RSVPs and the door); Qollab Studio
+picks an event up for the stage and the sound, and Qollab keeps only the link to that plan (`where.plan`), never the plan.
+
+- **The record:** `Event` in `@rustybuns/util/events`, the guard both ends import. In the order a host answers: the kind
+  (club, gig, wedding, party, festival, other) with a name and one line; `when` (doors, start, set times, curfew, and the
+  crew's load-in, soundcheck and load-out); `where` (an address, a map pin, the plan's link); `who` (a cap, anyone, RSVP
+  or invite only, ages); `there` (the line-up, what's on offer, what the RSVP asks). The kind only fills in the defaults
+  (`kindDefaults`: a wedding is invite only and asks about plus-ones, food and a song); every part can be changed.
+- **Where it lives:** one D1 row an event (`events`, its draft and its guest list as JSON read back through their guards),
+  no Durable Object: nothing about it is live. `edited` moves forward on every change, so a calendar file can follow it.
+- **The crew:** roles on the event's guest list (`@rustybuns/util/guests`, `EVENT_ROLES`: promoter, crew, artist, guest).
+  The owner is all of them; a role with `edit` changes the event; only the owner deletes it.
+- **Routes:** `GET /q/events` lists yours (soonest first, undated last), `POST` makes one from `{ kind, name }` and any parts,
+  `GET`, `PUT` (the parts sent replace those parts whole) and `DELETE /q/events/<id>`. Someone not on its list hears 404.
+  Up to 50 events an account. `events()` in the same module is a page's side. Deleting the account deletes its events.
+- **Not yet:** the public page, QR and calendar file (#6073); RSVPs, the attendee list and CSV (#6074); signed tickets and door mode (#6075); the
+  hand-off to Qollab Studio (#6076). Emails, paid tickets and flyers wait for their own issues.
+
 ## Status
 
 All six steps are on `main`. Key rotation (Q4) is built too (`EQOSYS_PREVIOUS_KEYS`), and open parties already work (`POST /q/party?open=1` skips the friends check; same rate limit, mute and report). The erase URL (Q2) is built: set `erase` on an app in `APPS` and account delete POSTs there with an `aud: "erase"` bearer token (60 seconds, `sub` the person), three tries; the account is kept unless it answers 200. No game sets it yet.

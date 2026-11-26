@@ -25,6 +25,7 @@ import { icon } from "./icons.ts";
 import { h, iconButton } from "./dom.ts";
 import { benchSlot } from "./bench-slot.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
+import { DEFAULT_DRIVE, onParts, readParts } from "./parts-store.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { startMidi } from "../ui/input.ts";
 import { MODES, Screen, lightLevels, topHz, hzLabel, type ScreenMode } from "./screens.ts";
@@ -74,7 +75,7 @@ const Saved = obj({
   /** The amp on the three.js stage (1) or the flat page (0). */
   stage: oneOf([0, 1], 1),
   /** Each pedal's parts the player swapped: pedal id → socket → choice (circuits.ts `Swaps`). */
-  swaps: or(rec(rec(str(12), 40), 10), {}),
+  swaps: or(rec(rec(str(12), 40), 32), {}),
   /** The mic on the cab: 0 the centre cap to 10 the cone's edge, and 0 on axis to 10 side on. */
   micAt: num(0, 10, 3),
   micAngle: num(0, 10, 0),
@@ -93,7 +94,7 @@ type State = Omit<ReturnType<typeof Saved>, "cables" | "order" | "lit"> & { cabl
 function loadState(): State {
   const fresh: State = {
     amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
-    drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, stage: 1, swaps: {}, micAt: 3, micAngle: 0, cc: 11,
+    drive: { ...DEFAULT_DRIVE }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, stage: 1, swaps: {}, micAt: 3, micAngle: 0, cc: 11,
     loop: freshLoop(),
     cables: [...STAGE.cables],
     order: freshOrder(), lit: [],
@@ -108,7 +109,9 @@ function loadState(): State {
       };
     }
   } catch { /* private window or bad JSON: start fresh */ }
-  return fresh;
+  // Q Builder may have kept knobs and swaps here before Q Amp was ever opened.
+  const parts = readParts();
+  return { ...fresh, drive: parts.drive, swaps: parts.swaps };
 }
 const S = loadState();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } };
@@ -676,6 +679,15 @@ function frame() {
     el.classList.toggle("warn", (v ?? 0) > 0.3);
   }
   requestAnimationFrame(frame);
+
+// A part swapped or a knob turned on Q Builder (another tab) is on this amp's pedals too, as it plays.
+onParts((p) => {
+  S.swaps = p.swaps;
+  Object.assign(S.drive, p.drive);
+  for (const e of ui.pedalEls) e.knob.set(S.drive[e.id] ?? 5);
+  send();
+  showBoard();
+});
 }
 requestAnimationFrame(frame);
 
