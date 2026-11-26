@@ -148,12 +148,21 @@ export function mend(j: Journey, frac: number): number {
 /** Line-up slots knocked out and not yet healed. */
 export const downed = (j: Journey) => new Set(j.party.flatMap((m, i) => (hpOf(m) <= 0 ? [i] : [])));
 
-/** Gives `m` the XP for beating a creature of `foeLevel`; how many levels it went up. */
-export function gainXp(m: Member, foeLevel: number): number {
-  m.xp += foeLevel * 10;
+/** What the rest of the line-up gets of a win's XP, beside the beast that fought it (the owner's call, #5387). */
+export const WATCH_SHARE = 0.5;
+
+/** Gives `m` the XP (`share` of it) for beating a creature of `foeLevel`; how many levels it went up. */
+export function gainXp(m: Member, foeLevel: number, share = 1): number {
+  m.xp += Math.round(foeLevel * 10 * share);
   let up = 0;
   while (m.xp >= toNext(m.level) && m.level < 100) { m.xp -= toNext(m.level); m.level++; up++; }
   return up;
+}
+
+/** A won fight's XP: `fighter` gets all of it, every other beast in `party` gets `WATCH_SHARE` of it. The levels each
+ *  went up, by party slot. */
+export function shareXp(party: Member[], fighter: Member, foeLevel: number): number[] {
+  return party.map((m) => gainXp(m, foeLevel, m === fighter ? 1 : WATCH_SHARE));
 }
 
 // --- binding: the Book's ink -----------------------------------------------------------------------------------
