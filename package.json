@@ -16,6 +16,7 @@
     "knip": "knip --include exports,types,files --workspace apps/cron-swanson --workspace apps/at-lens",
     "site": "bun scripts/site.ts",
     "test": "bun test",
+    "blender": "bun scripts/blender-queue.ts",
     "builder": "bun scripts/remote-ci.ts",
     "ios": "bun scripts/ios-sim.ts",
     "usdz": "bun scripts/usdz.ts",

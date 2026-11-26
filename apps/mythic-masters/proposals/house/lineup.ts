@@ -11,7 +11,9 @@ import { dirname, join, resolve } from "node:path";
 import { runBlender } from "@rustybuns/cli/blender";
 import { obj, str } from "@rustybuns/util/guard";
 import { help } from "../../../../scripts/help.ts";
+import { queued } from "../../../../scripts/blender-queue.ts";
 
+await queued(); // Blender runs on the builder Mac, one job at a time (scripts/blender-queue.ts)
 const APP = join(import.meta.dir, "..", "..");
 const Named = obj({ name: str(40) });
 
