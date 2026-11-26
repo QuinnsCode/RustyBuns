@@ -15,6 +15,5 @@
   "packages/shell-bun/src/client.ts": 1,
   "packages/shell-bun/src/webmcp.ts": 1,
   "packages/util/src/codemode.ts": 1,
-  "packages/util/src/features.ts": 1,
-  "packages/util/src/qlave-call.ts": 2
+  "packages/util/src/features.ts": 1
 }
