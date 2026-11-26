@@ -130,3 +130,32 @@ test.skipIf(!hasChrome)("out of doors: set the night's air and ground in the out
     expect(late.cold - late.hot).toBeGreaterThan(0.5);
   } finally { await tab.close(); }
 });
+
+test.skipIf(!hasChrome)("the Event Planner's lesson: the cap button starts it on a cleared field, the card ticks each step off and says done", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 720 });
+  try {
+    await load(chrome.cdp, tab, `${vite.url}rooms.html`, 0);
+    await until(tab, "!!window.qrooms");
+    // the cap button in the corner starts it: the Desert Gathering with its stacks taken away, the card on the first step
+    const started = await tab.eval<{ stacks: number; room: string; shown: boolean; next: string | null }>(`(() => {
+      document.querySelector(".lesson-ask").click();
+      const card = document.getElementById("lesson");
+      return { stacks: qrooms.pa().stacks.length, room: qrooms.state().room, shown: !card.hidden && document.querySelector(".lesson-ask").hidden, next: card.querySelector("li.next span")?.textContent ?? null };
+    })()`);
+    expect(started).toMatchObject({ stacks: 0, room: "desert-gathering", shown: true });
+    expect(started.next).toContain("Stand two stacks");
+    // two stacks either side, facing the middle as the PA tool puts them down; the 100 kVA set; the gear list
+    const done = await tab.eval<{ steps: boolean[]; why: string | null; done: boolean; doneLine: string | null }>(`(() => {
+      qrooms.edit({ t: "stack", at: [-15, -16] });
+      const why = document.querySelector("#lesson .lesson-why span")?.textContent ?? null;
+      qrooms.edit({ t: "stack", at: [15, -16] });
+      qrooms.edit({ t: "generator", set: "generator-100kva" });
+      qrooms.download("list");
+      const l = qrooms.lesson().lesson;
+      return { steps: l.steps.map((s) => s.done), why, done: l.done, doneLine: document.querySelector("#lesson .lesson-done")?.textContent ?? null };
+    })()`);
+    expect(done.why).toMatch(/^One stack throws at its own side/);
+    expect(done).toMatchObject({ steps: [true, true, true, true], done: true });
+    expect(done.doneLine).toContain("The plan is yours");
+  } finally { await tab.close(); }
+});
