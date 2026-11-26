@@ -79,7 +79,7 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   expect(Math.hypot(LINE[0]! - -2, 30.3) / (w.t - t1)).toBeLessThan(0.25);
   [1, 2, 3].forEach((n) => move(w, c, `dolly-${n + 1}`, LINE[n]!, 1, "push"));
   // Each stack rode whole: the bin a hand's width off the sand on its dolly, the mid-high's mouth over the heads.
-  for (const [n, x] of LINE.entries()) for (const [k, y] of [["dolly", 0], ["bin", 0.15], ["midbass", 0.95], ["top", 1.795]] as const) {
+  for (const [n, x] of LINE.entries()) for (const [k, y] of [["dolly", 0], ["bin", 0.15], ["midbass", 0.732], ["top", 1.577]] as const) {
     expect(at(w, `${k}-${n + 1}`).x).toBeCloseTo(x, 1);
     expect(at(w, `${k}-${n + 1}`).y).toBeCloseTo(y, 5);
   }

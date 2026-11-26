@@ -8,6 +8,8 @@
 //   bun packages/models/scripts/turntable.ts --label round-0 --plain     the flat colours (`gearLook()`, the `low` quality look)
 //   bun packages/models/scripts/turntable.ts --only sub-18,wedge-12       just these ids
 //   bun packages/models/scripts/turntable.ts --only dance-stack            the whole stack (bins, mid-bass, tops)
+//   bun packages/models/scripts/turntable.ts --only stack-mid-high~exploded,stack-mid-high~plug   a box built piece by piece
+//                                                                        (`gearPieces`): pulled apart, or one piece alone
 //   bun packages/models/scripts/turntable.ts --size 1024 --out /tmp/x     bigger, somewhere else
 //   bun packages/models/scripts/turntable.ts --js "turntable.ao.enabled = false"   runs this in the page first (try a light or a material)
 //   bun packages/models/scripts/turntable.ts --hdri studio_small_09       another Poly Haven HDRI (the default, kloofendal_overcast_puresky, is the photos' soft

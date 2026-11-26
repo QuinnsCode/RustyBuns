@@ -73,7 +73,7 @@ export const SURFACES = {
   cheek: { dir: "plastic", tile: 0.35, tint: 0x3a3c33, roughness: 0.92, metalness: 0, normalScale: 0.8, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.3, matte: 0.75, speck: 1, fleck: 0.5 } },
   /** A dance-stack horn's lining: pale painted fibreglass in a satin finish (flat colour, the plastic's fine relief),
    * greyed where hands and road dust have rubbed it, scuffed where the boxes are stacked. */
-  horn: { dir: "plastic", tile: 0.35, tint: 0x6a6e66, roughness: 0.75, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
+  horn: { dir: "plastic", tile: 0.35, tint: 0x565b60, roughness: 0.75, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
   /** The same lining deep in a horn's throat, where no rag reaches: greyed and browned with road dust, matte. */
   grime: { dir: "plastic", tile: 0.35, tint: 0x403f37, roughness: 0.9, metalness: 0, normalScale: 0.3, wear: { chip: 0x3e3b33, stipple: 0.8, scuff: 0.4, matte: 0.7, speck: 1 } },
   /** A dance stack's cabinets: dark violet paint over birch, a fine roller texture, rubbed pale at the edges. */

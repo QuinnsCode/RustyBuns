@@ -10,7 +10,7 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearLook } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearLook, gearPieces } from "../src/gear.ts";
 import { surface, gearSurfaces } from "../src/surfaces.ts";
 
 // `close` is a macro shot: the front three-quarter view moved in on the top front corner, where a pixel is about
@@ -129,15 +129,16 @@ let shown: THREE.Object3D | null = null;
 /** Swaps in another look (the material kit) for the pieces shown from now on; `done` resolves once its textures are in. */
 function setLook(l: typeof look, done: Promise<unknown>) { look = l; ready = done; }
 
-/** `dance-stack`: the stack as the photos show one, two bass bins side by side and three columns of mid-bass and top
+/** `dance-stack`: the stack as the photos show one, two long F221 bins side by side and three columns of mid-bass and top
  * on them, the outer columns splayed out. */
 function danceStack(): THREE.Group {
-  const g = new THREE.Group(), sh = 0.8, bh = GEAR_SIZES["stack-mid-bass"][1];
-  for (const x of [-0.552, 0.552]) { const s = gear("horn-sub-21", { look }); s.position.x = x; g.add(s); }
+  const g = new THREE.Group(), sh = GEAR_SIZES["horn-sub-21"][1], bh = GEAR_SIZES["stack-mid-bass"][1];
+  const [bw] = GEAR_SIZES["horn-sub-21"];
+  for (const s of [-1, 1]) { const bin = gear("horn-sub-21", { look }); bin.position.x = (s * bw) / 2; g.add(bin); }
   for (const k of [-1, 0, 1]) {
     const col = new THREE.Group();
-    col.position.set(k * 0.62, sh, k ? -0.06 : 0);
-    col.rotation.y = -k * 0.2;
+    col.position.set(k * 1.05, sh, k ? -0.05 : 0);
+    col.rotation.y = -k * 0.1;
     const mb = gear("stack-mid-bass", { look }), mh = gear("stack-mid-high", { look });
     mh.position.y = bh;
     col.add(mb, mh);
@@ -146,9 +147,22 @@ function danceStack(): THREE.Group {
   return g;
 }
 
-async function show(id: GearId | "dance-stack", angle: Angle) {
+/** `<id>~exploded`: a box built piece by piece (`gearPieces`) pulled apart, each piece forward of the last in the order
+ * it goes in; `<id>~<piece>`: that piece alone, where it sits in the box. */
+function pieces(name: string): THREE.Group {
+  const [id, which] = name.split("~") as [GearId, string], g = new THREE.Group();
+  for (const [i, p] of (gearPieces(id, { look }) ?? []).entries()) {
+    if (which !== "exploded" && which !== p.name) continue;
+    if (which === "exploded") p.group.position.z = i * 0.22;
+    g.add(p.group);
+  }
+  return g;
+}
+const PIECE_IDS = GEAR_IDS.flatMap((id) => { const p = gearPieces(id); return p ? [`${id}~exploded`, ...p.map((q) => `${id}~${q.name}`)] : []; });
+
+async function show(id: string, angle: Angle) {
   if (shown) scene.remove(shown);
-  shown = id === "dance-stack" ? danceStack() : gear(id, { look, height: 1.6 });
+  shown = id === "dance-stack" ? danceStack() : id.includes("~") ? pieces(id) : gear(id as GearId, { look, height: 1.6 });
   scene.add(shown);
   shown.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(shown), c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
@@ -188,4 +202,4 @@ async function show(id: GearId | "dance-stack", angle: Angle) {
 // `?plain=1` is the flat look (the `low` quality setting); otherwise the material kit from the served textures/.
 if (!plain) { const kit = gearSurfaces({ base: "/textures/" }); setLook(kit.look, kit.ready); }
 
-Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack"], angles: ["front", "side", "back", "close"], show, ready: true, look: () => look, ao, contact, key } });
+Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack", ...PIECE_IDS], angles: ["front", "side", "back", "close"], show, ready: true, look: () => look, ao, contact, key } });

@@ -2,7 +2,7 @@
 // sound and power math wires up (each on the outside, facing out) and a grab point, and stays cheap to draw.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { GEAR_IDS, GEAR_SIZES, RIG_IDS, RIG_SIZES, STOMP_SIZE, type GearId, gear, gearJacks, gearParts, rigging, stompbox } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, RIG_IDS, RIG_SIZES, STOMP_SIZE, type GearId, gear, gearJacks, gearParts, gearPieces, rigging, stompbox } from "../src/gear.ts";
 import { triangles } from "../src/index.ts";
 import { LINEUP } from "../src/lineup.ts";
 import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../gear/src/catalog.ts";
@@ -44,6 +44,23 @@ test("every speaker copies a real product, at its published size once built to i
   for (const id of GEAR_IDS) {
     const published = LINEUP[id]?.published;
     if (published) expect<number[]>([...GEAR_SIZES[id]]).toEqual([...published]);
+  }
+});
+
+// The boxes built from a maker's drawing piece by piece (`gearPieces`): put back together, the pieces are the box.
+test("a box built piece by piece: its pieces fill the box's size, each one named and drawn", () => {
+  const built = GEAR_IDS.flatMap((id) => { const p = gearPieces(id); return p ? [[id, p] as const] : []; });
+  expect(built.map(([id]) => id)).toEqual(expect.arrayContaining(["stack-mid-high", "stack-mid-bass", "horn-sub-21"]));
+  for (const [id, pieces] of built) {
+    const all = new THREE.Box3();
+    for (const { name, group } of pieces) {
+      group.updateMatrixWorld(true);
+      const b = new THREE.Box3().setFromObject(group);
+      expect(b.isEmpty(), `${id}~${name}`).toBe(false);
+      all.union(b);
+    }
+    all.getSize(new THREE.Vector3()).toArray().forEach((s, i) => expect(Math.abs(s - GEAR_SIZES[id][i]) / GEAR_SIZES[id][i], id).toBeLessThan(0.05));
+    expect(new Set(pieces.map((p) => p.name)).size).toBe(pieces.length);
   }
 });
 
