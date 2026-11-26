@@ -15,7 +15,7 @@ test("every Q Amp head plays the same from its boards as from the shared parts",
   const input = riff(SR).subarray(0, SR / 5);
   for (const h of HEADS) {
     const knobs = { ...h.knobs, noise: 0 };
-    const boards = runRig(buildRig(h, knobs), input, SR, 2).out, parts = runRig(headRig(h, knobs), input, SR, 2).out;
+    const boards = runRig(buildRig(h, knobs), input, SR).out, parts = runRig(headRig(h, knobs), input, SR).out;
     let diff = 0, peak = 0;
     for (let i = 0; i < boards.length; i++) {
       diff = Math.max(diff, Math.abs(boards[i]! - parts[i]!));
