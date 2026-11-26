@@ -132,16 +132,14 @@ export const DARK: Theme = {
 };
 
 /**
- * The house look's own rules, worn through the same door as a game's (`css`) when a page gives no skin: fat tiles
- * standing on a thick bottom edge of the one strong outline, paper buttons that press down into theirs, an accent
- * line under each heading, and the chip's name behind an accent dot. Every colour is a token, so it follows light and dark.
+ * The house look's own rules, worn through the same door as a game's (`css`) when a page gives no skin: one even
+ * outline on every tile, button and field (no second, thicker edge under it, which read as a broken border on dark),
+ * buttons that press in, an accent line under each heading, and the chip's name behind an accent dot. Every colour is
+ * a token, so it follows light and dark.
  */
-export const HOUSE = `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-coach,.eq-chip.in{box-shadow:0 4px 0 var(--ui-line),var(--ui-shadow)}
-.eq-btn{box-shadow:0 3px 0 var(--ui-line);margin-bottom:3px}.eq-btn:active{transform:translateY(3px);box-shadow:0 0 0 var(--ui-line)}.eq-btn:disabled{transform:none}
-.rb-spaces-log .eq-btn{box-shadow:0 2px 0 var(--ui-line);margin-bottom:2px}.eq-chip.in .eq-btn{box-shadow:none;margin-bottom:0}.eq-chip.in .eq-btn:active{transform:scale(.97)}
+export const HOUSE = `.eq-btn:active{transform:scale(.97)}.eq-btn:disabled{transform:none}
 .eq-title,.rb-spaces h2{text-decoration:underline 3px var(--ui-accent);text-underline-offset:4px}
 .eq-chip.in .eq-who::before{content:"";display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:var(--ui-accent)}
-.eq input,.eq select,.eq textarea{box-shadow:inset 0 2px 0 var(--ui-accent-soft)}
 .rb-lobby-code{background:var(--ui-accent-soft)}`;
 
 export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n@media (prefers-color-scheme:dark){:where(.eq){${decls(DARK)}}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.theme || skin.css ? skin.css ?? "" : HOUSE}\n${BADGE}`;
