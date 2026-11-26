@@ -8,7 +8,7 @@ import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { GENERATOR_IDS, MAX_PIN, SYSTEM_IDS, type GeneratorId, type SystemId } from "@rustybuns/gear";
+import { GENERATOR_IDS, GROUNDS, MAX_PIN, SYSTEM_IDS, type GeneratorId, type Ground, type SystemId } from "@rustybuns/gear";
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
@@ -30,6 +30,12 @@ const COLOR = str(9, { re: /^#[0-9a-f]{6}$/i });
 const PINS = arr(num(0, MAX_PIN), 3, { min: 1 });
 /** A rig's stacks, indoors or out (room.ts Outdoor stacks). */
 const STACKS = arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)), pins: opt(PINS) }), MAX_STACKS);
+/** The air a field's panel takes: -10 to 40 C, 10 to 100 % (ISO 9613-1 holds well across it). */
+const TEMP_C = num(-10, 40), HUMIDITY = num(10, 100);
+/** A bank: up to 40 m long, 0.3 to 6 m high. */
+const BANK = { at: XZ, yaw: num(-7, 7), len: num(1, 40), h: num(0.3, 6) };
+/** The most banks a field holds. */
+export const MAX_BANKS = 8;
 
 /** What the builder's Decorate tool puts down, each at its real size and in its usual colour (drawn by props.ts). */
 export const DECOR: Record<string, Pick<Prop, "w" | "d" | "h" | "color">> = {
@@ -113,6 +119,9 @@ export const Studio: Guard<StudioDef> = obj({
     lanternPoles: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 32)),
     lanterns: opt(arr((v): [number, number, number] => { const [x, y, z] = arr(num(-25, 25), 3, { min: 3 })(v); return [x, y, z]; }, MAX_LANTERNS)),
     carry: opt(bool()),
+    air: opt(obj({ tempC: TEMP_C, humidity: HUMIDITY })),
+    ground: opt(oneOf(GROUNDS)),
+    banks: opt(arr(obj(BANK), MAX_BANKS)),
     rugs: opt(arr(obj({ at: XZ, yaw: num(-7, 7), w: num(0.5, 6), d: num(0.5, 6) }), 16)),
     seed: int(0, 2 ** 31),
   })),
@@ -185,6 +194,9 @@ export type Edit =
   | { t: "aimStack"; index: number; yaw?: number; splay?: number; pins?: number[] }
   | { t: "unstack"; index: number }
   | { t: "generator"; set: GeneratorId | "auto" }
+  | { t: "field"; tempC?: number; humidity?: number; ground?: Ground }
+  | { t: "bank"; at: [number, number]; yaw: number; len: number; h: number }
+  | { t: "unbank"; index: number }
   | { t: "venue"; venue: Venue | null };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
@@ -217,6 +229,9 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("aimStack"), index: int(0, MAX_STACKS - 1), yaw: opt(num(-7, 7)), splay: opt(num(-1, 1)), pins: opt(PINS) }),
   obj({ t: tag("unstack"), index: int(0, MAX_STACKS - 1) }),
   obj({ t: tag("generator"), set: oneOf([...GENERATOR_IDS, "auto"] as const) }),
+  obj({ t: tag("field"), tempC: opt(TEMP_C), humidity: opt(HUMIDITY), ground: opt(oneOf(GROUNDS)) }),
+  obj({ t: tag("bank"), ...BANK }),
+  obj({ t: tag("unbank"), index: int(0, MAX_BANKS - 1) }),
   obj({ t: tag("venue"), venue: nul(VENUE) }),
 ];
 
@@ -470,6 +485,27 @@ export function edit(def: StudioDef, e: Edit): Built {
       // a rig with none yet gets one in the back left corner, off the floor
       const g = out.generator ??= { at: [-next.size.w / 2 + 2, -next.size.d / 2 + 2], yaw: 0 };
       if (e.set === "auto") delete g.set; else g.set = e.set;
+      break;
+    }
+    // the field the sound crosses: its air, what the crowd stands on, and the banks on it
+    case "field": {
+      const out = next.outdoor;
+      if (!out) return no("the air and the ground are out of doors");
+      const air = out.air ?? { tempC: 20, humidity: 50 };
+      if (e.tempC !== undefined) air.tempC = e.tempC;
+      if (e.humidity !== undefined) air.humidity = e.humidity;
+      out.air = air;
+      if (e.ground) out.ground = e.ground;
+      break;
+    }
+    case "bank": case "unbank": {
+      const out = next.outdoor;
+      if (!out) return no("a bank stands out of doors");
+      const list = out.banks ??= [];
+      if (e.t === "unbank") { if (!list[e.index]) return no("there is no such bank"); list.splice(e.index, 1); }
+      else if (list.length >= MAX_BANKS) return no(`a field holds ${MAX_BANKS} banks`);
+      else list.push({ at: e.at, yaw: e.yaw, len: e.len, h: e.h });
+      if (!list.length) delete out.banks;
       break;
     }
     case "venue":

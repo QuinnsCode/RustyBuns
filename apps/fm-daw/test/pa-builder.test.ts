@@ -1,7 +1,7 @@
 // Planning a sound system in the studio builder (#5863), in headless Chrome over CDP (scripts/chrome.ts): on
 // /rooms.html start from the Desert Gathering, clear its stacks and place two, aim one off at the edge of the ground and
 // watch the coverage map drop on the floor it left, put the rig on the small generator and read why it fails, then take
-// the gear list and the plan drawing away.
+// the gear list and the plan drawing away. Out of doors, set the night's air and ground and stand a bank in front of a stack.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
@@ -87,5 +87,46 @@ test.skipIf(!hasChrome)("indoors: stand two stacks in the scoring hall, read the
     // the coverage map on the 3D view's floor, not a jump to the blueprint
     const seen = await tab.eval<{ view: string; heatOnFloor: boolean }>(`(() => { qrooms.showDelay(false); qrooms.view("3d"); qrooms.showMap(true); return qrooms.view(); })()`);
     expect(seen).toEqual({ view: "3d", heatOnFloor: true });
+  } finally { await tab.close(); }
+});
+
+test.skipIf(!hasChrome)("out of doors: set the night's air and ground in the outdoor panel, stand a bank in front of a stack and hear the floor behind it go dull, read the delay move with the cold", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 720 });
+  try {
+    await load(chrome.cdp, tab, `${vite.url}rooms.html`, 0);
+    await until(tab, "!!window.qrooms");
+    type Field = { tempC: number; humidity: number; ground: string; speed: number; banks: unknown[] } | null;
+    // one stack at the back of the Desert Gathering's floor, facing down it; then the panel's air, humidity and ground
+    const set = await tab.eval<{ field: Field; ok: boolean[] }>(`(() => {
+      qrooms.load("desert-gathering");
+      const ok = [];
+      while (qrooms.pa().stacks.length) ok.push(qrooms.edit({ t: "unstack", index: 0 }).ok);
+      ok.push(qrooms.edit({ t: "stack", at: [0, -8], yaw: 0 }).ok);
+      const pick = (sel, v) => { const i = document.querySelector(sel); i.value = String(v); i.dispatchEvent(new Event("change")); };
+      pick('[data-field="tempC"]', 30); pick('[data-field="humidity"]', 80); pick("#ground", "grass");
+      return { field: qrooms.pa().field, ok };
+    })()`);
+    expect(set.ok.every(Boolean)).toBe(true);
+    expect(set.field).toEqual({ tempC: 30, humidity: 80, ground: "grass", speed: 349, banks: [] });
+
+    // the panel's bank, 6 m out across the stack's throw: 6 m past it the floor loses its highs over the crest
+    const bank = await tab.eval<{ before: number; after: number; banks: number }>(`(() => {
+      qrooms.pickStack(0);
+      const before = qrooms.level(0, 6);
+      document.getElementById("bank").click();
+      return { before, after: qrooms.level(0, 6), banks: qrooms.pa().field.banks.length };
+    })()`);
+    expect(bank.banks).toBe(1);
+    expect(bank.before - bank.after).toBeGreaterThan(6);
+
+    // a second stack: at the back left, its sound lands 4.3 m later, and later still on a freezing night than a hot one
+    const late = await tab.eval<{ hot: number; cold: number }>(`(() => {
+      qrooms.edit({ t: "stack", at: [8, -8], yaw: 0 });
+      const hot = qrooms.delay(-10, 14)[1].ms;
+      qrooms.edit({ t: "field", tempC: -10 });
+      return { hot, cold: qrooms.delay(-10, 14)[1].ms };
+    })()`);
+    expect(late.hot).toBeCloseTo(((Math.hypot(18, 22) - Math.hypot(10, 22)) / 349) * 1000, 0);
+    expect(late.cold - late.hot).toBeGreaterThan(0.5);
   } finally { await tab.close(); }
 });

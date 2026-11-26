@@ -1,16 +1,6 @@
 // Outdoor sound against numbers worked by hand or read off the standards' own tables.
 import { expect, test } from "bun:test";
-import { airAbsorption, barrierLoss, bendAngle, echoOf, pressureAt, reflection, source, speedOfSound, weatherAtDistance } from "../src/index.ts";
-
-test("air absorption matches ISO 9613-2's table at 10 C and 70% humidity, and dry thin air takes more of the highs", () => {
-  // dB/km, ISO 9613-2:1996 Table 2.
-  for (const [hz, dbKm] of [[500, 1.9], [1000, 3.7], [2000, 9.7], [4000, 32.8], [8000, 117]]) {
-    expect(Math.abs(airAbsorption(hz, 10, 70) * 1000 / dbKm - 1)).toBeLessThan(0.06);
-  }
-  // 100 m at 8 kHz: about 11 dB in damp air, more than twice that in the dry evening at 1,950 m.
-  expect(airAbsorption(8000, 20, 50) * 100).toBeCloseTo(10.5, 0);
-  expect(airAbsorption(8000, 17, 22, pressureAt(1950)) * 100).toBeGreaterThan(20);
-});
+import { barrierLoss, bendAngle, echoOf, pressureAt, reflection, source, speedOfSound, weatherAtDistance } from "../src/index.ts";
 
 test("speed of sound, pressure, barrier, weather and bending, worked by hand", () => {
   const cases: [string, number, number, number][] = [

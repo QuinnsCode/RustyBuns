@@ -1,40 +1,6 @@
-// Sound out of doors: what the air, the rock and the weather do to it between the hang and a seat. Plain functions over
-// the same `Source` and `Vec3` as sound.ts. Each number says where it comes from.
+// Sound out of doors: what the rock and the weather do to it between the hang and a seat (the air, the ground and the
+// land are field.ts). Plain functions over the same `Source` and `Vec3` as sound.ts. Each number says where it comes from.
 import { type Source, type Vec3, aimTo, levelAt1m, offAxisLoss } from "./sound.ts";
-
-/** Sea-level standard pressure, kPa (ISO 2533). */
-export const SEA_LEVEL_KPA = 101.325;
-
-/** Air pressure at an altitude, kPa: the barometric formula with an 8.4 km scale height (air at about 15 C). At 1,950 m
- * that is about 80 kPa, a fifth thinner than at the sea. */
-export function pressureAt(altitudeM: number): number {
-  return SEA_LEVEL_KPA * Math.exp(-altitudeM / 8434);
-}
-
-/** The speed of sound in dry air at a temperature, m/s: 331.3 √(1 + T / 273.15). It hangs on temperature alone, not on
- * pressure, so thin air at altitude carries sound no faster; a warm afternoon (30 C, 349 m/s) against a cool night
- * (12 C, 338 m/s) moves a 100 m delay by about 9 ms. */
-export function speedOfSound(tempC: number): number {
-  return 331.3 * Math.sqrt(1 + tempC / 273.15);
-}
-
-/**
- * Air absorption, dB per metre, at `freq` Hz (ISO 9613-1:1993, the full formula: oxygen and nitrogen relaxation and the
- * classical loss). Dry air takes the highs harder: at 8 kHz and 20 C, 50% humidity is about 0.11 dB/m and 15% about
- * 0.24 dB/m, so 100 m of dry air takes 20 dB or more off the top octave. Thinner air at altitude shifts the
- * relaxation peaks down and takes a little more again.
- */
-export function airAbsorption(freq: number, tempC: number, humidity: number, kPa = SEA_LEVEL_KPA): number {
-  const T = tempC + 273.15, T0 = 293.15, T01 = 273.16, pr = kPa / SEA_LEVEL_KPA;
-  // Molar concentration of water vapour, percent, from the relative humidity and the saturation pressure.
-  const psat = 10 ** (-6.8346 * (T01 / T) ** 1.261 + 4.6151);
-  const h = (humidity * psat) / pr;
-  const frO = pr * (24 + (4.04e4 * h * (0.02 + h)) / (0.391 + h));
-  const frN = pr * (T / T0) ** -0.5 * (9 + 280 * h * Math.exp(-4.17 * ((T / T0) ** (-1 / 3) - 1)));
-  const f2 = freq * freq;
-  return 8.686 * f2 * (1.84e-11 / pr * (T / T0) ** 0.5
-    + (T / T0) ** -2.5 * ((0.01275 * Math.exp(-2239.1 / T)) / (frO + f2 / frO) + (0.1068 * Math.exp(-3352 / T)) / (frN + f2 / frN)));
-}
 
 /** A flat face of rock: a point on it, its unit normal (pointing out into the air the sound comes through), and the
  * stretch of it there is (the reflection must land inside it). */
@@ -118,11 +84,4 @@ export function weatherAtDistance(d: number, windAlong: number, inversion: boole
   const grow = Math.max(0, Math.min(1, Math.log10(Math.max(d, 100) / 100)));
   const raw = Math.max(-10, Math.min(5, 1.5 * windAlong + (inversion ? 4 : -2)));
   return Math.round(raw * grow * 10) / 10;
-}
-
-/** A barrier between the source and the listener (a rock behind the stage): Maekawa's chart, 10 log10(3 + 20 N) dB
- * with N the Fresnel number, 2 × the extra path over the top / wavelength. Bass bends round it; the highs don't. */
-export function barrierLoss(extraPath: number, freq: number, c = 343): number {
-  const n = (2 * extraPath * freq) / c;
-  return Math.min(20, 10 * Math.log10(3 + 20 * Math.max(0, n)));
 }
