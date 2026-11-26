@@ -5,7 +5,7 @@ import { onPortOrFree, portArg } from "@rustybuns/util/ports";
 import { json, parseJson } from "@rustybuns/util/http";
 import type { ServerWebSocket } from "bun";
 import index from "../index.html";
-import { linksFor, Relay } from "../src/relay.ts";
+import { fromPage, linksFor, Relay } from "../src/relay.ts";
 import { ROOM } from "../src/tools.ts";
 
 const port = portArg(process.argv[process.argv.indexOf("--port") + 1], "agentPage");
@@ -23,6 +23,8 @@ const roomFor = (id: string) => {
 
 const { server, moved } = onPortOrFree(port, (p) => Bun.serve<Tag>({
   port: p,
+  // This Mac only: the room link is the key, so other machines on the same Wi-Fi shouldn't get a door at all.
+  hostname: "127.0.0.1",
   routes: { "/": index, "/r/:room": index },
   async fetch(req, srv) {
     const url = new URL(req.url);
@@ -30,6 +32,7 @@ const { server, moved } = onPortOrFree(port, (p) => Bun.serve<Tag>({
     const m = url.pathname.match(/^\/api\/r\/([^/]+)(\/.*)?$/);
     if (!m || !ROOM.test(m[1]!)) return json({ error: "not a room: /api/r/<room>/tools" }, 404);
     const [, room, rest = ""] = m;
+    if (rest === "/socket" && !fromPage(req)) return json({ error: "only this site's page may hold the room" }, 403);
     if (rest === "/socket") return srv.upgrade(req, { data: { room: room! } }) ? undefined : json({ error: "this is the page's socket" }, 426);
     return roomFor(room!).relay.http(req, rest, linksFor(url.origin, room!));
   },
@@ -41,4 +44,4 @@ const { server, moved } = onPortOrFree(port, (p) => Bun.serve<Tag>({
   development: true,
 }));
 
-console.log(`Agent Page: http://localhost:${server.port}${moved ? ` (${port} was taken)` : ""}`);
+console.log(`Agent Page: http://127.0.0.1:${server.port}${moved ? ` (${port} was taken)` : ""}`);

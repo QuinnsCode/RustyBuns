@@ -9,7 +9,7 @@
 
 ```
 cd apps/effect-ui-page
-bun run dev              # http://localhost:4799
+bun run dev              # http://127.0.0.1:4799
 ```
 
 Open the page. It gives itself a room (`/r/<room>` in the address bar) and the Connect box beside it says how to reach
@@ -41,6 +41,15 @@ Undo and Start over buttons do the same as the tools. This browser keeps each ro
 
 The room's link is its key: there's no sign-in, so share it only with agents you want building your page. The page has
 to stay open: it holds the page, and an agent that calls while no tab is open is told to ask you to open it.
+
+What keeps it safe, in short (the page says the same in its "How it works" card):
+
+- An agent can only call the page's tools, and each call is checked by its Schema: text of a set length, `#rrggbb`
+  colors, a font from a list, `https://` links. Nothing reaches your machine, and the page never runs what it's sent.
+- Only a page this server served can hold a room's socket (its `Origin` must match), so another site that learns the
+  link can't take the agent's calls. `bun run dev` listens on 127.0.0.1 only, not your Wi-Fi.
+- What the page says goes back to the agent, so the prompt and the MCP instructions tell it page text is content,
+  never instructions.
 
 From a script or the console, the same tools are on `window.__commands`:
 
