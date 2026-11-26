@@ -75,6 +75,11 @@ try {
 
     await tab.eval(`document.querySelector(".gc-cog").click()`);
     await shot("controls");
+    // The same sheet with a switch on, so a shot shows a rocker's on state beside an off one; then put it back.
+    const invert = `[...document.querySelectorAll(".gc-card label")].find((l) => /Invert Y/.test(l.textContent ?? ""))?.querySelector("input")?.click()`;
+    await tab.eval(invert);
+    await shot("controls-on");
+    await tab.eval(invert);
     if (tab.noise.length) console.warn(`${size}:\n  ${tab.noise.join("\n  ")}`);
     await tab.close();
   }

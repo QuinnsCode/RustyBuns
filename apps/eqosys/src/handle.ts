@@ -13,7 +13,7 @@ import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, hubInvited, hubRedeem, linkOf, type Who } from "./qollab/hub.ts";
 import { isQollab, qollab } from "./qollab/routes.ts";
-import { makeSpace, SPACE_NAME, studioAdd, studioRemove } from "./qollab/space.ts";
+import { makeSpace, SPACE_NAME, studioAdd, studioJoin, studioRemove } from "./qollab/space.ts";
 import { bearerOf, cors, HOME_LIFE, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, mintRefresh, setAccess, signOutApps } from "./members.ts";
 import { oauth, provedBy } from "./oauth.ts";
@@ -114,11 +114,14 @@ export async function invitedBy(req: Request, conf: Env): Promise<{ id: string; 
 
 /** Whether someone already signed in goes on to the app without seeing the page: it is one of our own games (they pressed Sign in
  * in it, and it is ours, so nothing to ask), they have used it before, or this browser just pressed "Continue with…" for it.
- * A first visit to a suite or a studio's game still asks, so nobody is handed to somebody else's app they never picked. */
+ * A first visit to a suite or a studio's game still asks, so nobody is handed to somebody else's app they never picked.
+ * A return to a custom URL scheme always asks (#6233): any app installed on the device can claim the same scheme and ask under
+ * our app's id, so the Continue page is what stands between it and a code. Only the press that page just made goes on. */
 async function goesStraightOn(conf: Env, userId: string, a: Ask, mark: string | null) {
   if (a.pick) return false;
-  if (a.app.kind === "game" && ourApp(a.app.id) === a.app) return true;
   if (mark && mark === await socialMark(conf, a)) return true;
+  if (a.back.protocol !== "https:" && a.back.protocol !== "http:") return false;
+  if (a.app.kind === "game" && ourApp(a.app.id) === a.app) return true;
   return !!(await conf.DB.prepare("SELECT 1 AS n FROM links WHERE user_id = ? AND app = ?").bind(userId, a.app.id).first<number>("n"));
 }
 
@@ -427,12 +430,16 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   }
   if (act === "logout") await signOutApps(conf, me.id);
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
-  // The Studio tab (Studio.tsx): add someone by email, or make a studio. The same rules as eq_studio_add and eq_studio_make.
+  // The Studio tab (Studio.tsx): ask someone in by email, answer an invite, or make a studio. The same rules as eq_studio_add, eq_studio_join and eq_studio_make.
   if (act === "studio-add") {
     const role = check(Role, field(form, "role"));
     if (!role) return see("/?tab=studio&e=studio");
     const r = await studioAdd(conf, field(form, "studio"), me.id, field(form, "email"), role);
-    return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 404 ? "nobody" : "studio"}`);
+    return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 429 ? "slow" : r.error.includes("invites waiting") ? "invites" : "studio"}`);
+  }
+  if (act === "studio-join") {
+    const r = await studioJoin(conf, field(form, "studio"), me.id, field(form, "answer") === "yes");
+    return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 409 ? "joinfull" : "noinvite"}`);
   }
   if (act === "studio-remove") {
     const r = await studioRemove(conf, field(form, "studio"), me.id, field(form, "email"));
