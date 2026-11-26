@@ -157,6 +157,18 @@ button.info svg { width: 16px; height: 16px; }
 body > .gc-dialog .gc-head h2 { padding: 5px 14px 5px 18px; background: var(--fibre) 0 0 / 96px 48px, #dfe5ec; color: #11141a; font: 700 17px/1.2 ui-monospace, Menlo, monospace;
   letter-spacing: 0.18em; text-transform: uppercase; clip-path: var(--clip); transform: rotate(var(--tilt, 0deg)); box-shadow: inset 7px 0 0 var(--lane-2); }
 body > .gc-dialog .gc-close { border: 1px solid #000; background: linear-gradient(#262a33, #121419); box-shadow: inset 0 1px 0 #ffffff29, 0 3px 0 #000; }
+/* The station display under the title, set in the speaker grille: the fascia's tuning dial behind glass, and the MUSIC VU. */
+body > .gc-dialog .dr-monitor { --hair: #e9ecf22e; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 9px 10px;
+  border: 1px solid #000; border-radius: 8px; background: #050608 var(--grille); box-shadow: inset 0 2px 8px #000, inset 0 0 0 1px var(--hair), 0 1px 0 #ffffff12; }
+body > .gc-dialog .dr-monitor .display { margin: 0; padding: 7px 10px 3px; }
+body > .gc-dialog .dr-monitor .live svg { width: 84px; }
+@media (min-width: 600px) { body > .gc-dialog .dr-monitor .live svg { width: 104px; } }
+@media (max-height: 480px) {
+  body > .gc-dialog .dr-monitor { padding: 5px 8px; gap: 8px; }
+  body > .gc-dialog .dr-monitor .display { padding: 3px 8px 1px; }
+  body > .gc-dialog .dr-monitor .scale { max-height: 34px; }
+  body > .gc-dialog .dr-monitor .live svg { width: 54px; }
+}
 /* Presets: a key each with its lane's LED (lit on the one in use), the number big, its name on tape under it. */
 body > .gc-dialog .gc-profiles.gc-presets { gap: 10px; }
 body > .gc-dialog .gc-presets .gc-prof { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; --led: var(--lane-0); }
