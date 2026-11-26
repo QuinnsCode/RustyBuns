@@ -1,0 +1,52 @@
+:root { color-scheme: light; --dock: #f4f4f5; --line: #e4e4e7; --muted: #71717a; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #fafafa; color: #18181b; }
+
+.shell { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 100vh; }
+@media (max-width: 760px) { .shell { grid-template-columns: 1fr; } }
+
+/* The agent's page: every color and the font come from the theme, as CSS variables on .page. */
+.page { background: var(--paper); color: var(--ink); font-family: var(--font); padding: 48px max(16px, 6vw); transition: background .3s, color .3s; }
+.page header { display: flex; gap: 20px; align-items: center; margin-bottom: 32px; }
+.page h1 { margin: 0; font-size: clamp(28px, 5vw, 44px); line-height: 1.1; }
+.tagline { margin: 6px 0 0; opacity: .75; font-size: 17px; }
+.avatar { flex: none; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--paper); font-weight: 700; font-size: 26px; }
+.block { max-width: 680px; margin: 0 0 18px; padding: 18px 22px; border-radius: 16px; background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.block h2 { margin: 0 0 8px; font-size: 18px; color: var(--accent); }
+.block p { margin: 0; }
+.block ul { margin: 0; padding-left: 18px; }
+.block a { color: var(--accent); font-weight: 600; }
+.k-quote blockquote { margin: 0; font-size: 20px; font-style: italic; }
+.k-quote .who { margin-top: 8px; opacity: .7; }
+.stats { display: flex; flex-wrap: wrap; gap: 12px; }
+.stat { min-width: 100px; padding: 10px 14px; border-radius: 12px; background: var(--paper); }
+.stat b { display: block; font-size: 24px; color: var(--accent); }
+.stat span { font-size: 13px; opacity: .75; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { padding: 4px 12px; border-radius: 999px; background: var(--accent); color: var(--paper); font-size: 13px; font-weight: 600; }
+
+/* The dock: the tools an agent sees and what it last did. */
+.dock { background: var(--dock); border-left: 1px solid var(--line); padding: 24px 20px; font-size: 14px; }
+.dock h3 { margin: 0 0 8px; font-size: 14px; }
+.dock h3 + * { margin-top: 0; }
+.muted { color: var(--muted); }
+.tools, .log { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 4px; }
+.tools code, .log code { font-size: 12px; }
+.log li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border-radius: 8px; background: #fff; }
+.log li.bad { background: #fee2e2; }
+.row { display: flex; gap: 8px; margin-bottom: 20px; }
+button { font: inherit; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+
+/* The Connect box: the relay's status, the prompt to paste, and one copy line per agent. */
+.status { margin: 0 0 16px; padding: 8px 12px; border-radius: 10px; background: #fff; color: var(--muted); }
+.status.on { background: #dcfce7; color: #166534; font-weight: 600; }
+.door { margin-bottom: 18px; }
+.door > b { display: block; margin-bottom: 2px; }
+.door > p { margin: 0 0 8px; font-size: 13px; }
+.line { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; margin-bottom: 10px; }
+.line span { grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--muted); }
+.line code { font-size: 11px; padding: 6px 8px; border-radius: 8px; background: #fff; border: 1px solid var(--line); word-break: break-all; }
+button.copy { padding: 4px 12px; font-size: 13px; }
+details { margin-bottom: 16px; }
+summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }

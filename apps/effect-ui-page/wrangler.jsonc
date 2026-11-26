@@ -1,0 +1,17 @@
+// Agent Page on Cloudflare: the built page as static assets (every /r/<room> is the same page) and one Room
+// Durable Object per room, the relay between agents in a terminal and the page in a browser (src/edge/worker.ts).
+// `bun run deploy`. The Worker runs first only for /api and /.well-known, so the page itself costs no Worker call.
+{
+  "name": "agent-page",
+  "main": "src/edge/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "dist/ui",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/.well-known/*"]
+  },
+  "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "observability": { "enabled": true }
+}
