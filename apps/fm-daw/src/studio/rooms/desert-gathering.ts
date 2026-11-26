@@ -16,10 +16,11 @@ import { all, seat } from "./kit.ts";
 const TABLE_W = 3.2;
 /** The booth's table's middle: the DJ stands at z = -8.4 facing +z, the table 55 cm in front. */
 const TABLE_Z = -7.85;
-/** A stack's footprint: the horn bin, 1.1 m wide (pa-room.ts rigStacks closes each side to the rig's own width). */
-const STACK_W = 1.12;
-/** Each side's middle, metres out from the DJ, and how far it's turned in toward the floor's middle. */
-const SIDE_X = 7.4, SIDE_Z = -10, TOE = 0.2;
+/** A stack's footprint: the 21" horn bin, 1.686 m wide at its real size (pa-room.ts rigStacks closes each side to the rig's own width). */
+const STACK_W = 1.706;
+/** Each side's middle, metres out from the DJ, and how far it's turned in toward the floor's middle. The inner
+ *  columns stand about 6.85 m out, which is where the toed-in horns cross over the floor 10 to 16 m out. */
+const SIDE_X = 7.7, SIDE_Z = -10, TOE = 0.2;
 /** How far a side's two tops fan apart from its own aim, each way. */
 const SPLAY = 0.12;
 /** One side of the floor (-1 left as the DJ sees the crowd from behind, 1 right): two columns along the side's face. */
