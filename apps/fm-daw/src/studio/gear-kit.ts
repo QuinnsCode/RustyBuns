@@ -26,28 +26,31 @@ const KIT: Record<string, SurfaceName> = { metal: "aluminium", plastic: "plastic
  * square), and how rough and bumpy it is. `shade` scales the colour asked for (in linear light): look.ts painted
  * boards darker than their colour (seams, grain), and the rooms were lit for that. `turn` stands the photo on its
  * side (veneer whose grain should run up the wall), and `as` is the sound material whose colour it takes when none is asked. */
-interface RoomSurface { dir: string; tile: number; tall?: number; rough: number; color: boolean; normal?: number; shade?: number; tone?: number; wear?: number; turn?: boolean; as?: keyof typeof MATERIALS }
+interface RoomSurface { dir: string; tile: number; tall?: number; rough: number; color: boolean; normal?: number; shade?: number; tone?: number; wear?: number; grime?: number; coat?: number; turn?: boolean; as?: keyof typeof MATERIALS }
 const ROOM: Record<string, RoomSurface> = {
-  floorboards: { dir: "floorboards", tile: 1.5, rough: 0.55, color: true, normal: 0.8, shade: 0.32, tone: 0.14, wear: 0.8 },
+  // lacquered boards (round 13): glossy enough to hold a soft smear of each can, dull where they are walked on
+  floorboards: { dir: "floorboards", tile: 1.5, rough: 0.5, color: true, normal: 0.8, shade: 0.32, tone: 0.16, wear: 1, grime: 0.5, coat: 0.55 },
   foam: { dir: "foam", tile: 1.2, rough: 1, color: false, normal: 0.9 },
   ceilingTile: { dir: "ceilingTile", tile: 3.6, rough: 1, color: true, normal: 1.2, tone: 0.05 },
-  drywall: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 0.3, tone: 0.07 },
-  plaster: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 1, tone: 0.08 },
-  concrete: { dir: "concrete", tile: 2.5, rough: 1, color: true, normal: 0.8, tone: 0.12, wear: 0.5 },
+  drywall: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 0.3, tone: 0.07, grime: 0.18 },
+  plaster: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 1, tone: 0.08, grime: 0.25 },
+  concrete: { dir: "concrete", tile: 2.5, rough: 1, color: true, normal: 0.8, tone: 0.12, wear: 0.5, grime: 0.45 },
   // old red brick laid in courses 7.5 cm high: one copy is twelve bricks across and nineteen courses up
-  brick: { dir: "bricks", tile: 2.86, tall: 1.43, rough: 1, color: true, normal: 1.1, shade: 0.75, tone: 0.1, wear: 0.25 },
+  // deep mortar joints, and soot and damp stains where a century of rooms left them (round 13)
+  brick: { dir: "bricks", tile: 2.86, tall: 1.43, rough: 1, color: true, normal: 1.8, shade: 0.75, tone: 0.17, wear: 0.25, grime: 0.9 },
   // walnut veneer on the walls, the grain running up them (look.ts's `walls()` cuts the sheets' joints)
-  woodPanel: { dir: "walnut", tile: 1.3, rough: 0.62, color: true, normal: 0.5, shade: 0.55, turn: true, tone: 0.08, as: "wood" },
+  woodPanel: { dir: "walnut", tile: 1.3, rough: 0.62, color: true, normal: 0.5, shade: 0.55, turn: true, tone: 0.1, grime: 0.2, as: "wood" },
   // the woven cloth stretched over an absorber's frame
-  panel: { dir: "panelCloth", tile: 0.32, rough: 1, color: true, normal: 0.9, tone: 0.04 },
+  panel: { dir: "panelCloth", tile: 0.32, rough: 1, color: true, normal: 0.9, tone: 0.04, grime: 0.15 },
 };
 
 /**
  * A photo repeated every metre and a half reads as wallpaper. Over the map, two slow value noises in the map's own
  * coordinates (one copy is 1 across): a tone that drifts `tone` either way over a few metres, so no two copies match,
- * and worn patches (`wear`, 0 to 1) where feet and chairs have dulled the finish, a touch paler and rougher.
+ * and worn patches (`wear`, 0 to 1) where feet and chairs have dulled the finish, a touch paler and rougher, and grime
+ * (`grime`, 0 to 1): smaller dark stains, dust and soot, darker and duller where they lie (round 13).
  */
-function weather(m: THREE.MeshStandardMaterial, tone: number, wear: number) {
+function weather(m: THREE.MeshStandardMaterial, tone: number, wear: number, grime = 0) {
   m.onBeforeCompile = (s) => {
     s.fragmentShader = s.fragmentShader
       .replace("#include <common>", `#include <common>
@@ -60,13 +63,15 @@ float qNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
   float qWorn = smoothstep(0.58, 0.86, qNoise(vMapUv * 0.8 + 7.3) * 0.75 + qNoise(vMapUv * 3.1) * 0.25) * ${wear.toFixed(2)};
   diffuseColor.rgb *= 1.0 + (qTone - 0.5) * ${(tone * 2).toFixed(2)};
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.14, 1.1, 1.04) + 0.004, qWorn);
+  float qGrime = smoothstep(0.45, 0.85, qNoise(vMapUv * 1.3 + 11.7) * 0.6 + qNoise(vMapUv * 4.9 + 2.2) * 0.4) * ${grime.toFixed(2)};
+  diffuseColor.rgb *= 1.0 - qGrime * vec3(0.46, 0.5, 0.54);
 #endif`)
       .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
 #ifdef USE_MAP
-  roughnessFactor = clamp(roughnessFactor + qWorn * 0.3 - (qTone - 0.5) * 0.12, 0.0, 1.0);
+  roughnessFactor = clamp(roughnessFactor + qWorn * 0.3 + qGrime * 0.15 - (qTone - 0.5) * 0.12, 0.0, 1.0);
 #endif`);
   };
-  m.customProgramCacheKey = () => `weather-${tone}-${wear}`;
+  m.customProgramCacheKey = () => `weather-${tone}-${wear}-${grime}`;
 }
 
 /** The average colour of a loaded map, in linear light (what the tint divides by). */
@@ -129,9 +134,10 @@ export function gearKit(quality: Quality): (name: string, color?: string) => THR
     const r = ROOM[name];
     if (!r || quality === "low") return null;
     const want = new THREE.Color(color ?? MATERIALS[r.as ?? (name as keyof typeof MATERIALS)].color).multiplyScalar(r.shade ?? 1);
-    const m = roomMaterial({ color: want, roughness: r.rough, metalness: 0 });
+    // a coat is a clear lacquer over the photo (the boards'): it holds the cans' reflections whatever the wood's own roughness
+    const m = r.coat ? new THREE.MeshPhysicalMaterial({ color: want, roughness: r.rough, metalness: 0, clearcoat: r.coat, clearcoatRoughness: 0.2 }) : roomMaterial({ color: want, roughness: r.rough, metalness: 0 });
     m.name = `room-${name}-${want.getHexString()}`;
-    if (r.tone || r.wear) weather(m, r.tone ?? 0, r.wear ?? 0);
+    if (r.tone || r.wear || r.grime) weather(m, r.tone ?? 0, r.wear ?? 0, r.grime ?? 0);
     void Promise.all([
       r.color ? map(r.dir, "color", r, true).then((t) => void (m.map = t)) : undefined,
       map(r.dir, "normal", r, false).then((t) => { m.normalMap = t; m.normalScale.setScalar(r.normal ?? 1); }),
