@@ -41,9 +41,10 @@ export const LINEUP: Partial<Record<GearId, LineupRow>> = {
   "sub-18": { maker: "QSC", issue: 5960 },
   "wedge-12": { maker: "QSC", issue: 5960 },
   "line-array-10": { maker: "QSC", issue: 5960 },
-  "top-15-passive": { maker: "JBL", issue: 5960 },
-  "wedge-12-passive": { maker: "JBL", issue: 5960 },
-  "line-array-box": { maker: "JBL", issue: 5960 },
+  "top-15-passive": { maker: "JBL", product: "JRX215", published: [0.46, 0.699, 0.432], issue: 5960 },
+  // its sheet's 353 x 574 x 399 standing up, laid as a stage monitor on its 30-degree facet (the owner's call, 2026-11-26)
+  "wedge-12-passive": { maker: "JBL", product: "PRX412M", published: [0.574, 0.41, 0.487], issue: 5960 },
+  "line-array-box": { maker: "JBL", product: "VTX A12", published: [1.118, 0.33, 0.495], issue: 5960 },
   "synergy-horn": { maker: null, issue: 5961 },
   "tapped-horn-18": { maker: null, issue: 5961 },
   "cab-4x12": { maker: null, issue: 5961 },
