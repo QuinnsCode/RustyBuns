@@ -5,7 +5,8 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { add, type Bob, drain, Event, fold, wait } from "./blender-queue.ts";
+import { add, type Bob, drain, Event, fold, queuedJob, wait } from "./blender-queue.ts";
+import { SH_BLENDER_LOCK } from "../packages/cli/src/blender.ts";
 
 setDefaultTimeout(30_000);
 const tmp = mkdtempSync(join(tmpdir(), "blender-queue-"));
@@ -34,6 +35,7 @@ writeFileSync(blender, `#!/bin/sh\nwhile [ "$1" != "-P" ]; do shift; done; s=$2;
 chmodSync(blender, 0o755);
 const trace = join(tmp, "trace");
 process.env.TRACE = trace;
+process.env.RUSTYBUNS_HOME = join(tmp, "home"); // the one-Blender lock the drainer takes
 const quiet = { log: () => {}, every: 50 };
 const job = (name: string, ...more: string[]) => ({ dir: ".", py: true, cmd: ["job.py", name, ...more], out: ["out"], who: name });
 const traced = () => readFileSync(trace, "utf8").trim().split("\n");
@@ -99,4 +101,28 @@ test("a job cut short when Bob goes away goes back in line and runs again from t
   expect(await draining(() => wait(bob, root, j.id, quiet))).toBe(0);
   expect(jobs().find((x) => x.id === j.id)).toMatchObject({ state: "done", tries: 3 });
   expect(traced().filter((l) => l === "start long")).toHaveLength(2);
+});
+
+test("a job waits while a warm Blender holds Bob's Blender, and runs once it is gone", async () => {
+  writeFileSync(trace, "");
+  // a warm Blender over ssh takes the lock in sh and execs Blender (here a shell that sleeps), which keeps the pid
+  const warm = Bun.spawn(["sh", "-c", `${SH_BLENDER_LOCK}exec sh -c 'sleep 1; echo warm-end >> "$TRACE"'`], {
+    env: { PATH: process.env.PATH ?? "", HOME: tmp, TRACE: trace, RUSTYBUNS_HOME: process.env.RUSTYBUNS_HOME ?? "" }, stdout: "ignore", stderr: "ignore",
+  });
+  while (!existsSync(join(process.env.RUSTYBUNS_HOME!, "blender.lock/pid"))) await Bun.sleep(10);
+  const j = await add(bob, root, sha, job("after-warm"), quiet);
+  expect(await draining(() => wait(bob, root, j.id, quiet))).toBe(0);
+  expect(await warm.exited).toBe(0);
+  expect(traced()).toEqual(["warm-end", "start after-warm", "end after-warm"]);
+});
+
+test("a script's Blender run goes out as a job with its paths made relative, and a path outside the repo is turned away", () => {
+  const app = join(root, "apps/beasts");
+  const j = queuedJob(root, app, {
+    script: "blender/closeups.py", args: [join(app, "public/a.glb"), join(app, "blender/out/a.png"), "--focus", "0,1,0,0.4"],
+    out: [join(app, "blender/out")], send: [join(app, "blender/out/main.glb")],
+  });
+  expect(j.add).toEqual({ dir: "apps/beasts", py: true, cmd: ["blender/closeups.py", "public/a.glb", "blender/out/a.png", "--focus", "0,1,0,0.4"], out: ["apps/beasts/blender/out"] });
+  expect(j.send).toEqual(["apps/beasts/blender/out/main.glb"]);
+  expect(() => queuedJob(root, app, { script: "x.py", args: [join(tmpdir(), "elsewhere.glb")], out: ["."] })).toThrow("outside the repo");
 });
