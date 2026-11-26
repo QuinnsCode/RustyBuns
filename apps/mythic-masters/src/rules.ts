@@ -12,7 +12,7 @@ import { FACTIONS } from "./factions/model.ts";
 import { FIELDS, STRONG, typeMul } from "./fields.ts";
 import {
   atLevel, baseLevel, bindBelow, bindChance, gainXp, INK, MAULED, OUTNUMBERED, OWN_MAX, PARTY_FIRST, PARTY_MAX, PICKS, SAVE_KEY, SECTIONS, sectionLevel,
-  START_LEVEL, STARTERS, toNext, TRAIL_REGIONS, type Member,
+  START_LEVEL, STARTERS, toNext, TRAIL_REGIONS, WATCH_SHARE, type Member,
 } from "./journey.ts";
 import { MAX_PLAYERS } from "./net/party.ts";
 import { REGIONS } from "./regions.ts";
@@ -90,10 +90,10 @@ export const RULES: Rule[] = [
     ],
   },
   {
-    n: 4, title: "XP: who earns it, how much, what the next level costs", from: "src/journey.ts gainXp, toNext",
-    numbers: { "gainXp per foe level": XP_PER_LEVEL, "toNext per level": NEXT_PER_LEVEL },
+    n: 4, title: "XP: who earns it, how much, what the next level costs", from: "src/journey.ts gainXp, shareXp, WATCH_SHARE, toNext",
+    numbers: { "gainXp per foe level": XP_PER_LEVEL, "toNext per level": NEXT_PER_LEVEL, "percent for the rest of the line-up": Math.round(WATCH_SHARE * 100) },
     says: [
-      `Only the beast that wins the fight earns XP. The others in the line-up get none.`,
+      `The beast that wins the fight earns all of its XP. The others in the line-up watched, and each gets ${Math.round(WATCH_SHARE * 100)}% of it.`,
       `A win gives ${XP_PER_LEVEL} XP for each level of the creature you beat. The next level costs ${NEXT_PER_LEVEL} XP for each level you have now. Example: a level-5 beast needs ${toNext(5)} XP, and beating a level-4 creature gives ${4 * XP_PER_LEVEL}.`,
     ],
   },
@@ -213,7 +213,7 @@ export const RULES: Rule[] = [
     says: [
       `A friend joins your world through a party link. Up to ${MAX_PLAYERS} players share a region.`,
       `When you walk into a wild one or a keeper, friends in the region can join the fight. A lone creature that faces a team hits harder: ${OUTNUMBERED[2].edge} times against two, ${OUTNUMBERED[3].edge} against three, ${OUTNUMBERED[4].edge} against four.`,
-      `Each player's own beast earns the XP, and each player has the usual ${INK} tries of ink. The first bind that holds takes the creature. A keeper beaten together clears the stone only for a player whose next stone it is.`,
+      `Each player's own beast earns the XP (the rest of that player's line-up gets half), and each player has the usual ${INK} tries of ink. The first bind that holds takes the creature. A keeper beaten together clears the stone only for a player whose next stone it is.`,
     ],
   },
   {
