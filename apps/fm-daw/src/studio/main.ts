@@ -68,7 +68,7 @@ import { badge, dropBadge } from "./badge.ts";
 import { prop, chaseSteps, tickProps } from "./props.ts";
 import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { doorways } from "./doors.ts";
-import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
+import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Look, type Quality } from "./look.ts";
 import { gearKit, gearKitLook } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
@@ -407,9 +407,17 @@ function thing(s: Spot): THREE.Group {
   }
   return g;
 }
-useKit(gearKit(loadQuality()));
-buildRoom();
-const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
+/** The front door draws no studio: walking into a room loads its link, so the door never needs one (#5905). */
+function doorLook(quality: Quality): Look {
+  renderer.setClearColor(0x0d0e10);
+  renderer.clear();
+  return {
+    quality, render() {}, resize: (w, h) => { renderer.setSize(w, h, false); renderer.clear(); },
+    state: () => ({ quality, lights: 0, shadows: 0, post: [], tone: "none", exposure: 1, drawCalls: 0, triangles: 0, fps: 0, ground: 0, env: "room" }),
+  };
+}
+if (here) { useKit(gearKit(loadQuality())); buildRoom(); }
+const picture = !here ? doorLook(loadQuality()) : def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
 // the subs' cones pump on the beat while the band plays
 const pumpSubs = subCones([scene]);
 /** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
@@ -424,7 +432,7 @@ const drawnLook = (id: number | "me") => drawn.get(id)?.avatar ?? null;
 let watched: THREE.Vector3 | null = null;
 // step dust off the floor: thick on an open-air room's sand, a faint scuff indoors
 // out of doors, a crowd on the dance floor facing the stacks, dancing to the groove (dancers.ts)
-const dancers = def.outdoor ? new Dancers(def, loadQuality() === "low" ? 6 : 12) : null; // fewer on a phone
+const dancers = here && def.outdoor ? new Dancers(def, loadQuality() === "low" ? 6 : 12) : null; // fewer on a phone
 if (dancers) scene.add(dancers.group);
 const dust = new Dust(scene, def.outdoor ? 1.6 : 0.6, `#${new THREE.Color(def.colors.floor).lerp(new THREE.Color("#d8cbb4"), 0.6).getHexString()}`);
 const palm = new THREE.Vector3();
@@ -1565,7 +1573,7 @@ function frame(now: number) {
   picture.render(camera);
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+if (here) requestAnimationFrame(frame); // the front door has no room to draw or walk in
 // the menu's lists are sideways rows of cards, like the studios: a wheel or a drag scrolls them, touch swipes
 for (const id of ["rooms", "invites", "friends", "people"]) { $(id).classList.add("cards"); sideways($(id)); }
 menu();

@@ -28,9 +28,17 @@ test("a table of file times becomes balanced lanes, with no empty one", () => {
     [{ "test/a.test.ts": 5 }, [["./test/a.test.ts"]]],
   ];
   for (const [times, want] of cases) expect(laneCommands("bun test test", ms(times), 3).map(files)).toEqual(want);
-  // Flags and their values stay; the folder they ran over goes, since each lane names its files.
+  // Flags and their values stay; the folder they ran over goes, since each lane names its files. Every lane bails.
   expect(laneCommands("bun test --parallel --timeout 30000 test", ms({ "test/a.test.ts": 1 }), 3))
-    .toEqual(["bun test --parallel --timeout 30000 ./test/a.test.ts"]);
+    .toEqual(["bun test --bail --parallel --timeout 30000 ./test/a.test.ts"]);
+});
+
+// #5920: a lane runs the PR's own test files first and stops at its first failure, so its breakage shows in a minute.
+test("in each lane the PR's changed test files run first", () => {
+  const files = ["test/a.test.ts", "test/b.test.ts", "test/c.test.ts", "test/d.test.ts"].map((name) => ({ name, ms: 10 }));
+  expect(laneCommands("bun test test", files, 1, (f) => f === "test/c.test.ts"))
+    .toEqual(["bun test --bail ./test/c.test.ts ./test/a.test.ts ./test/b.test.ts ./test/d.test.ts"]);
+  expect(laneCommands("bun test --bail test", files, 1)).toEqual(["bun test --bail ./test/a.test.ts ./test/b.test.ts ./test/c.test.ts ./test/d.test.ts"]);
 });
 
 // #4136: a drop-pipeline PR dry-ran every app (~70 jobs a push, more runner time than the test suites); now one per build path.
@@ -67,7 +75,7 @@ test("a full run puts every sub-minute suite with nothing to build or boot in a 
     expect(g.dir).toBe(".");
     for (const a of apps) {
       expect(APPS[a]!.prep ?? APPS[a]!.boot ?? false).toBe(false);
-      expect(g.test).toContain(`${appDir(a)} '${APPS[a]!.test}'`);
+      expect(g.test).toContain(`${appDir(a)} 'bun test --bail`);
       expect(g.filters).toContain(`--filter ./${appDir(a)}`);
       expect(g.sparse).toContain(`/${appDir(a)}/`);
     }
