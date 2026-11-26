@@ -53,7 +53,7 @@ Put `protect: true` on a database, bucket or room that holds data people care ab
   limits (`/limits`) and bytes and hashes (`/bytes`). Grep before adding a helper; if one exists twice, keep one.
 - **Effects at the edges.** Use Effect (or plain `try/finally`, `AbortController`) where something must be
   cleaned up, cancelled or retried: processes, sockets, saves, deploys. Keep it out of per-frame code and pure logic.
-- **TypeScript wide, Rust deep.** Start in TypeScript. Move only a measured hot path (audio, physics, geometry) to
+- **TypeScript everywhere, Rust when you need it.** Start in TypeScript. Move only a measured hot path (audio, physics, geometry) to
   Rust via `@rustybuns/native`; keep a TypeScript twin that gives the same answer and test the two against each
   other, so the app still runs when Rust can't load.
 - **Give the page a handle.** A game or tool puts `window.<name>.state()` (and a few verbs) on the page, so an

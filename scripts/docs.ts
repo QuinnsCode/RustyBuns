@@ -67,16 +67,16 @@ function blurb(app: string): string {
   return (text.match(/^.*?[.!?](\s|$)/)?.[0] ?? text).trim().replace(/\|/g, "\\|") || "TODO: say what this one proves";
 }
 
-// Features: every `###` under "## Features" is a one-line short explanation, then the long one in a
-// <details> block, so the README reads as a list and expands where you want more.
-const features = readme.match(/\n## Features\n([\s\S]*?)\n## /)?.[1];
-if (!features) problems.push("README.md: no `## Features` section");
+// Features (FEATURES.md, so the README stays short): every `###` under "## Features" is a one-line short
+// explanation, then the long one in a <details> block, so the list reads short and expands where you want more.
+const features = readFileSync("FEATURES.md", "utf8").match(/\n## Features\n([\s\S]*?)\n## /)?.[1];
+if (!features) problems.push("FEATURES.md: no `## Features` section");
 else
   for (const [, title, body] of features.matchAll(/\n### (.+)\n([\s\S]*?)(?=\n### |$)/g)) {
     const [short, ...rest] = body!.trim().split(/\n\s*\n/);
-    if (!short || short.startsWith("<")) problems.push(`README.md feature "${title}": needs a one-line short explanation`);
+    if (!short || short.startsWith("<")) problems.push(`FEATURES.md feature "${title}": needs a one-line short explanation`);
     if (!(rest[0] ?? "").startsWith("<details><summary>") || !body!.trim().endsWith("</details>"))
-      problems.push(`README.md feature "${title}": put the long explanation in <details><summary>More</summary> ... </details>`);
+      problems.push(`FEATURES.md feature "${title}": put the long explanation in <details><summary>More</summary> ... </details>`);
   }
 
 // Relative links (and their #anchors) in the root docs.

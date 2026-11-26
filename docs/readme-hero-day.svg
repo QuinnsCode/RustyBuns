@@ -6,5 +6,5 @@
 <path d="M0 282 Q200 250 420 278 T820 276 T1200 270 V300 H0Z" fill="#e85d04"/>
 <text x="60" y="130" font-family="BG,'Arial Black',sans-serif" font-weight="800" font-size="70" letter-spacing="2" fill="#2a1a0e">RUSTY<tspan fill="#c2410c"> BUNS</tspan></text>
 <text x="64" y="190" font-family="DMM,monospace" font-size="21" fill="#2a1a0e">My idea engine for agents and humans alike.</text>
-<text x="64" y="228" font-family="DMM,monospace" font-size="20" fill="#c2410c">TypeScript wide  /  Rust deep  /  laptop, edge and server<animate attributeName="opacity" values="1;.55;1" dur="3s" repeatCount="indefinite"/></text>
+<text x="64" y="228" font-family="DMM,monospace" font-size="20" fill="#c2410c">TypeScript everywhere  /  Rust when you need it<animate attributeName="opacity" values="1;.55;1" dur="3s" repeatCount="indefinite"/></text>
 </svg>
