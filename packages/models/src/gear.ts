@@ -597,7 +597,7 @@ function cab1960aPieces(): Record<string, Build> {
   hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [0, h * 0.4, zb - 0.001], 8));
   hw.pieces.push(box("knob", [mm(120), mm(75), 0.008], [0, h * 0.83, zb - 0.001], { bevel: 0.002 }));
   for (const x of [-1, 1]) for (const y of [-1, 1]) hw.pieces.push(disc("plug", mm(4), 0.002, "z", [x * mm(48), h * 0.83 + y * mm(26), zb - 0.006], 8));
-  jacks(hw, ["speaker-in"], "back", [0, h * 0.83, zb - 0.001], [0, 0, 0]);
+  socketPanel(hw, "cab-4x12", "back", [0, h * 0.83, zb - 0.005], [mm(110), mm(66)]);
   mark(hw, "grab", [w / 2 + 0.012, h * 0.62, mm(-20)], [1, 0, 0]);
   return { cabinet: cab, grille, piping, corners, hardware: hw };
 }
@@ -1704,7 +1704,7 @@ function f124Pieces(): Record<string, Build> {
     hw.pieces.push(box("violet", [mm(160), mm(38), mm(100)], [x, t + mm(19), f - mm(460)], { bevel: 0.004 }));
   }
   plate(hw, mm(193), mm(147), [0, mm(674), -d / 2 - 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [-0.035, mm(690), -d / 2 - 0.008], [0.07, 0, 0]);
+  socketPanel(hw, "horn-sub-24", "back", [0, mm(690), -d / 2 - 0.008], [mm(183), mm(137)]);
   for (const x of [-1, 1]) for (const y of [mm(130), h - mm(130)]) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]])
     hw.pieces.push(disc("metal", 0.006, 0.004, "z", [x * (w / 2 - mm(70)) + dx * mm(30), y + dy * mm(40), -d / 2 - 0.001], 8));
   for (const s of [-1, 1]) for (const y of [mm(85), h - mm(85)]) for (const z of [f - mm(85), -d / 2 + mm(85)])
@@ -1754,7 +1754,7 @@ function ib218Pieces(): Record<string, Build> {
     for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) hw.pieces.push(disc("metal", 0.005, 0.004, "z", [x + dx * mm(32), y + dy * mm(32), -d / 2 - 0.004], 8));
   }
   plate(hw, mm(86), mm(128), [0, mm(272), -d / 2 - 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(300), -d / 2 - 0.008], [0, -0.056, 0]);
+  socketPanel(hw, "infra-sub-18", "back", [0, mm(272), -d / 2 - 0.008], [mm(78), mm(120)]);
   mark(hw, "grab", [w / 2 + 0.012, cy, 0], [1, 0, 0]);
   return { cabinet: cab, slot: slotB, grille, hardware: hw };
 }
@@ -1821,9 +1821,9 @@ function skeletalPieces(id: "skeletal-mid-high" | "skeletal-mid"): Record<string
   }
   yoke.pieces.push(box("metal", [ax * 2 + 0.005, 0.005, 0.036], top, { bevel: 0.0015, rot: [-s.swing, 0, 0] }));
 
-  // the jacks on the can's back: the Res 2SH's two NL4s, the Res 2S8's terminal
+  // the jacks on the can's back: the Res 2SH's two NL4s, the Res 2S8's junction box
   plate(drv, 0.09, 0.05, [0, s.my, -d / 2 - 0.004]);
-  jacks(drv, hf ? ["speaker-in", "speaker-out"] : ["speaker-in"], "back", [hf ? -0.02 : 0, s.my, -d / 2 - 0.008], [0.04, 0, 0]);
+  socketPanel(drv, id, "back", [0, s.my, -d / 2 - 0.008], [mm(84), mm(46)]);
   mark(drv, "grab", top, [0, 1, 0]);
   return { face, "mid-horn": mid, plug: plugB, driver: drv, ...(hf ? { "hf-horn": hfB } : {}), yoke };
 }
@@ -2113,7 +2113,7 @@ function sh50Pieces(): Record<string, Build> {
   for (const y of [h + 0.0015, feet - 0.0015]) for (const [x, z] of [[-mm(250), f - mm(45)], [mm(250), f - mm(45)], [-mm(120), zb + mm(200)], [mm(120), zb + mm(200)], [0, zb + mm(40)]])
     hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x, y, z], 10));
   plate(hw, mm(105), mm(240), [0, mm(270), zb - 0.001]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(340), zb - 0.001], [0, -mm(140), 0]);
+  socketPanel(hw, "synergy-horn", "back", [0, mm(270), zb - 0.005], [mm(95), mm(230)]);
   hw.pieces.push(box("cavity", [mm(80), mm(45), 0.004], [0, h / 2 + mm(30), zb - 0.0004], { bevel: 0.001 }));
   mark(hw, "grab", onSide(1, 0.3, h - mm(75), 0.012), out);
   return { cabinet: cab, horn, ports, grille, hardware: hw };
@@ -2181,7 +2181,7 @@ function th118Pieces(): Record<string, Build> {
     if (!(y < ch && z < 0)) hw.pieces.push(disc("metal", 0.009, 0.003, "x", [s * (w / 2 + 0.0015), y, z], 10));
   hw.pieces.push(disc("metal", 0.009, 0.003, "x", [w / 2 + 0.0015, ch + mm(60), zb + mm(60)], 10), disc("metal", 0.009, 0.003, "x", [-w / 2 - 0.0015, ch + mm(60), zb + mm(60)], 10));
   plate(hw, mm(110), mm(240), [-mm(60), h * 0.66, zb - 0.001]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [-mm(60), h * 0.66 + mm(60), zb - 0.001], [0, -mm(120), 0]);
+  socketPanel(hw, "tapped-horn-18", "back", [-mm(60), h * 0.66, zb - 0.005], [mm(100), mm(230)]);
   hw.pieces.push(box("cavity", [mm(70), mm(45), 0.004], [mm(130), h * 0.66, zb - 0.0004], { bevel: 0.001 }));
   // the casters: a wheel on a fork either side, half out of the slant
   const nz = -Math.cos(slant), ny = -Math.sin(slant), wz = zb + cw / 2 + nz * mm(20), wy = ch / 2 + ny * mm(20);
