@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Runs } from "./pr.ts";
+import { lineMerge } from "../apps/codesplitter/scripts/shadow.ts";
 import { type AfterPr, type Gh, type Head, NO_CHECKS, type PrState, KICK_MESSAGE, pass } from "./after.ts";
 
 setDefaultTimeout(30_000);
@@ -59,6 +60,54 @@ test.each(pushes)("a PR that says merge after #9 waits while #9 is open, then ge
     // The push-time comment carries the head's marker, which the later CI check reads as already flagged.
     expect(said.map((s) => s.split("\n")[0])).toEqual(comments);
     if (!token) expect(said[0]).toContain(`<!-- after:unchecked ${ok(origin, "rev-parse", "mine")} -->`);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+// Main's conflicts Mervin's line merge settles are pushed; a real one still stops for a person. The first two are
+// #5997 (fm-daw README) and #5983 (GEAR_SIZES) from 2026-11-25.
+const A = "- **Live line:** everything in the room edits one groove.", NEW = "- **Takes:** record a loop and keep it.", B = "- **Private seshes:** set a room code.";
+const HIGH = '  "stack-mid-high": [0.6, 0.9, 0.5],', BASS = '  "stack-mid-bass": [0.75, 0.75, 0.85],';
+const doc = (...l: string[]) => `# fm-daw\n\n## Features\n\n${l.join("\n")}\n\nThe end.\n`;
+const gear = (...l: string[]) => `export const GEAR_SIZES = {\n  turntable: [0.453, 0.169, 0.353],\n${l.join("\n")}\n  "horn-sub-21": [1.1, 0.8, 1.0],\n};\n`;
+const settles: { why: string; file: string; base: string; main: string; branch: string; want: string | null }[] = [
+  { why: "a bullet the branch grew, a bullet main added after it", file: "README.md", base: doc(A, B), main: doc(A, NEW, B), branch: doc(`${A} It plays back in time.`, B), want: doc(`${A} It plays back in time.`, NEW, B) },
+  { why: "next-door rows each side changed", file: "gear.ts", base: gear(HIGH, BASS), main: gear('  "stack-mid-high": [0.522, 0.92, 0.56],', BASS), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],'), want: gear('  "stack-mid-high": [0.522, 0.92, 0.56],', '  "stack-mid-bass": [0.7, 0.8, 0.85],') },
+  { why: "one row changed two ways stops", file: "gear.ts", base: gear(HIGH, BASS), main: gear(HIGH, '  "stack-mid-bass": [0.8, 0.75, 0.85],'), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],'), want: null },
+];
+test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want }) => {
+  const root = mkdtempSync(join(tmpdir(), "after-"));
+  try {
+    const run = (cwd: string, ...a: string[]) => {
+      const r = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd, stdout: "pipe", stderr: "pipe" });
+      return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
+    };
+    const ok = (cwd: string, ...a: string[]) => { const r = run(cwd, ...a); if (r.code !== 0) throw new Error(r.out); return r.out; };
+    const origin = join(root, "origin.git"), dev = join(root, "dev"), ci = join(root, "ci");
+    ok(root, "init", "-q", "--bare", "-b", "main", origin);
+    ok(root, "clone", "-q", origin, dev);
+    const commit = (text: string) => { writeFileSync(join(dev, file), text); ok(dev, "commit", "-qam", "x"); };
+    writeFileSync(join(dev, file), base); ok(dev, "add", "-A"); ok(dev, "commit", "-qm", "base");
+    ok(dev, "push", "-q", "origin", "HEAD:main");
+    ok(dev, "checkout", "-q", "-b", "mine"); commit(branch); ok(dev, "push", "-q", "origin", "mine");
+    ok(dev, "checkout", "-q", "main"); commit(main); ok(dev, "push", "-q", "origin", "main");
+    ok(root, "clone", "-q", origin, ci);
+    const pr: AfterPr = { number: 12, headRefName: "mine", body: "Merge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [] };
+    const said: string[] = [];
+    const gh: Gh = { open: () => [pr], state: () => "MERGED", comment: (_, t) => { said.push(t); }, setBody: (_, b) => { pr.body = b; }, head: () => { throw new Error("no head"); }, runs: () => [], closedBlockers: () => [] };
+    const before = ok(origin, "rev-parse", "mine");
+    const out = pass(gh, (...a) => run(ci, ...a), { token: true, lineMerge });
+    if (want === null) {
+      expect(out).toEqual([`#12 conflicts with main in ${file}: commented`]);
+      expect(ok(origin, "rev-parse", "mine")).toBe(before);
+      expect(pr.body).toStartWith("Main conflicts after #9");
+      expect(said[0]).toContain(`- \`${file}\`: Mervin left 1 card`);
+      return;
+    }
+    expect(out).toEqual(["#12 merged main in and pushed (settled its conflicts)"]);
+    expect(ok(origin, "show", `mine:${file}`)).toBe(want);
+    expect(ok(origin, "rev-list", "--parents", "-1", "mine").trim().split(" ")).toHaveLength(3);
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain(`- \`${file}\``);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -273,6 +273,15 @@ export async function until(tab: Tab, expr: string, what = expr, waitMs = 30_000
   }
 }
 
+/** `until` for any truthy answer of `expr`, awaited: a test's wait on its page. On a miss the error also carries what
+ *  `state` (an expression, such as the game's `state()`) says then. */
+export async function waitFor(tab: Tab, what: string, expr: string, ms = 30_000, state?: string, everyMs = 100) {
+  try { await until(tab, `(async () => !!(await (${expr})))()`, what, ms, everyMs); } catch (e) {
+    if (state && e instanceof Error) e.message += `; state: ${JSON.stringify(await tab.eval(state).catch(() => null))}`;
+    throw e;
+  }
+}
+
 export async function freePort() { const s = Bun.serve({ port: 0, fetch: () => new Response() }); const p = s.port!; await s.stop(true); return p; }
 
 /** True when the app's vite config loads @cloudflare/vite-plugin, whose miniflare dies under `bun --bun` (`#runtimeDispatcher?.close is not a function`). */

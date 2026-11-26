@@ -6,6 +6,7 @@
 import { expect, test } from "bun:test";
 import { load, openTab, until } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
+import { PLACES } from "../src/way.ts";
 
 /** The menu's journey on a `w` x `h` screen, as this file's one test. */
 export function menuOn(screen: string, w: number, h: number) {
@@ -55,10 +56,11 @@ async function rows(tab: Awaited<ReturnType<typeof openTab>>, w: number) {
 
   // in the room the row of rooms folds to the one you're in; pressing it opens the row again
   const shown = () => page<number>(`[...document.getElementById("qs-way").children].filter((e) => e.getClientRects().length).length`);
-  // the place you are in and a door to each of the six others (Paths first, #5880)
-  expect(await shown()).toBe(7);
+  // the place you are in and a door to each of the others (Paths first, #5880)
+  const places = Object.keys(PLACES).length;
+  expect(await shown()).toBe(places);
   await page(`window.qjam.start()`);
   expect(await shown()).toBe(1);
   await page(`document.querySelector("#qs-way [aria-current]").click()`);
-  expect(await shown()).toBe(7);
+  expect(await shown()).toBe(places);
 }

@@ -3,7 +3,7 @@
 // After that the tutorial is learned in this browser and Play never shows it again. A ?role= jump never starts it.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
-import { launchChrome, load, openTab, startVite, type Cdp } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, startVite, waitFor, type Cdp } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(180_000); // vite serves the game cold, then plays the tutorial round in headless Chrome
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -19,10 +19,7 @@ async function open(cdp: Cdp, path: string) {
   const tab = await openTab(cdp, { w: 1280, h: 720 });
   await load(cdp, tab, new URL(path, vite.url).href, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("window.parkHideSeek?.state()").catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms = 30_000) => waitFor(tab, what, expr, ms, "window.parkHideSeek?.state()", 50);
   const key = (type: "keyDown" | "keyUp", code: string) => tab.call("Input.dispatchKeyEvent", { type, code, key: code.slice(3).toLowerCase() });
   const errors = () => tab.noise.filter((n) => !n.startsWith("HTTP "));
   await until("the menu", `!!window.parkHideSeek && !document.getElementById("play").disabled`, 60_000);

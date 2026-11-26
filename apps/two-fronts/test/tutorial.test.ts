@@ -2,7 +2,7 @@
 // and picking a side, a fleet, placing a unit, deploying and calling a play with Confirm walk it to the end. A reload
 // of the same browser shows it no more.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, waitFor } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(120_000); // vite serves the game cold, then walks the tutorial in headless Chrome
 
@@ -61,8 +61,7 @@ test.skipIf(!chromePath())("a first visit teaches a side, a fleet, a unit placed
     expect(await tab.eval<string>(`document.querySelector(".eq-coach").textContent`)).toContain("1 of 5");
     expect(await tab.eval<Title>(TITLE)).toEqual({ covers: [], vsAi: true });
     expect(await tab.eval<(string | null)[]>(PLAY)).toEqual(["Pick a side", "Choose your fleet", "Place a unit", "Deploy your fleet", "Call a play"]);
-    const end = Date.now() + 5000;
-    while (!(await coach(tab)).learned && Date.now() < end) await Bun.sleep(100);
+    await waitFor(tab, "the tutorial learned", "twoFronts.state().then((s) => s.tutorial.learned)", 5000);
     expect(await coach(tab)).toMatchObject({ learned: true, running: false });
 
     // Back in the same browser: the war goes on, and no coach.

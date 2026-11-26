@@ -6,9 +6,8 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { space } from "@rustybuns/util/eqosys";
-import type { SpacesState } from "@rustybuns/util/spaces";
 import { newKey } from "@rustybuns/util/token";
-import { launchChrome, load, openTab } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
 import { handle } from "../src/handle.ts";
 import { Space } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
@@ -41,6 +40,7 @@ async function signUp(name: string, app: string, origin: string) {
   const up = await call("/do/signup", { form: { ...a.form, name, email: `${name.toLowerCase()}@example.com`, password: PASSWORD } });
   return (await (await call("/api/exchange", { json: { app, code: codeIn(up.to), verifier: a.verifier } })).res.json() as { token: string }).token;
 }
+/** For what this side of the wire hears (a page's waits are `waitFor`'s). */
 const until = async (what: string, f: () => Promise<unknown> | unknown, ms = 10_000) => {
   for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await f()) return;
   throw new Error(`never saw ${what}`);
@@ -50,16 +50,14 @@ test("make a space in the panel, a friend joins by invite, they talk, the owner 
   const ada = await signUp("Ada", "park-hide-seek", PARK), bo = await signUp("Bo", "qcrm", QCRM);
   const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
   await load(chrome.cdp, tab, `${base}/panel?${new URLSearchParams({ token: ada, name: "Ada" })}`, 0);
-  const state = () => tab.eval<SpacesState>("panel.state()").catch(() => null);
-  const seen = async (what: string, ok: (s: SpacesState) => boolean) => {
-    try { await until(what, async () => { const s = await state(); return s && ok(s); }); } catch (e) { throw new Error(`${(e as Error).message}: ${JSON.stringify(await state())}`); }
-  };
+  /** Waits for `ok`, an expression over the panel's state `s`. */
+  const seen = (what: string, ok: string) => waitFor(tab, what, `(() => { const s = panel.state(); return !!s && (${ok}); })()`, 10_000, "panel.state()", 50);
   const type = (placeholder: string, text: string) => tab.eval(`(() => { const i = document.querySelector('#spaces input[placeholder=${JSON.stringify(placeholder)}]'); i.value = ${JSON.stringify(text)}; i.form.requestSubmit(); })()`);
   const press = (title: string) => tab.eval(`document.querySelector('#spaces button[title=${JSON.stringify(title)}]').click()`);
 
-  await seen("an empty list", (s) => s.open === null && s.spaces.length === 0);
+  await seen("an empty list", `s.open === null && s.spaces.length === 0`);
   await type("Name a new space", "Night ride");
-  await seen("the new space open on #general", (s) => s.open === "Night ride" && s.channel === "general" && s.online.join() === "Ada");
+  await seen("the new space open on #general", `s.open === "Night ride" && s.channel === "general" && s.online.join() === "Ada"`);
 
   const friend = space({ url: () => base, token: () => bo });
   const invite = (await space({ url: () => base, token: () => ada }).mine())![0]!.invite!;
@@ -70,59 +68,59 @@ test("make a space in the panel, a friend joins by invite, they talk, the owner 
     said: (_, m) => { heard.push(`${m.from.name}: ${m.text}`); ids.set(m.text, m.id); }, gone: (w) => (gone = w),
     online: (m) => (friendSees = m.map((x) => (x.voice ? `${x.name} in voice` : x.name))),
   });
-  await seen("Bo online", (s) => s.online.join() === "Ada,Bo");
+  await seen("Bo online", `s.online.join() === "Ada,Bo"`);
 
   friend.say("general", "on my way");
-  await seen("Bo's line", (s) => s.messages.includes("Bo: on my way"));
+  await seen("Bo's line", `s.messages.includes("Bo: on my way")`);
   await type("Message #general", "meet at the bowl");
   await until("Ada's line at Bo's end", () => heard.includes("Ada: meet at the bowl"));
 
   // A thread: Ada replies under Bo's line, Bo answers in it from his app, and #general counts the replies.
   await press("Reply to Bo");
-  await seen("the thread under Bo's line", (s) => s.thread?.join() === "Bo: on my way");
+  await seen("the thread under Bo's line", `s.thread?.join() === "Bo: on my way"`);
   await type("Reply in thread", "bring the wax");
-  await seen("Ada's reply in the thread", (s) => s.thread?.join("|") === "Bo: on my way|Ada: bring the wax");
+  await seen("Ada's reply in the thread", `s.thread?.join("|") === "Bo: on my way|Ada: bring the wax"`);
   await until("the reply at Bo's end", () => ids.has("bring the wax"));
   friend.say("general", "got it", ids.get("bring the wax")); // a reply to a reply joins the same thread
-  await seen("Bo's reply in the thread", (s) => s.thread?.at(-1) === "Bo: got it");
+  await seen("Bo's reply in the thread", `s.thread?.at(-1) === "Bo: got it"`);
   await press("Back to #general");
-  await until("two replies under Bo's line", () => tab.eval<boolean>(`!!document.querySelector('#spaces button[title="2 replies"]')`));
+  await waitFor(tab, "two replies under Bo's line", `!!document.querySelector('#spaces button[title="2 replies"]')`, 10_000, undefined, 50);
 
   // Search: what was said, whoever said it, and a word nobody did.
   await type("Search #general", "BOWL");
-  await seen("the bowl line found", (s) => s.found?.join() === "Ada: meet at the bowl");
+  await seen("the bowl line found", `s.found?.join() === "Ada: meet at the bowl"`);
   await type("Search #general", "skatepark");
-  await seen("nothing found", (s) => s.found?.length === 0);
+  await seen("nothing found", `s.found?.length === 0`);
   await press("Back to #general");
-  await seen("back on #general", (s) => s.found === null && s.thread === null);
+  await seen("back on #general", `s.found === null && s.thread === null`);
   // A space takes 5 frames a second from a socket with a burst of 10, and a person is slower than this script: let it refill.
   await Bun.sleep(2_000);
 
   // Voice: the owner adds a channel, joins it with a fresh ticket, and the friend sees them in it.
   await type("Voice room", "lounge");
-  await seen("the lounge tab", (s) => s.voices.join() === "lounge");
+  await seen("the lounge tab", `s.voices.join() === "lounge"`);
   await tab.eval(`[...document.querySelectorAll('#spaces [role=tab]')].find((b) => b.textContent === "lounge").click()`);
   await press("Join lounge");
-  await seen("Ada in the lounge", (s) => s.inVoice === "lounge" && s.speakers.join() === "Ada");
+  await seen("Ada in the lounge", `s.inVoice === "lounge" && s.speakers.join() === "Ada"`);
   expect(await tab.eval<string>("voice.tickets[0]")).toStartWith(`${base}/qlave ey`);
   await until("Bo seeing Ada in voice", () => friendSees.includes("Ada in voice"));
   await press("Mute yourself");
-  await seen("Ada muted", (s) => s.speakers.join() === "Ada (muted)");
+  await seen("Ada muted", `s.speakers.join() === "Ada (muted)"`);
   // Qlave closing the room (here: the stand-in says the room ended) takes Ada out, and everyone sees it.
   await tab.eval(`voice.gone("ended")`);
-  await seen("Ada out of voice", (s) => s.inVoice === null && s.note === "That voice channel ended.");
+  await seen("Ada out of voice", `s.inVoice === null && s.note === "That voice channel ended."`);
   await until("Bo seeing Ada leave voice", () => friendSees.join() === "Ada,Bo");
 
   // A private channel: Ada adds it with a lock on its tab, opens it, and lets Bo in from Bo's row.
   await type("Private channel", "leads");
-  await seen("the private tab", (s) => s.private.join() === "leads" && s.role === "owner");
+  await seen("the private tab", `s.private.join() === "leads" && s.role === "owner"`);
   await tab.eval(`[...document.querySelectorAll('#spaces [role=tab]')].find((b) => b.textContent === "leads").click()`);
-  await seen("on #leads", (s) => s.channel === "leads");
+  await seen("on #leads", `s.channel === "leads"`);
   await press("Let Bo into leads");
-  await until("Bo let in", () => tab.eval<boolean>(`!!document.querySelector('#spaces button[title="Keep Bo out of leads"]')`));
+  await waitFor(tab, "Bo let in", `!!document.querySelector('#spaces button[title="Keep Bo out of leads"]')`, 10_000, undefined, 50);
 
   await press("Kick Bo");
-  await seen("Bo gone", (s) => s.online.join() === "Ada");
+  await seen("Bo gone", `s.online.join() === "Ada"`);
   await until("Bo closed out", () => gone);
   await until("the kick sent to Qlave", () => orders.some((o) => JSON.stringify(o).includes('"t":"kick"')));
 
