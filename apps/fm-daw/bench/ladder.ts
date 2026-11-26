@@ -6,6 +6,7 @@
 //   3. The same ladder as its stage equations, every number from the same parts (the tail current, C, VT, the
 //      dividers and the output gain), as the wall already plays its switching modules: how far it lands from the
 //      solved ladder, and what it costs.
+//   4. Q Ladder, the module built from it (#5812): its own sim against Q Filter, and the voice with it.
 //   bun apps/fm-daw/bench/ladder.ts
 import { Circuit, type Part } from "@rustybuns/gear/circuit";
 import { makeSim } from "../src/wall/sims.ts";
@@ -132,3 +133,20 @@ for (const [amps, res] of [[30e-6, 0], [100e-6, 0.5], [400e-6, 0.9]]) {
   console.log(`  solved: ${s.us.toFixed(2)} µs a sample (${(s.us / vcf.us).toFixed(1)}x Q Filter), ${s.newton.toFixed(2)} Newton steps, ${s.misses} misses; voice ${withSolved.toFixed(2)} µs, ${realTime(withSolved).toFixed(1)}x real time`);
   console.log(`  stages: ${m.us.toFixed(2)} µs a sample, ${(apart(s.out, m.out) * 100).toFixed(1)}% from the solved ladder; voice ${withStages.toFixed(2)} µs, ${realTime(withStages).toFixed(1)}x real time`);
 }
+
+// Q Ladder, the module (#5812): its sim (these stage equations, every number from circuits/wall-ladder.tsx) on the
+// same saw, and the first voice with it in Q Filter's place.
+const module = (() => {
+  const f = makeSim("ladder", RATE), x = new Float64Array(f.ins.length), y = new Float64Array(f.outs.length);
+  for (let i = 0; i < RATE / 2; i++) { x[0] = saw[i]; f.step(x, y); }
+  return { us: us(time(() => { for (let i = 0; i < N; i++) { x[0] = saw[i]; f.step(x, y); } })), hz: f.read().hz };
+})();
+const LADDER_VOICE: WallSpec = {
+  ...VOICE,
+  modules: VOICE.modules.map((m) => (m.kind === "vcf" ? { ...m, id: "ladder", kind: "ladder" } : m)),
+  cables: VOICE.cables.map((c) => ({ from: c.from[0] === "vcf" ? (["ladder", "out"] as [string, string]) : c.from, to: c.to[0] === "vcf" ? (["ladder", c.to[1]] as [string, string]) : c.to })),
+};
+renderWall(LADDER_VOICE, 0.5);
+const withLadder = us(time(() => renderWall(LADDER_VOICE, SECONDS)));
+console.log(`\nQ Ladder (the module's sim, cutoff ${Math.round(module.hz)} Hz): ${module.us.toFixed(2)} µs a sample (${(module.us / vcf.us).toFixed(2)}x Q Filter)`);
+console.log(`first voice with Q Ladder in Q Filter's place: ${withLadder.toFixed(2)} µs a sample, ${realTime(withLadder).toFixed(1)}x real time`);

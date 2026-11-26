@@ -140,6 +140,11 @@ export const PANELS: Panel[] = [
     ],
     jacks: [jack("J1", "in", "In", "in", -16, -36), jack("J2", "cv", "Time CV", "in", 0, -36), jack("J3", "out", "Out", "out", 16, -36)],
   },
+  {
+    id: "ladder", name: "Q Ladder", what: "filter (transistor ladder)", hp: 10,
+    knobs: [knob("RV1", "freq", "Freq", -10, 34, 0.55), knob("RV2", "res", "Res", 10, 34, 0.3), knob("RV3", "cv", "CV", 0, 12, 0.6)],
+    jacks: [jack("J1", "in", "In", "in", -12, -16), jack("J2", "cv", "CV", "in", 12, -16), jack("J3", "out", "Out", "out", 0, -38)],
+  },
 ];
 
 /** A Eurorack panel's holes, mm from its top left corner: jacks 6 mm, pots 7 mm, and the 3.2 mm rail screws. */

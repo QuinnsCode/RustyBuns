@@ -1606,7 +1606,7 @@ const harness = {
   gearClick: () => atWall.click(jam),
   /** Let go of the cable in your hand (G). */
   gearDrop: () => atWall.letGo(),
-  /** A new sound wall module in your hands (K's list), by kind: seq, vco, vcf, vca, env, lfo, mix, out, noise, keys, bbd. */
+  /** A new sound wall module in your hands (K's list), by kind: seq, vco, vcf, vca, env, lfo, mix, out, noise, keys, bbd, ladder. */
   gearBring: (kind: string) => atWall.bring(jam, kind),
   /** The sound wall at the gear wall: what the sesh's patch makes of it and, with the speakers up, what each module is doing. */
   wall: async () => { const { spec, ...heard } = atWall.wall(), s = await wallLine?.state() ?? null; return { heard: { ...heard, modules: spec.modules.map((m) => m.id), cables: spec.cables }, modules: s?.modules ?? null, load: s?.load ?? null }; },
