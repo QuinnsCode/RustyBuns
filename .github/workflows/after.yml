@@ -30,6 +30,9 @@ jobs:
           token: ${{ secrets.AFTER_TOKEN || github.token }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
+      # Mervin's line merge (apps/codesplitter/scripts/shadow.ts) imports @rustybuns/util: without the install it
+      # can't load and every conflict goes to a person. The root and codeSplitter's workspace are all after.ts needs.
+      - run: bun install --frozen-lockfile --filter rustybuns --filter ./apps/codesplitter
       - env:
           GH_TOKEN: ${{ secrets.AFTER_TOKEN || github.token }}
           # Whether the secret is set (never its value): with it, a bot head that got no CI gets an empty commit that starts it;

@@ -289,10 +289,14 @@ export const ghCli: Gh = {
 if (import.meta.main) {
   help(import.meta.path);
   const git: Git = (...a) => sh(["git", ...a]);
-  // Mervin's line merge needs the repo's packages; a checkout without them still runs, sending every conflict to a person.
+  // Mervin's line merge needs the repo's packages (after.yml installs them). Without them the pass still runs, sending
+  // every conflict to a person, but the run fails so nobody mistakes that for a healthy pass.
   let lineMerge: LineMerge | null = null;
   try { lineMerge = (await import("../apps/codesplitter/scripts/shadow.ts")).lineMerge; }
-  catch (e) { console.log(`::warning::Mervin's line merge didn't load, so conflicts go to a person: ${e instanceof Error ? e.message : String(e)}`); }
+  catch (e) {
+    console.log(`::error::Mervin's line merge didn't load, so conflicts go to a person (run bun install --frozen-lockfile): ${e instanceof Error ? e.message : String(e)}`);
+    process.exitCode = 1;
+  }
   const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true", lineMerge };
   const lines = pass(ghCli, git, opts);
   console.log(lines.length ? lines.join("\n") : "no open PR says merge after, and no fixed blocker holds one");
