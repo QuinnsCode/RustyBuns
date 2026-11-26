@@ -338,6 +338,27 @@ const list: Gear[] = [
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 103, maxSpl: 134, ratedWatts: 1200, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 25, highCut: 80, rearLoss: 3 },
   },
+  // The Res2's two sections with no box round them, for fills, delays and speech, from their data sheets: 106 dB at
+  // 4 V into 16 ohm (1 W / 1 m), 200 W AES, 50 x 25 degrees. With no cabinet behind it a skeletal horn spills more
+  // to the back than the Res2 does.
+  {
+    // Res 2SH (D0028-01): the 8" mid and 1" high with a passive crossover, 250 Hz-18 kHz, 13 kg, two NL4s.
+    id: "skeletal-mid-high",
+    what: "skeletal mid-high horn",
+    size: box(0.484, 0.447, 0.357),
+    kg: 13,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 106, maxSpl: 129, ratedWatts: 200, ohms: 16, coverage: { h: 50, v: 25 }, lowCut: 250, highCut: 18000, rearLoss: 18 },
+  },
+  {
+    // Res 2S8 (D0061-00): the 8" mid alone, 250 Hz-5 kHz, 10.5 kg, a Wago terminal box.
+    id: "skeletal-mid",
+    what: "skeletal mid horn",
+    size: box(0.458, 0.307, 0.357),
+    kg: 10.5,
+    jacks: { "speaker-in": 1 },
+    speaker: { sensitivity: 106, maxSpl: 129, ratedWatts: 200, ohms: 16, coverage: { h: 50, v: 25 }, lowCut: 250, highCut: 5000, rearLoss: 18 },
+  },
   // The sculpted array (Void's Air Motion V2): three moulded fibreglass conical horns (12" LF, 8" MF, 1.5" HF) on a
   // steel frame, no cabinet, 853.9 x 671.2 x 659.9 mm and 35 kg, 60 x 50 degrees, flown or on a pole in pairs, over the
   // arc subs. Sound numbers as before (its sheet: 106 dB LF, 137 dB peak).

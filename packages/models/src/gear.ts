@@ -71,6 +71,8 @@ export const GEAR_SIZES = {
   "horn-sub-18": [1.326, 0.496, 0.723],
   "horn-sub-24": [0.702, 0.992, 1.056],
   "infra-sub-18": [1.326, 0.496, 0.723],
+  "skeletal-mid-high": [0.484, 0.447, 0.357],
+  "skeletal-mid": [0.458, 0.307, 0.357],
   "sculpted-3way": [0.8539, 0.6712, 0.6599],
   "arc-sub-18": [0.6568, 0.55, 0.6952],
   "amp-rack-12u": [0.6, 1.05, 0.75],
@@ -1322,12 +1324,13 @@ function slab(slot: GearSlot, pts: number[][], y0: number, y1: number): Piece {
 }
 
 /** Flat triangles between rings of points (each ring the same length, closed), each face turned to look forward (+z):
- * a horn's walls, creased where the rings' points are, as a moulded horn's facets are. */
-function ringWalls(slot: GearSlot, rings: THREE.Vector3[][]): Piece {
+ * a horn's walls, creased where the rings' points are, as a moulded horn's facets are. `facing` -1 turns them to look
+ * back instead: the outside of a horn with no cabinet round it. */
+function ringWalls(slot: GearSlot, rings: THREE.Vector3[][], facing: 1 | -1 = 1): Piece {
   const pos: number[] = [];
   const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
     const n = b.clone().sub(a).cross(c.clone().sub(a));
-    pos.push(...(n.z >= 0 ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
+    pos.push(...(n.z * facing >= 0 ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
   };
   for (let i = 0; i + 1 < rings.length; i++) for (let j = 0; j < rings[i]!.length; j++) {
     const k = (j + 1) % rings[i]!.length, a = rings[i]!, b = rings[i + 1]!;
@@ -1652,6 +1655,75 @@ function ib218Pieces(): Record<string, Build> {
   jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(300), -d / 2 - 0.008], [0, -0.056, 0]);
   mark(hw, "grab", [w / 2 + 0.012, cy, 0], [1, 0, 0]);
   return { cabinet: cab, slot: slotB, grille, hardware: hw };
+}
+
+/**
+ * The Res 2's two sections with no box round them (Funktion-One's "skeletal" horns), piece by piece (no maker's name:
+ * the mark moulded in the rim's corner stays plain). Both have the Res2's 8" mid horn and axe-head plug in a moulded
+ * face, the 8" driver's can behind and a stainless yoke on two M10 points, which the model shows swung back so it stays
+ * inside the published size. Metres from the centre line, floor and front.
+ * - Res 2SH (Res2SH-F1-WD=T0107-00), `skeletal-mid-high`: 484 x 447 x 357, grey; the face straight-sided to 307 and
+ *   shouldered up to a 145 flat, the 1" HF horn above the mid (167 x 96, centred 371 up) and its driver behind
+ * - Res 2S8 (Res2S8-F1-WD=T0055-00), `skeletal-mid`: 458 x 307 x 357, black; the mid alone in a rolled rim
+ * - face: the moulded front, its mouths cut through
+ * - mid horn: the facets from the mouth back 160 to the throat, the outside of them too
+ * - plug: the axe head across the throat
+ * - driver: the 8" can, 220 across, its clamp band
+ * - hf horn (Res 2SH only): its walls to the compression driver's throat, and the driver
+ * - yoke: the strap's two arms from the M10 points and the bar across them
+ */
+function skeletalPieces(id: "skeletal-mid-high" | "skeletal-mid"): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES[id], f = d / 2, hf = id === "skeletal-mid-high", skin: GearSlot = hf ? "horn" : "knob", P = pieceBuild;
+  const face = P(), mid = P(), plugB = P(), drv = P(), hfB = P(), yoke = P(), ft = 0.012;
+  // the numbers off each drawing: the mid mouth's half width and height and its centre, the yoke's pivot, arm and swing
+  const s = hf ? { mA: mm(215), mC: mm(137.5), my: mm(163.5), py: mm(215), pz: f - mm(189), arm: mm(255), swing: (33 * Math.PI) / 180 }
+    : { mA: mm(209), mC: mm(131.5), my: mm(153.5), py: mm(156), pz: f - mm(188), arm: mm(210), swing: (49 * Math.PI) / 180 };
+  const hcy = mm(371), hA = mm(83.5), hC = mm(48);
+
+  // ---- face: the Res 2SH's shouldered front with both mouths, or the Res 2S8's rounded rim round the one
+  const outline = hf ? [[-w / 2, 0], [w / 2, 0], [w / 2, mm(307)], [mm(72.5), h], [-mm(72.5), h], [-w / 2, mm(307)]]
+    : roundRect(0, h / 2, w, h, 0.02).map((v) => [v.x, v.y]);
+  face.pieces.push(frontPlate(skin, outline, [rect(0, s.my, s.mA * 2, s.mC * 2), ...(hf ? [rect(0, hcy, hA * 2, hC * 2)] : [])], f, ft));
+
+  // ---- mid horn: the Res2's rings scaled to this mouth and 160 deep, inside and out
+  const k = s.mA / mm(211), zt = f - ft - 0.16, tipA = mm(154) * k, drR = mm(77);
+  const mouth = ring8(0, s.my, f - ft, s.mA, s.mC);
+  const bands = [ring8(0, s.my, f - ft - 0.04, mm(203) * k, mm(126) * k, mm(178) * k, mm(122) * k), ring8(0, s.my, f - ft - 0.093, mm(178) * k, mm(100) * k, mm(110) * k, mm(98) * k)];
+  const throat = ring8(0, s.my, zt, tipA, drR, mm(54), drR), out = (r: THREE.Vector3[], e: number) => r.map((v) => new THREE.Vector3(v.x * (1 + e / Math.abs(v.x || 1)), s.my + (v.y - s.my) * (1 + e / Math.abs(v.y - s.my || 1)), v.z));
+  mid.pieces.push(ringWalls(skin, [mouth, ...bands, throat]), ringWalls(skin, [mouth, ...bands, throat].map((r) => out(r, 0.005)), -1));
+  mid.pieces.push(frontPlate("grime", throat.map((v) => [v.x, v.y]), [Array.from({ length: 20 }, (_, i) => [Math.cos((i / 20) * Math.PI * 2) * drR, s.my + Math.sin((i / 20) * Math.PI * 2) * drR])], zt + 0.004, 0.006));
+
+  // ---- plug: the axe head, blunt on the driver, its ridge forward, pointed at both tips
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, s.my + y, zt + z), pt: THREE.Vector3[] = [];
+  for (const q of [-1, 1]) pt.push(V(q * 0.09, 0.032, 0.01), V(q * 0.09, -0.032, 0.01), V(q * 0.09, 0.03, 0.06), V(q * 0.09, -0.03, 0.06), V(q * 0.08, 0, 0.11), V(q * tipA, 0, 0.04), V(q * 0.13 * k, 0.012, 0.026), V(q * 0.13 * k, -0.012, 0.026));
+  plugB.pieces.push({ geo: toCreasedNormals(new ConvexGeometry(pt), 0.2), slot: skin });
+
+  // ---- driver: the can from the throat to the back, domed at its end, and the clamp band the yoke bolts to
+  const cr = mm(110);
+  drv.pieces.push(disc("knob", cr, zt + d / 2 - 0.014, "z", [0, s.my, (zt - d / 2 + 0.014) / 2], 24), disc("knob", cr * 0.88, 0.014, "z", [0, s.my, -d / 2 + 0.007], 24));
+  drv.pieces.push(disc("metal", cr + 0.006, 0.044, "z", [0, s.my, s.pz], 24));
+  for (const q of [-1, 1]) drv.pieces.push(box("metal", [0.024, 0.03, 0.044], [q * (cr + 0.016), s.py, s.pz], { bevel: 0.003 }));
+
+  // ---- hf horn: straight walls from the mouth to the compression driver's throat, and the driver behind
+  if (hf) {
+    const hd = 0.09, hr = [ring8(0, hcy, f - ft, hA, hC), ring8(0, hcy, f - ft - hd, 0.016, 0.012)];
+    hfB.pieces.push(ringWalls(skin, hr), ringWalls(skin, [ring8(0, hcy, f - ft, hA + 0.004, hC + 0.004), ring8(0, hcy, f - ft - hd, 0.02, 0.016)], -1));
+    hfB.pieces.push(disc("knob", mm(45), 0.06, "z", [0, hcy, f - ft - hd - 0.03], 16), disc("metal", mm(30), 0.008, "z", [0, hcy, f - ft - hd - 0.064], 12));
+  }
+
+  // ---- yoke: two flat stainless arms from the M10 points, swung back, and the bar across their tops
+  const ax = cr + 0.032, top: THREE.Vector3Tuple = [0, s.py + s.arm * Math.cos(s.swing), s.pz - s.arm * Math.sin(s.swing)];
+  for (const q of [-1, 1]) {
+    yoke.pieces.push(box("metal", [0.005, s.arm, 0.036], [q * ax, s.py + (s.arm / 2) * Math.cos(s.swing), s.pz - (s.arm / 2) * Math.sin(s.swing)], { bevel: 0.0015, rot: [-s.swing, 0, 0] }));
+    yoke.pieces.push(disc("metal", 0.011, 0.012, "x", [q * (ax + 0.006), s.py, s.pz], 6));
+  }
+  yoke.pieces.push(box("metal", [ax * 2 + 0.005, 0.005, 0.036], top, { bevel: 0.0015, rot: [-s.swing, 0, 0] }));
+
+  // the jacks on the can's back: the Res 2SH's two NL4s, the Res 2S8's terminal
+  plate(drv, 0.09, 0.05, [0, s.my, -d / 2 - 0.004]);
+  jacks(drv, hf ? ["speaker-in", "speaker-out"] : ["speaker-in"], "back", [hf ? -0.02 : 0, s.my, -d / 2 - 0.008], [0.04, 0, 0]);
+  mark(drv, "grab", top, [0, 1, 0]);
+  return { face, "mid-horn": mid, plug: plugB, driver: drv, ...(hf ? { "hf-horn": hfB } : {}), yoke };
 }
 
 /**
@@ -2670,6 +2742,7 @@ function la108Pieces(): Record<string, Build> {
 const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "stack-mid-high": res2Pieces, "stack-mid-bass": f215Pieces,
   "horn-sub-21": () => binPieces("horn-sub-21", F221), "horn-sub-18": () => binPieces("horn-sub-18", F218), "horn-sub-24": f124Pieces, "infra-sub-18": ib218Pieces,
+  "skeletal-mid-high": () => skeletalPieces("skeletal-mid-high"), "skeletal-mid": () => skeletalPieces("skeletal-mid"),
   "sculpted-3way": airMotionPieces, "triple-21-sub": incubusPieces, "arc-sub-18": arcline118Pieces,
   "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
   "top-15-passive": jrx215Pieces, "wedge-12-passive": prx412mPieces, "line-array-box": a12Pieces,
@@ -2721,6 +2794,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "horn-sub-18": whole("horn-sub-18"),
   "horn-sub-24": whole("horn-sub-24"),
   "infra-sub-18": whole("infra-sub-18"),
+  "skeletal-mid-high": whole("skeletal-mid-high"),
+  "skeletal-mid": whole("skeletal-mid"),
   "sculpted-3way": whole("sculpted-3way"),
   "arc-sub-18": whole("arc-sub-18"),
   "amp-rack-12u": ampRack12,
