@@ -2,6 +2,7 @@
 // (@rustybuns/util/train) instead of turning on GitHub's auto-merge, which merges on a stale green run (#2778 on
 // 2026-10-29). The patches (train/patch.ts) route merge(…, auto) here and put each PR's spot on the PR board's card.
 import { ghTrain, Train, type Method } from "@rustybuns/util/train";
+import { every } from "../live/every.ts";
 import type { Card } from "./chip.ts";
 
 /** How often the head of the line is looked at: CI takes minutes, and every look is a few `gh` calls. */
@@ -31,7 +32,7 @@ export interface OfficeTrain {
 }
 
 /** Hooks a floor up: called from its constructor (see scripts/rustybunsify.ts). */
-export function mergeTrain(floor: Floor, every = EVERY_MS): OfficeTrain {
+export function mergeTrain(floor: Floor, ms = EVERY_MS): OfficeTrain {
   const gh = floor.github;
   let train: Promise<Train> | undefined;
   const ready = () => (train ??= gh.repoInfo().then((r) => new Train({
@@ -44,8 +45,7 @@ export function mergeTrain(floor: Floor, every = EVERY_MS): OfficeTrain {
     merged: () => void gh.refreshPulls(),
   })).catch((e) => { train = undefined; throw e; }));
   let now: Train | undefined;
-  const timer = setInterval(() => void (now?.moving && now.step().then(() => gh.refreshPulls())), every);
-  timer.unref?.();
+  const stop = every(ms, () => now?.moving && now.step().then(() => gh.refreshPulls()), { name: "merge train" });
   const office: OfficeTrain = {
     async join(pr, method, deleteBranch) {
       try {
@@ -60,7 +60,7 @@ export function mergeTrain(floor: Floor, every = EVERY_MS): OfficeTrain {
       const s = now?.spot(pr);
       return s && { state: s.state, why: s.why, ahead: now!.ahead(pr) };
     },
-    stop: () => clearInterval(timer),
+    stop,
   };
   gh.__rbTrain = office;
   return office;

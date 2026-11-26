@@ -2,9 +2,10 @@ import { expect, test } from "bun:test";
 import { heldBy, pick, type Row } from "./phil.ts";
 
 test("Phil picks the oldest Mythic Masters issue nobody holds", () => {
-  const row = (number: number, title: string, createdAt: string, body = ""): Row => ({ number, title, body, createdAt });
+  const row = (number: number, title: string, createdAt: string, body = "", authorAssociation = "OWNER"): Row => ({ number, title, body, createdAt, authorAssociation });
   const rows = [
     row(10, "Mythic Masters: fix the map", "2026-11-03T00:00:00Z"),
+    row(11, "Mythic Masters: a stranger's, older than any", "2026-09-01T00:00:00Z", "", "NONE"),
     row(1, "MANUAL RUN: Mythic Masters deploy", "2026-10-01T00:00:00Z"),
     row(2, "Mythic Masters: tome UI, hill climb to 8/10", "2026-10-02T00:00:00Z"),
     row(3, "Mythic Masters: bestiary art", "2026-10-03T00:00:00Z", "Score: 4/10 (target 7)"),

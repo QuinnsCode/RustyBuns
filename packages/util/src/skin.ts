@@ -31,7 +31,7 @@ const BASE = `
 .rb-report .eq-form{position:fixed;left:0;right:0;bottom:0;width:auto;max-height:min(60dvh,420px);overflow-y:auto;border-width:var(--ui-border) 0 0;border-radius:var(--ui-radius) var(--ui-radius) 0 0;padding-bottom:max(14px,env(safe-area-inset-bottom))}
 .rb-report .eq-form textarea{min-height:72px}.rb-report:has(.eq-form:not([hidden]))>.eq-btn{display:none}
 .rb-report:has(.eq-form:not([hidden]))::before{content:"";position:fixed;inset:0;background:var(--ui-scrim);pointer-events:none}}
-.eq-form{display:grid;gap:8px;width:min(320px,calc(100vw - 24px));padding:14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
+.eq-form{display:grid;gap:8px;width:min(380px,calc(100vw - 24px));padding:14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .eq-form[hidden]{display:none}
 .eq-title{margin:0;font:700 17px/1.2 var(--ui-font-head);color:var(--ui-ink)}
 .eq-status{min-height:1em;color:var(--ui-dim);font-size:12px}.eq-status a{color:var(--ui-accent)}

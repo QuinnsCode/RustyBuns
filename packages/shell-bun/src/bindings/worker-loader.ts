@@ -38,7 +38,7 @@ export interface WorkerCode {
 const ISOLATE = `"use strict";
 const post = postMessage, Req = Request, Res = Response;
 const no = (what) => function () { throw new Error(what === "fetch" || what.endsWith("Socket") || what === "EventSource" ? "network access is blocked: this Worker has no outbound (globalOutbound: null)" : what + " is blocked: this Worker has no outbound (globalOutbound: null)"); };
-for (const k of ["fetch", "WebSocket", "EventSource", "Worker", "SharedWorker", "BroadcastChannel", "require", "module", "Loader"]) {
+for (const k of ["fetch", "WebSocket", "EventSource", "Worker", "SharedWorker", "BroadcastChannel", "require", "module", "Loader", "ShadowRealm"]) {
   try { Object.defineProperty(globalThis, k, { value: no(k), writable: false, configurable: false }); } catch {}
 }
 for (const k of Object.getOwnPropertyNames(Bun)) { try { Object.defineProperty(Bun, k, { value: undefined, writable: false, configurable: false }); } catch {} }
@@ -100,20 +100,34 @@ function shimRuntimeImports() {
 
 // Names an isolated Worker's code may not use, read in the transpiled source (comments gone, escapes spelled out):
 // the `Bun` global can't be removed from a thread, the global object leads to it, and a module's own `require`
-// and `import()` load the machine's modules. A property of the same name (`x.self`) is fine.
-const UNNAMED = /(?<![.$\w])(Bun|globalThis|self|global|window|require|module|__dirname|__filename)(?![$\w])|(?<![.$\w])import\s*(\(|\.\s*meta)/;
+// and `import()` load the machine's modules. A `ShadowRealm` is a fresh global with all of it back. A property of
+// the same name (`x.self`) is fine; a spread (`...require`) is not a property.
+const UNNAMED = /(?<![$\w])(?<!(?<!\.\.)\.)(Bun|globalThis|self|global|window|require|module|__dirname|__filename|ShadowRealm)(?![$\w])|(?<![$\w])(?<!(?<!\.\.)\.)import\s*(\(|\.\s*meta)/;
+
+// `macro: false`: a `with { type: "macro" }` import is refused. Left on, transpiling it RUNS it, here in the host.
+// @ts-expect-error bun-types names only the macro map; Bun takes `false` and refuses ("Macros are disabled")
+const transpiler = () => new Bun.Transpiler({ loader: "js", macro: false });
+/** What an isolated Worker's file holds: the source as checked (macro imports gone), and always an ES module, since
+ *  Bun reads a file with no import or export as CommonJS, whose `this` and `arguments` reach the machine. */
+const checked = (src: string) => `${transpiler().transformSync(src)}\nexport {};\n`;
 
 /** Why an isolated Worker's modules can't load, or null: they import only each other and name nothing above. */
 export function walled(modules: WorkerCode["modules"]): string | null {
-  const t = new Bun.Transpiler({ loader: "js" });
+  const t = transpiler();
   for (const [name, m] of Object.entries(modules)) {
-    const src = typeof m === "string" ? m : "js" in m ? m.js : "cjs" in m ? m.cjs : null;
+    if (name.endsWith(".cjs") || (typeof m === "object" && "cjs" in m)) return `${name} is CommonJS: an isolated Worker (globalOutbound: null) runs ES modules only`;
+    const src = typeof m === "string" ? m : "js" in m ? m.js : null;
     if (src === null) continue;
-    const out = t.transformSync(src), hit = out.match(UNNAMED);
-    if (hit) return `${name} uses \`${hit[1] ?? `import${hit[2] === "(" ? "()" : ".meta"}`}\`, which an isolated Worker (globalOutbound: null) can't`;
-    for (const i of t.scanImports(src)) {
-      const to = i.path.startsWith("./") || i.path.startsWith("../") ? join(dirname(name), i.path) : null;
-      if (to === null || !(to in modules)) return `${name} imports "${i.path}": an isolated Worker (globalOutbound: null) imports only its own modules`;
+    try {
+      // The imports first: scanning them only parses, and an outside one is turned away before anything transpiles it.
+      for (const i of t.scanImports(src)) {
+        const to = i.path.startsWith("./") || i.path.startsWith("../") ? join(dirname(name), i.path) : null;
+        if (to === null || !(to in modules)) return `${name} imports "${i.path}": an isolated Worker (globalOutbound: null) imports only its own modules`;
+      }
+      const hit = t.transformSync(src).match(UNNAMED);
+      if (hit) return `${name} uses \`${hit[1] ?? `import${hit[2] === "(" ? "()" : ".meta"}`}\`, which an isolated Worker (globalOutbound: null) can't`;
+    } catch (e) {
+      return `${name} doesn't load in an isolated Worker (globalOutbound: null): ${e instanceof Error ? e.message : String(e)}`;
     }
   }
   return null;
@@ -137,7 +151,10 @@ export class LocalWorkerStub {
       for (const [name, m] of Object.entries(c.modules)) {
         const file = join(root, name);
         mkdirSync(dirname(file), { recursive: true });
-        if (typeof m === "string" || "js" in m || "cjs" in m) writeFileSync(file, typeof m === "string" ? m : "js" in m ? m.js : m.cjs);
+        if (typeof m === "string" || "js" in m || "cjs" in m) {
+          const src = typeof m === "string" ? m : "js" in m ? m.js : m.cjs;
+          writeFileSync(file, c.globalOutbound === null ? checked(src) : src);
+        }
         else if ("text" in m) writeFileSync(file, m.text);
         else if ("json" in m) writeFileSync(file, JSON.stringify(m.json));
         else if ("data" in m) writeFileSync(file, new Uint8Array(ArrayBuffer.isView(m.data) ? m.data.buffer.slice(m.data.byteOffset, m.data.byteOffset + m.data.byteLength) : m.data));

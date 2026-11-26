@@ -373,6 +373,16 @@ const list: Gear[] = [
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 106, maxSpl: 137, ratedWatts: 800, ohms: 8, coverage: { h: 60, v: 50 }, lowCut: 90, highCut: 20000, rearLoss: 22 },
   },
+  // Its left-handed twin (Void sells both): the same box mirrored, the LF horn on the right seen from the front, so in
+  // a pair the two LF horns meet in the middle. The left box of each pair is this one.
+  {
+    id: "sculpted-3way-lh",
+    what: "sculpted three-way horn, left-handed",
+    size: box(0.8539, 0.6712, 0.6599),
+    kg: 35.4,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 106, maxSpl: 137, ratedWatts: 800, ohms: 8, coverage: { h: 60, v: 50 }, lowCut: 90, highCut: 20000, rearLoss: 22 },
+  },
   // The arc sub (Void's Arcline 118): one 18" in a ported ply box with a bowed grille, 656.8 x 550 x 695.2 mm, 55 kg,
   // 134 dB peak, 1500 W, from its sheet (TD10753-2.0).
   {
@@ -407,14 +417,16 @@ const list: Gear[] = [
   },
   // The sculpted family's triple 21 (Void's Incubus Sub): a hybrid horn bandpass, 105 dB 1 W / 1 m, 148 dB peak
   // (its sheet, TD10760-2.0), 29-95 Hz +/- 3 dB, 1479 x 696 x 1218 mm, 214 kg, 6 kW AES. The sheet gives 3 x 8 ohms,
-  // one per 21"; with one speaker jack here it stays 4 ohms, so a daisy chain of two doesn't read as a 1.3 ohm load.
+  // one per 21", each on its own pair of the 8-pin input. A crew wires it as one load: the amp end of the 8-core joins
+  // the three pairs, so a channel sees the three in parallel, 8/3 ohms, one box per channel. Linked on to a second box
+  // it is 1.33 ohms, under any amp's 2 ohm floor, and the patch says so.
   {
     id: "triple-21-sub",
     what: "triple 21\" hybrid horn sub",
     size: box(1.479, 0.696, 1.218),
     kg: 214,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
-    speaker: { sensitivity: 105, maxSpl: 148, ratedWatts: 6000, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 27, highCut: 95, rearLoss: 6 },
+    speaker: { sensitivity: 105, maxSpl: 148, ratedWatts: 6000, ohms: 8 / 3, coverage: { h: 360, v: 360 }, lowCut: 27, highCut: 95, rearLoss: 6 },
   },
   // The tri-amp horn stack, the old touring way, as the Turbosound Flashlight's datasheet gives it: the TFS-780H top (a
   // 12" and a 6.5" on TurboMid horns with bar phase plugs, a 1" on a waveguide, tri-amped, high-Q 25 x 25 degrees)

@@ -393,5 +393,20 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
   :root { --rivet: #8a8276 0 1.5px, #18140f 1.8px 3px, transparent 3.4px; }
 }
 .game-hud.bezel, .game-foot.bezel, .hud.bezel { padding-left: 24px; padding-right: 24px; }
+/* The survey's tool strip: controls never wrap; a phone gets the short hint. */
+.hud .chk, .hud .mini { white-space: nowrap; }
+.hud-hint-short { display: none; }
+@media (max-width: 520px) {
+  .hud { right: 12px; gap: 10px; }
+  .hud-hint { display: none; }
+  .hud-hint-short { display: inline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+}
+/* The manifest: a stamped hairline between rows and a small red serial tick before each kind. */
+.kind { border-top-color: rgb(239 228 201 / 0.07); }
+.kind > span:first-child::before { content: ""; display: inline-block; width: 7px; height: 1px; margin: 0 8px 0 0; vertical-align: middle; background: var(--red); box-shadow: 0 3px 0 rgb(212 64 44 / 0.45); }
+/* The menu's uplink stays one line: the long part gives way first. */
+.uplink { white-space: nowrap; min-width: 0; }
+.uplink > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 420px) { .uplink { font-size: .66rem; letter-spacing: .03em; } }
 /* The Room browser's side rails: the same worn steel as the plates, bolted at the corners. */
 .rail { background-image: var(--rivets), var(--wear); }

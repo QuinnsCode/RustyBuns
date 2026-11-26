@@ -626,6 +626,8 @@ export default class World {
       // blocked: turned away at the door, before the chat or anyone hears they came
       if (this.guests?.blocked[me]) { this.turnAway(ws); return; }
       this.sockets.attach(ws, { ...seat, me });
+      // A new key is a new person: the hand the old one raised goes down, or hellos pile hands up past what a page reads.
+      if (seat.me && seat.me !== me && !this.sockets.open().some((w) => w !== ws && this.sockets.who(w)?.me === seat.me)) delete this.asks[seat.me];
       this.chat = rename(this.chat, me, m.name);
       const { lines, names } = this.chat;
       this.sockets.send(ws, { t: "chat", lines, names, you: me, host: seat.host });

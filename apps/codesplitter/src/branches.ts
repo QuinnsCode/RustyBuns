@@ -889,7 +889,7 @@ async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow
  * Merge an open branch into main: a dry run first, so a conflict anywhere merges nothing (409),
  * then each file for real. `resolve` settles conflicts by line; `build_ok` lets build files land.
  */
-async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }, req: Request): Promise<Response> {
+async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown; hash?: unknown }, req: Request): Promise<Response> {
   const name = branch.name;
   // build_ok is someone reading the build files: an API token (a prompt-injected agent may hold one) can't say it.
   if (body.build_ok && byToken(req)) return fail("PersonOnly", "API tokens can't pass build_ok: read the build files and merge on the site, signed in");
@@ -909,6 +909,11 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all<{ path: string; source: string }>()).results;
   if (stuck.length) return fail("StrandedFork", `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, { files: stuck.map((f) => f.path) });
   await followRenames(env, owner, repo, name, user);
+  // The branch as the person read it (#5701, its review's `hash`): an edit since then lands nothing unread, as an agent batch's accept.
+  if (body.hash !== undefined) {
+    if (typeof body.hash !== "string") return fail("BadInput", "hash: the branch's hash, as its review gave it");
+    if (body.hash !== await branchHash(env, owner, repo, name)) return fail("BranchMoved", "the branch changed since you read it: read it again, then merge");
+  }
   const rows = await files(), todo = rows.filter((f) => !f.merged);
   // The path policy and the checks' commands are the owner's to change on main (#1567): a merge is no way round it.
   for (const f of todo) { const closed = policyClosed(owner, f.path, user); if (closed) return named(closed, "PolicyFile"); }
@@ -1012,7 +1017,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
  * check (it parses, and the tests pass where test_merges is on), or answer with the one conflict left: both
  * sides, why each changed it, and who its policy's `leftover` gives it to. Settle that with `resolve` and land again.
  */
-async function land(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }, req: Request): Promise<Response> {
+async function land(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown; hash?: unknown }, req: Request): Promise<Response> {
   const resolve = parseResolve(body.resolve);
   if (typeof resolve === "string") return fail("BadInput", resolve);
   let res = await mergeBranch(env, owner, repo, branch, user, { ...body, resolve }, req);
@@ -1024,7 +1029,8 @@ async function land(env: Env, owner: string, repo: string, branch: BranchRow, us
   }));
   if (passed.length) {
     for (const p of passed) resolve[p.path] = { ...resolve[p.path], [p.line]: { text: p.text } };
-    res = await mergeBranch(env, owner, repo, branch, user, { ...body, resolve }, req);
+    // The first try checked the hash; a file that merged in it since would move the hash on its own.
+    res = await mergeBranch(env, owner, repo, branch, user, { ...body, hash: undefined, resolve }, req);
     if (res.status !== 409) return res;
     out = await res.clone().json();
   }
@@ -1315,7 +1321,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       const tier = conflicts.length ? "card" : m.solved ? "mervin" : "clean";
       return { path: f.path, merged: false, build, tier, policy: m.policy, ops, conflicts: shown, hunks: changed, ...(checks.length && { checks }), ...(lines && { lines }) };
     }));
-    return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out, ...(followed?.moved.length && { moved: followed.moved }), ...(followed?.left.length && { stranded: followed.left }) });
+    // `hash` is the branch as this review read it: a merge that sends it lands only that (#5701). The crew's only: it fingerprints main's private lines too.
+    return json({ ...branch, ...(a.write && { hash: await branchHash(env, owner, repo, name) }), deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out, ...(followed?.moved.length && { moved: followed.moved }), ...(followed?.left.length && { stranded: followed.left }) });
   }
 
   // GET /api/repos/:o/:r/branches/:b/hunks?path=  (its reply is HunksReply)  what the branch changed in one file, as hunks against where it forked.
@@ -1375,13 +1382,13 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // POST /api/repos/:o/:r/branches/:b/hooks/:hook {say: "yay" | "nay", reason?}  a person's word at a hook (pipeline-hooks.ts)
   if (p[6] === "hooks" && !p[8]) return hookRoutes(req, env, p[7], owner, repo, branch, user, a);
 
-  // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: pick}}}, a pick being
+  // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: pick}}, hash?}, a pick being
   // "main", "branch", "both", "both:branch-first" or {text}
   // POST /api/repos/:o/:r/branches/:b/land, the same body: merge, or the one conflict left and why (#1013)
   if ((p[6] === "merge" || p[6] === "land") && req.method === "POST") {
     if (!a.write) return fail("NoWriteAccess", "no write access");
     if (branch.status !== "open") return fail("BranchClosed", `branch is ${branch.status}`);
-    return (p[6] === "land" ? land : mergeBranch)(env, owner, repo, branch, user!, await readBody<"resolve" | "build_ok">(req), req);
+    return (p[6] === "land" ? land : mergeBranch)(env, owner, repo, branch, user!, await readBody<"resolve" | "build_ok" | "hash">(req), req);
   }
   return null;
 }
