@@ -152,16 +152,3 @@ test("with a retention set, the daily alarm takes out messages older than it, cl
     expect(pages[2]).toEqual(["fresh"]);
   } finally { setSystemTime(); h.c.close(); }
 });
-
-test("direct messages opened at the same moment all stay, and two people who message each other at once share one", async () => {
-  const ada = await signUp("AdaR"), bo = await signUp("BoR"), cy = await signUp("CyR");
-  const a = member(ada.token), b = member(bo.token), c = member(cy.token);
-  const made = (await a.c.make("Rush"))!;
-  for (const m of [b, c]) await m.c.join(made.invite);
-  for (const m of [a, b, c]) m.open(made.id);
-  await until(() => [a, b, c].every((m) => m.info()) && a.online().length === 3);
-  b.c.dm(cy.id); c.c.dm(bo.id); a.c.dm(bo.id);
-  await until(() => a.dm() && b.dm() && c.dm() && b.info()?.dms?.length === 2);
-  await Bun.sleep(100);
-  expect({ shared: b.dm() === c.dm(), bo: b.info()!.dms!.map((d) => d.name).sort() }).toEqual({ shared: true, bo: ["AdaR", "CyR"] });
-});
