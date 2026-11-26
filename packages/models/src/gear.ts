@@ -26,7 +26,10 @@ import * as THREE from "three";
 import { clamp } from "@rustybuns/util";
 import { ConvexGeometry } from "three/examples/jsm/geometries/ConvexGeometry.js";
 import { mergeGeometries, mergeVertices, toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import type { ConnectorType, Gender } from "@rustybuns/util/connectors";
+import { PANELS } from "./panels.ts";
 import { type Piece, type Ring, R, along, box, loft } from "./shapes.ts";
+import { socketPieces } from "./sockets.ts";
 
 export type GearId = keyof typeof GEAR_SIZES;
 
@@ -99,14 +102,14 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "cavity", "turbo"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "cavity", "turbo", "pcblue", "pcgrey"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
  * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
- * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured). */
+ * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured); and the connectors' pcblue and pcgrey (powerCON's blue power-in and grey power-out housings). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -119,6 +122,7 @@ export function gearLook(): GearLook {
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
     horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8), turbo: std(0x0e1422, 0.82),
+    pcblue: std(0x1f63c4, 0.42), pcgrey: std(0xa3a8ae, 0.5),
     cavity: new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.9, envMapIntensity: 0.16 }),
   };
 }
@@ -418,6 +422,52 @@ function jacks(b: Build, names: string[], face: Face, at: THREE.Vector3Tuple, st
     b.pieces.push(disc("metal", r, 0.008, axis, c, seg), disc("knob", r * 0.74, 0.009, axis, c, seg));
     b.marks.push({ name: `jack:${name}`, at: [p[0] + out[0] * 0.008, p[1] + out[1] * 0.008, p[2] + out[2] * 0.008], out });
   });
+}
+
+/** How far a socket's mark sits out from the panel face: past the tallest socket (an IEC's blades, a male XLR's pins). */
+const SOCKET_TIP = 0.008;
+
+/** Half a socket's width and height on its face, metres. */
+const socketHalf = new Map<string, [number, number]>();
+function halfOf(type: ConnectorType, gender: Gender): [number, number] {
+  const key = `${type}/${gender}`;
+  let h = socketHalf.get(key);
+  if (!h) {
+    const bb = new THREE.Box3();
+    for (const p of socketPieces(type, gender)) { p.geo.computeBoundingBox(); bb.union(p.geo.boundingBox!); }
+    socketHalf.set(key, (h = [(bb.max.x - bb.min.x) / 2, (bb.max.y - bb.min.y) / 2]));
+  }
+  return h;
+}
+
+/** A box's real connector panel (panels.ts) on `face`: each socket the connector it is on the maker's sheet, laid out
+ * as the sheet has them, centred on `centre` and kept inside `area` (the jack plate's free part, w x h metres: the
+ * layout closes up to fit, the sockets keep their size), the ones a cable goes into marked `jack:<name>`. A socket the
+ * sheet puts on another face (the arc sub's front pair) goes there instead. */
+function socketPanel(b: Build, id: GearId, face: Face, centre: THREE.Vector3Tuple, area: [number, number]) {
+  const p = PANELS[id]!, own = p.sockets.filter((s) => !s.face), mmv = (v: number) => v / 1000, margin = 0.004;
+  const lo = [0, 1].map((k) => Math.min(...own.map((s) => s.at[k]!))), hi = [0, 1].map((k) => Math.max(...own.map((s) => s.at[k]!)));
+  const cu = (lo[0]! + hi[0]!) / 2, cv = (lo[1]! + hi[1]!) / 2;
+  // the most of the sheet's spacing that can be kept with every socket's edge inside the area
+  const fit = Math.min(1, ...own.flatMap((s) => {
+    const half = halfOf(s.type, s.gender);
+    return [0, 1].map((k) => { const d = Math.abs(mmv(s.at[k]! - (k ? cv : cu))); return d < 1e-6 ? 1 : Math.max(0, area[k]! / 2 - margin - half[k]!) / d; });
+  }));
+  // closed up that far, no two sockets may touch: a plate too small for its panel is a mistake in the call, not a look
+  own.forEach((a, i) => own.slice(i + 1).forEach((c) => {
+    const ha = halfOf(a.type, a.gender), hc = halfOf(c.type, c.gender);
+    if ([0, 1].every((k) => Math.abs(mmv(a.at[k]! - c.at[k]!)) * fit < ha[k]! + hc[k]! + 0.001)) throw new Error(`${id}: the ${a.role} and ${c.role} sockets overlap on a ${area.map((v) => Math.round(v * 1000)).join(" x ")} mm plate`);
+  }));
+  for (const s of p.sockets) {
+    const on = s.face ?? face, out = new THREE.Vector3(...NORMAL[on]);
+    const at = s.face ? new THREE.Vector3(mmv(s.at[0]), mmv(s.at[1]), (GEAR_SIZES[id][2] / 2) * out.z)
+      : on === "bottom" ? new THREE.Vector3(centre[0] + mmv(s.at[0] - cu) * fit, centre[1], centre[2] + mmv(s.at[1] - cv) * fit)
+      : new THREE.Vector3(centre[0] + mmv(s.at[0] - cu) * fit, centre[1] + mmv(s.at[1] - cv) * fit, centre[2]);
+    // the flange sunk most of its 2 mm into the plate, as a panel socket sits
+    const m = new THREE.Matrix4().compose(at.clone().addScaledVector(out, -0.0015), new THREE.Quaternion().setFromUnitVectors(Z, out), new THREE.Vector3(1, 1, 1));
+    b.pieces.push(...onto(m, socketPieces(s.type, s.gender)));
+    if (s.jack) b.marks.push({ name: `jack:${s.jack}`, at: at.clone().addScaledVector(out, SOCKET_TIP).toArray(), out: out.toArray() });
+  }
 }
 
 const mark = (b: Build, name: string, at: THREE.Vector3Tuple, out: THREE.Vector3Tuple = [0, 1, 0]) => b.marks.push({ name, at, out });
@@ -1425,7 +1475,7 @@ function res2Pieces(): Record<string, Build> {
   const sa = Math.atan2((w - bw) / 2, d);
   for (const s of [-1, 1]) cab.pieces.push(box("knob", [0.004, 0.032, 0.1], [s * (sideX(0) + 0.0008), top(229), 0], { bevel: 0.0015, rot: [0.5 * s, s * sa, 0] }));
   plate(cab, 0.14, 0.09, [0, top(140), -d / 2 - 0.004]);
-  jacks(cab, ["speaker-in", "speaker-out"], "back", [-0.03, top(140), -d / 2 - 0.008], [0.06, 0, 0]);
+  socketPanel(cab, "stack-mid-high", "back", [0, top(140), -d / 2 - 0.008], [0.14, 0.09]);
   mark(cab, "grab", [sideX(0) + 0.012, top(229), 0], [Math.cos(sa), 0, Math.sin(sa)]);
   for (const x of [-1, 1]) for (const z of [-1, 1]) cab.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (sideX(z * d * 0.4) - 0.05), 0.006, z * d * 0.4], 0.004));
 
@@ -1520,7 +1570,7 @@ function f215Pieces(): Record<string, Build> {
   for (const s of [-1, 1]) for (const [y, z] of [[mm(40), -d / 2 + mm(55)], [h - mm(40), -d / 2 + mm(55)], [h / 2, f - mm(55)]])
     hw.pieces.push(disc("metal", 0.009, 0.003, "x", [s * (w / 2 + 0.002), y, z], 10));
   plate(hw, 0.13, 0.09, [0, h / 2, -d / 2 - 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [-0.03, h / 2, -d / 2 - 0.008], [0.06, 0, 0]);
+  socketPanel(hw, "stack-mid-bass", "back", [0, h / 2, -d / 2 - 0.008], [0.13, 0.09]);
   mark(hw, "grab", [w / 2 + 0.012, h * 0.55, 0], [1, 0, 0]);
   return { cabinet: cab, "horn-walls": walls, braces, channels: chans, hardware: hw };
 }
@@ -1584,7 +1634,7 @@ function binPieces(id: GearId, sheet: BinSheet): Record<string, Build> {
     hw.pieces.push(block("rubber", [mm(56), 0.01, mm(56)], [x * (w / 2 - mm(70)), 0.005, z * (d / 2 - mm(70))], 0.003));
   }
   plate(hw, 0.16, 0.1, [0, h - mm(130), -d / 2 - 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [-0.035, h - mm(130), -d / 2 - 0.008], [0.07, 0, 0]);
+  socketPanel(hw, id, "back", [0, h - mm(130), -d / 2 - 0.008], [0.16, 0.1]);
   mark(hw, "grab", [w / 2 + 0.012, cy, 0], [1, 0, 0]);
   return { cabinet: cab, "horn-walls": walls, braces, channels: chans, hardware: hw };
 }
@@ -1640,7 +1690,7 @@ function jrx215Pieces(): Record<string, Build> {
   // the jack plate, 138 x 97 in a shallow cup in the back, its foot 226 up: the Speakon and the 1/4" jack
   const bz = -d / 2 + rec - 0.008;
   plate(hw, mm(138), mm(97), [0, jy, bz + 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [-mm(30), jy, bz], [mm(60), 0, 0]);
+  socketPanel(hw, "top-15-passive", "back", [0, jy, bz], [mm(138), mm(97)]);
   // the pole socket underneath (two cups, 0 and 10 degrees, 53 apart) and the four feet, 32 in from each edge
   for (const z of [-mm(32), mm(21)]) hw.pieces.push(disc("metal", 0.024, 0.004, "y", [0, feet - 0.002, z], 14), disc("knob", 0.018, 0.003, "y", [0, feet - 0.0035, z], 14));
   for (const [x, z] of [[mm(195.5), f - mm(32)], [mm(147), -d / 2 + mm(32)]]) for (const s of [-1, 1]) hw.pieces.push(block("rubber", [0.04, feet, 0.04], [s * x, feet / 2, z], 0.004));
@@ -1714,8 +1764,8 @@ function prx412mPieces(): Record<string, Build> {
   hw.pieces.push(...onto(jp, [box("panel", [mm(160), mm(84), 0.006], [0, 0, 0.003], { bevel: 0.002 })]));
   ["speaker-in", "speaker-out"].forEach((name, i) => {
     const u = (i - 0.5) * mm(70), sock = new THREE.Matrix4().copy(jp).multiply(new THREE.Matrix4().makeTranslation(u, mm(28), 0.006));
-    hw.pieces.push(...onto(sock, [disc("metal", 0.012, 0.008, "z", [0, 0, 0], 14), disc("knob", 0.0089, 0.009, "z", [0, 0, 0], 14)]));
-    const p = new THREE.Vector3(u, mm(28), 0.012).applyMatrix4(jp);
+    hw.pieces.push(...onto(sock, socketPieces(PANELS["wedge-12-passive"]!.sockets[i]!.type, PANELS["wedge-12-passive"]!.sockets[i]!.gender)));
+    const p = new THREE.Vector3(u, mm(28), 0.006 + SOCKET_TIP).applyMatrix4(jp);
     hw.marks.push({ name: `jack:${name}`, at: p.toArray(), out: [0, 0, -1] });
   });
   // the pole socket in the bottom (an end, here), and the rubber feet the facet stands on
@@ -1788,7 +1838,7 @@ function a12Pieces(): Record<string, Build> {
       hw.pieces.push(...screw([s * (inner / 2 + 0.001), y, z], "x", 0.006, "knob", 8));
   }
   plate(hw, mm(200), mm(90), [0, h / 2, back - 0.004]);
-  jacks(hw, ["power-in", "xlr-in", "xlr-out"], "back", [-mm(55), h / 2, back - 0.008], [mm(55), 0, 0]);
+  socketPanel(hw, "line-array-box", "back", [0, h / 2, back - 0.008], [mm(200), mm(90)]);
   mark(hw, "hinge-top", [0, h + py, fz], [1, 0, 0]);
   mark(hw, "hinge-bottom", [0, py, fz], [1, 0, 0]);
   mark(hw, "grab", [0, h, 0]);
@@ -2064,7 +2114,7 @@ function tfs780hPieces(): Record<string, Build> {
   back.pieces.push(frontPlate("turbo", stadium(mm(198), mm(261)), [], -d / 2, 0.006));
   back.pieces.push(box("metal", [0.008, mm(300), 0.006], [mm(198), Y(407), -d / 2 - 0.003]));
   back.pieces.push(disc("panel", mm(106), 0.006, "z", [0, Y(274), -d / 2 - 0.007], 32));
-  jacks(back, ["speaker-in", "speaker-out"], "back", [-mm(68), Y(240), -d / 2 - 0.01], [0, -mm(60), 0], mm(23.5));
+  socketPanel(back, "tri-amp-top", "back", [-mm(68), Y(210), -d / 2 - 0.01], [mm(90), mm(130)]);
   return { cabinet, face, "lmf-horn": lmf, "hmf-horn": hmf, "hf-waveguide": hf, back, hardware };
 }
 
@@ -2088,7 +2138,7 @@ function tfs780lPieces(): Record<string, Build> {
   horn.pieces.push(squareToRound("turbo", c, cx, cy, mm(220), f - 0.002, mm(330)));
   turboThroat(horn, cx, cy, mm(220), mm(165), mm(40), mm(40), f - mm(330));
   plate(back, mm(170), mm(110), [0, Y(300), -d / 2 - 0.004]);
-  jacks(back, ["speaker-in", "speaker-out"], "back", [-mm(35), Y(300), -d / 2 - 0.008], [mm(70), 0, 0], mm(14));
+  socketPanel(back, "tri-amp-bass", "back", [0, Y(300), -d / 2 - 0.008], [mm(170), mm(110)]);
   return { cabinet, face, "bass-horn": horn, back, hardware };
 }
 
@@ -2155,7 +2205,7 @@ function airMotionPieces(): Record<string, Build> {
     frame.pieces.push(rod("knob", a, b, 0.012));
   mark(frame, "grab", [px, 0.51, pz]);
   mark(frame, "pole-cup", [px, foot, pz], [0, -1, 0]);
-  jacks(jack, ["speaker-in", "speaker-out"], "bottom", [px - 0.035, foot, pz], [0.07, 0, 0]);
+  socketPanel(jack, "sculpted-3way", "bottom", [px, foot, pz], [0.12, 0.08]);
   // the hoses from the HF unit to the two cans, each in two runs
   const hoses: THREE.Vector3Tuple[][] = [[[X(583), 0.465, 0.13], [0.06, 0.45, -0.02], [-0.08, 0.44, -0.16]], [[X(583) + 0.02, 0.465, 0.12], [0.22, 0.43, 0.06], [0.24, 0.4, 0.03]]];
   for (const run of hoses)
@@ -2223,7 +2273,7 @@ function incubusPieces(): Record<string, Build> {
   }
   mark(handles, "grab", [w / 2 + 0.012, cy, f - mm(582)], [1, 0, 0]);
   plate(jack, mm(72), mm(144), [0, cy, -f - 0.004]);
-  jacks(jack, ["speaker-in", "speaker-out"], "back", [0, cy + 0.035, -f - 0.008], [0, -0.07, 0]);
+  socketPanel(jack, "triple-21-sub", "back", [0, cy, -f - 0.008], [mm(72), mm(144)]);
   for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([a, b]) => [a! * (w / 2 - mm(54)), b! * (f - mm(54))]).concat([[-1, 1], [1, 1], [-1, -1], [1, -1]].map(([a, b]) => [a! * mm(63), b! * (f - mm(54))])))
     hw.pieces.push(disc("cavity", mm(30), 0.004, "y", [x!, h - 0.0015, z!], 12));
   return { cabinet: cab, "horn-walls": walls, grille, braces, slots, handles, jacks: jack, hardware: hw };
@@ -2272,7 +2322,7 @@ function arcline118Pieces(): Record<string, Build> {
   mark(handles, "pole", [0, h - 0.005, 0], [0, 1, 0]);
   const jx = w / 2 - mm(408); // 408 from the left seen from behind
   plate(jack, mm(68), mm(177), [jx, mm(163), -d / 2 - 0.004]);
-  jacks(jack, ["speaker-in", "speaker-out"], "back", [jx, mm(163) + 0.035, -d / 2 - 0.008], [0, -0.07, 0]);
+  socketPanel(jack, "arc-sub-18", "back", [jx, mm(163), -d / 2 - 0.008], [mm(68), mm(177)]);
   return { cabinet: cab, grille, driver, port, handles, fittings, jacks: jack };
 }
 
@@ -2441,7 +2491,7 @@ const K2 = {
   "fill-8-powered": {
     w: 280, h: 449, d: 269, feet: 4, plan: [[-140, 134.5], [140, 134.5], [106, -134.5], [-10, -134.5], [-121, -51]], r: 15, fall: 9, round: 34,
     grille: [221, 437], screws: [[-100, 0, 100], [-100, -54, 54, 100]], badge: [80, 34, 30], recess: [95, 200, -32], bar: [143, 30, 3],
-    m10: [222, 24, 58], insert: [133, 254], feetAt: [102, 116], woofer: 83, wooferY: 150, horn: [170, 100, 85], amp: [70, 220, 255],
+    m10: [222, 24, 58], insert: [133, 254], feetAt: [102, 116], woofer: 83, wooferY: 150, horn: [170, 100, 85], amp: [76, 280, 262],
   },
 } as const;
 
@@ -2500,10 +2550,13 @@ function k2Pieces(id: keyof typeof K2): Record<string, Build> {
   // the amp plate on the narrow back, its jacks in a column: mains low, the XLRs above it
   const [pw, ph, py] = k.amp.map(mm) as [number, number, number], px = mm((k.plan[2][0] + k.plan[3][0]) / 2), bz = -f + 0.016 - 0.008;
   plate(amp, pw, ph, [px, h - py, bz + 0.004]);
-  for (let i = 0; i < (ph > 0.25 ? 7 : 5); i++) amp.pieces.push(box("metal", [pw * 0.7, 0.003, 0.008], [px, h - py + ph * 0.3 - i * 0.012, bz - 0.006]));
-  knob(amp, [px - pw * 0.2, h - py - ph * 0.08, bz - 0.004], -1, 0.009);
-  amp.pieces.push(disc("light", 0.0035, 0.004, "z", [px + pw * 0.25, h - py - ph * 0.08, bz - 0.006], 8));
-  jacks(amp, ["xlr-in", "xlr-out", "power-in"], "back", [px, h - py - ph * 0.2, bz - 0.004], [0, -ph * 0.11, 0]);
+  for (let i = 0; i < (pw > 0.09 ? 7 : 3); i++) amp.pieces.push(box("metal", [pw * 0.7, 0.003, 0.008], [px, h - py + ph * 0.3 - i * 0.012, bz - 0.006]));
+  // the gain knob and the LED under the fins (on the narrow K8.2 plate, up among them, to leave the sockets room)
+  const ky = h - py + ph * (pw > 0.09 ? -0.08 : 0.1);
+  knob(amp, [px - pw * 0.2, ky, bz - 0.004], -1, 0.009);
+  amp.pieces.push(disc("light", 0.0035, 0.004, "z", [px + pw * 0.25, ky, bz - 0.006], 8));
+  // the amp plate's heatsink fins and knob are across its top half: the sockets go in its lower half
+  socketPanel(amp, id, "back", [px, h - py - ph * (id === "fill-8-powered" ? 0.27 : 0.3), bz - 0.004], [pw, ph * (id === "fill-8-powered" ? 0.48 : 0.36)]);
   return { shell, grille, drivers, handle: grip, hardware: hw, "amp-plate": amp };
 }
 
@@ -2560,7 +2613,8 @@ function ks118Pieces(): Record<string, Build> {
   for (const s of [-1, 1]) amp.pieces.push(box("metal", [0.03, mm(348), 0.012], [s * mm(142), h - mm(293), back - 0.006], { bevel: 0.002 }));
   for (const x of [-0.3, -0.1]) knob(amp, [x * aw, ay + ah * 0.2, bz - 0.004], -1, 0.009);
   amp.pieces.push(box("knob", [0.04, 0.02, 0.004], [aw * 0.25, ay + ah * 0.25, bz - 0.006]), disc("light", 0.0035, 0.004, "z", [aw * 0.05, ay + ah * 0.2, bz - 0.006], 8));
-  jacks(amp, ["speaker-in", "speaker-out"], "back", [-aw * 0.15, ay - ah * 0.2, bz - 0.004], [aw * 0.3, 0, 0]);
+  // the knobs and the screen are across the plate's top: the IEC and the jacks go below them
+  socketPanel(amp, "sub-18", "back", [0, ay - ah * 0.2, bz - 0.004], [aw, ah * 0.5]);
   // the casters: a plate on the back's corner, a fork out behind it, the wheel turning about x
   const wr = mm(28);
   for (const x of [-1, 1]) for (const y of [h - mm(43), mm(36)]) {
@@ -2633,7 +2687,8 @@ function cp12Pieces(): Record<string, Build> {
   for (let i = 0; i < 7; i++) back.pieces.push(box("metal", [pw * 0.45, 0.003, 0.008], [px - pw * 0.18, py + ph * 0.32 - i * 0.012, bz - 0.006]));
   knob(back, [px - pw * 0.18, py - ph * 0.05, bz - 0.004], -1, 0.009);
   back.pieces.push(disc("light", 0.0035, 0.004, "z", [px - pw * 0.18, py + ph * 0.05, bz - 0.006], 8));
-  jacks(back, ["xlr-in", "xlr-out", "power-in"], "back", [px + pw * 0.25, py + ph * 0.25, bz - 0.004], [0, -ph * 0.25, 0]);
+  // the fins and the knob run down the plate's left: the sockets go in a column down its right
+  socketPanel(back, "wedge-12", "back", [px + pw * 0.24, py, bz - 0.004], [pw * 0.48, ph * 0.8]);
   const pieces = { shell, grille, drivers, port, handle: grip, feet, "back-panel": back };
   // Lay it down: the upright box's height runs along -x, the monitor flat's normal turns to look down, and the face
   // looks up at 45 degrees toward +z, where the player stands. Then sit it on the floor, centred.
@@ -2698,8 +2753,9 @@ function la108Pieces(): Record<string, Build> {
   const ph = h - 2 * taper - 0.04, bz = b + 0.016 - 0.008;
   plate(amp, mm(358), ph, [0, yc, bz + 0.004]);
   for (let i = 0; i < 12; i++) amp.pieces.push(box("metal", [0.003, mm(90), 0.008], [mm(-60) - mm(104) + (i * mm(208)) / 11, yc + mm(23) * Math.min(1, ph / 0.19), bz - 0.006]));
-  jacks(amp, ["power-in", "xlr-in", "xlr-out"], "back", [mm(145), yc - ph * 0.25, bz - 0.004], [mm(-40), 0, 0]);
-  amp.pieces.push(disc("light", 0.0035, 0.004, "z", [mm(80), yc + ph * 0.25, bz - 0.006], 8), disc("metal", 0.01, 0.006, "z", [0, taper + 0.008, b - 0.003], 8));
+  // the fins cover the plate's left two thirds: the sockets go in its right third
+  socketPanel(amp, "line-array-10", "back", [mm(112), yc, bz - 0.004], [mm(130), ph]);
+  amp.pieces.push(disc("light", 0.0035, 0.004, "z", [mm(61), yc + ph * 0.25, bz - 0.006], 8), disc("metal", 0.01, 0.006, "z", [0, taper + 0.008, b - 0.003], 8));
   return { cabinet: cab, grille, drivers: drv, rigging: rig, "pole-cups": cups, "amp-plate": amp };
 }
 

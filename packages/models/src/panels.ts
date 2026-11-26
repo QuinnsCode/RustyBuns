@@ -18,6 +18,8 @@ export type Socket = {
   role: string;
   /** Millimetres on the panel's face, as the file's top says. */
   at: [number, number];
+  /** A face other than the panel's, where the sheet puts this socket on its own: placed at `at` there, not round the plate. */
+  face?: "front";
   /** What runs through it where it isn't the connector's usual: a speaker line on an XLR. */
   carries?: Carries;
 };
@@ -37,16 +39,29 @@ const nl4 = (jack: string | null, role: string, x: number, y: number): Socket =>
 const nl8 = (jack: string | null, role: string, x: number, y: number): Socket => ({ jack, type: "nl8", gender: "none", role, at: [x, y] });
 const pair = (make: typeof nl4, at: [[number, number], [number, number]]) => [make("speaker-in", "input", ...at[0]), make("speaker-out", "link", ...at[1])];
 
-/** K.2 tops: two locking combo inputs, a 3.5 mm input, a thru per combo, a mix out and a locking IEC (K.2 manual p10-11). */
-const k2 = (s: number): Socket[] => [
-  { jack: "xlr-in", type: "combo", gender: "female", role: "input A", at: [40 * s, 420 * s] },
-  { jack: null, type: "combo", gender: "female", role: "input B", at: [-40 * s, 420 * s] },
-  { jack: null, type: "trs-mini", gender: "female", role: "input C", at: [-110 * s, 470 * s] },
-  { jack: "xlr-out", type: "xlr3", gender: "male", role: "thru A", at: [40 * s, 340 * s] },
-  { jack: null, type: "xlr3", gender: "male", role: "thru B", at: [-40 * s, 340 * s] },
-  { jack: null, type: "xlr3", gender: "male", role: "mix out", at: [110 * s, 340 * s] },
-  { jack: "power-in", type: "iec", gender: "male", role: "mains in (locking)", at: [0, 120 * s] },
-];
+/** K.2 tops: two locking combo inputs and a 3.5 mm input, a thru under each combo and the mix out, the locking IEC
+ * below (K.2 manual p10-11). The K12.2's plate takes them three across; the K8.2's narrow back two across, the 3.5 mm
+ * beside the mix out. Where on the amp plate is inferred. */
+const k2 = (across: 2 | 3): Socket[] => {
+  const x = across === 3 ? [29, 0, -29] : [16, -16];
+  return across === 3 ? [
+    { jack: "xlr-in", type: "combo", gender: "female", role: "input A", at: [x[0]!, 360] },
+    { jack: null, type: "combo", gender: "female", role: "input B", at: [x[1]!, 360] },
+    { jack: null, type: "trs-mini", gender: "female", role: "input C", at: [x[2]!, 360] },
+    { jack: "xlr-out", type: "xlr3", gender: "male", role: "thru A", at: [x[0]!, 327] },
+    { jack: null, type: "xlr3", gender: "male", role: "thru B", at: [x[1]!, 327] },
+    { jack: null, type: "xlr3", gender: "male", role: "mix out", at: [x[2]!, 327] },
+    { jack: "power-in", type: "iec", gender: "male", role: "mains in (locking)", at: [0, 298] },
+  ] : [
+    { jack: "xlr-in", type: "combo", gender: "female", role: "input A", at: [x[0]!, 300] },
+    { jack: null, type: "combo", gender: "female", role: "input B", at: [x[1]!, 300] },
+    { jack: "xlr-out", type: "xlr3", gender: "male", role: "thru A", at: [x[0]!, 267] },
+    { jack: null, type: "xlr3", gender: "male", role: "thru B", at: [x[1]!, 267] },
+    { jack: null, type: "xlr3", gender: "male", role: "mix out", at: [x[0]!, 234] },
+    { jack: null, type: "trs-mini", gender: "female", role: "input C", at: [x[1]!, 234] },
+    { jack: "power-in", type: "iec", gender: "male", role: "mains in (locking)", at: [0, 203] },
+  ];
+};
 
 /** Every speaker's panel, by gear id. */
 export const PANELS: { readonly [id in GearId]?: Panel } = {
@@ -76,8 +91,8 @@ export const PANELS: { readonly [id in GearId]?: Panel } = {
   },
   "arc-sub-18": {
     face: "back", drive: "passive", pins: "1+/1- (sheet: 4-pin locking, pins not given)",
-    sockets: [...pair(nl4, [[-84, 199], [-84, 111]]), nl4(null, "front input (cardioid)", -280, 100), nl4(null, "front link (cardioid)", -280, 60)],
-    ref: "void/TD10753 p2: rear plate right of centre in the lower half; the front pair (drawn on the back face here) is inferred",
+    sockets: [...pair(nl4, [[-84, 199], [-84, 111]]), { ...nl4(null, "front input (cardioid)", -280, 100), face: "front" }, { ...nl4(null, "front link (cardioid)", -280, 60), face: "front" }],
+    ref: "void/TD10753 p2: rear plate right of centre in the lower half; the front pair, low at the grille's left edge, is inferred",
   },
   "tri-amp-top": {
     face: "back", drive: "triamp", pins: "1 LMF-, 2 LMF+, 3 HMF-, 4 HMF+, 5 HF-, 6 HF+ (sheet)",
@@ -113,8 +128,8 @@ export const PANELS: { readonly [id in GearId]?: Panel } = {
     sockets: pair(nl8, [[38, 110], [-38, 110]]),
     ref: "jbl/vtx-a12-user-manual.pdf p17, vtx-a12-back.webp: the VTX A12 is passive; plate between the handle pockets",
   },
-  "top-12-powered": { face: "back", drive: "powered", pins: "XLR pin 1 ground, 2 hot, 3 cold", sockets: k2(1), ref: "qsc/q_spk_k2_usermanual.pdf p10-11 (K12.2)" },
-  "fill-8-powered": { face: "back", drive: "powered", pins: "XLR pin 1 ground, 2 hot, 3 cold", sockets: k2(0.75), ref: "qsc/q_spk_k2_usermanual.pdf p10-11 (K8.2, the same panel smaller)" },
+  "top-12-powered": { face: "back", drive: "powered", pins: "XLR pin 1 ground, 2 hot, 3 cold", sockets: k2(3), ref: "qsc/q_spk_k2_usermanual.pdf p10-11 (K12.2); the layout on the amp plate is inferred" },
+  "fill-8-powered": { face: "back", drive: "powered", pins: "XLR pin 1 ground, 2 hot, 3 cold", sockets: k2(2), ref: "qsc/q_spk_k2_usermanual.pdf p10-11 (K8.2: the same connectors, two across on its narrow back)" },
   "sub-18": {
     face: "back", drive: "powered", pins: "XLR pin 1 ground, 2 hot, 3 cold",
     sockets: [
@@ -129,25 +144,25 @@ export const PANELS: { readonly [id in GearId]?: Panel } = {
   "wedge-12": {
     face: "back", drive: "powered", pins: "XLR pin 1 ground, 2 hot, 3 cold",
     sockets: [
-      { jack: "xlr-in", type: "combo", gender: "female", role: "input A", at: [0, 250] },
-      { jack: null, type: "combo", gender: "female", role: "input B", at: [0, 200] },
-      { jack: null, type: "trs-mini", gender: "female", role: "input C", at: [0, 160] },
-      { jack: "xlr-out", type: "xlr3", gender: "male", role: "mix out", at: [-60, 225] },
-      { jack: "power-in", type: "iec", gender: "male", role: "mains in", at: [60, 100] },
+      { jack: "xlr-in", type: "combo", gender: "female", role: "input A", at: [0, 290] },
+      { jack: null, type: "combo", gender: "female", role: "input B", at: [0, 252] },
+      { jack: null, type: "trs-mini", gender: "female", role: "input C", at: [0, 222] },
+      { jack: "xlr-out", type: "xlr3", gender: "male", role: "mix out", at: [0, 188] },
+      { jack: "power-in", type: "iec", gender: "male", role: "mains in", at: [0, 140] },
     ],
-    ref: "qsc/q_spk_cp_usermanual.pdf p8: combos stacked, 3.5 mm under them; the IEC's place isn't drawn",
+    ref: "qsc/q_spk_cp_usermanual.pdf p8: one column down the amp plate: the combos, the 3.5 mm, the mix out; the IEC's place isn't drawn",
   },
   "line-array-10": {
     face: "back", drive: "powered", pins: "XLR pin 1 ground, 2 hot, 3 cold; Dante on the etherCONs",
     sockets: [
-      { jack: "xlr-in", type: "xlr3", gender: "female", role: "input", at: [60, 170] },
-      { jack: "xlr-out", type: "xlr3", gender: "male", role: "thru", at: [110, 170] },
-      { jack: null, type: "ethercon", gender: "female", role: "network in", at: [60, 110] },
-      { jack: null, type: "ethercon", gender: "female", role: "network thru", at: [110, 110] },
-      { jack: "power-in", type: "powercon-true1", gender: "male", role: "mains in", at: [-120, 90] },
-      { jack: null, type: "powercon-true1", gender: "female", role: "mains thru", at: [-170, 90] },
+      { jack: "xlr-in", type: "xlr3", gender: "female", role: "input", at: [20, 200] },
+      { jack: "xlr-out", type: "xlr3", gender: "male", role: "thru", at: [-20, 200] },
+      { jack: null, type: "ethercon", gender: "female", role: "network in", at: [20, 150] },
+      { jack: null, type: "ethercon", gender: "female", role: "network thru", at: [-20, 150] },
+      { jack: "power-in", type: "powercon-true1", gender: "male", role: "mains in", at: [20, 95] },
+      { jack: null, type: "powercon-true1", gender: "female", role: "mains thru", at: [-20, 95] },
     ],
-    ref: "qsc/q_spk_l_class_la108-la112_specsheet.pdf, la108_2ddrawing: connectors from the sheet, layout inferred",
+    ref: "qsc/q_spk_l_class_la108-la112_specsheet.pdf, la108_2ddrawing: connectors from the sheet; the layout, a block of in and thru pairs beside the heatsink, is inferred",
   },
 };
 
