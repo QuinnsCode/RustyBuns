@@ -2,6 +2,7 @@
 // no loop, no sacred being fought, a built beat pinned to something the game plays, levels that only climb along the
 // main story, and every playable region with all four kinds of beat and every sense of its world. It also scores the
 // story card of the story-and-world climb. No DOM.
+import { record } from "@rustybuns/util";
 import { sectionLevel, SECTIONS, sections } from "../journey.ts";
 import { REGIONS, sacredIds } from "../regions.ts";
 import { ROSTER } from "../roster.ts";
@@ -118,7 +119,7 @@ export function checkStory(json: unknown): Report {
 
   // every playable region: all four kinds, and an area with every sense
   const coverage = PLAYABLE.map((g) => {
-    const counts = Object.fromEntries(KINDS.map((k) => [k, 0])) as Record<Kind, number>;
+    const counts = record(KINDS, () => 0);
     for (const b of beats) if (where.get(b.id)?.region === g.n) counts[b.kind]++;
     return { region: g.n, name: g.name, counts };
   });

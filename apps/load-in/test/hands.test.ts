@@ -2,6 +2,7 @@
 // size) and no joint bent past its range, and carrying a cabinet puts both palms flat on its sides. The solver and the
 // placement are plain TS, so this runs without a page. The skin over the bones is one closed surface, and bent by the
 // same pose its fingers close on what the hand holds.
+import { record } from "@rustybuns/util";
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { CABLE_RADIUS, HandSolver, gripFor, surfaceDistance, thumbOverlap, type What } from "@rustybuns/rig/hand";
 import * as THREE from "three";
@@ -43,7 +44,7 @@ describe("hands", () => {
   /** The skin bent by the pose of a grip on `what`: how close each finger's skin comes to what it holds (negative: inside). */
   const skinGaps = (what: What) => {
     const grip = gripFor(what), m = solver.pose(grip).mats, P = skin.positions;
-    const near = Object.fromEntries(FINGERS.map((f) => [f, Infinity])) as Record<(typeof FINGERS)[number], number>;
+    const near = record(FINGERS, () => Infinity);
     // The thumb's base is the ball of the thumb, part of the palm: its skin is the palm's, flat on what it holds.
     const fingerOf = new Map(FINGERS.flatMap((f) => HAND.chains[f].slice(f === "thumb" ? 1 : 0).map((j) => [j, f] as const)));
     for (let i = 0; i < P.length / 3; i++) {

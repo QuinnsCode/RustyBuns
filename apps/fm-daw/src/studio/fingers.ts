@@ -7,6 +7,7 @@
 // and the picking hand strums across the strings. At the DJ table each hand's index goes to the control it touches
 // (booth-3d.ts says which), pressing it, then hovers there. Plain three.js; the page hands it the spot's keys or kit and
 // the notes sounding there, or what's touched at the decks.
+import { record } from "@rustybuns/util";
 import * as THREE from "three";
 import { FINGERS, HAND, HandSolver, PALM, SKIN_TONE, gripFor, handMesh, localQuats, placeHand, type Finger, type HandMesh, type Side, type What } from "@rustybuns/rig/hand";
 import type { Play } from "@rustybuns/models/character";
@@ -115,7 +116,7 @@ export function hands(group: THREE.Group, root: THREE.Object3D, height: number):
     group.add(mesh.root, stick);
     stick.visible = false;
     const rest = turnsFor(REST);
-    return { arm, mesh, stick, turns: rest.map((q) => q.clone()), curls: Object.fromEntries(FINGERS.map((f) => [f, [...LIFTED]])) as Record<Finger, number[]>, at: null, tip: null, note: null, part: null, pitch: PITCH, fore: null };
+    return { arm, mesh, stick, turns: rest.map((q) => q.clone()), curls: record(FINGERS, () => [...LIFTED]), at: null, tip: null, note: null, part: null, pitch: PITCH, fore: null };
   });
 
   const place = new THREE.Matrix4(), world = new THREE.Matrix4(), inv = new THREE.Matrix4(), basis = new THREE.Matrix4(), scale = new THREE.Vector3(k, k, k);
@@ -371,7 +372,7 @@ export function hands(group: THREE.Group, root: THREE.Object3D, height: number):
       }
     },
     tips() {
-      const one = (h: Hand) => Object.fromEntries(FINGERS.map((f) => [f, h.mesh.bones[HAND.tips[f]].getWorldPosition(v())])) as Record<Finger, THREE.Vector3>;
+      const one = (h: Hand) => record(FINGERS, (f) => h.mesh.bones[HAND.tips[f]].getWorldPosition(v()));
       group.updateMatrixWorld(true);
       return { right: one(list[0]), left: one(list[1]) };
     },

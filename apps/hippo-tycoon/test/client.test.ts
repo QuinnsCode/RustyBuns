@@ -17,8 +17,8 @@ describe("settings", () => {
   test("anything malformed falls back field by field", () => {
     expect(parseSettings("not json")).toEqual(DEFAULTS);
     expect(parseSettings("null")).toEqual(DEFAULTS);
-    const s = parseSettings(JSON.stringify({ quality: "ultra", reducedMotion: "yes", filmLook: 0, music: false }));
-    expect([s.quality, s.reducedMotion, s.filmLook, s.music]).toEqual(["high", null, true, false]);
+    const s = parseSettings(JSON.stringify({ quality: "ultra", reducedMotion: "yes", filmLook: 0, music: false, difficulty: "insane", players: 3 }));
+    expect([s.quality, s.reducedMotion, s.filmLook, s.music, s.difficulty, s.players]).toEqual(["high", null, true, false, "normal", 1]);
   });
 
   test("reduced motion: the system decides until the player picks, then the player does", () => {
