@@ -27,6 +27,7 @@ import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { endedClicks, endedManager } from "./ended.ts";
+import { lastPromptBin, lastPromptHooks, lastPromptPersist, lastPromptTasks } from "./lastprompt.ts";
 import { screenTerminal } from "./screen.ts";
 import { plainCheckout, slowCheckout, startFromDefault } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
@@ -299,6 +300,10 @@ async function prepare(tag: string) {
   // (the card is a page script, asks/), with the office-workers command waiting long enough for the answer
   const bin = path.resolve(srv, "../../../bin/office-workers.js");
   writeFileSync(bin, floorGuardBin(readFileSync(bin, "utf8")));
+  // 12e. each worker keeps the full text of its last prompt, through a restart, for `office-workers show` to hand on (#4753)
+  for (const [file, change] of [[path.join(srv, "workers/tasks.js"), lastPromptTasks], [path.join(srv, "workers/persist.js"), lastPromptPersist],
+    [path.join(srv, "hooks/office-workers.js"), lastPromptHooks], [bin, lastPromptBin]] as const)
+    writeFileSync(file, change(readFileSync(file, "utf8")));
   prepend("http/router.js", "import { asksRoute as __rbAsks, outboundRoute as __rbOut } from '../rb-floorguard.js';\nimport { grantsRoute as __rbGrants } from '../rb-askfirst.js';\n");
   // the box's egress proxy has no session: it asks about an outbound host here with the box's own token (live/floorguard.ts)
   patch("http/router.js", "            const session = auth.fromRequest(req);",
