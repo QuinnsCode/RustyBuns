@@ -168,6 +168,7 @@ export const ProfilePageNoDeps = Def.make({
         ...page.blocks.map((b) => blockView(h, b)),
       ),
       h.aside.class("dock").children(
+        h.div.class("titlebar").children(h.b("Agent Page Builder"), h.span("v1.0")),
         how(h, online, log.find((l) => l.call > 0)),
         h.h3("Connect your agent"),
         h.p.class("status", online && "on").attr("role", "status").children(online ? "Ready: any agent can reach this page now." : "Connecting to the relay…"),
@@ -195,6 +196,7 @@ export const ProfilePageNoDeps = Def.make({
         log.length === 0
           ? h.p.class("muted").children("Nothing yet.")
           : h.ol.class("log").children(...log.map((l, i) => h.li.key(`${l.call}-${i}`).class(l.error !== null && "bad").children(h.code(l.tool), l.error ?? "ok"))),
+        h.div.class("statusbar").children(h.span(`Room ${room}`), h.span(online ? "Relay: on" : "Relay: off")),
       ),
     );
   },
