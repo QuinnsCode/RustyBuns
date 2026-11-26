@@ -42,6 +42,9 @@ export function findings(report: unknown): Finding[] {
 
 export type Allowance = Record<string, Record<string, number>>;
 
+/** scripts/lint.allow.json: today's findings per file and rule. */
+export const allowance = (): Allowance => Allowed(JSON.parse(readFileSync(ALLOW, "utf8")));
+
 /** Findings counted per file, then per rule, both sorted so the allowance diffs cleanly. */
 export function count(all: Finding[]): Allowance {
   const out: Allowance = {};
@@ -67,13 +70,13 @@ export function compare(now: Allowance, allowed: Allowance, all: Finding[]): str
 
 // Through bun, not the bin's `node` shebang: CI has no Node new enough to load the .ts plugin.
 // The report goes to a file: through a pipe, oxlint exits before the end is written (cut JSON on Linux CI).
-function lint(paths: string[]): Finding[] {
+export function lint(paths: string[]): Finding[] {
   const dir = mkdtempSync(join(tmpdir(), "lint-"));
   const file = join(dir, "report.json");
   const run = Bun.spawnSync([process.execPath, `${ROOT}node_modules/oxlint/bin/oxlint`, "--format=json", ...(paths.length ? paths : ["."])], { cwd: ROOT, stdout: Bun.file(file) });
   const out = readFileSync(file, "utf8");
   rmSync(dir, { recursive: true });
-  if (!out.trim()) { console.error(run.stderr.toString() || "oxlint printed nothing"); process.exit(2); }
+  if (!out.trim()) throw new Error(run.stderr.toString() || "oxlint printed nothing");
   return findings(JSON.parse(out));
 }
 
@@ -91,7 +94,7 @@ if (import.meta.main) {
     show();
     console.log(`${all.length} finding${all.length === 1 ? "" : "s"}`);
   } else {
-    const allowed = Allowed(JSON.parse(readFileSync(ALLOW, "utf8")));
+    const allowed = allowance();
     const bad = compare(count(all), allowed, all);
     if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
     console.log(`lint: ${all.length} old findings allowed, none new`);
