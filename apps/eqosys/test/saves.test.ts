@@ -3,7 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
-import { MAX_BODY, QUOTA } from "../src/qollab/saves.ts";
+import { MAX_BODY, QUOTA, SLOTS } from "../src/qollab/saves.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -56,4 +56,10 @@ test("save, overwrite, previous version, drop the oldest, and the caps", async (
   await conf.DB.prepare(`INSERT INTO saves (user_id, app, slot, at, size, data) VALUES (?, 'qcrm', 'old', 1, ?, x'00')`).bind(adaId, QUOTA - 100).run();
   expect((await save("PUT", "run", ada, bytes(50, 1))).status).toBe(200);
   expect((await save("PUT", "run", ada, bytes(500, 1))).status).toBe(507);
+});
+
+test("saves sent all at once still stop at the slot cap", async () => {
+  const dee = await signUp("Dee", "park-hide-seek", PARK);
+  const got = await Promise.all(Array.from({ length: SLOTS + 8 }, (_, i) => save("PUT", `slot-${i}`, dee, bytes(4, 1))));
+  expect(got.map((r) => r.status).sort()).toEqual([...Array(SLOTS).fill(200), ...Array(8).fill(409)]);
 });

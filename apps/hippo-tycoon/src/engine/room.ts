@@ -306,8 +306,12 @@ export class Room {
     }
   }
 
+  /** What was last written, so a client repeating `hello` or a setting writes nothing. */
+  private written = "";
   private persist() {
-    try { void this.ctx.storage.put(STORE_KEY, this.match.persisted()); } catch (err) { this.opts.report?.("persist", err); }
+    const state = this.match.persisted(), s = JSON.stringify(state);
+    if (s === this.written) return;
+    try { void this.ctx.storage.put(STORE_KEY, state); this.written = s; } catch (err) { this.opts.report?.("persist", err); }
   }
 
   private send(ws: EngineSocket, m: ServerMsg) { try { ws.send(JSON.stringify(m)); } catch { /* a closing socket */ } }

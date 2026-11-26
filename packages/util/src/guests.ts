@@ -115,6 +115,8 @@ function broughtBy(l: GuestList, who: string, rank: number): string[] {
 export function act(l: GuestList, by: string, a: GuestAct, now: number, code = ""): Acted {
   const mine = rankOf(l, by), byName = nameOf(l, by);
   const target = "who" in a ? a.who : undefined;
+  // An id like "toString" is found on any object: written to the list it fails the list's own guard, and the list is lost.
+  if (target !== undefined && Object.hasOwn(Object.prototype, target)) return no("They're not on the list.");
   if (target !== undefined && target === by && a.t !== "unblock") return no("That's you.");
   if (target !== undefined && a.t !== "unblock" && rankOf(l, target) >= mine && target !== l.owner && (l.guests[target] || a.t === "block")) return no(`${nameOf(l, target)} ranks as high as you.`);
   if (target === l.owner) return no("Nobody can do that to the owner.");

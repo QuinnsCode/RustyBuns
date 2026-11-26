@@ -214,7 +214,7 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
   };
 
   const draw = () => {
-    const mine = members.find((m) => m.name === name());
+    const own = p.me?.(), mine = members.find((m) => own ? m.id === own : m.name === name());
     // Reads "Party KRTZ: Ada (host), Grace ready" as text; each member is its own mark, a lit dot once ready (the host always is).
     const on = new Set(members.filter((m) => m.host || m.ready).map((m) => m.id)), was = lit;
     lit = members.length ? on : null;

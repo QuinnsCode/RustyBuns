@@ -288,7 +288,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     const openThread = (id: number) => { view = { kind: "thread", id, messages: [] }; sp.thread(ch, id); draw(); };
     const said = (m: SpaceMessage, inThread = false) => {
       const to = m.reply && !inThread ? shown.find((x) => x.id === m.reply) : undefined;
-      const f = m.file, mine = m.from.name === name();
+      const f = m.file, mine = isMe(m.from.id, m.from.name);
       // the name and words wrap inside their own span, so the buttons stay on the message's line however narrow the chat
       return el("li", {}, ...(to ? [el("small", { className: "rb-spaces-re" }, `re ${to.from.name}`)] : []), el("span", { className: "rb-spaces-said" }, el("b", {}, m.from.name), " ",
         ...(f ? [btn("download", `Download ${f.name}`, () => void download(f), true, "rb-spaces-file"), el("small", {}, ` ${size(f.size)}`)] : [m.text])),
@@ -315,6 +315,9 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     return [head, tabs, el("div", { className: "rb-spaces-body" }, el("div", { className: "rb-spaces-chat" }, find, older, log(shown)), who()), typed, drop, noteEl()];
   }
 
+  /** Whether this is the person looking: by account id (names are anyone's to copy), by name when the token says none. */
+  const isMe = (id: string, called: string) => { const own = sp.me?.(); return own ? id === own : called === name(); };
+
   /** A voice channel: join it, or, once in, who Qlave has in the room (talking, muted), your mute and hang up. */
   function drawVoice(v: SpaceVoice) {
     if (talkingIn?.id !== v.id) {
@@ -333,9 +336,9 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
   }
 
   function who() {
-    const me = name(), let_in = allowed.get(channel);
+    const let_in = allowed.get(channel);
     // Your own status line, set from the top of the online list.
-    const mine = line(online.find((m) => m.name === me)?.status ? "Change your status" : "Set a status", 80, "send", "Set your status", (v) => sp.status(v === "-" ? "" : v));
+    const mine = line(online.find((m) => isMe(m.id, m.name))?.status ? "Change your status" : "Set a status", 80, "send", "Set your status", (v) => sp.status(v === "-" ? "" : v));
     // In a private channel, those who run the space let people in or keep them out; the owner of a person's own space hands out roles.
     const gate = (m: SpaceMember) => !let_in || m.role === "owner" || m.role === "admin" ? []
       : let_in.includes(m.id) ? [btn("user-minus", `Keep ${m.name} out of ${channel}`, () => sp.allow(channel, m.id, false))]
@@ -343,7 +346,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     const ranks = (m: SpaceMember) => role !== "owner" || open?.studio || !m.role || m.role === "owner" ? []
       : [btn("shield", `Make ${m.name} ${ROLE_WORD[NEXT_ROLE[m.role]]}`, () => sp.role(m.id, NEXT_ROLE[m.role as keyof typeof NEXT_ROLE]))];
     const tag = (m: SpaceMember) => m.role && m.role !== "member" ? [el("small", { className: "rb-spaces-role" }, m.role)] : [];
-    return el("ul", { className: "rb-spaces-online", ariaLabel: "Online" }, el("li", { className: "rb-spaces-mine" }, mine), ...online.map((m) => el("li", {}, m.name, ...tag(m), ...(m.status ? [el("small", { className: "rb-spaces-status" }, m.status)] : []), ...(m.voice ? [el("span", { className: "rb-spaces-in-voice", title: `In ${voiceName(m.voice) ?? "voice"}` }, icon("volume-2"))] : []), ...(m.name === me ? [] : owner
+    return el("ul", { className: "rb-spaces-online", ariaLabel: "Online" }, el("li", { className: "rb-spaces-mine" }, mine), ...online.map((m) => el("li", {}, m.name, ...tag(m), ...(m.status ? [el("small", { className: "rb-spaces-status" }, m.status)] : []), ...(m.voice ? [el("span", { className: "rb-spaces-in-voice", title: `In ${voiceName(m.voice) ?? "voice"}` }, icon("volume-2"))] : []), ...(isMe(m.id, m.name) ? [] : owner
       ? [btn(muted.has(m.id) ? "mic" : "mic-off", muted.has(m.id) ? `Unmute ${m.name}` : `Mute ${m.name}`, () => { const on = !muted.has(m.id); if (on) muted.add(m.id); else muted.delete(m.id); sp.mute(m.id, on); draw(); }),
         btn("user-x", `Kick ${m.name}`, () => sp.kick(m.id)), btn("user-x", `Remove ${m.name} from every space you run`, () => sp.kick(m.id, true), false, "rb-spaces-everywhere"),
         btn("message-circle", `Message ${m.name}`, () => sp.dm(m.id)), ...gate(m), ...ranks(m)]
