@@ -34,3 +34,13 @@ test("the Worker tells an old build to update on /ws and /api, and serves a curr
   expect(((await reply.json()) as { update: number }).update).toBe(MIN_PROTOCOL);
   expect((await worker.fetch(new Request(`https://phs.test/index.html?pv=0`), env)).status).toBe(200);
 });
+
+test("five votes a minute an address, however many guests it makes up and whichever park", async () => {
+  const worker = (await import("../src/edge/worker.ts")).default;
+  const { MIN_PROTOCOL } = await import("../src/api.ts");
+  const env = { PARKS: { idFromName: (n: string) => n, get: () => ({ fetch: async () => new Response("counted") }) } } as unknown as Parameters<typeof worker.fetch>[1];
+  const vote = async (n: number) => (await worker.fetch(new Request(`https://phs.test/api/parks?pv=${MIN_PROTOCOL}&code=ZION&uid=made-up-guest-${n}`, { method: "POST", headers: { "CF-Connecting-IP": "198.51.100.9" } }), env)).status;
+  const got: number[] = [];
+  for (let n = 0; n < 7; n++) got.push(await vote(n));
+  expect(got).toEqual([200, 200, 200, 200, 200, 429, 429]);
+});

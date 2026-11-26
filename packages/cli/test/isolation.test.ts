@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "../src/config.ts";
-import { adoptProblem, adoptQuestion, adoptedNames, confirmAdopt, forceFresh, isolationFlags, modeLine } from "../src/isolation.ts";
+import { adoptProblem, adoptQuestion, adoptedNames, confirmAdopt, forceFresh, isolationFlags, modeLine, stateHoldsAdopted } from "../src/isolation.ts";
 
 const cfg = (adopt: boolean): RustyBunsConfig => ({
   name: "shop",
@@ -55,6 +55,16 @@ test("ADOPT refuses a first deploy and any destroy, until --adopt-existing", () 
   // FRESH and plans never stop here.
   expect(adoptProblem("destroy", cfg(false), dir, "dev", none)).toBeNull();
   expect(adoptProblem("plan", cfg(true), dir, "other", none)).toBeNull();
+});
+
+test("destroy --fresh on a stage that took real resources over is still an ADOPT destroy", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rb-iso-")), stage = join(dir, ".alchemy", "state", "shop", "dev");
+  mkdirSync(stage, { recursive: true });
+  writeFileSync(join(stage, "DB.json"), JSON.stringify({ attr: { databaseName: "shop-dev-db-x1y2" } }));
+  expect(stateHoldsAdopted(cfg(true), dir, "dev")).toBe(false); // made fresh: --fresh may destroy it unasked
+  writeFileSync(join(stage, "DB.json"), JSON.stringify({ attr: { databaseName: "shop-db" } }));
+  expect(stateHoldsAdopted(cfg(true), dir, "dev")).toBe(true);
+  expect(stateHoldsAdopted(cfg(false), dir, "dev")).toBe(false);
 });
 
 test("the question names every resource, and only y or yes says yes", async () => {

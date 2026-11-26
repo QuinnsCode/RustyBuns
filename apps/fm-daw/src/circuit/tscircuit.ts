@@ -37,6 +37,7 @@ const Component = obj({
   source_component_id: str(200), ftype: str(80), name: str(80),
   resistance: opt(num(1e-3, 1e12)), capacitance: opt(num(1e-15, 10)), inductance: opt(num(1e-12, 1e3)),
   max_resistance: opt(num(1e-3, 1e12)), transistor_type: opt(oneOf(["npn", "pnp"])),
+  manufacturer_part_number: opt(str(120)),
 });
 const Port = obj({
   source_port_id: str(200), source_component_id: str(200), name: str(80),
@@ -49,8 +50,11 @@ type Named<P> = P extends unknown ? P & { name: string } : never;
 /** One part on a board, by its silkscreen name, with the nets its pins sit on (before `BoardOptions`). */
 export type BoardPart = Named<Part>;
 
-/** A board read out of its circuit JSON: its parts, its named nets, and the PCB's size in millimetres if the JSON has its `pcb_board`. */
-export interface Board { parts: BoardPart[]; nets: string[]; mm: { w: number; h: number } | null }
+/**
+ * A board read out of its circuit JSON: its parts, its named nets, and the PCB's size in millimetres if the JSON has its `pcb_board`.
+ * `node(key)` is the node a connectivity key (a schematic trace's `data-subcircuit-connectivity-map-key`) is in the netlist.
+ */
+export interface Board { parts: BoardPart[]; nets: string[]; mm: { w: number; h: number } | null; node: (key: string) => string }
 
 /** A pot on the board: its name (the knob's) and its full resistance. */
 export interface BoardPot { name: string; ohms: number }
@@ -98,6 +102,18 @@ export interface BoardOptions extends ReadOptions {
 
 /** What moves a part: the control's name (a rig `Mod`'s `ctl`) and its range in ohms. */
 export interface Moved { ctl: string; hi: number; lo: number }
+
+/**
+ * Diodes a board names by part number (tscircuit's `manufacturerPartNumber`), with their junctions tuned to the forward
+ * drop at about 1 mA. A diode with no part number, or one not here, is a silicon 1N4148. A remade board (Q Builder)
+ * carries its clipper swaps this way, so it plays the same read on its own.
+ */
+export const DIODE_PARTS: Partial<Record<string, Junction>> = {
+  "1N4148": { is: 2.52e-9, n: 1.752 },
+  "1N34A": { is: 1.4e-7, n: 1.3 },
+  "LED-RED-3MM": { is: 5e-18, n: 2 },
+  BS170: { is: 2e-10, n: 3 },
+};
 
 /** The units a multi-amp package's pin labels end in. */
 const UNITS = ["A", "B", "C", "D"];
@@ -171,7 +187,8 @@ export function readBoard(json: unknown, o: ReadOptions = {}): Board {
       const anode = pins.find((p) => p.port_hints?.includes("anode")) ?? pins[0];
       const cathode = pins.find((p) => p !== anode);
       if (!cathode) throw new Error(`${name}: no cathode`);
-      return { name, kind: "D", a: nodeOf(anode), k: nodeOf(cathode) };
+      const j = c.manufacturer_part_number === undefined ? undefined : DIODE_PARTS[c.manufacturer_part_number];
+      return { name, kind: "D", a: nodeOf(anode), k: nodeOf(cathode), ...j };
     }
     if (c.ftype === "simple_chip") {
       const names = new Set(pins.map((p) => p.name.toUpperCase()));
@@ -193,7 +210,7 @@ export function readBoard(json: unknown, o: ReadOptions = {}): Board {
     }
     throw new Error(`${name}: no model for ${c.ftype} yet`);
   });
-  return { parts, nets: nets.map((n) => n.name), mm };
+  return { parts, nets: nets.map((n) => n.name), mm, node: (key) => netName.get(key) ?? key };
 }
 
 /** The board's pots, in the order they were drawn. */

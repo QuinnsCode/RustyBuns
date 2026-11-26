@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 24" width="80" height="24">
+  <!-- A strip of field tape, torn at both ends, holding a manual sheet's corner down. -->
+  <path d="M3 1l2 3-2 3 2 3-2 3 2 3-2 3 2 3-2 2h74l-2-3 2-3-2-3 2-3-2-3 2-3-2-3 2-3z" fill="#e6d9b4" fill-opacity=".86"/>
+  <path d="M6 6h68M6 18h68" stroke="#b8a57a" stroke-opacity=".35"/>
+</svg>
