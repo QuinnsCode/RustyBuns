@@ -158,8 +158,6 @@ describe("a branch that clashed takes main in once its blocker merges (#1162)", 
 });
 
 describe("dispatch hint (#1163)", () => {
-  const paths = ["apps/two-fronts/src/main.ts", "apps/two-fronts/src/rules.ts", "apps/other/src/main.ts", "README.md", "main"];
-
   test("GET .../dispatch-hint: open branches on the task's files, not merged ones or ones elsewhere", async () => {
     const call = await boot({ GH_CLI: "off" });
     const post = (url: string, body: unknown) => call("ana", url, { method: "POST", body: JSON.stringify(body) });
