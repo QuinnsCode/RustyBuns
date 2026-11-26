@@ -1166,7 +1166,7 @@ export function App() {
             onLanes={(lanes) => commit({ t: "auto", track: selected, lanes })} />
 
           {t.plugin ? (<>
-            <PluginPanel track={t} color={color} shown={plugins.get(selected)} head={t.plugin.web ? <>{trackSound}{insertPick}</> : trackSound}
+            <PluginPanel track={t} color={color} shown={plugins.get(selected)} duck={{ names: project.tracks.map((x) => x.name), self: selected }} head={t.plugin.web ? <>{trackSound}{insertPick}</> : trackSound}
               onValue={(id, v) => { if (t.plugin) commit({ t: "plugin", track: selected, plugin: withValue(t.plugin, id, v) }, { group: `plug:${selected}:${id}` }); }}
               onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
               onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
