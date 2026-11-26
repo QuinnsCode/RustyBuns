@@ -77,8 +77,8 @@ export const GEAR_SIZES = {
   "synergy-horn": [0.711, 0.711, 0.648],
   "tapped-horn-18": [0.734, 1.016, 0.572],
   "triple-21-sub": [1.479, 0.696, 1.218],
-  "tri-amp-top": [0.76, 0.76, 0.9],
-  "tri-amp-bass": [0.76, 0.76, 0.9],
+  "tri-amp-top": [0.574, 0.825, 0.773],
+  "tri-amp-bass": [0.574, 0.825, 0.773],
 } as const satisfies Record<string, THREE.Vector3Tuple>;
 
 export const GEAR_IDS = Object.keys(GEAR_SIZES) as GearId[];
@@ -99,14 +99,14 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "cavity"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "cavity", "turbo"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
  * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
- * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it). */
+ * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -118,7 +118,7 @@ export function gearLook(): GearLook {
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0xd9d6cf, 0.5), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
-    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8),
+    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8), turbo: std(0x0e1422, 0.82),
     cavity: new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.9, envMapIntensity: 0.16 }),
   };
 }
@@ -1514,24 +1514,6 @@ function mouth(b: Build, w: number, h: number, deep: number, at: THREE.Vector3Tu
   b.pieces.push(disc("knob", Math.min(w, h) * 0.1, 0.01, "z", [at[0], at[1], at[2] - deep], 12));
 }
 
-/**
- * A horn-loaded box (the tri-amp rig's): a black cabinet whose front is a well (its walls run the full depth) filled by
- * its horn mouths, a label plate on the top rail, bar handles on the sides and the speaker jacks on the back.
- */
-function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number, p?: number][], deep: number, { badge = true, skin = "paint" as GearSlot } = {}): Build {
-  const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, t = 0.04, front = d / 2;
-  well(b, skin, GEAR_SIZES[id], deep, t);
-  b.pieces.push(box("knob", [w - 2 * t, h - 2 * t, 0.01], [0, h / 2, front - deep]));
-  for (const [x, y, mw, mh, p] of mouths) mouth(b, mw, mh, deep * 0.92, [x, y, front - 0.004], p, skin === "paint" ? "panel" : skin);
-  if (badge) b.pieces.push(box("badge", [0.15, 0.026, 0.004], [w / 2 - t - 0.1, h - t / 2, front + 0.001]));
-  for (const s of [-1, 1]) b.pieces.push(...handle("metal", [s * w / 2, h * 0.6, -d * 0.1], s > 0 ? "x" : "-x", 0.18, 0.012));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.05)], 0.004));
-  plate(b, w * 0.3, h * 0.2, [0, h * 0.45, -d / 2 - 0.004]);
-  jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.06, h * 0.45, -d / 2 - 0.008], [w * 0.12, 0, 0]);
-  mark(b, "grab", [w / 2 + 0.012, h * 0.6, 0], [1, 0, 0]);
-  return b;
-}
-
 /** A mouth flaring back from a rectangle on the face to a smaller one at the back, `outer` and `inner` [x0, x1, y0, y1],
  * the front at z `zf` and the back `deep` behind it: four flat walls, every face turned to look forward (a bass bin's
  * pyramid horn, its throat anywhere in the mouth). */
@@ -1885,19 +1867,140 @@ function triple21(): Build {
   return b;
 }
 
+/** A circle's outline [x, y], `n` points counter-clockwise round (x, y). */
+const circle = (x: number, y: number, r: number, n = 32) => Array.from({ length: n }, (_, i) => [x + Math.cos((i / n) * Math.PI * 2) * r, y + Math.sin((i / n) * Math.PI * 2) * r]);
+
 /**
- * The tri-amp horn top: a deep birch box in black, two 10" mid drivers each loaded by its own short round horn with a
- * bullet phase plug in its throat, side by side over the low half of the front; a 1" waveguide over them. Narrow and
- * long-throwing, the old touring way (sheets for this class: high-Q, about 35 x 25 degrees).
+ * A square-mouthed horn turning round, as a TurboMid or TurboBass device's flare is drawn: its mouth the cell
+ * [x0, x1, y0, y1] at z `zf`, its throat the circle `r` round (cx, cy) `deep` behind. Rings of 16 points (the cell's
+ * corners and three along each edge) slide from the rectangle to the circle, squarest at the front: the creases run in
+ * from the mouth's corners, as on the drawing, and the throat is round.
  */
-function triAmpTop(): Build {
-  const b = hornCab("tri-amp-top", [[-0.18, 0.27, 0.34, 0.34, 2], [0.18, 0.27, 0.34, 0.34, 2], [0, 0.6, 0.46, 0.2, 8]], 0.5, { badge: false, skin: "coat" });
-  const front = GEAR_SIZES["tri-amp-top"][2] / 2;
-  for (const x of [-0.18, 0.18]) b.pieces.push(lathe("knob", [[-0.44, 0.05, 0.05], [-0.36, 0.04, 0.04], [-0.28, 0.02, 0.02], [-0.24, 0.004, 0.004]], { p: 2, seg: 16, m: new THREE.Matrix4().makeTranslation(x, 0.27, front) }));
-  return b;
+function squareToRound(slot: GearSlot, [x0, x1, y0, y1]: number[], cx: number, cy: number, r: number, zf: number, deep: number): Piece {
+  const my = (y0 + y1) / 2;
+  const edge = (a: number[], b: number[]) => [0, 1, 2, 3].map((k) => [a[0]! + ((b[0]! - a[0]!) * k) / 4, a[1]! + ((b[1]! - a[1]!) * k) / 4]);
+  // counter-clockwise from the right edge's middle, so point j sits at the same angle on the circle
+  const rect = [...edge([x1, my], [x1, y1]).slice(0, 2), ...edge([x1, y1], [x0, y1]), ...edge([x0, y1], [x0, y0]), ...edge([x0, y0], [x1, y0]), ...edge([x1, y0], [x1, my]).slice(0, 2)];
+  const roundAt = (j: number) => [cx + Math.cos((j / 16) * Math.PI * 2) * r, cy + Math.sin((j / 16) * Math.PI * 2) * r];
+  const rings = [0, 0.2, 0.45, 0.72, 1].map((s) => {
+    const k = s ** 0.7;
+    return rect.map(([x, y], j) => { const [rx, ry] = roundAt(j); return new THREE.Vector3(x! + (rx! - x!) * k, y! + (ry! - y!) * k, zf - deep * s); });
+  });
+  // every quad split on the same diagonal and turned to look forward, smoothed round the throat but creased where the
+  // mouth's corners fold
+  const pos: number[] = [];
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
+    const n = b.clone().sub(a).cross(c.clone().sub(a));
+    pos.push(...(n.z >= 0 ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
+  };
+  for (let i = 0; i + 1 < rings.length; i++) for (let j = 0; j < 16; j++) {
+    const k = (j + 1) % 16, a = rings[i]!, b = rings[i + 1]!;
+    tri(a[j]!, a[k]!, b[k]!); tri(a[j]!, b[k]!, b[j]!);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  return { geo: toCreasedNormals(geo, 0.5), slot };
 }
-/** Its bass: two 15" horn-loaded side by side, square mouths, the same black birch. */
-const triAmpBass = () => hornCab("tri-amp-bass", [[-0.185, 0.38, 0.35, 0.66, 6], [0.185, 0.38, 0.35, 0.66, 6]], 0.55, { badge: false, skin: "coat" });
+
+/** A TurboMid's throat, `deep` behind the front `f`: the flat ring round the driver (`ro` out, `ri` in), the dark
+ * driver behind it and the phase plug, a bar `bw` wide standing up across the throat and `over` past the ring. */
+function turboThroat(b: Build, cx: number, cy: number, ro: number, ri: number, bw: number, over: number, z: number) {
+  b.pieces.push(frontPlate("turbo", circle(cx, cy, ro), [circle(cx, cy, ri)], z, 0.006));
+  b.pieces.push(disc("cavity", ri, 0.004, "z", [cx, cy, z - 0.03], 24));
+  b.pieces.push(box("turbo", [bw, 2 * (ro + over), 0.05], [cx, cy, z + 0.022], { bevel: bw * 0.3 }));
+}
+
+/**
+ * The Flashlight's shared shell, 574 wide, 825 tall and 773 deep in 18 mm birch and TurboBlue paint (TFS-780
+ * datasheet, dimensions p.15), and its hardware: four dog-bone hand recesses in each side (four in all on the bass),
+ * pointing at the side's keyhole fly cup, and the fly track plates top and bottom of the back.
+ */
+function flashlightShell(id: "tri-amp-top" | "tri-amp-bass", handles: number[][]): { cabinet: Build; hardware: Build } {
+  const [w, h, d] = GEAR_SIZES[id], t = 0.018, mm = (v: number) => v / 1000, cab: Build = { pieces: [], marks: [] }, hw: Build = { pieces: [], marks: [] };
+  well(cab, "turbo", [w, h, d], mm(340), t);
+  const cupY = h - mm(308), cupZ = d / 2 - mm(408);
+  for (const s of [-1, 1]) {
+    const x = s * (w / 2 + 0.0006);
+    for (const [y, z] of handles) hw.pieces.push(box("cavity", [0.004, mm(50), mm(115)], [x, y!, z!], { bevel: 0.012, rot: [Math.sign((y! - cupY) * (z! - cupZ)) * -Math.PI / 4, 0, 0] }));
+    hw.pieces.push(disc("metal", mm(46), 0.004, "x", [s * (w / 2 + 0.002), cupY, cupZ], 20), disc("cavity", mm(10), 0.005, "x", [s * (w / 2 + 0.002), cupY + mm(8), cupZ], 10));
+  }
+  for (const y of [h - mm(20), mm(20)]) hw.pieces.push(box("metal", [mm(160), mm(39), 0.004], [0, y, -d / 2 - 0.002], { bevel: 0.001 }));
+  mark(hw, "grab", [w / 2 + 0.012, handles[0]![0]!, 0], [1, 0, 0]);
+  return { cabinet: cab, hardware: hw };
+}
+
+/**
+ * The tri-amp top, as the Turbosound Flashlight TFS-780H is drawn on its datasheet (dimensions p.15) and built, piece
+ * by piece (no maker's name: the plate under the waveguide stays plain). Every number is the drawing's, in mm from the
+ * face's left edge and its top: 574 wide, 825 tall, 773 deep, 87 kg; a 12" and a 6.5" on TurboMid horns and a 1"
+ * compression driver on a waveguide, tri-amped, 25 x 25 degrees.
+ * - cabinet: the shell, 18 mm walls the full depth
+ * - face: the frame round the face (28 in at the sides) and the dividers between the three cells
+ * - lmf horn: the 12"'s cell 28 to 550 across and 297 to 802 down, its square mouth turning round to the throat ring
+ *   (248 across, centred 286 across and 544 down) 300 behind the front; the plug, a bar 28 wide standing 31 past the ring
+ * - hmf horn: the 6.5"'s cell 28 to 284 across and 23 to 286 down, its ring 129 across round (160, 150), bar 26 wide
+ * - hf waveguide: a flat baffle in the cell 292 to 550 across, the 163 square mouth round (413, 150) closing to 108 and
+ *   the 21 mm throat; the plain plate under it at 260 down
+ * - back: the hinged oval door (396 x 657, centred 407 down), the round cover (212) in its top with the two EP6 jacks
+ * - hardware: eight dog-bone hand recesses (115 x 50) and the keyhole fly cups in the sides, the back's track plates
+ * The detachable wheel board is left off: a top stands on its bass without it.
+ */
+function tfs780hPieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["tri-amp-top"], f = d / 2, mm = (v: number) => v / 1000, X = (v: number) => mm(v) - w / 2, Y = (v: number) => h - mm(v);
+  const P = (): Build => ({ pieces: [], marks: [] }), face = P(), lmf = P(), hmf = P(), hf = P(), back = P();
+  const { cabinet, hardware } = flashlightShell("tri-amp-top", [[Y(136), f - mm(146)], [Y(136), f - mm(632)], [Y(604), f - mm(146)], [Y(604), f - mm(632)]]);
+  const cell = (a: number, b: number, c: number, e: number) => [X(a), X(b), Y(e), Y(c)];
+  const lc = cell(28, 550, 297, 802), mc = cell(28, 284, 23, 286), hc = cell(292, 550, 23, 286);
+  const hole = ([x0, x1, y0, y1]: number[]) => [[x0!, y0!], [x1!, y0!], [x1!, y1!], [x0!, y1!]];
+  face.pieces.push(frontPlate("turbo", hole([-w / 2 + 0.018, w / 2 - 0.018, 0.018, h - 0.018]), [lc, mc, hc].map(hole), f, 0.018));
+  // the 12" TurboMid
+  lmf.pieces.push(squareToRound("turbo", lc, X(286), Y(544), mm(124), f - 0.002, mm(300)));
+  turboThroat(lmf, X(286), Y(544), mm(124), mm(87.5), mm(28), mm(31), f - mm(300));
+  // the 6.5" TurboMid
+  hmf.pieces.push(squareToRound("turbo", mc, X(160), Y(150), mm(64.5), f - 0.002, mm(180)));
+  turboThroat(hmf, X(160), Y(150), mm(64.5), mm(49), mm(26), mm(10), f - mm(180));
+  // the 1" waveguide in its flat baffle, the plain plate under it
+  const hx = X(413), hy = Y(150), bz = f - mm(20), sq = (s: number, z: number) => ring8(hx, hy, z, s / 2, s / 2);
+  hf.pieces.push(frontPlate("turbo", hole(hc), [hole([hx - mm(81.5), hx + mm(81.5), hy - mm(81.5), hy + mm(81.5)])], bz, 0.012));
+  hf.pieces.push(ringWalls("knob", [sq(mm(163), bz), sq(mm(108), bz - mm(30)), ring8(hx, hy, bz - mm(120), mm(10.5), mm(10.5), mm(7.4), mm(7.4))]));
+  hf.pieces.push(disc("cavity", mm(13), 0.004, "z", [hx, hy, bz - mm(122)], 12));
+  hf.pieces.push(box("panel", [mm(160), mm(20), 0.003], [hx, Y(260), bz + 0.0015]));
+  // the back: the hinged oval door (a stadium, its ends half circles) in its dark gap, its round cover and the jacks in it
+  const stadium = (r: number, straight: number) => [0, 1].flatMap((half) => Array.from({ length: 17 }, (_, i) => {
+    const q = half * Math.PI + (i / 16) * Math.PI;
+    return [Math.cos(q) * r, Y(407) + (half ? -1 : 1) * straight / 2 + Math.sin(q) * r];
+  }));
+  back.pieces.push(frontPlate("cavity", stadium(mm(202), mm(261)), [], -d / 2, 0.002));
+  back.pieces.push(frontPlate("turbo", stadium(mm(198), mm(261)), [], -d / 2, 0.006));
+  back.pieces.push(box("metal", [0.008, mm(300), 0.006], [mm(198), Y(407), -d / 2 - 0.003]));
+  back.pieces.push(disc("panel", mm(106), 0.006, "z", [0, Y(274), -d / 2 - 0.007], 32));
+  jacks(back, ["speaker-in", "speaker-out"], "back", [-mm(68), Y(240), -d / 2 - 0.01], [0, -mm(60), 0], mm(23.5));
+  return { cabinet, face, "lmf-horn": lmf, "hmf-horn": hmf, "hf-waveguide": hf, back, hardware };
+}
+
+/**
+ * The tri-amp bass, as the Turbosound Flashlight TFS-780L's sheet gives it (TFS-780 datasheet p.3; its own dimension
+ * drawing is not in the datasheet, so the front is the TFS-780H's shell and frame round one cell): the same 574 x 825 x
+ * 773 shell, 90 kg, one 21" on a TurboBass device, four hand recesses, two XLR-3 jacks on a plate on the back.
+ * - cabinet, hardware: the shell, as the top's
+ * - face: the frame round the one cell, 28 to 550 across and 23 to 802 down
+ * - bass horn: the cell's square mouth turning round to a 21" throat ring (440 across, a guess until the drawing),
+ *   centred in the cell 330 behind the front; the plug bar 40 wide
+ * - back: the jack plate
+ */
+function tfs780lPieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["tri-amp-bass"], f = d / 2, mm = (v: number) => v / 1000, X = (v: number) => mm(v) - w / 2, Y = (v: number) => h - mm(v);
+  const P = (): Build => ({ pieces: [], marks: [] }), face = P(), horn = P(), back = P();
+  const { cabinet, hardware } = flashlightShell("tri-amp-bass", [[Y(136), f - mm(146)], [Y(136), f - mm(632)]]);
+  const c = [X(28), X(550), Y(802), Y(23)], cx = X(289), cy = Y(412.5);
+  const hole = ([x0, x1, y0, y1]: number[]) => [[x0!, y0!], [x1!, y0!], [x1!, y1!], [x0!, y1!]];
+  face.pieces.push(frontPlate("turbo", hole([-w / 2 + 0.018, w / 2 - 0.018, 0.018, h - 0.018]), [hole(c)], f, 0.018));
+  horn.pieces.push(squareToRound("turbo", c, cx, cy, mm(220), f - 0.002, mm(330)));
+  turboThroat(horn, cx, cy, mm(220), mm(165), mm(40), mm(40), f - mm(330));
+  plate(back, mm(170), mm(110), [0, Y(300), -d / 2 - 0.004]);
+  jacks(back, ["speaker-in", "speaker-out"], "back", [-mm(35), Y(300), -d / 2 - 0.008], [mm(70), 0, 0], mm(14));
+  return { cabinet, face, "bass-horn": horn, back, hardware };
+}
 
 /**
  * The sculpted three-way: one moulded teal shell, round in plan and swelling at the waist like a pebble on end, with
@@ -2062,6 +2165,7 @@ function chainMotor(): Build {
 const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "stack-mid-high": res2Pieces, "stack-mid-bass": f215Pieces,
   "horn-sub-21": () => binPieces("horn-sub-21", F221), "horn-sub-18": () => binPieces("horn-sub-18", F218),
+  "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
 };
 
 /** A box built piece by piece, every piece merged into one build. */
@@ -2114,8 +2218,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "synergy-horn": synergyHorn,
   "tapped-horn-18": tappedHorn,
   "triple-21-sub": triple21,
-  "tri-amp-top": triAmpTop,
-  "tri-amp-bass": triAmpBass,
+  "tri-amp-top": whole("tri-amp-top"),
+  "tri-amp-bass": whole("tri-amp-bass"),
 };
 
 type Slots = [GearSlot, THREE.BufferGeometry][];
