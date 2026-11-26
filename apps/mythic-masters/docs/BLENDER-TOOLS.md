@@ -6,9 +6,11 @@ again. [MODEL-TOOLING.md](MODEL-TOOLING.md) has the beast pipeline's history and
 tools and the rules.
 
 **No Blender on the office Mac (the owner's order, 2026-11-23).** Do not start Blender there, or any script
-below that starts it, headless included: the Mac was forced off twice that night. A Blender step runs on the
-builder Mac (Bob) or waits in an issue. On that date a `bun run builder run` on Bob did not find `blender` on its
-`PATH`, so check that first.
+below that starts it, headless included: the Mac was forced off twice that night. Every Blender step goes through
+the Blender queue (`bun run blender`, `scripts/blender-queue.ts`, #6007) to the builder Mac (Bob), one job at a time:
+the scripts below queue themselves (`await queued()`), `runBlender` refuses to start Blender where `BUILDER_HOST`
+is set, and the guard hook turns a direct `blender` away. On 2026-11-23 a `bun run builder run` on Bob did not find
+`blender` on its `PATH`: a queue job fails "no Blender on Bob" until it does (or `BLENDER_PATH` points at it).
 
 Blender 5.2 LTS is at `/opt/homebrew/bin/blender` on the office Mac and is on `PATH`. The builder Mac (Bob)
 has it too ([MAC_SETUP.md](../../../MAC_SETUP.md)). The beast build runs on 5.2.0 only: 5.2.1 writes other GLB bytes from the same

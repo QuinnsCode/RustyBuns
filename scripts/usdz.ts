@@ -7,7 +7,9 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { writeProceduralGlbs } from "../packages/models/src/catalog.ts";
 import { findBlender, runBlender } from "../packages/cli/src/blender.ts";
+import { queued } from "./blender-queue.ts";
 
+await queued(["dist/ios"]); // Blender runs on the builder Mac, one job at a time (scripts/blender-queue.ts)
 if (Bun.argv.slice(2).includes("beasts")) {
   const { exportBeasts } = await import("./usdz/beasts.ts");
   const n = await exportBeasts("apps/mythic-masters/public/models", "dist/ios/mythic-masters/beasts");

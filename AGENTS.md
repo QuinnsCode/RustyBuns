@@ -94,6 +94,9 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
   A PR that changes how an app looks runs `--before-after <dir>` (origin/main's copy of the app next to your working
   tree, one `before-after.html`), publishes that page as an artifact and links it under `Before / after` in its body. A new game gets a handle on
   `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
+- `bun run blender add <script.py> [args] --out <dir>`: a Blender job queued for Bob, who runs them one at a time in order
+  (`bun run blender` lists them, `bun run blender wait <id>` brings the output back). Blender never runs on this Mac:
+  `runBlender` and the guard turn it away, and a build script's first line `await queued()` (`scripts/blender-queue.ts`) sends the whole script through the queue.
 - `bun run climbs`: every open hill climb (a score chased round by round) with its last score, target and days idle.
   A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it, `--wait` to keep trying each minute while the office is full) hands
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and

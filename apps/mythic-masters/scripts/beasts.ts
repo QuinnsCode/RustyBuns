@@ -33,7 +33,9 @@ import { feetOf, feetPaired, wingsOf, type BeastRig } from "../src/beasts.ts";
 import { SHEET_WHO } from "../src/roster.ts";
 import { judge, OUT, shoot } from "./beast-loop.ts";
 import { help } from "../../../scripts/help.ts";
+import { queued } from "../../../scripts/blender-queue.ts";
 
+await queued(); // Blender runs on the builder Mac, one job at a time (scripts/blender-queue.ts)
 const APP = join(import.meta.dir, "..");
 const Sheet = obj({ ...SHEET_WHO, feet: int(0, 8), wings: opt(int(0, 8)), budget: num(100, 20000, 3000) });
 

@@ -8,7 +8,9 @@ import { join } from "node:path";
 import { runBlender, warmBlender } from "@rustybuns/cli/blender";
 import { arr, num, obj, str } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
+import { queued } from "../../../scripts/blender-queue.ts";
 
+await queued(); // Blender runs on the builder Mac, one job at a time (scripts/blender-queue.ts)
 help(import.meta.path);
 const APP = join(import.meta.dir, "..");
 const argv = process.argv.slice(2);
