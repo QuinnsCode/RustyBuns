@@ -36,7 +36,8 @@ export const Finding = obj({ kind: text, sev: oneOf(["error", "warn"]), detail: 
 export type Finding = Of<typeof Finding>;
 export const PhoneResult = obj({ phone: text, w: px, h: px, shot: opt(text), findings: arr(Finding, Infinity) });
 export type PhoneResult = Of<typeof PhoneResult>;
-export const AppResult = obj({ app: text, bootError: opt(text), phones: arr(PhoneResult, Infinity) });
+/** `unfinished`: the app ran out of time after some phones were looked at; those phones still count, and the rest is a warning. */
+export const AppResult = obj({ app: text, bootError: opt(text), unfinished: opt(text), phones: arr(PhoneResult, Infinity) });
 export type AppResult = Of<typeof AppResult>;
 /** A shard's report.json, which `--merge` reads back. */
 export const Report = obj({ generatedAt: text, apps: arr(AppResult, Infinity) });
@@ -86,6 +87,23 @@ const count = (cs: Control[]) => {
   return m;
 };
 
+/** The labelled controls the laptop page shows that the phone shows fewer of. */
+export function missingVsLaptop(phone: Audit, ref: Audit) {
+  const have = count(phone.controls);
+  return [...count(ref.controls)].map(([label, n]) => ({ label, n, got: have.get(label) ?? 0 })).filter((m) => m.got < m.n);
+}
+
+/** Looks at the page until it shows every control the laptop page did, or `waitMs` runs out, and returns the last look.
+ *  A menu that comes in after the load (Skate Tech Park's Single and Multi on a busy runner, #5797) is late, not gone:
+ *  the screenshot taken after the audit showed both buttons the audit had called gone. */
+export async function settledAudit(look: () => Promise<Audit>, ref?: Audit, waitMs = 8000, everyMs = 500): Promise<Audit> {
+  const end = Date.now() + waitMs;
+  for (let a = await look(); ; a = await look()) {
+    if (!ref || !missingVsLaptop(a, ref).length || Date.now() >= end) return a;
+    await new Promise((ok) => setTimeout(ok, everyMs));
+  }
+}
+
 /** The findings for one phone: layout breaks, controls that are cut off, covered or gone, and noise from the page. */
 export function analyze(phone: Audit, ref: Audit | undefined, noise: string[] = []): Finding[] {
   const out: Finding[] = [];
@@ -105,13 +123,8 @@ export function analyze(phone: Audit, ref: Audit | undefined, noise: string[] = 
     if (!c.label) add("unlabeled", "warn", `${c.tag} at ${c.x},${c.y} has no text, aria-label or title`);
     else if (/^(button|input|select)$/.test(c.tag) && Math.min(c.w, c.h) < 24) add("tiny-target", "warn", `${name} is ${c.w}x${c.h}px, under the 24px minimum`);
   }
-  if (ref) {
-    const have = count(phone.controls);
-    for (const [label, n] of count(ref.controls)) {
-      const got = have.get(label) ?? 0;
-      if (got < n) add("missing-vs-desktop", "error", `"${label}" is on the laptop page${n > 1 ? ` ${n} times` : ""} and ${got ? `${got} on the phone` : "gone on the phone"}`);
-    }
-  }
+  for (const { label, n, got } of ref ? missingVsLaptop(phone, ref) : [])
+    add("missing-vs-desktop", "error", `"${label}" is on the laptop page${n > 1 ? ` ${n} times` : ""} and ${got ? `${got} on the phone` : "gone on the phone"}`);
   for (const n of noise) add("console", "warn", n);
   return out;
 }
@@ -120,7 +133,7 @@ export type Status = "error" | "warn" | "ok";
 export const worst = (fs: Finding[]): Status => (fs.some((f) => f.sev === "error") ? "error" : fs.length ? "warn" : "ok");
 const RANK = { error: 0, warn: 1, ok: 2 } as const;
 export const appStatus = (a: AppResult): Status =>
-  a.bootError ? "error" : a.phones.map((p) => worst(p.findings)).reduce<Status>((s, w) => (RANK[w] < RANK[s] ? w : s), "ok");
+  a.bootError ? "error" : a.phones.map((p) => worst(p.findings)).reduce<Status>((s, w) => (RANK[w] < RANK[s] ? w : s), a.unfinished ? "warn" : "ok");
 
 /** Joins the reports of several shards (one per ephemeral runner) into one, keeping the app names unique. */
 export function mergeReports(rs: Report[]): Report {
@@ -148,7 +161,7 @@ export function board(r: Report): string {
       return `<figure class="${w}"><a href="${esc(p.shot ?? "#")}">${img}</a><figcaption><span>${esc(p.phone)}</span><i>${p.w}x${p.h}</i>` +
         `<em>${p.findings.length ? plural(p.findings.length, "finding") : "ok"}</em></figcaption><details><summary>details</summary>${list}</details></figure>`;
     }).join("");
-    const body = a.bootError ? `<pre class="boot">${esc(a.bootError)}</pre>` : `<div class="strip">${tiles}</div>`;
+    const body = a.bootError ? `<pre class="boot">${esc(a.bootError)}</pre>` : `${a.unfinished ? `<pre class="boot">${esc(a.unfinished)}</pre>` : ""}<div class="strip">${tiles}</div>`;
     return `<section class="${st}" data-status="${st}"><h2><span class="dot"></span>${esc(a.app)}<small>${a.bootError ? "did not finish" : plural(total, "finding")}</small></h2>${body}</section>`;
   }).join("\n");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Phone smoke</title><style>

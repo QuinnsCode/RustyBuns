@@ -58,3 +58,10 @@ test("a page's act is checked before it runs", () => {
   for (const bad of [{ t: "nuke" }, { t: "role", who: "x" }, { t: "invite", role: "guest", uses: -1 }, "block"]) expect(() => GuestAct(bad)).toThrow(Bad);
   expect(GuestAct({ t: "block", who: "x", extra: 1 })).toEqual({ t: "block", who: "x" });
 });
+
+test("an id every object has is on nobody's list: the list stays one that loads", () => {
+  const l = guestList("ada", "Ada");
+  const got = act(l, "ada", { t: "role", who: "toString", role: "guest" }, T);
+  expect(got).toEqual({ ok: false, why: "They're not on the list." });
+  expect(act(l, "ada", { t: "block", who: "constructor", why: "x" }, T).ok).toBe(false);
+});

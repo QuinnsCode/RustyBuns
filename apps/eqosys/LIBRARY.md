@@ -47,8 +47,9 @@ rides in URLs, `aud` and labels, so it has no `/`.) The names a token's `aud` al
   the answers on the listing, in `eq_listing_review`'s queue (`verdict: "check"` runs them again): each origin
   answers over https; the page is HTML and every script and stylesheet it names answers; someone in the studio has
   signed in to it through eqosys; and its `window.<game>` harness (the template's, named as `bun run new-game` names
-  it) is in its scripts. A Worker runs no page, so an error thrown while it runs and what `state()` answers are the
-  reviewer's `bun run probe --url <origin> --js "<game>.state()"`, the line the check hands over. Then a person looks: it plays, its name
+  it) is in its scripts. Then Cloudflare Browser Run (the `BROWSER` binding, `src/browse.ts`) opens the page: it threw
+  no errors in its first 1.5 s, and `window.<game>.state()` answered. Without the binding those two are left out and the
+  reviewer runs `bun run probe --url <origin> --js "<game>.state()"`, the line the check hands over. Then a person looks: it plays, its name
   and card don't pass it off as someone else's game, nothing the house rules keep out (the same as codeSplitter's:
   no weapons, sexual or political content), and an `erase` URL if it keeps data per account.
 - **Listed.** The reviewer lists the game as they read it (the queue's `at`): a change made since is refused and read again.

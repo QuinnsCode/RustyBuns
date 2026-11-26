@@ -181,6 +181,7 @@ import {
 import {
   audit,
   auditRoutes,
+  viaToken,
   via,
 } from "./audit.ts";
 import {
@@ -400,6 +401,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   // A self-request made inside another (edit.ts) was signed in the way that one was; any other is a job.
   const outer = onBehalfOf.get(req);
   via.set(req, actingAs.has(req) ? (outer && via.get(outer)) || "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
+  const tokenId = actingAs.has(req) ? outer && viaToken.get(outer) : token?.id;
+  if (tokenId) viaToken.set(req, tokenId);
   if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
   const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin, token?.id));
   if (slow) return slow;

@@ -1,6 +1,7 @@
 # The @rustybuns packages go to npm from here, never a laptop: npm trusted publishing
 # (OIDC, no token anywhere) with --provenance, so each version links back to this
-# run and commit. Push a tag v<version> matching packages/*/package.json to publish;
+# run and commit. Push a tag v<x.y.z> on any commit (the stable ring's pick) to publish that
+# commit as x.y.z: the version comes from the tag, not packages/*/package.json;
 # run it from the Actions tab to only pack and dry-run.
 # Bun packs (it turns workspace:* into versions); npm publishes, since trusted
 # publishing and provenance are npm's.
@@ -33,12 +34,12 @@ jobs:
         with: { node-version: "24" }   # no registry-url: its placeholder token would stand in for OIDC
       - run: npm install -g npm@11.6.2   # trusted publishing needs npm 11.5.1+
       - run: bun install --frozen-lockfile --ignore-scripts   # no package's install script next to the publish credential
-      - run: bun scripts/check-release.ts
-      - name: Tag matches the packages
-        if: github.event_name == 'push'
+      # A tag push sets the tag's version at pack time (#4528), so the tag goes on the commit the stable ring soaked
+      # and no bump commit has to land on top of it first. A dispatch only checks what main says.
+      - name: Version from the tag
         run: |
-          v="$(bun -p 'require("./packages/cli/package.json").version')"
-          [ "$GITHUB_REF_NAME" = "v$v" ] || { echo "tag $GITHUB_REF_NAME, packages are $v"; exit 1; }
+          if [ "${{ github.event_name }}" = push ]; then bun scripts/check-release.ts --set "${GITHUB_REF_NAME#v}"
+          else bun scripts/check-release.ts; fi
       - name: Pack
         run: for p in $(bun scripts/check-release.ts --list); do (cd "packages/$p" && bun pm pack --destination ../../npm-dist --quiet); done
       - name: Publish

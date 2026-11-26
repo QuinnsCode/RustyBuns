@@ -18,20 +18,24 @@ export type Put = { ok: true; id: number; at: number; previous: { id: number; at
 export async function put(conf: Env, userId: string, app: string, slot: string, data: Uint8Array<ArrayBuffer>, now = Date.now()): Promise<Put> {
   if (data.byteLength > MAX_BODY) return { ok: false, status: 413, error: `a save is up to ${MAX_BODY / 1024} KB` };
   const mine = (await conf.DB.prepare(`SELECT id, at, size FROM saves WHERE user_id = ? AND app = ? AND slot = ? ORDER BY id DESC`).bind(userId, app, slot).all<Meta>()).results;
-  if (!mine.length && ((await conf.DB.prepare(`SELECT COUNT(DISTINCT slot) AS n FROM saves WHERE user_id = ? AND app = ?`).bind(userId, app).first<number>("n")) ?? 0) >= SLOTS)
-    return { ok: false, status: 409, error: `that's ${SLOTS} saves in this game: overwrite one` };
-  // The versions this write pushes out give their bytes back before the quota is checked.
-  const freed = mine.slice(VERSIONS - 1).reduce((n, v) => n + v.size, 0);
-  const used = (await conf.DB.prepare(`SELECT COALESCE(SUM(size), 0) AS n FROM saves WHERE user_id = ?`).bind(userId).first<number>("n")) ?? 0;
-  if (used - freed + data.byteLength > QUOTA) return { ok: false, status: 507, error: `that would pass ${QUOTA / 1024 / 1024} MB of saves: delete or overwrite some` };
   const key = await keyOf(conf, userId);
   const kept = key ? await seal(key, data, where(userId, app, slot)) : data;
-  const id = await conf.DB.prepare(`INSERT INTO saves (user_id, app, slot, at, size, data, sealed) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`)
-    .bind(userId, app, slot, now, data.byteLength, kept, key ? 1 : 0).first<number>("id");
+  // The caps are checked by the statement that writes, so uploads sent together can't each see room for one more. The versions
+  // this write pushes out (past the newest VERSIONS - 1) give their bytes back before the quota is counted.
+  const id = await conf.DB.prepare(`INSERT INTO saves (user_id, app, slot, at, size, data, sealed) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+    WHERE (EXISTS (SELECT 1 FROM saves WHERE user_id = ?1 AND app = ?2 AND slot = ?3) OR (SELECT COUNT(DISTINCT slot) FROM saves WHERE user_id = ?1 AND app = ?2) < ?8)
+      AND (SELECT COALESCE(SUM(size), 0) FROM saves WHERE user_id = ?1)
+        - (SELECT COALESCE(SUM(size), 0) FROM (SELECT size FROM saves WHERE user_id = ?1 AND app = ?2 AND slot = ?3 ORDER BY id DESC LIMIT -1 OFFSET ?9)) + ?5 <= ?10
+    RETURNING id`).bind(userId, app, slot, now, data.byteLength, kept, key ? 1 : 0, SLOTS, VERSIONS - 1, QUOTA).first<number>("id");
+  if (!id) {
+    const slots = (await conf.DB.prepare(`SELECT COUNT(DISTINCT slot) AS n FROM saves WHERE user_id = ? AND app = ?`).bind(userId, app).first<number>("n")) ?? 0;
+    return !mine.length && slots >= SLOTS ? { ok: false, status: 409, error: `that's ${SLOTS} saves in this game: overwrite one` }
+      : { ok: false, status: 507, error: `that would pass ${QUOTA / 1024 / 1024} MB of saves: delete or overwrite some` };
+  }
   await conf.DB.prepare(`DELETE FROM saves WHERE user_id = ? AND app = ? AND slot = ? AND id NOT IN (SELECT id FROM saves WHERE user_id = ? AND app = ? AND slot = ? ORDER BY id DESC LIMIT ?)`)
     .bind(userId, app, slot, userId, app, slot, VERSIONS).run();
   const prev = mine[0];
-  return { ok: true, id: id!, at: now, previous: prev ? { id: prev.id, at: prev.at } : null };
+  return { ok: true, id, at: now, previous: prev ? { id: prev.id, at: prev.at } : null };
 }
 
 /** The newest version of a slot, or the one with this id, unsealed. D1 hands a blob back as numbers, the local test database as bytes.

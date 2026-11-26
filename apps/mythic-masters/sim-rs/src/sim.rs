@@ -557,6 +557,8 @@ const HANG_ROLL_SAFE: f64 = 18.0;
 const HANG_REGRAB: f64 = 20.0;
 const SPIKE_DOWN: f64 = 0.75;
 const SPIKE_STUN: f64 = 14.0;
+/// sim.ts PART.skid: a melee blow sends the struck body off at no less than this, m/s per metre of its length.
+const PART_SKID: f64 = 6.0;
 
 /// (fighter `side`, fighter `foe`), both mutable.
 fn pair<'m, 'a>(fs: &'m mut [Fighter<'a>], side: usize, foe: usize) -> (&'m mut Fighter<'a>, &'m mut Fighter<'a>) {
@@ -1276,8 +1278,9 @@ fn hit(m: &mut Match, by: usize, on: usize, mv: &Move, power: f64, from: V3, at:
         * pile;
     let ang = if flat(from, d.pos) > 0.05 { angle_to(from, d.pos) } else { a_yaw };
     let h = (1.0 - up * up).sqrt();
-    d.vel.x = cos(ang) * kb * h;
-    d.vel.z = sin(ang) * kb * h;
+    let along = if ranged || spike || repeat { kb * h } else { (kb * h).max(PART_SKID * 2.0 * d.b.radius * pile) };
+    d.vel.x = cos(ang) * along;
+    d.vel.z = sin(ang) * along;
     d.vel.y = kb * up;
     if d.vel.y > 0.0 {
         d.on_ground = false;

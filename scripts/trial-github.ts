@@ -49,6 +49,7 @@ import { scheduler, lowPriorityCommand, PERSONAS, type Persona } from "../packag
 import { staticBuild, staticTool, toolchainError } from "./trial-static.ts";
 import { installedPackages, ownInstallScripts, parseDenials, treeUsage, malicious, flagLines, USUAL_INSTALL, IDLE_CPU, BIG_RSS_MB, type Flags, type Idle } from "./trial-flags.ts";
 import { withMode } from "../packages/cli/src/smoke.ts";
+import { NO_PM_SWITCH } from "../packages/cli/src/sandbox.ts";
 import { fetchLfs } from "./trial-lfs.ts";
 import { declaredSecrets, fakeSecret, removeCommittedSecrets } from "../packages/cli/src/fake-secrets.ts";
 
@@ -181,6 +182,8 @@ const ENV: Record<string, string | undefined> = {
   npm_config_cache: join(realHome, ".npm"), npm_config_store_dir: join(realHome, "Library/pnpm/store"),
   BUN_INSTALL_CACHE_DIR: join(realHome, ".bun/install/cache"),
   CI: "1", RUSTYBUNS_NO_UPDATE_CHECK: "1", RB_NO_BROWSER: "1",
+  // a clone that pins a newer pnpm runs on the installed one, not a self-install loop (#5764)
+  ...NO_PM_SWITCH,
 };
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 /** The last lines of a failed step's output worth reading: no stack frames. */

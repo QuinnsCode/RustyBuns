@@ -115,6 +115,8 @@ function broughtBy(l: GuestList, who: string, rank: number): string[] {
 export function act(l: GuestList, by: string, a: GuestAct, now: number, code = ""): Acted {
   const mine = rankOf(l, by), byName = nameOf(l, by);
   const target = "who" in a ? a.who : undefined;
+  // An id like "toString" is found on any object: written to the list it fails the list's own guard, and the list is lost.
+  if (target !== undefined && Object.hasOwn(Object.prototype, target)) return no("They're not on the list.");
   if (target !== undefined && target === by && a.t !== "unblock") return no("That's you.");
   if (target !== undefined && a.t !== "unblock" && rankOf(l, target) >= mine && target !== l.owner && (l.guests[target] || a.t === "block")) return no(`${nameOf(l, target)} ranks as high as you.`);
   if (target === l.owner) return no("Nobody can do that to the owner.");
@@ -153,7 +155,7 @@ export function act(l: GuestList, by: string, a: GuestAct, now: number, code = "
       if (!l.guests[a.who]) return no("They're not on the list.");
       if (!role) return no("There's no such role.");
       if (role.rank >= mine) return no("You can only hand out roles below your own.");
-      return { ok: true, list: logged({ ...l, guests: { ...l.guests, [a.who]: { ...l.guests[a.who], role: role.id } } }, { at: now, by, act: "role", who: a.who, name: nameOf(l, a.who), role: role.id }) };
+      return { ok: true, list: logged({ ...l, guests: { ...l.guests, [a.who]: { ...l.guests[a.who]!, role: role.id } } }, { at: now, by, act: "role", who: a.who, name: nameOf(l, a.who), role: role.id }) };
     }
     case "revoke": {
       if (!can(l, by, "revoke")) return no("You can't take people off here.");
@@ -182,7 +184,7 @@ export function act(l: GuestList, by: string, a: GuestAct, now: number, code = "
       if (by !== l.owner) return no("Only the owner changes the roles.");
       const ids = new Set(a.roles.map((r) => r.id));
       if (ids.size !== a.roles.length) return no("Two roles share a name.");
-      const roles = sortRoles(a.roles), last = roles[roles.length - 1].id;
+      const roles = sortRoles(a.roles), last = roles[roles.length - 1]!.id;
       // someone whose role went lands on the lowest one; an invite for a gone role goes
       const guests = Object.fromEntries(Object.entries(l.guests).map(([id, g]) => [id, ids.has(g.role) ? g : { ...g, role: last }]));
       return { ok: true, list: logged({ ...l, roles, guests, invites: l.invites.filter((i) => ids.has(i.role)) }, { at: now, by, act: "roles" }) };
@@ -212,7 +214,7 @@ export function guestRows(l: GuestList): GuestRow[] {
   const walk = (id: string, depth: number) => {
     if (seen.has(id)) return;
     seen.add(id);
-    const g = l.guests[id], under = (kids.get(id) ?? []).sort((a, b) => rankOf(l, b) - rankOf(l, a) || l.guests[a].at - l.guests[b].at);
+    const g = l.guests[id], under = (kids.get(id) ?? []).sort((a, b) => rankOf(l, b) - rankOf(l, a) || (l.guests[a]?.at ?? 0) - (l.guests[b]?.at ?? 0));
     rows.push({ id, name: nameOf(l, id), role: g ? roleOf(l, id) ?? null : null, by: g?.by ?? null, byName: g ? nameOf(l, g.by) : null, at: g?.at ?? 0, depth, brought: under.length });
     for (const k of under) walk(k, depth + 1);
   };
