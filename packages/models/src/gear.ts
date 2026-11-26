@@ -37,7 +37,7 @@ export const GEAR_SIZES = {
   "sub-18": [0.52, 0.638, 0.784],
   "wedge-12": [0.515, 0.375, 0.453],
   "amp-head": [0.7, 0.27, 0.25],
-  "cab-4x12": [0.76, 0.76, 0.36],
+  "cab-4x12": [0.77, 0.755, 0.365],
   "amp-rack-4u": [0.6, 0.4, 0.65],
   "mixer-small": [0.4, 0.1, 0.35],
   "generator-7kva": [0.7, 0.6, 0.55],
@@ -78,8 +78,8 @@ export const GEAR_SIZES = {
   "amp-rack-12u": [0.6, 1.05, 0.75],
   "generator-100kva": [1.3, 2.0, 3.6],
   // Desert Gathering's other rigs (packages/gear systems.ts): sizes from the makers' sheets, or typical of the class
-  "synergy-horn": [0.711, 0.711, 0.648],
-  "tapped-horn-18": [0.734, 1.016, 0.572],
+  "synergy-horn": [0.711, 0.711, 0.647],
+  "tapped-horn-18": [0.572, 1.016, 0.724],
   "triple-21-sub": [1.479, 0.696, 1.218],
   "tri-amp-top": [0.574, 0.825, 0.773],
   "tri-amp-bass": [0.574, 0.825, 0.773],
@@ -493,16 +493,63 @@ function ampHead(): Build {
   return b;
 }
 
-function cab4x12(): Build {
-  const [w, h, d] = GEAR_SIZES["cab-4x12"], b: Build = { pieces: [], marks: [] };
-  b.pieces.push(box("tolex", [w, h - 0.015, d], [0, 0.015 + (h - 0.015) / 2, 0], { bevel: 0.02 }));
-  b.pieces.push(box("grille", [w - 0.07, h - 0.08, 0.01], [0, h / 2, d / 2 - 0.003], { bevel: 0.003 }));
-  for (const x of [-1, 1]) b.pieces.push(...handle("rubber", [x * w / 2, h * 0.62, 0], x > 0 ? "x" : "-x", 0.16, 0.012));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.015, 0.015, "y", [x * (w / 2 - 0.05), 0.0075, z * (d / 2 - 0.05)], 6));
-  b.pieces.push(box("panel", [0.12, 0.08, 0.008], [0, h * 0.3, -d / 2 - 0.002]));
-  jacks(b, ["speaker-in"], "back", [0, h * 0.3, -d / 2 - 0.006], [0, 0, 0]);
-  mark(b, "grab", [w / 2 + 0.012, h * 0.62, 0], [1, 0, 0]);
-  return b;
+/** The guitar cab's angled front: it stands upright to `bend` (metres up) and leans back `setback` by the top. */
+export const CAB_SLANT = { bend: 0.378, setback: 0.1 } as const;
+
+/**
+ * The guitar cab, as the Marshall 1960A angled 4x12 is published (770 wide, 755 tall, 365 deep, 36.5 kg, four 12"
+ * behind the cloth) and photographed by its maker (front, three-quarter, back), piece by piece, no maker's name or
+ * model plate. The sheet gives only the outside, so the front's bend (half way up) and its 100 mm lean back by the
+ * top are read off the three-quarter photo. Metres from the cab's centre line, floor and front.
+ * - cabinet: the tolex-covered box in its side profile, upright below the bend, leaning back above it
+ * - grille: the black basketweave cloth in two panels (upright, leaning), inside a 35 mm tolex frame at the sides
+ *   and 30 at the top and bottom
+ * - piping: the white piping round the cloth's edge
+ * - corners: the eight black corner protectors, a brass screw in each front one
+ * - hardware: a recessed dish handle in each side, two strip handles on the top, the back's screws and its jack
+ *   plate high in the middle
+ */
+function cab1960aPieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["cab-4x12"], P = pieceBuild, cab = P(), grille = P(), piping = P(), corners = P(), hw = P();
+  const f = d / 2, zb = -d / 2, { bend: yb, setback: s } = CAB_SLANT, lean = Math.atan2(s, h - yb), fx = mm(35), fy = mm(30);
+  // the front's z at height y, and a point `out` proud of it
+  const zf = (y: number) => (y <= yb ? f : f - (s * (y - yb)) / (h - yb));
+  const front = (x: number, y: number, out: number): THREE.Vector3Tuple => [x, y + (y > yb ? out * Math.sin(lean) : 0), zf(y) + out * (y > yb ? Math.cos(lean) : 1)];
+
+  cab.pieces.push(prism("tolex", [[f, 0], [f, yb], [f - s, h], [zb, h], [zb, 0]], w, 0, 0.01));
+
+  // the cloth: upright from the frame's bottom to the bend, then leaning to the frame's top
+  const gw = w - 2 * fx, upH = (h - fy - yb) / Math.cos(lean);
+  grille.pieces.push(box("grille", [gw, yb - fy, 0.004], [0, (yb + fy) / 2, f + 0.001]));
+  grille.pieces.push(box("grille", [gw, upH, 0.004], front(0, (yb + h - fy) / 2, 0.001), { rot: [-lean, 0, 0] }));
+  // the piping round the cloth's edge, and the plain plate low on the left where the real one carries its model name
+  const ring: [number, number][] = [[-gw / 2, fy], [gw / 2, fy], [gw / 2, yb], [gw / 2, h - fy], [-gw / 2, h - fy], [-gw / 2, yb]];
+  ring.forEach(([x, y], i) => { const [x2, y2] = ring[(i + 1) % ring.length]!; piping.pieces.push(rod("ink", front(x, y, 0.002), front(x2, y2, 0.002), 0.0025, 6)); });
+  piping.pieces.push(box("plug", [mm(60), mm(22), 0.003], front(-gw / 2 + mm(45), fy + mm(26), 0.004), { bevel: 0.001 }));
+
+  // corners: a protector over each of the eight corners, 3 mm proud, the front ones with a brass screw
+  const c = mm(50), k = c / 2 - mm(3);
+  for (const x of [-1, 1]) for (const [y, z] of [[k, f - k], [h - k, f - s - k], [k, zb + k], [h - k, zb + k]]) {
+    corners.pieces.push(box("knob", [c, c, c], [x * (w / 2 - k), y, z], { bevel: mm(6) }));
+    if (z > 0) corners.pieces.push(disc("plug", mm(5), 0.002, "z", [x * (w / 2 - mm(14)), y, zf(y) + mm(3) + 0.001], 8));
+  }
+
+  // hardware: the side dish handles (a black dish, the bar across it), the top's strip handles, the back's screws and plate
+  for (const s2 of [-1, 1]) {
+    const x = s2 * (w / 2 + 0.0015), y = h * 0.62, z = mm(-20);
+    hw.pieces.push(box("knob", [0.003, mm(190), mm(120)], [x, y, z], { bevel: 0.001 }));
+    hw.pieces.push(box("cavity", [0.004, mm(150), mm(85)], [s2 * (w / 2 + 0.002), y, z], { bevel: 0.001 }));
+    hw.pieces.push(rod("metal", [s2 * (w / 2 - 0.004), y - mm(60), z], [s2 * (w / 2 - 0.004), y + mm(60), z], 0.009, 8));
+  }
+  for (const x of [-1, 1]) hw.pieces.push(box("knob", [mm(45), 0.004, mm(140)], [x * mm(300), h + 0.001, (zb + f - s) / 2], { bevel: 0.001 }));
+  for (const x of [-1, -0.5, 0, 0.5, 1]) for (const y of [0.04, h - 0.04]) hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [x * (w / 2 - 0.04), y, zb - 0.001], 8));
+  for (const x of [-1, 1]) for (const y of [0.25, 0.5, 0.75]) hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [x * (w / 2 - 0.04), y * h, zb - 0.001], 8));
+  hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [0, h * 0.4, zb - 0.001], 8));
+  hw.pieces.push(box("knob", [mm(120), mm(75), 0.008], [0, h * 0.83, zb - 0.001], { bevel: 0.002 }));
+  for (const x of [-1, 1]) for (const y of [-1, 1]) hw.pieces.push(disc("plug", mm(4), 0.002, "z", [x * mm(48), h * 0.83 + y * mm(26), zb - 0.006], 8));
+  jacks(hw, ["speaker-in"], "back", [0, h * 0.83, zb - 0.001], [0, 0, 0]);
+  mark(hw, "grab", [w / 2 + 0.012, h * 0.62, mm(-20)], [1, 0, 0]);
+  return { cabinet: cab, grille, piping, corners, hardware: hw };
 }
 
 /** A rolling rack: a case on casters with its front lid off, two power amps in the rails. */
@@ -1940,55 +1987,155 @@ function well(b: Build, skin: GearSlot, [w, h, d]: readonly number[], deep: numb
   for (const y of [t / 2, h - t / 2]) b.pieces.push(box(skin, [w - 2 * t + 0.002, t, d], [0, y, 0], { bevel: 0.006 }));
 }
 
-/** The back of a passive box: a plate with the speaker jacks, rubber feet, a bar handle each side (unless `bars` is off) and the grab. */
-function backAndFeet(b: Build, [w, h, d]: readonly number[], handleY = 0.6, bars = true) {
-  if (bars) for (const s of [-1, 1]) b.pieces.push(...handle("knob", [s * w / 2, h * handleY, -d * 0.1], s > 0 ? "x" : "-x", 0.16, 0.01));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.05)], 0.004));
-  plate(b, w * 0.3, Math.min(0.2, h * 0.2), [0, h * 0.45, -d / 2 - 0.004]);
-  jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.06, h * 0.45, -d / 2 - 0.008], [w * 0.12, 0, 0]);
-  mark(b, "grab", [w / 2 + 0.012, h * handleY, 0], [1, 0, 0]);
+/**
+ * The synergy horn, as the Danley SH50 is given on its spec sheet (Rev. 202209301629: 711 x 711 x 647 mm, 18 mm
+ * Baltic birch in black polyurea, 2 x 12" + 4 x 5" + 1" in one 50 x 50 degree horn) and shown in the maker's
+ * renders (front, side, back, no grille), piece by piece, no maker's name. The sheet gives no plan drawing, so the
+ * plan is read off the back render: the sides run straight 72 mm, then close 25 degrees each (half the horn's 50, so
+ * boxes side by side splay to an arc) to a 174 mm flat back. Metres from the box's centre line, floor and front.
+ * - cabinet: the top and bottom in the box's plan, the straight and closing sides, the back flat, the front frame
+ *   round the mouth (18 mm), two rubber runners under it
+ * - horn: one flat-walled pyramid from the 675 mm mouth to a 115 mm throat 580 deep, its walls 25 degrees off the
+ *   axis, parallel to the box's closing sides; the compression driver behind the throat
+ * - ports: the four 5" mids' round ports in the side walls part way down, the two 12" woofers' slots in the top and
+ *   bottom walls near the mouth
+ * - grille: the perforated steel sheet inside the frame, held by 22 black screws
+ * - hardware: four hand pockets in each closing side, the M10 points (5 on the top, 5 under, 4 in each side), the
+ *   jack plate low on the back flat with its two speaker jacks, the label recess above it
+ */
+function sh50Pieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["synergy-horn"], P = pieceBuild, cab = P(), horn = P(), ports = P(), grille = P(), hw = P();
+  const t = mm(18), f = d / 2, zb = -d / 2, rim = mm(18), feet = mm(10), cy = (h + feet) / 2;
+  const zk = f - mm(72), bh = mm(87), knee = w / 2;
+  // the right closing side: its run, its turn about y (local +z along it, back to front) and its outward normal
+  const run = Math.hypot(knee - bh, zk - zb), turn = Math.atan2(knee - bh, zk - zb), out: THREE.Vector3Tuple = [Math.cos(turn), 0, -Math.sin(turn)];
+  // a point on a closing side's outside, `s` from the knee (0) to the back (1), `lift` out of it, `y` up; x mirrored by `side`
+  const onSide = (side: number, s: number, y: number, lift = 0): THREE.Vector3Tuple =>
+    [side * (knee + (bh - knee) * s + out[0] * lift), y, zk + (zb - zk) * s + out[2] * lift];
+  const plan = [[-w / 2, f], [w / 2, f], [w / 2, zk], [bh, zb], [-bh, zb], [-w / 2, zk]];
+
+  // cabinet: top and bottom in the plan, the sides straight then closing, the back flat, the frame round the mouth
+  cab.pieces.push(slab("coat", plan, feet, feet + t), slab("coat", plan, h - t, h));
+  for (const s of [-1, 1]) {
+    cab.pieces.push(box("coat", [t, h - feet - 2 * t, f - zk], [s * (w / 2 - t / 2), cy, (f + zk) / 2]));
+    const mid = onSide(s, 0.5, cy, -t / 2);
+    cab.pieces.push(box("coat", [t, h - feet - 2 * t, run], mid, { rot: [0, s * turn, 0] }));
+  }
+  cab.pieces.push(box("coat", [2 * bh, h - feet - 2 * t, t], [0, cy, zb + t / 2]));
+  cab.pieces.push(frontPlate("coat", rect(0, cy, w, h - feet), [rect(0, cy, w - 2 * rim, h - feet - 2 * rim)], f, t));
+  for (const s of [-1, 1]) cab.pieces.push(box("rubber", [mm(100), feet, mm(360)], [s * mm(160), feet / 2, mm(120)], { bevel: 0.003 }));
+
+  // horn: the mouth inside the frame back to the throat, the compression driver's round mouth behind it
+  const deep = mm(580), zf = f - mm(26), mo = (w - 2 * rim) / 2, th = mm(57.5), slope = (mo - th) / deep;
+  horn.pieces.push(frustum("coat", [-mo, mo, cy - mo, cy + mo], [-th, th, cy - th, cy + th], zf, deep));
+  horn.pieces.push(box("cavity", [2 * th, 2 * th, 0.004], [0, cy, zf - deep - 0.002]));
+  horn.pieces.push(disc("knob", mm(25), mm(12), "z", [0, cy, zf - deep - 0.004], 16));
+
+  // ports: a 5" mid's round port (70 mm) in each side wall 300 back, above and below centre; the 12"s' slots
+  // (300 x 50) in the top and bottom walls 120 back
+  const wall = Math.atan(slope), half = (u: number) => mo - slope * u;
+  for (const s of [-1, 1]) for (const dy of [-mm(110), mm(110)]) {
+    const u = mm(300), p = disc("cavity", mm(35), 0.004, "x", [0, 0, 0], 16);
+    p.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(s * (half(u) - 0.002), cy + dy, zf - u).multiply(new THREE.Matrix4().makeRotationY(s * wall)));
+    ports.pieces.push(p);
+  }
+  for (const s of [-1, 1]) { const u = mm(120); ports.pieces.push(box("cavity", [mm(300), 0.004, mm(50) / Math.cos(wall)], [0, cy + s * (half(u) - 0.002), zf - u], { rot: [-s * wall, 0, 0] })); }
+
+  // grille: the perforated sheet inside the frame, six black screws along its top and bottom, five down each side
+  const gw = w - 2 * rim - 0.004, gh = h - feet - 2 * rim - 0.004;
+  grille.pieces.push(...grilleSlab(gw, gh, mm(12), cy, f - mm(13), mm(4)));
+  for (const s of [-1, 1]) for (let i = 0; i < 6; i++) grille.pieces.push(...screw([(i / 5 - 0.5) * (gw - 0.03), cy + s * (gh / 2 - 0.011), f + 0.001], "z", 0.004, "knob", 6));
+  for (const s of [-1, 1]) for (let i = 1; i < 6; i++) grille.pieces.push(...screw([s * (gw / 2 - 0.011), cy + (i / 6 - 0.5) * (gh - 0.03), f + 0.001], "z", 0.004, "knob", 6));
+
+  // hardware: the hand pockets (110 x 50) high and low in each closing side, the M10 points, the back's jack plate
+  for (const s of [-1, 1]) for (const a of [0.3, 0.72]) for (const y of [mm(75), h - mm(75)])
+    hw.pieces.push(box("cavity", [0.004, mm(50), mm(110)], onSide(s, a, y, 0.0004), { rot: [0, s * turn, 0], bevel: 0.001 }));
+  for (const s of [-1, 1]) for (const [a, y] of [[0.12, mm(40)], [0.12, h - mm(40)], [0.52, h / 2 + mm(140)], [0.52, h / 2 - mm(140)]] as const) {
+    const p = disc("metal", 0.009, 0.003, "x", [0, 0, 0], 10);
+    p.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(...onSide(s, a, y, 0.0015)).multiply(new THREE.Matrix4().makeRotationY(s * turn)));
+    hw.pieces.push(p);
+  }
+  for (const y of [h + 0.0015, feet - 0.0015]) for (const [x, z] of [[-mm(250), f - mm(45)], [mm(250), f - mm(45)], [-mm(120), zb + mm(200)], [mm(120), zb + mm(200)], [0, zb + mm(40)]])
+    hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x, y, z], 10));
+  plate(hw, mm(105), mm(240), [0, mm(270), zb - 0.001]);
+  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(340), zb - 0.001], [0, -mm(140), 0]);
+  hw.pieces.push(box("cavity", [mm(80), mm(45), 0.004], [0, h / 2 + mm(30), zb - 0.0004], { bevel: 0.001 }));
+  mark(hw, "grab", onSide(1, 0.3, h - mm(75), 0.012), out);
+  return { cabinet: cab, horn, ports, grille, hardware: hw };
 }
 
 /**
- * The synergy horn: one square box, 71 cm a side, whose whole front is a single pyramid horn in a textured black coat.
- * The tweeter's compression driver sits at the throat; the four mids fire into the horn's walls through small ports
- * part way up it, and the two 12" woofers through slots near its mouth, so all three ways leave from one point (the
- * box that sums as one source, 50 x 50 degrees). Flying points at the corners.
+ * The tapped horn, as the Danley TH118 is drawn on its spec sheet (V3.0, drawing TH118I rev 2, 2017, inches; sheet
+ * Rev. 202209231214) and shown in the maker's renders, piece by piece, no maker's name: a tall box of 18 mm Baltic
+ * birch in black polyurea, 22.5 in (572) wide, 40 (1016) tall and 28.5 (724) deep (the sheet's metric line says 734,
+ * but its drawing and inch line say 28.5). Metres from the box's centre line, floor and front.
+ * - cabinet: the sides, top, bottom, back and the plain front above the mouth, the back's bottom corner cut off on a
+ *   slant (135 in, 230 up, read off the side render) where the casters sit
+ * - mouth: the 20 in (508) tall well across the bottom of the front, dark at its back, the 18" driver standing in it
+ *   on its side, cone to the right, magnet to the left, as the sheet's photo shows it with the grille off
+ * - grille: the perforated steel sheet over the mouth, a black screw each side
+ * - hardware: a bar handle in a 1.72 in slot 19.66 long, 3.12 back from the front, high (4.00 down) and low (5.72 up)
+ *   in each side; a pole cup in each side (13.25 back, 20.50 down) and in the top; two hand pockets in the top at the
+ *   back; the 3/8-16 points (4 top, 4 under, 6 each side, 4 back); the jack plate and label on the back; two casters
  */
-function synergyHorn(): Build {
-  const size = GEAR_SIZES["synergy-horn"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.022, deep = d * 0.78, front = d / 2;
-  well(b, "coat", size, deep, t);
-  const W = w - 2 * t, H = h - 2 * t;
-  b.pieces.push(lathe("coat", [[-deep * 0.97, W * 0.035, H * 0.035], [-deep * 0.6, W * 0.2, H * 0.2], [-deep * 0.3, W * 0.35, H * 0.35], [0, W / 2, H / 2]], { p: 7, seg: 32, m: new THREE.Matrix4().makeTranslation(0, h / 2, front - 0.004) }));
-  b.pieces.push(disc("knob", 0.022, 0.012, "z", [0, h / 2, front - deep * 0.95], 12));
-  // the mids' ports: one in each wall, part way up the horn (walls at a fifth of the width there)
-  const mz = front - 0.004 - deep * 0.6, mr = W * 0.2 - 0.002;
-  for (const [x, y, axis] of [[mr, 0, "x"], [-mr, 0, "x"], [0, mr, "y"], [0, -mr, "y"]] as const) b.pieces.push(disc("knob", 0.03, 0.02, axis, [x, h / 2 + y, mz], 12));
-  // the woofers' slots near the mouth, top and bottom walls
-  const wz = front - 0.004 - deep * 0.22, wr = W * 0.39;
-  for (const y of [wr, -wr]) b.pieces.push(box("knob", [W * 0.4, 0.024, 0.07], [0, h / 2 + y, wz]));
-  for (const x of [-1, 1]) for (const y of [0.04, h - 0.04]) b.pieces.push(box("knob", [0.006, 0.05, 0.12], [x * (w / 2 + 0.003), y, -d / 2 + 0.1]));
-  // the touring box's perforated steel grille over the whole mouth, the horn dim behind its holes
-  b.pieces.push(...grilleSlab(W - 0.004, H - 0.004, 0.012, h / 2, front - 0.013, 0.008));
-  backAndFeet(b, size, 0.5);
-  return b;
-}
+function th118Pieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["tapped-horn-18"], P = pieceBuild, cab = P(), mouth = P(), grille = P(), hw = P();
+  const t = mm(18), f = d / 2, zb = -d / 2, inch = (v: number) => v * 0.0254, mh = inch(20), cw = mm(135), ch = mm(230);
+  const side: [number, number][] = [[f, 0], [f, h], [zb, h], [zb, ch], [zb + cw, 0]];
 
-/**
- * A tapped horn with one 18": a tall black box, its mouth a wide well across the top of the front, the folded horn's
- * last slanted panel showing inside it; the rest of the front is flat. Loud for its size down to about 30 Hz.
- */
-function tappedHorn(): Build {
-  const size = GEAR_SIZES["tapped-horn-18"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.02, mh = 0.34, deep = d * 0.8, front = d / 2;
-  well(b, "coat", size, deep, t);
-  b.pieces.push(box("coat", [w - 2 * t, h - mh - t, 0.02], [0, (h - mh + t) / 2, front - 0.01]));
-  b.pieces.push(box("coat", [w - 2 * t, h - mh - t, deep], [0, (h - mh + t) / 2, front - deep / 2 - 0.01]));
-  // the fold's last panel, slanting up from the mouth's floor to the back
-  const slant = Math.atan2(mh - t * 2, deep);
-  b.pieces.push(box("panel", [w - 2 * t, 0.012, Math.hypot(deep, mh - 2 * t) * 0.98], [0, h - mh / 2, front - deep / 2], { rot: [slant, 0, 0] }));
-  b.pieces.push(...grilleSlab(w - 2 * t - 0.004, mh - t - 0.004, 0.012, h - (mh + t) / 2, front - 0.013, 0.006));
-  backAndFeet(b, size, 0.55);
-  return b;
+  // cabinet: the two sides in the profile, top, bottom (stopping at the slant), back above the slant, the slant
+  // panel, the front above the mouth
+  for (const s of [-1, 1]) cab.pieces.push(prism("coat", side, t, s * (w / 2 - t / 2), 0.003));
+  cab.pieces.push(box("coat", [w - 2 * t, t, d], [0, h - t / 2, 0]));
+  cab.pieces.push(box("coat", [w - 2 * t, t, d - cw], [0, t / 2, (f + zb + cw) / 2]));
+  cab.pieces.push(box("coat", [w - 2 * t, h - ch - t, t], [0, (h - t + ch) / 2, zb + t / 2]));
+  const slant = Math.atan2(cw, ch);
+  cab.pieces.push(box("coat", [w - 2 * t, Math.hypot(cw, ch), t], [0, ch / 2 + (Math.sin(slant) * t) / 2, zb + cw / 2 + (Math.cos(slant) * t) / 2], { rot: [-slant, 0, 0] }));
+  cab.pieces.push(box("coat", [w - 2 * t, h - mh - t, t], [0, (h - t + mh) / 2, f - t / 2]));
+
+  // mouth: the well under the front, its back 400 in, its roof the fold's floor; the 18" on its side in it
+  const back = mm(480), my = mh / 2;
+  mouth.pieces.push(box("cavity", [w - 2 * t, mh - t, 0.004], [0, (mh + t) / 2, f - back]));
+  mouth.pieces.push(box("coat", [w - 2 * t, t, back], [0, mh - t / 2, f - back / 2]));
+  mouth.pieces.push(...cone(mm(190), mm(120), new THREE.Matrix4().makeTranslation(-mm(40), my, f - mm(245)).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), 20));
+  mouth.pieces.push(disc("metal", mm(85), mm(70), "x", [-mm(200), my, f - mm(245)], 16));
+
+  // grille: the sheet over the mouth inside a thin lip, one black screw each side at half height
+  const gw = w - mm(16), gh = mh - mm(12);
+  grille.pieces.push(...grilleSlab(gw, gh, mm(12), mm(6) + gh / 2, f - mm(13), mm(3)));
+  for (const s of [-1, 1]) grille.pieces.push(...screw([s * (gw / 2 - 0.011), mm(6) + gh / 2, f + 0.001], "z", 0.004, "knob", 6));
+
+  // hardware: the side rails (a slot, a bar in it), the pole cups, the top's pockets, the points, the back, casters
+  const railZ = f - inch(3.12) - inch(19.66) / 2, slotH = inch(1.72);
+  for (const s of [-1, 1]) for (const y of [h - inch(4.0) - slotH / 2, inch(5.72) + slotH / 2]) {
+    hw.pieces.push(box("cavity", [0.004, slotH, inch(19.66)], [s * (w / 2 - 0.0015), y, railZ], { bevel: 0.001 }));
+    hw.pieces.push(rod("metal", [s * (w / 2 - 0.004), y, railZ - inch(19.66) / 2 + 0.02], [s * (w / 2 - 0.004), y, railZ + inch(19.66) / 2 - 0.02], 0.011, 8));
+  }
+  for (const s of [-1, 1]) {
+    hw.pieces.push(disc("rubber", mm(50), 0.006, "x", [s * (w / 2 + 0.001), h - inch(20.5), f - inch(13.25)], 18));
+    hw.pieces.push(disc("cavity", mm(36), 0.008, "x", [s * (w / 2 + 0.0015), h - inch(20.5), f - inch(13.25)], 16));
+  }
+  hw.pieces.push(disc("rubber", mm(50), 0.006, "y", [0, h + 0.001, zb + inch(13.85)], 18), disc("cavity", mm(36), 0.008, "y", [0, h + 0.0015, zb + inch(13.85)], 16));
+  for (const s of [-1, 1]) hw.pieces.push(box("cavity", [mm(110), 0.004, mm(45)], [s * mm(150), h + 0.0004, zb + mm(60)], { bevel: 0.001 }));
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x * (w / 2 - mm(60)), h + 0.0015, z * (d / 2 - mm(60))], 10));
+    hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x * (w / 2 - mm(60)), -0.0005, z > 0 ? f - mm(60) : zb + cw + mm(60)], 10));
+    hw.pieces.push(disc("metal", 0.009, 0.003, "z", [x * (w / 2 - mm(60)), z > 0 ? h - mm(60) : ch + mm(60), zb - 0.0015], 10));
+  }
+  for (const s of [-1, 1]) for (const y of [mm(60), h / 2, h - mm(60)]) for (const z of [f - mm(60), zb + mm(60)])
+    if (!(y < ch && z < 0)) hw.pieces.push(disc("metal", 0.009, 0.003, "x", [s * (w / 2 + 0.0015), y, z], 10));
+  hw.pieces.push(disc("metal", 0.009, 0.003, "x", [w / 2 + 0.0015, ch + mm(60), zb + mm(60)], 10), disc("metal", 0.009, 0.003, "x", [-w / 2 - 0.0015, ch + mm(60), zb + mm(60)], 10));
+  plate(hw, mm(110), mm(240), [-mm(60), h * 0.66, zb - 0.001]);
+  jacks(hw, ["speaker-in", "speaker-out"], "back", [-mm(60), h * 0.66 + mm(60), zb - 0.001], [0, -mm(120), 0]);
+  hw.pieces.push(box("cavity", [mm(70), mm(45), 0.004], [mm(130), h * 0.66, zb - 0.0004], { bevel: 0.001 }));
+  // the casters: a wheel on a fork either side, half out of the slant
+  const nz = -Math.cos(slant), ny = -Math.sin(slant), wz = zb + cw / 2 + nz * mm(20), wy = ch / 2 + ny * mm(20);
+  for (const s of [-1, 1]) {
+    hw.pieces.push(disc("rubber", mm(50), mm(36), "x", [s * (w / 2 - mm(55)), wy, wz], 18));
+    hw.pieces.push(box("metal", [mm(46), mm(30), mm(70)], [s * (w / 2 - mm(55)), ch / 2 - ny * mm(5), zb + cw / 2 - nz * mm(5)], { rot: [-slant, 0, 0] }));
+  }
+  mark(hw, "grab", [w / 2 + 0.012, h - inch(4.0) - slotH / 2, railZ], [1, 0, 0]);
+  return { cabinet: cab, mouth, grille, hardware: hw };
 }
 
 /** A circle's outline [x, y], `n` points counter-clockwise round (x, y). */
@@ -2747,6 +2894,7 @@ const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
   "top-15-passive": jrx215Pieces, "wedge-12-passive": prx412mPieces, "line-array-box": a12Pieces,
   "top-12-powered": () => k2Pieces("top-12-powered"), "fill-8-powered": () => k2Pieces("fill-8-powered"), "sub-18": ks118Pieces, "wedge-12": cp12Pieces, "line-array-10": la108Pieces,
+  "synergy-horn": sh50Pieces, "tapped-horn-18": th118Pieces, "cab-4x12": cab1960aPieces,
 };
 
 /** A box built piece by piece, every piece merged into one build. */
@@ -2762,7 +2910,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "sub-18": whole("sub-18"),
   "wedge-12": whole("wedge-12"),
   "amp-head": ampHead,
-  "cab-4x12": cab4x12,
+  "cab-4x12": whole("cab-4x12"),
   "amp-rack-4u": ampRack,
   "mixer-small": mixer,
   "generator-7kva": generator,
@@ -2800,8 +2948,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "arc-sub-18": whole("arc-sub-18"),
   "amp-rack-12u": ampRack12,
   "generator-100kva": siteGenerator,
-  "synergy-horn": synergyHorn,
-  "tapped-horn-18": tappedHorn,
+  "synergy-horn": whole("synergy-horn"),
+  "tapped-horn-18": whole("tapped-horn-18"),
   "triple-21-sub": whole("triple-21-sub"),
   "tri-amp-top": whole("tri-amp-top"),
   "tri-amp-bass": whole("tri-amp-bass"),

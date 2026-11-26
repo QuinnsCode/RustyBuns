@@ -15,10 +15,10 @@ test("carry the cab from the door to the amp, put it down, stack the head on it"
   expect(pickUp(w, "guitar")).toEqual({ ok: false, why: "your hands are full" });
   expect(snapshot(w).holding).toBe("cab-4x12");
 
-  // 40 kg: a shuffle, a third of walking pace, all the way in to the back wall by the amp.
+  // 36.5 kg (the 4x12's published weight): a shuffle, all the way in to the back wall by the amp.
   const amp = at("amp-head");
   const carrying = walkTo(w, -0.4, 1.4);
-  expect(snapshot(w).you.speed).toBeCloseTo(carrySpeed(40), 2);
+  expect(snapshot(w).you.speed).toBeCloseTo(carrySpeed(36.5), 2);
   expect(carrying).toBeGreaterThan((2.5 * Math.hypot(1.3, 7.2)) / WALK);
   expect(at("cab-4x12")).toMatchObject({ held: true, y: expect.any(Number) });
 
