@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ask, brief, canMerge, pick, hitRate, needless, parseRound, parseRow, roundOf, roundsHit, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
-import { addHits, ownersOf, reach, rowOf, stalls, wrongOf } from "../scripts/mervin-live.ts";
+import { addHits, mainChecksOf, ownersOf, reach, rowOf, stalls, wrongOf } from "../scripts/mervin-live.ts";
 import type { Pr } from "../../../scripts/pr.ts";
 import { local as boot } from "./app-kit.ts";
 
@@ -95,6 +95,19 @@ describe("mervin-live", () => {
   test("owners from office-workers, a PR number or URL", () => {
     expect([...ownersOf([{ name: "pixel", pr: 12 }, { name: "bolt", pr: "https://github.com/o/r/pull/34" }, { name: "idle" }])]).toEqual([[12, "pixel"], [34, "bolt"]]);
   });
+  test("Ester sorts each red check against main's own run of it", () => {
+    const main = mainChecksOf({ check_runs: [
+      { name: "typecheck", status: "completed", conclusion: "failure" },
+      { name: "apps", status: "in_progress", conclusion: null },
+      { name: "lint", status: "completed", conclusion: "success" },
+    ] });
+    const stage = { pr: 7, head: "h", base: "b", ci: "fail" as const, failing: ["typecheck", "apps", "lint"], files: [] };
+    const board = { main: "m", at: "", stages: [stage], written: [], skipped: [], clashes: [] };
+    expect(rowOf(stage, board, new Map(), undefined, main).ester!.map((v) => [v.test, v.owner, v.prs])).toEqual([
+      ["typecheck", "main", undefined], ["apps", "wait", undefined], ["lint", "own", [7]],
+    ]);
+    expect(mainChecksOf("not json").size).toBe(0);
+  });
   test("a stage becomes a row, with the clashes it is in", () => {
     const stage = { pr: 5, head: "h", base: "b", ci: "fail" as const, failing: ["apps"], stackedOn: 4, files: [{ path: "a", tier: "card" as const, why: "", after: [] }] };
     const board = { main: "m", at: "", stages: [stage], written: [], skipped: [], clashes: [{ kind: "route" as const, key: "/x", prs: [5, 6] }] };
@@ -126,6 +139,13 @@ describe("GET/POST /api/repos/:o/:r/board", () => {
     expect(b.prs.map((p) => [p.pr, p.head, p.ci])).toEqual([[1, "new", "fail"]]);
     expect((b as unknown as { hits: unknown }).hits).toEqual({ agree: 75 });
     expect((await post("ana", u, { main: "m3", prs: [{ pr: 1 }] })).status).toBe(400);
+    // Ester's verdicts ride on the row (#5784); one she can't have given is turned away.
+    const ester = [{ test: "apps", owner: "own" as const, why: "CI is already red (apps)", prs: [1] }];
+    expect((await post("ana", u, { main: "m3", prs: [row(1, { ci: "fail", failing: ["apps"], ester })] })).status).toBe(201);
+    b = await (await call("ana", u)).json() as typeof b;
+    expect(b.prs[0]!.ester).toEqual(ester);
+    const bad = await post("ana", u, { main: "m3", prs: [row(1, { ester: [{ ...ester[0]!, owner: "mine" as "own" }] })] });
+    expect([bad.status, (await bad.text()).includes("ester")]).toEqual([400, true]);
     expect((await call("ana", `${u}?pr=9`)).status).toBe(404);
   });
 });

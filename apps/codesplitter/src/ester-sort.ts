@@ -10,7 +10,8 @@
 //   slow     every suspect waits only on checks that always take long: merge on the fast ones, the slow one is owed.
 //   blocks   only the changes together break it: the suspects are held back.
 
-export type Owner = "main" | "flaky" | "own" | "wait" | "slow" | "blocks";
+export const OWNERS = ["main", "flaky", "own", "wait", "slow", "blocks"] as const;
+export type Owner = (typeof OWNERS)[number];
 export interface Verdict<Id = number> { test: string; owner: Owner; prs: Id[]; why: string }
 
 export interface Facts<Id = number> {
