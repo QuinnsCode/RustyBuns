@@ -205,19 +205,30 @@ test("a turn that hangs, or that a notice ends owing work, is a stall once, and 
   const quiet = check(54).fresh;
   expect(quiet.map((s) => s.kind)).toEqual(["quiet"]);
 
-  // the office types into its worker (waking it with the prompt when it stopped); a session no worker runs in is a toast for a person
-  const told: string[] = [], toasts: string[] = [];
+  // the office types into its worker (waking it with the prompt when it stopped); a hung turn in a live process is
+  // interrupted with Escape first, so the prompt doesn't queue behind it (#4311); a session no worker runs in is a toast for a person
+  const told: string[] = [], toasts: string[] = [], waits: (() => void)[] = [];
   let running = false;
   const floor: StallFloor = { id: "f", workers: {
     list: () => [{ id: "w1", name: "Sprocket", worktree: { path: ".agent-office/worktrees/sprocket-b93a" } }],
+    write: (id, data) => void (running && told.push(`keys ${id}: ${JSON.stringify(data)}`)),
     prompt: (id, text) => (running ? (told.push(`prompt ${id}: ${text}`), undefined) : "Worker is not running"),
     resume: (id, text) => (told.push(`resume ${id}: ${text}`), undefined),
   } };
-  carryOn(quiet[0]!, [floor], (_, m) => toasts.push(m));
+  const later = (f: () => void) => void waits.push(f);
+  carryOn(quiet[0]!, [floor], (_, m) => toasts.push(m), later);
   running = true;
-  carryOn(hung.fresh[0]!, [floor], (_, m) => toasts.push(m));
-  expect(told).toEqual([`resume w1: ${CARRY_ON}`, `prompt w1: ${CARRY_ON}`]);
-  expect(toasts[1]).toEndWith("Told Sprocket to carry on.");
+  carryOn(hung.fresh[0]!, [floor], (_, m) => toasts.push(m), later);
+  expect(told).toEqual([`resume w1: ${CARRY_ON}`, `keys w1: "\\u001b"`]); // the prompt waits for the interrupt to land
+  waits.splice(0).forEach((f) => f());
+  expect(told.at(-1)).toBe(`prompt w1: ${CARRY_ON}`);
+  expect(toasts[1]).toEndWith("Interrupted the hung request and told Sprocket to carry on.");
+  // a hung request whose process died: the Escape goes nowhere and the prompt wakes it
+  running = false;
+  carryOn(hung.fresh[0]!, [floor], (_, m) => toasts.push(m), later);
+  waits.splice(0).forEach((f) => f());
+  expect(told.at(-1)).toBe(`resume w1: ${CARRY_ON}`);
+  expect(toasts.at(-1)).toEndWith("Woke Sprocket to carry on.");
 
   writeFileSync(other, prompt(0, "peer") + reply(1, "d", "end_turn", "ok", "s-other", "/tmp/elsewhere"));
   const lone = check(54).fresh;

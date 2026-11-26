@@ -52,6 +52,11 @@
       {
         "hooks": [{ "type": "command", "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/carry-on.ts\"" }]
       }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [{ "type": "command", "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-failure.ts\"" }]
+      }
     ]
   }
 }
