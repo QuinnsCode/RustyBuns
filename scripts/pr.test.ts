@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { MISS_AFTER, STUCK_AFTER, headRuns, jobOf, missedRun, outcomes, settled, summarize, trimLog, type Pr, type Runs } from "./pr.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dial, learn, readVerdicts } from "./ci-tier.ts";
+import { MISS_AFTER, STUCK_AFTER, appsRed, headRuns, jobOf, missedRun, outcomes, settled, summarize, trimLog, type Pr, type Runs } from "./pr.ts";
 
 const now = Date.parse("2026-11-01T10:00:00Z");
 const run = (name: string, conclusion: string | undefined, status = "COMPLETED", workflowName = "apps") =>
@@ -87,4 +90,26 @@ test("a check still running minutes after its run finished is stuck, and names t
   expect(lines.some((l) => l.startsWith("  running"))).toBe(false);
   expect(lines.at(-1)).toContain("STUCK   apps");
   expect(lines.at(-1)).toContain("gh pr update-branch 5338 --rebase");
+});
+
+test("a worker's red apps run costs it the targeted run once, however often `bun run pr` looks (#5605)", async () => {
+  const red = pr({ statusCheckRollup: [run("typecheck", "SUCCESS", "COMPLETED", "typecheck"), run("test wildclash 2/3", "FAILURE")] });
+  expect(appsRed(red)).toEqual({ who: "x", run: "41292692684", at: Date.parse("2026-11-01T09:21:40Z") });
+  expect(appsRed(pr())).toBeUndefined();
+  expect(appsRed({ ...red, headRefName: "someone/fix" })).toBeUndefined();
+  expect(appsRed(pr({ statusCheckRollup: [run("test wildclash", "CANCELLED")] }))).toBeUndefined();
+  expect(appsRed(pr({ statusCheckRollup: [run("typecheck", "FAILURE", "COMPLETED", "typecheck")] }))).toBeUndefined();
+
+  process.env.BUILDER_TRUST = `${mkdtempSync(`${tmpdir()}/trust-`)}/trust.jsonl`;
+  try {
+    const day = 86_400_000, t = Date.parse("2026-11-01T09:21:40Z");
+    for (let i = 5; i >= 1; i--) await learn({ who: "x", tier: 1, passed: true, at: t - i * day });
+    expect(dial(await readVerdicts(), "x", 1, t + 1).targeted).toBe(true);
+    const v = { ...appsRed(red)!, tier: 1, passed: false };
+    expect([await learn(v), await learn(v)]).toEqual([true, false]);
+    expect((await readVerdicts()).filter((h) => !h.passed)).toHaveLength(1);
+    expect(dial(await readVerdicts(), "x", 1, t + 1).targeted).toBe(false);
+  } finally {
+    delete process.env.BUILDER_TRUST;
+  }
 });
