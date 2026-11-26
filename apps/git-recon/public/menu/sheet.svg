@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
+  <!-- A field manual sheet's cut edge, sliced 10 for border-image: a hand-cut outline that wobbles, foxed brown under
+       the ink. The side tiles start and end at the same x, so they repeat down any height. -->
+  <path d="M4 4L10 3.4 15 4.6 20 3.2 25 4.4 30 3.3 36 4 36.6 10 35.3 15 36.8 20 35.6 25 36.9 30 36 40H4L3.2 30 4.6 25 3 20 4.5 15 3.4 10Z" fill="#fffdf6"/>
+  <path d="M4 40L3.2 30 4.6 25 3 20 4.5 15 3.4 10 4 4 10 3.4 15 4.6 20 3.2 25 4.4 30 3.3 36 4 36.6 10 35.3 15 36.8 20 35.6 25 36.9 30 36 40" fill="none" stroke="#b08a43" stroke-opacity=".28" stroke-width="4"/>
+  <path d="M4 40L3.2 30 4.6 25 3 20 4.5 15 3.4 10 4 4 10 3.4 15 4.6 20 3.2 25 4.4 30 3.3 36 4 36.6 10 35.3 15 36.8 20 35.6 25 36.9 30 36 40" fill="none" stroke="#141414" stroke-opacity=".85" stroke-width="1.2" stroke-linejoin="round"/>
+</svg>
