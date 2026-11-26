@@ -234,7 +234,7 @@ async function prepare(tag: string) {
     "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;\n__rbMem(infoPath);");
 
   // 7b. a Host allowlist in front of every request and socket (live/hosts.ts): the DNS-rebinding guard
-  prepend("http/router.js", "import { guardHost as __rbGuardHost } from '../rb-hosts.js';\n");
+  prepend("http/router.js", "import { guardHost as __rbGuardHost, foreignWrite as __rbForeignWrite } from '../rb-hosts.js';\n");
   patch("http/router.js", "    return async (req, res) => {\n        const { cfg, auth } = ctx;\n",
     "    const __rbHost = __rbGuardHost(ctx.cfg);\n    return async (req, res) => {\n        if (__rbHost(req, res))\n            return;\n        const { cfg, auth } = ctx;\n");
   prepend("ws/upgrade.js", "import { guardUpgrade as __rbGuardUpgrade } from '../rb-hosts.js';\n");
@@ -299,12 +299,16 @@ async function prepare(tag: string) {
   // (the card is a page script, asks/), with the office-workers command waiting long enough for the answer
   const bin = path.resolve(srv, "../../../bin/office-workers.js");
   writeFileSync(bin, floorGuardBin(readFileSync(bin, "utf8")));
-  prepend("http/router.js", "import { asksRoute as __rbAsks, outboundRoute as __rbOut } from '../rb-floorguard.js';\nimport { grantsRoute as __rbGrants } from '../rb-askfirst.js';\n");
+  prepend("http/router.js", "import { asksRoute as __rbAsks, outboundRoute as __rbOut, ownAddress as __rbOwn } from '../rb-floorguard.js';\nimport { readBody as __rbReadBody } from './util.js';\nimport { grantsRoute as __rbGrants } from '../rb-askfirst.js';\n");
   // the box's egress proxy has no session: it asks about an outbound host here with the box's own token (live/floorguard.ts)
   patch("http/router.js", "            const session = auth.fromRequest(req);",
-    "            if (p === '/__rb/outbound') {\n                const chunks = [];\n                for await (const c of req)\n                    chunks.push(c);\n                const body = await Promise.resolve().then(() => JSON.parse(Buffer.concat(chunks).toString())).catch(() => undefined);\n                const out = await __rbOut(req.method, url, req.headers.authorization, body);\n                return out ? send(res, out.status, out.body) : send(res, 404, { error: 'No such route' });\n            }\n            const session = auth.fromRequest(req);");
+    "            if (p === '/__rb/outbound') {\n                const body = await __rbReadBody(req, 4096).then((t) => JSON.parse(t)).catch(() => undefined);\n                const out = await __rbOut(req.method, url, req.headers.authorization, body);\n                return out ? send(res, out.status, out.body) : send(res, 404, { error: 'No such route' });\n            }\n            const session = auth.fromRequest(req);");
   patch("http/router.js", "const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url)",
-    "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name) ?? __rbGrantsRoute(req.method, url, req.headers['x-rb-ask'] === '1') ?? await __rbCsRoute(req.method, url)");
+    "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name, __rbOwn(req.socket.remoteAddress)) ?? __rbGrantsRoute(req.method, url, req.headers['x-rb-ask'] === '1') ?? await __rbCsRoute(req.method, url)");
+
+  // and the added routes take writes from the office's own page only (live/hosts.ts)
+  patch("http/router.js", "            const __rb = p.startsWith('/__rb/') && (",
+    "            if (__rbForeignWrite(req, p, ctx.cfg))\n                return send(res, 403, { error: 'This route takes writes from the office’s own page only' });\n            const __rb = p.startsWith('/__rb/') && (");
 
   // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitter tiles both hang off it
   officeTicks();

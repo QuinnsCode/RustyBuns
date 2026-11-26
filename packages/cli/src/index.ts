@@ -53,7 +53,7 @@ import { generateBoundaryFiles, scaffoldDesktopPackage, wireBoundaryPlugin } fro
 import { installCommand, applyOverrides, workspaceRoot, deployDeps, ownDeploySet, pkgDeps, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
-import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
+import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine, stateHoldsAdopted } from "./isolation.ts";
 import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unexportedClasses, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, spawnScopedTee, step } from "./lifecycle.ts";
 import { formatPlanSummary, readPlanRows } from "./plan-summary.ts";
@@ -1064,7 +1064,10 @@ const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>)
 const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(function* () {
   const stage = alchemyStage(rawArgs);
   const iso = isolationFlags(rawArgs);
-  freshRun = iso.fresh;
+  freshRun = false;
+  // destroy --fresh on a stage whose state holds adopted names is still an ADOPT destroy (isolation.ts)
+  const held = sub === "destroy" && iso.fresh && stateHoldsAdopted(yield* step(() => loadConfig(stage)), process.cwd(), stage);
+  freshRun = iso.fresh && !held;
   const cfg = yield* step(() => loadConfig(stage));
   const servers = desktopServers(cfg.targets.desktop);
   const entries = servers.map((s) => s.entry).join(", ");

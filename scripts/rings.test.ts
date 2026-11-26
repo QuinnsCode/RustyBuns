@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { expressByOwner, previewApps, rangeLine, ringLines, rollbackCandidates, sinceLastGreen, soaked, soakedLanes, laneLine, type Commit, type LabelEvent, type Tested } from "./rings.ts";
+import { expressByOwner, previewApps, rangeLine, ringLines, rollbackCandidates, savesBuilds, sinceLastGreen, soaked, soakedLanes, laneLine, type Commit, type LabelEvent, type Tested } from "./rings.ts";
 
 const sha = (c: string) => c.repeat(40);
 const [a, b, c, d] = ["a", "b", "c", "d"].map(sha) as [string, string, string, string];
@@ -12,6 +12,15 @@ test.each<[string, Tested[], { green?: string; shas: string[] }]>([
   ["no green in view", [{ sha: a, state: "FAILURE" }, { sha: b }], { shas: [a, b] }],
 ])("sinceLastGreen: %s", (_, history, want) => {
   expect(sinceLastGreen(history)).toEqual(want);
+});
+
+test.each([
+  ["schedule", ".github/workflows/desktop-hourly.yml", true],
+  ["pull_request_target", ".github/workflows/express.yml", true],
+  ["pull_request", ".github/workflows/desktop-hourly.yml", false],
+  ["push", ".github/workflows/other.yml", false],
+])("a build is taken only from our build workflows: %s of %s", (event, path, ours) => {
+  expect(savesBuilds({ event, path })).toBe(ours);
 });
 
 test("rangeLine links the compare view from the last green to the head", () => {

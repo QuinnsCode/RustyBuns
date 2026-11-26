@@ -191,6 +191,24 @@ test("a half-deleted worktree folder an hour old goes after what runs in it ends
   expect([existsSync(half), existsSync(path.join(live, "a.txt")), existsSync(fresh)]).toEqual([false, true, true]);
 });
 
+test("a worker's folder of worktrees across repositories is not a half-deleted one, however old", async () => {
+  const repo = tmp();
+  const git = (...a: string[]) => Bun.spawnSync(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdout: "ignore", stderr: "ignore" });
+  git("init", "-q", "-b", "main");
+  git("commit", "-q", "--allow-empty", "-m", "a");
+  // its own repo's worktree one level down, and a second folder holding only another repository's
+  const trees = path.join(repo, WORKTREES), ours = path.join(trees, "ws", "repo"), theirs = path.join(trees, "ws2", "other");
+  git("worktree", "add", "-q", "-b", "office/ws", ours);
+  mkdirSync(theirs, { recursive: true });
+  writeFileSync(path.join(theirs, ".git"), "gitdir: elsewhere\n");
+  for (const d of [ours, theirs]) writeFileSync(path.join(d, "uncommitted.txt"), "work\n");
+  const old = (Date.now() - 2 * 3_600_000) / 1000;
+  for (const d of ["ws", "ws2"]) utimesSync(path.join(trees, d), old, old);
+
+  expect((await sweepHalfGone(repo, true, async () => {})).paths).toEqual([]);
+  expect([ours, theirs].map((d) => existsSync(path.join(d, "uncommitted.txt")))).toEqual([true, true]);
+});
+
 // #5913: a remove cut off part way that kept its .git (git still lists it, every deleted file an "uncommitted change")
 test("a listed worktree with only deleted files goes through git; one with work, one unpushed, a seated one and a fresh one stay", async () => {
   const root = tmp();

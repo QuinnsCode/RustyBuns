@@ -14,18 +14,22 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
+import { wranglerLoginFiles } from "./cloudflare-auth.ts";
+import { sharedStateBase } from "./state.ts";
 
 export const HOST_FLAGS = ["--no-env-file", "--no-install"];
 
 // RB_* is ours (RB_TOKEN is the launch token); SSH_AUTH_SOCK and GIT_SSH_COMMAND are how a host
 // reaches git remotes, and Seatbelt is the lock for those.
 const KEEP = /^(RB_|SSH_AUTH_SOCK$|GIT_SSH_COMMAND$)/;
+// the deploy's own RB_ secrets (report-deploy.ts, drain.ts), which no host reads
+const DEPLOY_ONLY = /^RB_(DEPLOY_REPORT_KEY|DRAIN_SECRET)$/;
 const SECRET = /TOKEN|SECRET|PASSW|CREDENTIAL|API_?KEY|PRIVATE|ACCESS_KEY|AUTH|SESSION|COOKIE|^(AWS|AZURE|GCP|GOOGLE|GH|GITHUB|CLOUDFLARE|CF|OP|ANTHROPIC|OPENAI|NPM|ALCHEMY|HCLOUD|HETZNER|RAILWAY|VERCEL|DOCKER|STRIPE)_/i;
 
 /** The environment minus anything that looks like a credential. */
 export function hostEnv(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) if (v !== undefined && (KEEP.test(k) || !SECRET.test(k))) out[k] = v;
+  for (const [k, v] of Object.entries(env)) if (v !== undefined && !DEPLOY_ONLY.test(k) && (KEEP.test(k) || !SECRET.test(k))) out[k] = v;
   return out;
 }
 
@@ -96,7 +100,7 @@ export function emptyHome(env: Record<string, string>, home: string, realHome = 
 const HOME_SECRETS = [
   ".ssh", ".aws", ".azure", ".gnupg", ".kube", ".docker", ".netrc", ".npmrc", ".git-credentials", ".pypirc",
   ".alchemy", ".wrangler", ".op", ".config/op", ".config/gh", ".config/gcloud", ".config/.wrangler", ".config/hcloud",
-  ".config/railway", ".railway", "Library/Keychains", "Library/Group Containers/2BUA8C4S2C.com.1password",
+  ".config/railway", ".railway", "Library/Preferences/.wrangler", "Library/Keychains", "Library/Group Containers/2BUA8C4S2C.com.1password",
 ];
 /** In the project (and its repo root): what AGENTS.md keeps agents out of too. */
 const PROJECT_SECRETS = [".env", ".env.local", ".env.development", ".env.production", ".dev.vars", ".alchemy"];
@@ -112,10 +116,16 @@ function repoRoot(dir: string): string | undefined {
   }
 }
 
-/** The credential paths a jailed host is kept out of: HOME_SECRETS, and PROJECT_SECRETS in cwd and its repo root. */
-export function deniedPaths(cwd: string, home = homedir()): string[] {
-  const roots = [...new Set([cwd, repoRoot(cwd)].filter((d): d is string => !!d).map(real))];
-  return [...HOME_SECRETS.map((p) => join(real(home), p)), ...roots.flatMap((r) => PROJECT_SECRETS.map((p) => join(r, p)))];
+/** The credential paths a jailed host is kept out of: HOME_SECRETS, PROJECT_SECRETS in cwd and its repo root, wrangler's
+ *  login wherever XDG_CONFIG_HOME puts it, and the deploy state every worktree shares in .git (state.ts), which
+ *  `.alchemy/state` only links to. */
+export function deniedPaths(cwd: string, home = homedir(), env: Record<string, string | undefined> = process.env): string[] {
+  const root = repoRoot(cwd);
+  const roots = [...new Set([cwd, root].filter((d): d is string => !!d).map(real))];
+  const wrangler = wranglerLoginFiles(env, real(home)).map((f) => dirname(dirname(f)));
+  const shared = root ? sharedStateBase(root) : null;
+  return [...new Set([...HOME_SECRETS.map((p) => join(real(home), p)), ...wrangler,
+    ...roots.flatMap((r) => PROJECT_SECRETS.map((p) => join(r, p))), ...(shared ? [real(dirname(shared))] : [])])];
 }
 
 /** A Seatbelt profile: everything allowed but the credential paths. */

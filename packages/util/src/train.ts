@@ -9,7 +9,7 @@
 //
 // The office's "Merge when ready" joins this line instead of turning on `--auto` (apps/agent-office/train/), and
 // Mervin's `mervin-merge.ts --go` feeds it his wave. Everything goes through `gh`, so a fake runner tests it.
-import { arr, check, num, obj, oneOf, opt, str, type Of } from "./guard.ts";
+import { arr, bool, check, num, obj, oneOf, opt, str, type Of } from "./guard.ts";
 
 export type Method = "squash" | "merge" | "rebase";
 export type State = "waiting" | "updating" | "checking" | "main-red" | "merged" | "pulled";
@@ -33,6 +33,8 @@ export interface PrNow {
   head: string;
   base: string;
   conflicts: boolean;
+  /** The head is a fork's branch. */
+  fork?: boolean;
   checks: { name: string; state: "pass" | "fail" | "pending" }[];
 }
 
@@ -132,6 +134,9 @@ export class Train {
     const p = await gh.pr(s.pr);
     if (p.state === "MERGED") return this.done(s, "merged elsewhere");
     if (p.state === "CLOSED") return this.pull(s, "closed");
+    // the train takes whatever head a PR has when its turn comes, and a fork's author (no write access) can push after
+    // the person pressed. GitHub's auto-merge stops on that push; here the person merges what they read.
+    if (p.fork) return this.pull(s, "from a fork: read it and merge it by hand");
     if (p.conflicts) return this.pull(s, "conflicts with main", `#${s.pr} conflicts with main, so the merge train took it out. ` +
       `Merge main into it (the rebuild-pr skill), push, and press Merge when ready again.`);
     const fresh = p.head !== s.head;
@@ -219,6 +224,7 @@ const PrView = obj({
   state: oneOf(["OPEN", "MERGED", "CLOSED"]),
   headRefOid: str(64), baseRefName: str(255),
   mergeable: opt(str(40)),
+  isCrossRepository: opt(bool()),
   statusCheckRollup: opt(Rollup),
 });
 const Compare = obj({ behind_by: num(0, Infinity, 0), base_commit: obj({ sha: str(64) }) });
@@ -244,9 +250,9 @@ const parse = <T>(g: (v: unknown) => T, out: string, what: string): T => {
 export function ghTrain(gh: (args: string[]) => Promise<string>, repo: string): TrainGh {
   return {
     async pr(n) {
-      const p = parse(PrView, await gh(["pr", "view", String(n), "--repo", repo, "--json", "state,headRefOid,baseRefName,mergeable,statusCheckRollup"]), "PR");
+      const p = parse(PrView, await gh(["pr", "view", String(n), "--repo", repo, "--json", "state,headRefOid,baseRefName,mergeable,statusCheckRollup,isCrossRepository"]), "PR");
       return {
-        state: p.state, head: p.headRefOid, base: p.baseRefName, conflicts: p.mergeable === "CONFLICTING",
+        state: p.state, head: p.headRefOid, base: p.baseRefName, conflicts: p.mergeable === "CONFLICTING", fork: p.isCrossRepository ?? false,
         checks: (p.statusCheckRollup ?? []).map(checkOf),
       };
     },

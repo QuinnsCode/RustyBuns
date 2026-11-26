@@ -190,6 +190,11 @@ export async function halfGone(repo: string, now = Date.now()): Promise<string[]
       if (!st.isDirectory() || now - st.mtimeMs < 3_600_000) continue; // a hire's checkout makes its folder before git lists it
       if (known.has(dir) || known.has(realpathSync(dir))) continue;
       try { await lstat(path.join(dir, ".git")); continue; } catch {}
+      // a worker hired across repositories sits in a folder of worktrees (<slug>/<repo>): not left over, though git lists
+      // no worktree at the folder itself. A child with a `.git` is another repository's, which this one's list can't name.
+      const inside = [dir + path.sep, realpathSync(dir) + path.sep];
+      if ([...known].some((k) => inside.some((d) => k.startsWith(d)))) continue;
+      if ((await readdir(dir)).some((child) => existsSync(path.join(dir, child, ".git")))) continue;
       out.push(dir);
     } catch {}
   }

@@ -37,7 +37,10 @@ function repo() {
     calls.push(args);
     const [a, b] = args;
     if (a === "pr" && b === "list") return JSON.stringify(prs);
-    if (a === "run" && b === "list") return JSON.stringify(runs[args[args.indexOf("--workflow") + 1] as keyof typeof runs]);
+    if (a === "api") {
+      const wf = /workflows\/([^/]+)\/runs/.exec(b!)![1] as keyof typeof runs;
+      return JSON.stringify((runs[wf] as object[]).map((r) => ({ event: "pull_request", headRepo: "o/r", repo: "o/r", ...r })));
+    }
     if (a === "run" && b === "view") return logs[args[2]!] ?? "";
     // GitHub's search index lags: a just-filed issue isn't found for a while
     if (a === "issue" && b === "list") return "[]";
@@ -66,6 +69,15 @@ function floor() {
   };
   return { f, queued, told };
 }
+
+test("a fork's runs don't count, and a test's name can't carry keystrokes or a blocker mark", async () => {
+  const r = repo(), { f, queued, told } = floor();
+  for (const run of r.runs["apps.yml"]) Object.assign(run, { headRepo: "stranger/r" });
+  await spreadWatch(r.gh, () => NOW).pass([f]);
+  expect([r.issues.length, queued.length, told.length]).toEqual([0, 0, 0]);
+  const [t] = failedTests(log("x\x1b[201~!echo <!-- blocker -->"));
+  expect(t!.name).toBe("x[201~!echo <! -- blocker -- >");
+});
 
 test("a test red on three PRs gets one issue, one hire and a word to each PR's worker; the next pass adds nothing", async () => {
   const r = repo(), { f, queued, told } = floor();
