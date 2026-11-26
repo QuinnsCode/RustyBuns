@@ -10,7 +10,7 @@ import { clamp } from "@rustybuns/util";
 import { type EqBand, type Feedback, UNITY_LOOP_DB, aimTo, feedback, offAxisLoss, source } from "@rustybuns/gear";
 import { assist } from "../assists.ts";
 import { REACH, type Answer, type Item, type Level, type World } from "../sim.ts";
-import { type AmpKnob, type AmpKnobs, newAmp, turnKnob } from "../audio/amp.ts";
+import { type AmpKnob, type AmpKnobs, SHOW_HEAD, newAmp, turnKnob } from "../audio/amp.ts";
 import { type CrowdSpot, house } from "../crowd/crowd.ts";
 
 export const SHOW: Level = {
@@ -278,6 +278,6 @@ export function showState(w: World, d: Desk, s: Show) {
     on: s.on, done: s.done, t: r1(s.t), song: song.name, index, at: r1(at), solo: s.on && soloOn(s.t), crowd: Math.round(s.crowd),
     open: s.open.map((c) => c.kind), fixed: s.fixed, missed: s.missed, rang: r1(s.rang),
     ringing: r.ringing, margin: r1(r.margin), worstHz: r.worst.hz, me: r1(meDb(w, d)), wants: s.open.find((c) => c.wants)?.wants ?? null,
-    mix: mix(d, s), desk: d, atDesk: atDesk(w), amp: { ...s.amp }, atAmp: atAmp(w), people: house(w, AUDIENCE),
+    mix: mix(d, s), desk: d, atDesk: atDesk(w), amp: { ...s.amp }, head: SHOW_HEAD.name, atAmp: atAmp(w), people: house(w, AUDIENCE),
   };
 }
