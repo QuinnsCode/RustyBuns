@@ -63,13 +63,15 @@ export const AMPS: AmpDef[] = [
 /**
  * A pedal: its circuit at its one knob (0 to 10) with the player's part swaps, what the knob is called (Drive if not
  * said), what moves its `VarR`s, and its board (`circuits/<board>.tsx`), if it has one: a pedal dropped on the bench doesn't.
+ * The clip pedals (Drive, Fuzz, Dist) also read another copy of their board as `net`'s `json`: a remake of it, which
+ * is how Q Builder retests one.
  */
-export interface PedalDef { id: string; name: string; blurb: string; knob?: string; board?: BoardId; net: (k: number, swaps?: Swaps) => Netlist; mods?: (k: number) => Mod[] }
+export interface PedalDef { id: string; name: string; blurb: string; knob?: string; board?: BoardId; net: (k: number, swaps?: Swaps, json?: unknown) => Netlist; mods?: (k: number) => Mod[] }
 
 export const PEDALS: PedalDef[] = [
-  { id: "drive", name: "Q Drive", blurb: "Diodes in the op-amp's feedback: rounded clipping and a mid push. In front of an amp at low Drive, it tightens the lows.", board: "drive", net: (d, s) => overdrive(d / 10, s) },
-  { id: "fuzz", name: "Q Fuzz", blurb: "×2000 into soft diodes, then hard ones. Its input resistor hisses, and the hiss gets clipped with the notes.", board: "fuzz", net: (d, s) => fuzz(d / 10, s) },
-  { id: "dist", name: "Q Dist", blurb: "Op-amp gain into two diodes to ground: flat-topped, buzzy distortion.", board: "dist", net: (d, s) => hardClip(10e3 + (d / 10) * 190e3, s) },
+  { id: "drive", name: "Q Drive", blurb: "Diodes in the op-amp's feedback: rounded clipping and a mid push. In front of an amp at low Drive, it tightens the lows.", board: "drive", net: (d, s, j) => overdrive(d / 10, s, j) },
+  { id: "fuzz", name: "Q Fuzz", blurb: "×2000 into soft diodes, then hard ones. Its input resistor hisses, and the hiss gets clipped with the notes.", board: "fuzz", net: (d, s, j) => fuzz(d / 10, s, j) },
+  { id: "dist", name: "Q Dist", blurb: "Op-amp gain into two diodes to ground: flat-topped, buzzy distortion.", board: "dist", net: (d, s, j) => hardClip(10e3 + (d / 10) * 190e3, s, j) },
   {
     id: "phase", name: "Q Phase", knob: "Rate", blurb: "Four all-pass stages, JFETs as their resistors, one LFO on the gates, some fed back: two notches sweeping.",
     board: "phase", net: (_, s) => phaser(s), mods: (k) => [{ ctl: "gate", hz: 0.05 + (k / 10) ** 2 * 6 }],
