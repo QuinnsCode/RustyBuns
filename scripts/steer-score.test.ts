@@ -25,7 +25,7 @@ test.each<[string, () => unknown, unknown]>([
   ["a named file comes first, then its most frequent partner", () => rankFiles(["apps/skate/src/rail.ts"], [], g).slice(0, 2), ["apps/skate/src/rail.ts", "apps/skate/src/grind.ts"]],
   ["a sweep commit pairs nothing", () => rankFiles(["sweep/1.ts"], [], g), ["sweep/1.ts"]],
   ["near tasks' files rank by weight, locks and pictures dropped", () => rankFiles([], [{ files: ["apps/office/hire.ts", "bun.lock", "apps/office/docs/shot.png"], weight: 1 }, { files: ["apps/skate/src/sky.ts"], weight: 3 }], g),
-    ["apps/skate/src/sky.ts", "apps/skate/src/rail.ts", "apps/office/hire.ts"]],
+    ["apps/skate/src/sky.ts", "apps/office/hire.ts", "apps/skate/src/rail.ts"]],
   ["files that no longer exist are dropped", () => rankFiles(["apps/skate/src/rail.ts"], [], g, (f) => !f.includes("grind")), ["apps/skate/src/rail.ts", "apps/skate/src/sky.ts"]],
   ["a change's area is where most of its files sit", () => appOf(["apps/skate/a.ts", "apps/skate/b.ts", "packages/util/src/x.ts", "bun.lock"]), "skate"],
 ])("%s", (_, run, want) => {

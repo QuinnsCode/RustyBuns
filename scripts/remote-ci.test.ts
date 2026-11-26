@@ -162,7 +162,8 @@ test("a SIGTERM mid-suite ends the suite on Bob, then gives the slot back", asyn
   chmodSync(ssh, 0o755);
   chmodSync(pmset, 0o755);
   await Bun.write(`${root}/rb/valve`, "off\n");
-  const running = async () => (await Bun.$`pgrep -f ${nap}`.quiet().nothrow().text()).split("\n").filter(Boolean);
+  // anchored: the local `bun remote-ci.ts run . sh -c sleep …` names the nap too, and isn't the suite on "Bob"
+  const running = async () => (await Bun.$`pgrep -f ${`^${nap}`}`.quiet().nothrow().text()).split("\n").filter(Boolean);
   const run = Bun.spawn(["bun", `${import.meta.dir}/remote-ci.ts`, "run", ".", "sh", "-c", nap], {
     cwd: work, stdout: "ignore", stderr: "ignore",
     env: { ...process.env, ...id, BUILDER_HOST: "max", BUILDER_SSH: ssh, GIT_SSH_VARIANT: "simple", RUSTYBUNS_HOME: `${root}/rb`, BUILDER_WHO: "byte" },
@@ -171,7 +172,8 @@ test("a SIGTERM mid-suite ends the suite on Bob, then gives the slot back", asyn
     for (let i = 0; !(await running()).length && i < 300; i++) await Bun.sleep(50);
     expect(readdirSync(`${builder}/locks`)).toEqual(["slot-1"]);
     run.kill("SIGTERM");
-    expect(await run.exited).toBe(130);
+    // runScoped answers 128 + the signal's number; the run's record reads 130 (stopped), which ends its tree on Bob
+    expect(await run.exited).toBe(143);
     expect(await running()).toEqual([]);
     expect(readdirSync(`${builder}/locks`)).toEqual([]);
     expect(readRuns(builder).done.map((r) => [r.who, r.code])).toEqual([["byte", 130]]);

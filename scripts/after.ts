@@ -1,3 +1,7 @@
+// Mergiraf's wrapper reaches codeSplitter's worker, which imports "cloudflare:workers": its declaration comes along to
+// every project that typechecks this file (the root's, agent-office's). A .d.ts of `declare module` has no import form.
+// oxlint-disable-next-line typescript/triple-slash-reference
+/// <reference path="../apps/codesplitter/src/cloudflare.d.ts" />
 // Lands PRs that must wait for others (#5344). Preflight (scripts/preflight.ts) prints a `Merge after #12, #34` line for
 // the PR body when other open PRs change the same files. Each pass reads every open PR with that line; once every PR it
 // names has merged (or closed), it merges `main` into the branch and pushes, so the branch is current with what it
