@@ -1387,12 +1387,15 @@ function frustum(slot: GearSlot, outer: number[], inner: number[], zf: number, d
   return { geo, slot };
 }
 
-/** A flat plate in the front plane: `outline` [x, y] round, `holes` cut through it, `t` thick back from z `f`. */
-function frontPlate(slot: GearSlot, outline: number[][], holes: number[][][], f: number, t: number): Piece {
+/** A flat plate in the front plane: `outline` [x, y] round, `holes` cut through it, `t` thick back from z `f`, its
+ * edges (holes too) chamfered `bevel` deep when given, so they catch a thin line of light. */
+function frontPlate(slot: GearSlot, outline: number[][], holes: number[][][], f: number, t: number, bevel = 0): Piece {
   const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
   for (const h of holes) shape.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
-  geo.translate(0, 0, f - t);
+  const geo = new THREE.ExtrudeGeometry(shape, bevel > 0
+    ? { depth: t - 2 * bevel, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelOffset: -bevel, bevelSegments: 1 }
+    : { depth: t, bevelEnabled: false });
+  geo.translate(0, 0, f - t + bevel);
   return { geo: toCreasedNormals(geo, 0.3), slot };
 }
 
@@ -1405,14 +1408,20 @@ const rect = (x: number, y: number, w: number, h: number) => [[x - w / 2, y - h 
 const BRACE_TURN = (55 * Math.PI) / 180;
 
 /** A brace plate standing at (x, y), its face `front` deep: `w` wide as seen from the front, `h` tall, turned `turn`
- * about its upright axis, round holes `d` across at `ys` up from its middle, 18 mm ply. */
-function brace(x: number, y: number, front: number, w: number, h: number, ys: number[], d: number, turn: number): Piece {
-  const holes = ys.map((hy) => Array.from({ length: 20 }, (_, j) => { const q = (j / 20) * Math.PI * 2; return [Math.cos(q) * d / 2, hy + Math.sin(q) * d / 2]; }));
-  const pw = w / Math.cos(turn), p = frontPlate("violet", rect(0, 0, pw, h), holes, 0.009, 0.018);
+ * about its upright axis, holes at `ys` up from its middle: round ones `d` across, or ovals [wide, tall] as seen from
+ * the front; 18 mm ply, its edges chamfered `bevel` deep when given. */
+function brace(x: number, y: number, front: number, w: number, h: number, ys: number[], d: number | [number, number], turn: number, bevel = 0): Piece {
+  const [hw, hh] = typeof d === "number" ? [d, d] : [d[0] / Math.cos(turn), d[1]], n = typeof d === "number" ? 20 : 32;
+  const holes = ys.map((hy) => Array.from({ length: n }, (_, j) => { const q = (j / n) * Math.PI * 2; return [Math.cos(q) * hw / 2, hy + Math.sin(q) * hh / 2]; }));
+  const pw = w / Math.cos(turn), p = frontPlate("violet", rect(0, 0, pw, h), holes, 0.009, 0.018, bevel);
   // set back so the edge the turn swings forward stays at `front`, behind the box's face
   p.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(x, y, front - (pw / 2) * Math.abs(Math.sin(turn))).multiply(new THREE.Matrix4().makeRotationY(turn)));
   return p;
 }
+
+/** How far the F215's brace plates turn from facing the front: a little, so the photo's front-right view sees their
+ * oval holes still tall and the plate's 18 mm edge down one side. */
+const F215_BRACE_TURN = (12 * Math.PI) / 180;
 
 /** A piece in the `shade` paint: its full colour at `lit` and in front of it, falling off along a curve to `floor` of
  * that colour at `dark` and behind (as the `k`th power of the way between), as daylight dies down a horn cell toward its throat. The fall is in the
@@ -1590,18 +1599,23 @@ function f215Pieces(): Record<string, Build> {
   // the light dies down each cell toward its throat: the shelf, the horn walls, the fins and a liner on the box's
   // floor and roof go from the paint's full colour at the mouth to near black at the back (`fade`)
   const mouth = f - 0.04, hx0 = -w / 2 + t, hx1 = bx - bw / 2, deepZ = (f - 0.003 + zb) / 2, deepL = f - 0.003 - zb;
-  cab.pieces.push(fade(sheet([w - 2 * t, t, d - back], [0, mid, back / 2]), mouth, zb, 0.15));
-  for (const y of [t + 0.001, h - t - 0.001]) cab.pieces.push(fade(sheet([hx1 - hx0, 0.002, deepL], [(hx0 + hx1) / 2, y, deepZ]), mouth, zb, 0.15));
+  cab.pieces.push(fade(sheet([w - 2 * t, t, d - back], [0, mid, back / 2]), mouth, zb, 0.05, 4));
+  for (const y of [t + 0.001, h - t - 0.001]) cab.pieces.push(fade(sheet([hx1 - hx0, 0.002, deepL], [(hx0 + hx1) / 2, y, deepZ]), mouth, zb, 0.05, 4));
   for (const [y0, y1] of [[t, mid - t / 2], [mid + t / 2, h - t]]) {
     const ch = y1 - y0, cy = (y0 + y1) / 2;
     // the horn wall: a curve x(s) = throat + (mouth - throat) s^2 from the back (s = 0) to the front (s = 1)
     const xf = -w / 2 + t, xt = bx - bw / 2 - mm(50), z0 = zb + 0.005, z1 = f - 0.002, n = 10;
     const curve = Array.from({ length: n + 1 }, (_, i) => { const s = i / n; return [xt + (xf - xt) * s * s, z0 + (z1 - z0) * s]; });
-    walls.pieces.push(fade(slab("violet", [...curve, ...[...curve].reverse().map(([x, z]) => [x! - t, z!])], y0, y1), mouth, zb, 0.12, 6));
-    // the brace: set 20 mm back from the front and turned toward the channel, three round 95 mm holes through it (the
-    // drawing's ovals are those circles seen at the turn), and the fin behind its horn-side edge to the back
-    braces.pieces.push(brace(bx, cy, f - 0.02, bw, ch, [-1, 0, 1].map((k) => k * ch * 0.29), mm(95), BRACE_TURN));
-    braces.pieces.push(fade(sheet([t, ch, f - 0.038 - zb], [bx - bw / 2 + t / 2, cy, (f - 0.038 + zb) / 2]), mouth, zb, 0.15));
+    walls.pieces.push(fade(slab("violet", [...curve, ...[...curve].reverse().map(([x, z]) => [x! - t, z!])], y0, y1), mouth, zb, 0.05, 6));
+    // the brace: set 20 mm back from the front and turned a little toward the channel (the photo sees it near face on,
+    // its edge a dark strip down one side), three tall ovals through it, 52 x 95 as the drawing's front view has them,
+    // their rims chamfered so each catches a thin line of light, and the fin behind its horn-side edge to the back
+    braces.pieces.push(brace(bx, cy, f - 0.02, bw, ch, [-1, 0, 1].map((k) => k * ch * 0.29), [mm(52), mm(95)], F215_BRACE_TURN, 0.003));
+    // behind the brace's holes the channel is a dark slot: a black sheet just behind the plate, so each hole reads as
+    // a lit ply edge round a deep oval rather than a flat circle
+    const slot = brace(bx, cy, f - 0.02 - 0.03, bw, ch - 0.01, [], 0, F215_BRACE_TURN);
+    braces.pieces.push({ geo: slot.geo, slot: "cavity" });
+    braces.pieces.push(fade(sheet([t, ch, f - 0.038 - zb], [bx - bw / 2 + t / 2, cy, (f - 0.038 + zb) / 2]), mouth, zb, 0.05, 4));
     // the driver channel: near black at its back, a fixing block in its outer corner by the shelf
     chans.pieces.push(box("cavity", [w / 2 - t - cx0, ch, 0.004], [(w / 2 - t + cx0) / 2, cy, zb + 0.003]));
     chans.pieces.push(box("cavity", [bx - bw / 2 - xt, ch, 0.004], [(bx - bw / 2 + xt) / 2, cy, zb + 0.003]));
@@ -1613,12 +1627,9 @@ function f215Pieces(): Record<string, Build> {
     const by = y0 === t ? y0 + 0.02 : y1 - 0.02;
     chans.pieces.push(box("violet", [0.07, 0.022, 0.035], [w / 2 - t - 0.035, by, f - 0.06], { bevel: 0.003 }));
   }
-  // the kidney handles in the top, the drivers' access lid in the channel side, the fly points, the back's jack plate
+  // the kidney handles in the top and the back's jack plate; the sides stay one clean painted panel, as the photo shows
+  // them (the drivers' access lid sits flush and the fly points are inside the coat, so neither reads from the front)
   for (const s of [-1, 1]) hw.pieces.push(box("cavity", [mm(122), 0.004, mm(53)], [s * mm(212), h + 0.0004, -d / 2 + mm(250)], { bevel: 0.002 }));
-  hw.pieces.push(box("knob", [0.002, h - 0.03, mm(460)], [w / 2 + 0.0008, h / 2, -d / 2 + mm(240)]));
-  hw.pieces.push(box("violet", [0.003, h - 0.036, mm(454)], [w / 2 + 0.0015, h / 2, -d / 2 + mm(240)], { bevel: 0.001 }));
-  for (const s of [-1, 1]) for (const [y, z] of [[mm(40), -d / 2 + mm(55)], [h - mm(40), -d / 2 + mm(55)], [h / 2, f - mm(55)]])
-    hw.pieces.push(disc("metal", 0.009, 0.003, "x", [s * (w / 2 + 0.002), y, z], 10));
   plate(hw, 0.13, 0.09, [0, h / 2, -d / 2 - 0.004]);
   socketPanel(hw, "stack-mid-bass", "back", [0, h / 2, -d / 2 - 0.008], [0.13, 0.09]);
   mark(hw, "grab", [w / 2 + 0.012, h * 0.55, 0], [1, 0, 0]);
