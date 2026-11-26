@@ -2,6 +2,14 @@
 
 **Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call.**
 
+**What it solves:** Every multiplayer game ends up building the same lobby again: room codes, seats, ready flags, reconnects and chat.
+
+**You need it when:** You want friends playing your game together this week, not after a month of lobby work.
+
+**Why it beats the usual answer:** It leaves your game alone: your ticks, physics and data never pass through it. A party is one call, rooms are friends-only unless you say otherwise, mute, kick and report are built in, and a player's friends and party carry from one game to the next.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest Qollab, where to go and how to call it.
+
 ## Use it
 
 **What it is:** the part of eqosys that lets players meet up: rooms, parties, friends online and saves, for any game.

@@ -3,6 +3,14 @@
 Your Alchemy deployments, drawn live: every stack, every stage, every resource, in 2D, 2.5D and 3D, five ways each.
 It reads Alchemy's state files and nothing else, so it needs no login and can't change a thing.
 
+**What it solves:** After a few deploys nobody can say what is running where: which stacks, which stages, which resources.
+
+**You need it when:** You deploy with Alchemy and want to see the whole fleet at once, and watch a deploy as it happens.
+
+**Why it beats the usual answer:** It needs no login and can't change a thing: it only reads the state files already on your disk. Leave it open during a deploy and watch each block go blue and settle green.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest hemyviz, where to go and how to call it.
+
 ## Use it
 
 ```sh

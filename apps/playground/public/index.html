@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rusty Buns Playground</title>
+<title>Rusty Buns Playground: tools and games for people and their agents</title>
+<meta name="description" content="A code host where agents and people work on the same files at once, one account for every game, a CRM your agents can use, and a shelf of games to play now. Each product says what it solves, and has a guide for agents.">
+<link rel="alternate" type="text/plain" href="llms.txt" title="For agents: every product, what it is for and where to go">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Brawler:wght@400;700&display=swap">
@@ -228,6 +230,17 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
   /* Framework examples: a strip that scrolls sideways, each card rated fresh to stale. */
   .fw { margin-top: 56px; }
   .fw > p a { color: #fff; }
+  /* The hero's two ways in, and each product's pitch: what it solves, when you need it, why it wins. */
+  .hero { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+  .why { margin: 0; display: grid; gap: 6px; font-size: 14.5px; line-height: 1.4; }
+  .why div { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 10px; }
+  .why dt { font-weight: 700; color: var(--acc); white-space: nowrap; }
+  .why dd { margin: 0; }
+  .gate { flex-wrap: wrap; }
+  .gate > div p { -webkit-line-clamp: 4; }
+  .gate .why { flex: 0 0 100%; padding: 8px 4px 2px; border-top: 1px solid var(--edge); }
+  @media (max-width: 520px) { .why div { grid-template-columns: 1fr; gap: 0; } }
+  .fwc .calls { color: var(--mute); font-size: 13px; flex: 1; }
   .strip { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 12px 4px 18px; margin: 0 -4px; overscroll-behavior-x: contain; }
   .fwc { flex: 0 0 210px; scroll-snap-align: start; border: 1px solid var(--edge); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px;
     background: var(--grain), var(--paper); box-shadow: 0 3px 0 var(--edge); }
@@ -285,7 +298,8 @@ var s=get();if(s)go(s,false)})();</script>
 <!--/sky-switch-->
   <header>
     <h1 id="title" aria-label="Rusty Buns Playground">Rusty Buns Playground</h1>
-    <p>Pick a world and jump in. Playable ones open in your browser; the rest are a download away.</p>
+    <p>Tools and games for a world where people and their agents build side by side. A code host where a dozen agents never overwrite each other, one account for every game, a CRM your agents can use, and a shelf of games to play right now.</p>
+    <div class="hero"><a class="ui-btn primary play" href="#products-title">See what we make</a><a class="ui-btn" href="#agents-title">For agents</a></div>
   </header>
   <div class="layout">
   <aside class="side" aria-label="Menu">
@@ -297,6 +311,11 @@ var s=get();if(s)go(s,false)})();</script>
   </aside>
   <div class="content">
   <section class="gateway" id="gateway" aria-label="Start here"></section>
+  <section class="group" aria-labelledby="products-title">
+    <h2 id="products-title">Products</h2>
+    <p>Each one with the problem it takes off your hands, when you need it, and why it beats the usual answer.</p>
+    <div class="rows" id="products"></div>
+  </section>
   <section class="group" aria-labelledby="games-title">
     <h2 id="games-title">Games</h2>
     <p>The eqosys game suite: one account for all of them, friends and parties that carry from game to game.</p>
@@ -308,6 +327,11 @@ var s=get();if(s)go(s,false)})();</script>
     <div class="rows" id="apps"></div>
   </section>
   <p class="empty" id="empty" hidden>Nothing here yet. Try another word.</p>
+  <section class="fw" aria-labelledby="agents-title">
+    <h2 id="agents-title">For agents</h2>
+    <p>An AI agent, or sending one? Start at <a href="llms.txt">llms.txt</a>: every product in plain text, what it is for and when to pick it. Each product below has its own guide: what it does, how to call it, and what to tell the person you work for.</p>
+    <div class="strip" id="guides"></div>
+  </section>
   <section class="fw shelf" aria-labelledby="shelf-title">
     <h2 id="shelf-title">Parts on the shelf</h2>
     <p>The pieces our games share, each one line from yours: models, rigs, ground, controls and the UI kit. Each reads itself off its package's <code>package.json</code>.</p>
@@ -375,6 +399,7 @@ const ICONS = {
   store: ["m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4", "M2 7h20", "M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"],
   copy: ["M8 8h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2z", "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"],
   check: ["M20 6 9 17l-5-5"],
+  bot: ["M12 8V4H8", "M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z", "M2 14h2", "M20 14h2", "M15 13v2", "M9 13v2"],
   dice: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 8h.01", "M16 8h.01", "M12 12h.01", "M8 16h.01", "M16 16h.01"],
 };
 const el = (tag, attrs = {}, ...kids) => {
@@ -402,7 +427,12 @@ const fw = await (await fetch("frameworks.json")).json();
 const parts = await (await fetch("shelf.json")).json();
 const partsBox = document.getElementById("parts");
 // Each entry's `group` says where it goes: the gateway strip on top, then the games, then the apps.
-const boxes = { gateway: document.getElementById("gateway"), games: document.getElementById("games"), apps: document.getElementById("apps") };
+// A product is an app with a pitch (`why`): it gets its own section above the games.
+const boxes = { gateway: document.getElementById("gateway"), products: document.getElementById("products"), games: document.getElementById("games"), apps: document.getElementById("apps") };
+const placeOf = (a) => (a.group === "gateway" || a.group === "games" ? a.group : a.why ? "products" : "apps");
+const guidesBox = document.getElementById("guides");
+/** A product's pitch: what it solves, when you need it, and why it beats the usual answer. */
+const whyOf = (a) => (a.why ? el("dl", { className: "why" }, ...[["Solves", a.why.solves], ["For you if", a.why.need], ["Why it wins", a.why.better]].map(([k, v]) => el("div", {}, el("dt", { textContent: k }), el("dd", { textContent: v })))) : "");
 const empty = document.getElementById("empty");
 const strip = document.getElementById("strip");
 const q = document.getElementById("q");
@@ -419,6 +449,7 @@ const linksOf = (a) => {
   if (a.play) links.append(link(a.group === "games" ? "Play" : "Open", a.play, "play", "ui-btn primary play"));
   if (a.download) links.append(link("Download", `${REPO}/releases?q=${a.download}&expanded=true`, "download"));
   if (a.app) links.append(link("Source", `${REPO}/tree/main/apps/${a.app}`, "source"));
+  if (a.agents) links.append(link("For agents", a.agents, "bot"));
   if (!a.play) links.append(el("span", { className: "soon", textContent: a.note ?? (a.download ? "Browser version soon" : "Coming soon") }));
   return links;
 };
@@ -436,6 +467,7 @@ const gate = (a) => {
   if (a.app === "eqosys") g.prepend(el("span", { className: "minisky", role: "img", ariaLabel: "eqosys's sky" }, ...["d", "g", "st", "s", "m", "h", "h"].map((c) => el("i", { className: c }))));
   else if (a.app) g.prepend(shotOf(a));
   if (a.play) g.append(link(a.app === "eqosys" ? "Sign in" : "Open", a.play, "play", "ui-btn primary play"));
+  g.append(whyOf(a));
   return g;
 };
 
@@ -449,7 +481,7 @@ const creditOf = (a) => {
 
 /** A game or an app: a full-width row, the screenshot on one side and the rest on the other (stacked on a phone). */
 const row = (a, n) => {
-  const body = el("div", { className: "body" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), creditOf(a), el("div", { className: "meta" }, stage(a.stage), best(a, n)), linksOf(a));
+  const body = el("div", { className: "body" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), whyOf(a), creditOf(a), el("div", { className: "meta" }, stage(a.stage), best(a, n)), linksOf(a));
   const card = el("div", { className: a.app || a.image ? "card" : "card bare" }, body);
   if (a.app || a.image) card.prepend(shotOf(a, () => card.classList.add("bare")));
   if (a.play) card.prepend(el("span", { className: "tag", textContent: a.group === "games" ? "PLAY NOW" : "OPEN NOW" }));
@@ -462,8 +494,10 @@ const row = (a, n) => {
 const tabs = document.getElementById("tabs");
 const SECTIONS = [
   ["gateway", "Start here", (list) => list.filter((a) => a.group === "gateway")],
+  ["products-title", "Products", (list) => list.filter((a) => placeOf(a) === "products")],
   ["games-title", "Games", (list) => list.filter((a) => a.group === "games")],
-  ["apps-title", "Apps", (list) => list.filter((a) => (a.group ?? "apps") === "apps")],
+  ["apps-title", "Apps", (list) => list.filter((a) => placeOf(a) === "apps")],
+  ["agents-title", "For agents", (list) => list.filter((a) => a.agents)],
   ["shelf-title", "Parts", () => partsShown()],
   ["fw-title", "Frameworks", () => fwShown()],
 ];
@@ -491,9 +525,9 @@ const part = (p) => {
 
 const draw = () => {
   const needle = q.value.trim().toLowerCase();
-  const shown = apps.filter((a) => !needle || `${a.name} ${a.line}`.toLowerCase().includes(needle));
+  const shown = apps.filter((a) => !needle || `${a.name} ${a.line} ${Object.values(a.why ?? {}).join(" ")}`.toLowerCase().includes(needle));
   for (const [g, box] of Object.entries(boxes)) {
-    const mine = shown.filter((a) => (a.group ?? "apps") === g);
+    const mine = shown.filter((a) => placeOf(a) === g);
     box.replaceChildren(...mine.map((a, n) => (g === "gateway" ? gate(a) : row(a, n))));
     (g === "gateway" ? box : box.parentElement).hidden = mine.length === 0;
   }
@@ -505,6 +539,9 @@ const draw = () => {
     return a;
   }));
   mark();
+  const guides = shown.filter((a) => a.agents);
+  guidesBox.replaceChildren(...guides.map((a) => el("div", { className: "fwc" }, el("h3", { textContent: a.name }), el("span", { className: "calls", textContent: a.calls ? `Call it by: ${a.calls}` : "What it is for and when to pick it" }), link("Guide", a.agents, "bot"))));
+  guidesBox.parentElement.hidden = guides.length === 0;
   const ps = partsShown();
   partsBox.replaceChildren(...ps.map(part));
   partsBox.parentElement.hidden = ps.length === 0;
@@ -521,7 +558,7 @@ const draw = () => {
 };
 q.oninput = draw;
 draw();
-for (const sec of [boxes.gateway, boxes.games.parentElement, boxes.apps.parentElement, partsBox.parentElement, strip.parentElement]) seen.observe(sec);
+for (const sec of [boxes.gateway, boxes.products.parentElement, guidesBox.parentElement, boxes.games.parentElement, boxes.apps.parentElement, partsBox.parentElement, strip.parentElement]) seen.observe(sec);
 </script>
 </body>
 </html>

@@ -8,6 +8,14 @@ each org. A spike: hats (cap, beanie, bucket hat) and tops (a tee, a sweater, a 
 zones on the front, the back and, with sleeves, the left sleeve; up to 8 pictures and lines of text in all), plus **samples**: a shop with a product these don't cover uploads photos or a video, and Meshy makes a model
 of it the widget can print on. PolyForm Noncommercial.
 
+**What it solves:** Shoppers can't see what their own photo or words will look like on a hat or a shirt before they buy, so they guess, or leave.
+
+**You need it when:** You sell custom-printed hats, tees or hoodies and want shoppers to design on the product itself.
+
+**Why it beats the usual answer:** It goes on the shop's own page with one script and one tag, takes the shop's colours, and loads only when a shopper scrolls to it. A pasted tag keeps working through our updates. A product we don't cover? Upload photos and get a model to print on.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest QView3D, where to go and how to call it.
+
 ## Use it
 
 **What it is:** a 3D hat or shirt on a shop's page that shoppers can put their own photos and words on.

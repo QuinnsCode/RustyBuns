@@ -4,6 +4,14 @@ The CRM your agents can use. Contacts, companies, deals and activities for a rea
 with an MCP server built in, a Rust engine for analysis in the browser, office sync, signed webhooks,
 a desktop build, and every row yours to export or delete. One Cloudflare Worker, one D1 database.
 
+**What it solves:** Customer records end up locked in a CRM that an AI helper can only reach by clicking through screens, and that is hard to leave.
+
+**You need it when:** You want an agent to log the call, move the deal and tell you who to ring today, without you copying things by hand.
+
+**Why it beats the usual answer:** Agents are first-class: everything a person can do is a tool an agent can call, and the risky ones make it ask you first. The analysis runs in your own browser, and you can export or delete every row at any time.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest qCRM, where to go and how to call it.
+
 ## Use it
 
 **What it is:** a list of your customers, companies and sales for a small business, that AI helpers can use too.

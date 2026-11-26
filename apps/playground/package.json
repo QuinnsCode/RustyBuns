@@ -11,6 +11,7 @@
     "sizes": "bun scripts/sizes.ts",
     "fresh": "bun scripts/fresh.ts",
     "shelf": "bun scripts/shelf.ts",
+    "llms": "bun scripts/llms.ts",
     "ui": "bun scripts/ui.ts"
   }
 }

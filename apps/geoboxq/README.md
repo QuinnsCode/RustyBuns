@@ -7,6 +7,14 @@ misses). Turn "Box in a box" off to see what a tool that treats every product as
 
 **Live:** https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+**What it solves:** Picking a shipping box by eye costs money on boxes that are too big, or ends with an order that doesn't fit.
+
+**You need it when:** You pack mixed orders and want the right box named before you start packing.
+
+**Why it beats the usual answer:** It knows a box can go in a box: a product that opens carries smaller ones inside it, level after level, which tools that treat every product as solid get wrong. No account, and your sizes stay in your browser.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest GeoBoxQ, where to go and how to call it.
+
 ## Use it
 
 **What it is:** tells you which shipping box your products fit in, even when one product can go inside another.

@@ -1,7 +1,14 @@
 [
   {
     "name": "codeSplitter",
-    "line": "A code host for agents: every file a Durable Object, agents editing line by line at once, real git on Cloudflare Artifacts.",
+    "line": "Git for the agentic era: a code host where a dozen agents and people change the same files at once and nothing gets overwritten.",
+    "why": {
+      "solves": "Git was made for one person at one keyboard. Put a dozen coding agents on one repo and they overwrite each other, wait behind merges and leave you the conflicts.",
+      "need": "You run more than one agent, or agents next to people, and want every change read by a person before it ships.",
+      "better": "Other hosts merge by guessing from text. Here every line knows who wrote it, so three agents can change one file in the same moment. It is still real git (clone, pull and push work), agents get the same controls people do, and the free desktop app keeps your git going when a cloud is down."
+    },
+    "agents": "https://codesplitter.notryanquinn.workers.dev/agent.md",
+    "calls": "CLI, MCP, WebMCP, REST",
     "play": "https://codesplitter.notryanquinn.workers.dev",
     "app": "codesplitter",
     "stage": 3,
@@ -10,7 +17,14 @@
   },
   {
     "name": "eqosys",
-    "line": "One account for every app here: sign in once, keep your friends, and see who is on.",
+    "line": "One account for every game and app here: sign in once and your friends, saves and games come with you.",
+    "why": {
+      "solves": "Every new game or app asks for one more account, and your friends and saves stay stuck inside each one.",
+      "need": "You play more than one of these, or you are making a game and don't want to build sign-in, friends and cloud saves again.",
+      "better": "A game with no server of its own can use it straight from its page. Each person's saves are sealed with their own key and kept in their own region. An agent can call the same tools a person clicks."
+    },
+    "agents": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/eqosys/AGENTS.md",
+    "calls": "WebMCP, HTTP tools, CLI",
     "play": "https://eqosys.qntbr.com",
     "app": "eqosys",
     "stage": 3,
@@ -167,7 +181,14 @@
   },
   {
     "name": "GeoBoxQ",
-    "line": "Will it fit in the box? Shipping boxes and products in, the smallest box that takes the lot out, a box in a box included. qCRM's packing helper.",
+    "line": "Will it fit in the box? Tell it your boxes and your products, and it names the smallest box that takes the whole order.",
+    "why": {
+      "solves": "Picking a shipping box by eye costs money on boxes that are too big, or ends with an order that doesn't fit.",
+      "need": "You pack mixed orders and want the right box named before you start packing.",
+      "better": "It knows a box can go in a box: a product that opens carries smaller ones inside it, level after level, which tools that treat every product as solid get wrong. No account, and your sizes stay in your browser."
+    },
+    "agents": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/geoboxq/AGENTS.md",
+    "calls": "REST",
     "play": "https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev",
     "app": "geoboxq",
     "stage": 3,
@@ -192,7 +213,13 @@
   },
   {
     "name": "ShareSplat",
-    "line": "Photograph a product with your phone on a guided shot list and get a 3D spin for the store page.",
+    "line": "Photograph a product with your phone and shoppers can spin it round on your store page.",
+    "why": {
+      "solves": "A flat photo can't show a product from every side, and a 3D model used to need a studio or a 3D artist.",
+      "need": "You sell online and want shoppers to turn the real product round before they buy.",
+      "better": "A phone and a shot list that tells you each photo to take are enough. Your photos stay on your device until you choose to put a model online, and one pasted snippet (or the Shopify block) puts it on the page."
+    },
+    "agents": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/sharesplat/AGENTS.md",
     "play": "https://sharesplat.notryanquinn.workers.dev",
     "app": "sharesplat",
     "stage": 1,
@@ -201,11 +228,66 @@
   },
   {
     "name": "qCRM",
-    "line": "The CRM your agents can use: contacts, companies, deals and activities, with an MCP server built in and every row yours to export.",
+    "line": "The CRM your agents can use: customers, companies and deals for a small business, with every row yours to take away.",
+    "why": {
+      "solves": "Customer records end up locked in a CRM that an AI helper can only reach by clicking through screens, and that is hard to leave.",
+      "need": "You want an agent to log the call, move the deal and tell you who to ring today, without you copying things by hand.",
+      "better": "Agents are first-class: everything a person can do is a tool an agent can call, and the risky ones make it ask you first. The analysis runs in your own browser, and you can export or delete every row at any time."
+    },
+    "agents": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/qcrm/AGENTS.md",
+    "calls": "MCP, REST, CLI",
     "play": "https://qcrm.qntbr.com",
     "app": "qcrm",
     "stage": 2,
     "best": ["desktop", "tablet"],
+    "group": "apps"
+  },
+  {
+    "name": "Qollab",
+    "line": "The multiplayer around your game, done: rooms, parties, friends online, chat and saves.",
+    "why": {
+      "solves": "Every multiplayer game ends up building the same lobby again: room codes, seats, ready flags, reconnects and chat.",
+      "need": "You want friends playing your game together this week, not after a month of lobby work.",
+      "better": "It leaves your game alone: your ticks, physics and data never pass through it. A party is one call, rooms are friends-only unless you say otherwise, mute, kick and report are built in, and a player's friends and party carry from one game to the next."
+    },
+    "agents": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/qollab/AGENTS.md",
+    "calls": "One call from a signed-in page",
+    "app": "qollab",
+    "note": "Inside every game here: press With friends",
+    "stage": 3,
+    "best": ["phone", "tablet", "desktop"],
+    "group": "apps"
+  },
+  {
+    "name": "Cron Swanson",
+    "line": "Every scheduled job and reminder in one place: the nightly backups, the weekly check-ins, the yearly renewals.",
+    "why": {
+      "solves": "Scheduled jobs and reminders are spread over apps and dashboards, and nobody remembers why half of them exist.",
+      "need": "You want one screen that shows every backup, check-in and renewal and when it last ran, and that pesters you about the ones a person has to do.",
+      "better": "Each job carries why it exists and what it calls, not only a schedule. It fires on the minute, where the cloud alarms we tried came up to five minutes late, and it runs on any small computer you own."
+    },
+    "agents": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/cron-swanson/AGENTS.md",
+    "calls": "REST",
+    "app": "cron-swanson",
+    "note": "Run it yourself, from source",
+    "stage": 2,
+    "best": ["desktop", "phone"],
+    "group": "apps"
+  },
+  {
+    "name": "hemyviz",
+    "line": "Everything you have deployed, drawn live as a map, a city or a 3D scene: every stack, stage and resource.",
+    "why": {
+      "solves": "After a few deploys nobody can say what is running where: which stacks, which stages, which resources.",
+      "need": "You deploy with Alchemy and want to see the whole fleet at once, and watch a deploy as it happens.",
+      "better": "It needs no login and can't change a thing: it only reads the state files already on your disk. Leave it open during a deploy and watch each block go blue and settle green."
+    },
+    "agents": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/hemyviz/AGENTS.md",
+    "calls": "CLI",
+    "app": "hemyviz",
+    "note": "Runs on your own machine",
+    "stage": 2,
+    "best": ["desktop"],
     "group": "apps"
   },
   {
@@ -263,7 +345,14 @@
   },
   {
     "name": "QView3D",
-    "line": "A 3D product customiser for a shop page, from one script tag: drag a photo onto a hat, tee or hoodie, choose its colour and save a snapshot.",
+    "line": "Shoppers put their own photo and words on a 3D hat, tee or hoodie, right on your shop's page.",
+    "why": {
+      "solves": "Shoppers can't see what their own photo or words will look like on a hat or a shirt before they buy, so they guess, or leave.",
+      "need": "You sell custom-printed hats, tees or hoodies and want shoppers to design on the product itself.",
+      "better": "It goes on the shop's own page with one script and one tag, takes the shop's colours, and loads only when a shopper scrolls to it. A pasted tag keeps working through our updates. A product we don't cover? Upload photos and get a model to print on."
+    },
+    "agents": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/qview3d/AGENTS.md",
+    "calls": "One script tag",
     "play": "https://qview3d.notryanquinn.workers.dev",
     "app": "qview3d",
     "stage": 1,
