@@ -170,13 +170,10 @@ pinnedTest("AGENT_OFFICE_PEOPLE_ONLY keeps hire, tell, home and pr to people", a
   expect(peopleOnly("/nope", "all")).toBe("");
 });
 
-pinnedTest("unset, AGENT_OFFICE_PEOPLE_ONLY keeps home to people: an agent can't send a worker home", async () => {
+pinnedTest("unset, AGENT_OFFICE_PEOPLE_ONLY lets an agent send a finished worker home", async () => {
   delete process.env.AGENT_OFFICE_PEOPLE_ONLY;
-  const { ctx, seen } = office(0);
-  const res = await call(ctx, "/home", { merged: true });
-  expect(res.status).toBe(403);
-  expect(res.body.error).toContain("keeps home to people");
-  expect(seen.homes).toEqual([]);
+  const { ctx } = office(0);
+  expect((await call(ctx, "/home", { merged: true })).status).toBe(200);
   expect((await call(ctx, "/tell", { worker: "Sprocket", prompt: "hi" })).status).toBe(200);
 });
 
@@ -325,7 +322,7 @@ pinnedTest("every send-home request lands in the local log: an agent's refusal a
   {
     const { ctx } = office(0);
     // an agent asks while send-home is people-only: refused, and on the record with the worker it named
-    delete process.env.AGENT_OFFICE_PEOPLE_ONLY;
+    process.env.AGENT_OFFICE_PEOPLE_ONLY = "home";
     expect((await call(ctx, "/home", { workers: ["Sprocket"], cleanup: "all" })).status).toBe(403);
     // a person clicks 'send home' in the office
     const floor = (ctx as { floors: Map<string, { workers: { list(): unknown[] } }> }).floors.get("f")!;
@@ -398,19 +395,17 @@ pinnedTest("an agent's hire on files an open PR or a queued task is changing is 
     expect(no.body.error).toContain("anyway: true");
     expect(no.body.clash.files).toEqual(["apps/x/src/a.ts"]);
     expect((await call(ctx, "", { prompt: "and apps/y/src/b.ts" })).body.error).toContain('the queued task "Tidy b" (apps/y/src/b.ts)');
-    // another file in the PR's app clashes too (#4956): a task names a file or two and edits dozens
-    expect((await call(ctx, "", { prompt: "Restyle c.ts" })).body.error).toContain("PR #12 office/a (apps/x/)");
-
-    // a task on other files, or one sent with anyway, is hired as before
+    // a task on other files (in the PR's app too), or one sent with anyway, is hired: Mervin orders the merges
+    expect((await call(ctx, "", { prompt: "Restyle c.ts" })).status).toBe(200);
     expect((await call(ctx, "", { prompt: "write a README" })).status).toBe(200);
     expect((await call(ctx, "", { prompt: "Fix a.ts", anyway: true })).status).toBe(200);
-    expect(spawned).toEqual(["write a README", "Fix a.ts"]);
+    expect(spawned).toEqual(["Restyle c.ts", "write a README", "Fix a.ts"]);
 
     // held: nobody starts, and the office queues it itself once PR #12 has merged
     const held = await call(ctx, "", { prompt: "Fix a.ts properly", hold: true });
     expect(held.status).toBe(202);
     expect(held.body.held.message).toContain("once PR #12 has merged");
-    expect(spawned).toHaveLength(2);
+    expect(spawned).toHaveLength(3);
     const later = Date.now() + 61_000;
     expect(await releaseHeld(undefined, later)).toBe(0);
     writeFileSync(prsFile, "[]");

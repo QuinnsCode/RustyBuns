@@ -29,7 +29,7 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
   images aside) on your committed branch and writes down a pass; `bun run builder passed` lists what is ready to merge.
   The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
   tests and `build:native` go to Bob only while he serves (`~/builder/serve` on him: the owner turns him on for runs)
-  and wait otherwise (on battery up to three suites at once, none new under 20%, and at 13% he cuts them all off). Losing him or a cut-off mid-run waits and starts over, never fails. Shut, the
+  (when he isn't serving, don't wait: push and let CI run them), and otherwise wait (on battery up to three suites at once, none new under 20%, and at 13% he cuts them all off). Losing him or a cut-off mid-run waits and starts over, never fails. Shut, the
   guard hook turns away `bun test`, `bun run build`, `vite build` and `cargo build` here with the `builder run` line to use,
   and opening it is the owner's. Open, with
   no builder (`BUILDER_HOST` unset, or Bob not serving) `run` runs the test here, and a base-ref run
@@ -42,8 +42,8 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
 - A fix's or a feature's tests should fail on the old code: `bun scripts/test-bites.ts` runs your changed test files on
   `origin/main`'s source and names the ones that pass there anyway (exit 1); `--lines` lists the changed lines they
   never ran. It runs tests, so with the valve shut: `bun run builder run . bun scripts/test-bites.ts --lines`.
-- Before `gh pr create`, commit and run `bun scripts/preflight.ts` (the guard hook turns the create away until it has run on HEAD): it lists open PRs that change your files and how Mervin's board merges your branch after them (#3118), and names any file your branch puts back to an older copy main has since changed (a worktree reset onto a newer main, #5687): take main's copy unless you meant the revert. Paste the `Merge after #N` line it prints into the PR body (the guard turns the create away without it): the `after` workflow (`scripts/after.ts`, #5344) merges main into your branch and pushes once those land, or comments and tags you if main no longer merges clean. A `card` or `clash` (exit 1) needs a person: wait for them to merge and rebase, or ask their worker.
-- After pushing, `bun run pr <n>` (below) waits for the checks. On failure, fix that and rerun only its test.
+- Before `gh pr create`, commit and run `bun scripts/preflight.ts` (the guard hook turns the create away until it has run on HEAD): it lists open PRs that change your files and how Mervin's board merges your branch after them (#3118), and names any file your branch puts back to an older copy main has since changed (a worktree reset onto a newer main, #5687): take main's copy unless you meant the revert. Paste the `Merge after #N` line it prints into the PR body (the guard turns the create away without it): the `after` workflow (`scripts/after.ts`, #5344) merges main into your branch and pushes once those land, or comments and tags you if main no longer merges clean. A `card` or `clash` (exit 1) is a warning, not a stop: open the PR with the `Merge after` line, and Mervin and the `after` workflow order the merges.
+- After pushing, `bun run pr <n> --no-wait` once to see the checks started, then finish (below). Don't wait on CI or tend your PR: a red check later is the PR agent's to fix or hire for.
 - Claude Code's `/ship` and `/steward` (2.1.330+) keep tending a PR until it merges: they fix red checks, merge main in
   when it conflicts and answer review comments. They never merge. Only a line the owner types starts one. Open the PR
   our way first (preflight, the `Merge after` line). `/ship` won't push to this public repo from a worker, and the PR
@@ -86,7 +86,7 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
 
 - `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
   `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
-  When it says an after-bot head has no checks, the owner runs `bun run kick <n>` (one empty commit on top, pushed).
+  When it says an after-bot head has no checks, run `bun run kick <n>` (one empty commit on top, pushed).
 - `bun run issue <n> [n ...]`: an issue's brief (header, PRs that close it, body cut at a paragraph, last three comments); `--full` for all of it.
 - `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
@@ -198,24 +198,27 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
   `rustybuns destroy --stage office-preview` and don't send home the worker driving it. codeSplitter stays in this
   repo for now (owner, 2026-11-09). The build order and prices are in MOVE.md's "Build order".
 
-## Finishing: say what is left, and leave nothing in your head
+## Finishing: do the task, hand off the rest, leave
 
-The owner closes your worktree when you stop, to keep context small. So before you end a turn, nothing may
-be left only in chat. A background-job notice or any other system event is never a reason to end a turn while a task
-is owed: carry on (`.claude/hooks/carry-on.ts` refuses that stop once). Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
-stacked base that may merge first) goes one of three ways: a new worker (`office-workers hire`), an issue
-(anything for the owner's hands is a `MANUAL RUN:` in the private manual-run repo, see below), or a question to
-the owner right then. A note in a PR body or comment is not a hand-off: a merged PR's open items vanish. Before you
-stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a hired worker. Open your last message with "N of M done" and name each leftover with its link, or say
-"4 of 4, nothing left". The count is agent work only: a filed `MANUAL RUN:` or an issue waiting on the owner's
-decision isn't a leftover, so don't count it; just say it was added (below). "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
-base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
-and every PR on it closes unmerged.
+Do what the task asks and nothing more, then stop. Your desk goes to the next task in the queue.
 
-Done means back on `main`. PRs are squash-merged, so your branch still holds commits main doesn't: once yours
-lands, check `git diff HEAD origin/main` shows none of your work and `git reset --hard origin/main`, leaving
-`git log origin/main..HEAD` empty. Work that didn't merge isn't kept on a branch: it is an open PR you are still
-landing, or an issue.
+- **What you deliver fits the request.** Code or docs that belong in the repo get a PR. A question, research or a
+  plan does not: answer it in your last message, or as an artifact or a markdown note if it's long, and stop. No PR
+  just to have one.
+- **Push, start the checks, leave.** Once your PR is pushed and `bun run pr <n> --no-wait` shows checks running,
+  you're done. Don't wait for CI, merges or reviews, and don't stay to fix your own PR: red checks, after-bot heads
+  and merge conflicts are the PR agent's.
+- **Nothing left only in chat.** Each undone item becomes an issue (or a comment on the issue it belongs to), or a
+  hired worker. Anything for the owner's hands is a `MANUAL RUN:` in the private manual-run repo (below). A note in
+  a PR body is not a hand-off: a merged PR's open items vanish.
+- **Last message:** open with "N of M done" and name each leftover with its link, or "4 of 4, nothing left". A filed
+  `MANUAL RUN:` or an issue waiting on the owner's decision isn't a leftover; just say it was added.
+- Base every PR on `main`, never on another PR's branch: when the base merges, its branch is deleted and every PR
+  on it closes unmerged.
+
+Finished workers go home: the queue sends its own home when it needs the desk, and the PR agent (or any lead) sends
+the rest home with `office-workers home <name>` once their work is pushed. The worktree's branch is on GitHub, so
+nothing is lost; `home` keeps a worktree that holds unpushed work.
 
 ## Manual runs: the owner's hands, in plain sight
 
