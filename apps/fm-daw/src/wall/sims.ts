@@ -26,9 +26,10 @@ import mixBoard from "../../circuits/wall-mix.circuit.json";
 import outBoard from "../../circuits/wall-out.circuit.json";
 import noiseBoard from "../../circuits/wall-noise.circuit.json";
 import bbdBoard from "../../circuits/wall-bbd.circuit.json";
+import ladderBoard from "../../circuits/wall-ladder.circuit.json";
 
 /** Each module's board as circuit JSON, by kind: read through `readBoard`, which checks it. */
-const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard], ["noise", noiseBoard], ["keys", keysBoard], ["bbd", bbdBoard]]);
+const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard], ["noise", noiseBoard], ["keys", keysBoard], ["bbd", bbdBoard], ["ladder", ladderBoard]]);
 /** Every module kind the wall has. */
 export const KINDS = [...BOARDS.keys()];
 
@@ -694,12 +695,83 @@ class Bbd implements Sim {
   range(): [number, number] { return [BBD_STAGES / (2 * this.clockAt(V9)) * 1000, BBD_STAGES / (2 * this.clockAt(0)) * 1000]; }
 }
 
+/** Steps a sample of Q Ladder's stage equations: explicit, so four keeps its top cutoff's step under one. */
+const LADDER_STEPS = 4;
+
+/**
+ * Q Ladder: its stage equations, every number from the board's parts (WALL.md, "The ladder, measured"; the solved
+ * ladder is 9 to 11 times Q Filter's cost, these a twentieth). Each stage's capacitor u_s (C2 to C5) moves with the
+ * difference of its pair's current and the pair's below: C du_s/dt = (I/2)(tanh(u_{s-1}/2VT) - tanh(u_s/2VT)), the
+ * drive pair's u_0 = -(Q3's base - Q4's base). In reaches Q3 through R8 into R9; the out comes back to Q4 through
+ * R10, Res and R11. I is the tail, from the converter as Q Filter's: 12 V / R6 at Q1, times e^(-Vbx/VT) with Freq and
+ * CV through U1A's gains onto Q1's base, up to what R7 lets through. U2A's R19/R18 across the top capacitor is what
+ * Res feeds back; U2B's 1 + R24/R23 is the out, each clipped at its rails. The bias string only gives every pair room,
+ * so it isn't in the equations.
+ */
+class Ladder implements Sim {
+  readonly ins = ["in", "cv"];
+  readonly outs = ["out"];
+  private readonly b = board("ladder");
+  private readonly u = new Float64Array(5);
+  /** Each stage's step: (1/2) over its capacitor, over the steps a sample (times I gives its du per tanh). */
+  private readonly per: Float64Array;
+  private readonly cMean: number;
+  private readonly kin: number;
+  private readonly gain: number;
+  private readonly post: number;
+  private readonly iref: number;
+  private readonly most: number;
+  private base = (_cv: number) => 0;
+  private kfb = 0;
+  private amps = 0;
+  private y = 0;
+  constructor(sampleRate: number, k: Record<string, number>) {
+    const r = (n: string) => value(this.b, n), caps = ["C2", "C3", "C4", "C5"].map(r), h = 1 / (sampleRate * LADDER_STEPS);
+    this.per = Float64Array.from([0, ...caps.map((c) => h / (2 * c))]);
+    this.cMean = caps.reduce((a, c) => a + c, 0) / caps.length;
+    this.kin = r("R9") / (r("R8") + r("R9"));
+    this.gain = r("R19") / r("R18");
+    this.post = 1 + r("R24") / r("R23");
+    this.iref = SUPPLIES.V12 / r("R6");
+    // U1B can pull the emitters only so far: R7 carries the reference and the tail.
+    this.most = Math.max(0, (RAIL - 0.7) / r("R7") - this.iref);
+    this.knobs(k);
+  }
+  knobs(k: Record<string, number>) {
+    const b = turned("ladder", this.b, { ...knobsOf("ladder"), ...k }), r = (n: string) => value(b, n);
+    this.base = line(gains(netOf(b, ["R1", "R2", "R3", "R4", "R5", "RV1", "RV3", "U1A"]), ["CV"], ["BX"]));
+    this.kfb = r("R11") / (r("R10") + rheostat(b, "RV2") + r("R11"));
+  }
+  step(x: Float64Array, y: Float64Array) {
+    // NPNs: the tail is Iref e^(-Vbx/VT), the reference's base going down a volt's worth an octave up.
+    const amps = Math.min(this.iref * Math.exp(-this.base(x[1]) / VT), this.most);
+    this.amps = amps;
+    const u = this.u, per = this.per, vin = x[0] * this.kin, two = 2 * VT;
+    let out = this.y;
+    for (let o = 0; o < LADDER_STEPS; o++) {
+      u[0] = this.kfb * out - vin;
+      let below = Math.tanh(u[0] / two);
+      for (let s = 1; s <= 4; s++) {
+        const t = Math.tanh(u[s] / two);
+        u[s] += amps * per[s] * (below - t);
+        below = t;
+      }
+      out = clamp(-this.gain * u[4], -RAIL, RAIL);
+    }
+    this.y = out;
+    y[0] = clamp(this.post * out, -RAIL, RAIL);
+  }
+  /** The tail current and the cutoff it sets: I / (8 pi C VT). */
+  read() { return { bias: this.amps, hz: this.amps / (8 * Math.PI * this.cMean * VT) }; }
+}
+
 /** A module of `kind` at these knobs. */
 export function makeSim(kind: string, sampleRate: number, knobs: Record<string, number> = {}): Sim {
   switch (kind) {
     case "vco": return new Vco(sampleRate, knobs);
     case "keys": return new Keys(sampleRate, knobs);
     case "bbd": return new Bbd(sampleRate, knobs);
+    case "ladder": return new Ladder(sampleRate, knobs);
     case "lfo": return new Lfo(sampleRate, knobs);
     case "seq": return new Seq(sampleRate, knobs);
     case "env": return new Env(sampleRate, knobs);

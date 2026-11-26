@@ -72,7 +72,13 @@ export interface StudioDef {
   /** What stands at the keys seat (a seat named for its section, piano, strings or brass, takes that section's instead):
    *  one of polysynth's classic families (gear-models.ts keysKind). The seat's id picks one when left out. */
   keys?: PolyKind;
+  /** A real venue as the room (#5933): a ShareSplat capture of the place, drawn round the seats (venue-splat.ts). Indoors
+   *  its floor, ceiling and outside walls stand in for the drawn ones; the room's size still bounds where you walk. */
+  venue?: Venue;
 }
+
+/** A captured venue: the hosted splat, how big it is drawn (1 = as captured), where its middle sits and its turn. */
+export interface Venue { src: string; scale: number; at: [number, number, number]; yaw: number }
 
 /**
  * An open-air party's rig, drawn by open-air.ts: the speaker stacks (each a horn bin, a mid-bass horn and a mid-high horn

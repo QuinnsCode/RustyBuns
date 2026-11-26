@@ -24,7 +24,7 @@ describe("stack builder", () => {
     expect(settle([bin, { gear: "sub-18", x: 1.5, y: 3 }])[1]!.y).toBe(0);
     // a mid-bass dropped at 0.5 m goes under the horn sitting at 0.8 m and lifts it
     const lifted = settle([...top, { gear: "stack-mid-bass", x: 0, y: 0.5 }]);
-    expect(lifted.map((b) => [b.gear, Math.round(b.y * 100)])).toEqual([["horn-sub-21", 0], ["stack-mid-bass", 80], ["stack-mid-high", 155]]);
+    expect(lifted.map((b) => [b.gear, Math.round(b.y * 100)])).toEqual([["horn-sub-21", 0], ["stack-mid-bass", 80], ["stack-mid-high", 165]]);
     expect(stats({ name: "", boxes: lifted }).layers).toBe(3);
   });
 

@@ -10,12 +10,14 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { GEAR_IDS, type GearId, gear, gearLook } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearLook } from "../src/gear.ts";
 import { surface, gearSurfaces } from "../src/surfaces.ts";
 
 // `close` is a macro shot: the front three-quarter view moved in on the top front corner, where a pixel is about
 // half a millimetre, so the coat's grain, the grille's holes and the hardware show as they would in a close photo.
-const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16] } as const;
+// `photo` is the dance stack top's reference photo's own view (#5948): from the box's left, near straight on, a little
+// above; `straight` is the owner's straight-on photo's. Neither is in the default set; `--js "turntable.angles = ['photo']"` picks one.
+const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16], photo: [-15, 8], straight: [0, 4] } as const;
 type Angle = keyof typeof ANGLES;
 
 // `?sky=1` (an outdoor overcast HDRI, the default): the photos' soft daylight. The sky does most of the lighting, the
@@ -130,11 +132,11 @@ function setLook(l: typeof look, done: Promise<unknown>) { look = l; ready = don
 /** `dance-stack`: the stack as the photos show one, two bass bins side by side and three columns of mid-bass and top
  * on them, the outer columns splayed out. */
 function danceStack(): THREE.Group {
-  const g = new THREE.Group(), sh = 0.8, bh = 0.75;
+  const g = new THREE.Group(), sh = 0.8, bh = GEAR_SIZES["stack-mid-bass"][1];
   for (const x of [-0.552, 0.552]) { const s = gear("horn-sub-21", { look }); s.position.x = x; g.add(s); }
   for (const k of [-1, 0, 1]) {
     const col = new THREE.Group();
-    col.position.set(k * 0.77, sh, k ? -0.06 : 0);
+    col.position.set(k * 0.62, sh, k ? -0.06 : 0);
     col.rotation.y = -k * 0.2;
     const mb = gear("stack-mid-bass", { look }), mh = gear("stack-mid-high", { look });
     mh.position.y = bh;
@@ -186,4 +188,4 @@ async function show(id: GearId | "dance-stack", angle: Angle) {
 // `?plain=1` is the flat look (the `low` quality setting); otherwise the material kit from the served textures/.
 if (!plain) { const kit = gearSurfaces({ base: "/textures/" }); setLook(kit.look, kit.ready); }
 
-Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack"], angles: Object.keys(ANGLES), show, ready: true, look: () => look, ao, contact, key } });
+Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack"], angles: ["front", "side", "back", "close"], show, ready: true, look: () => look, ao, contact, key } });

@@ -1,6 +1,6 @@
 # The sound wall
 
-**What it is:** a modular synth in Qollab Studio's gear room (`/studio.html`). It is a Eurorack case on a stand to the right of the rack, with eleven modules you patch with cables. Each module is a real circuit, drawn as a tscircuit board with Eurorack power. The sim plays that board, and the same board comes out of `bun scripts/pcb.ts` as Gerbers, a parts list and a front-panel drill template. So a patch you like in the room is also boards a fab can make.
+**What it is:** a modular synth in Qollab Studio's gear room (`/studio.html`). It is a Eurorack case on a stand to the right of the rack, with twelve modules you patch with cables. Each module is a real circuit, drawn as a tscircuit board with Eurorack power. The sim plays that board, and the same board comes out of `bun scripts/pcb.ts` as Gerbers, a parts list and a front-panel drill template. So a patch you like in the room is also boards a fab can make.
 
 The idea comes from Q Amp's pedals ([ANALOG.md](ANALOG.md) section 8): the circuit is the source, nothing is drawn twice. This page is the sound wall's part of that map.
 
@@ -16,7 +16,7 @@ Until the last is in, the sections on how the sim plays a module and on playing 
 
 ## Play it
 
-- **Where:** the gear room, `/studio.html`. Walk round the cab to the case right of the rack. The starter system stands in it: one of each module, left to right along the lower row, and Q Brigade at the left of the upper one.
+- **Where:** the gear room, `/studio.html`. Walk round the cab to the case right of the rack. The starter system stands in it: one of each module, left to right along the lower row, then Q Brigade and Q Ladder at the left of the upper one.
 - **Patch:** click a jack to take a cable, then click another jack to plug it in, as with the rest of the room's gear. Drag a knob to turn it. A first voice:
   1. Q Steps CV into Q Saw V/Oct.
   2. Q Saw's Saw into Q Filter In, and Q Filter LP into Q Level In.
@@ -25,6 +25,7 @@ Until the last is in, the sections on how the sim plays a module and on playing 
 - **Play it from the keys:** cable Q Keys' V/Oct into Q Saw's V/Oct and its Gate into Q Swell's Gate (in place of Q Steps'). Press Z and the letter keys play it, A to ' from C3, as FM DAW's keyboard does; you stand still until Z again. A MIDI keyboard plugged into the computer plays it too, whenever the speakers are up.
 - **In time with the band:** Q Keys' Clock runs at the sesh's tempo (120 bpm on your own), on the band's beat once the sesh's clock is known. Its Div knob picks quarters, eighths or sixteenths. Cable it into Q Steps' Clock to step the sequencer in time, or into Q Hiss' Clock for a new random voltage on each one.
 - **Echo:** cable Q Level Out into Q Brigade In, and Q Brigade Out where Q Level went. Time sets the delay (10 to 102 ms), Repeats feeds it back for more echoes, Mix fades from the dry note to the echo alone. Mod and Rate sweep the delay with the module's own LFO: a little at a slow Rate is a chorus, short Time with Repeats up a flanger. Time CV moves the delay from another module (a CV up makes it longer).
+- **The ladder:** Q Ladder is the other low-pass, four poles (24 dB an octave) to Q Filter's two. Put it where Q Filter is in the first voice: Q Saw's Saw into Q Ladder In, Q Ladder Out into Q Level In. Freq sets the cutoff (about 30 Hz to 27 kHz), CV moves it from another module (a volt an octave with the CV knob up), and Res makes it ring. At the top of Res it sings a sine at the cutoff on its own.
 - **Hear it:** M brings the speakers up. The wall plays from where its Q Out stands. The status line at the bottom says "Sound wall playing", or why it is silent.
 - **Clock In:** cable any clock (a square, a gate, another module's clock) into Q Steps' Clock and it steps on that instead of its own Rate.
 - **Sends and returns:** Q Bus has two aux buses. Turn a channel's A knob up, cable Send A out to a pedal or one of the rack's machines (Q Spring, Q Tape, Q Bucket), and cable that box's out back into Ret A. The return comes back into the main bus on its own knob, as a desk's return does. A send can also go to another module (into Q Filter, say), and a module's out can go into a return.
@@ -49,6 +50,7 @@ Each module is named by what it does. Each panel is laid out in `circuits/wall-p
 | Q Out | Line out to the room | 6 | Level, a 300k/100k divider to line level, and a buffer per side. In R takes In L when nothing is in it. | Its board's gains, as Q Bus. |
 | Q Hiss | Noise, sample and hold | 6 | A transistor's base-emitter junction in breakdown, amplified a hundredfold. A clock's edge, high-passed and squared by a comparator, opens a JFET onto a 1 nF hold capacitor for a fifth of a millisecond. S&H In takes the noise when nothing is in it. | White noise at the junction (20 mV rms, a typical part) through the board's coupling, gain and the op-amp's bandwidth. The sample and hold tracks while the high-passed clock is over the comparator's threshold. |
 | Q Brigade | Delay, chorus, flanger: a bucket brigade | 12 | A V3208D, 2048 stages on its own 9 V, between half an SA571 as a 2:1 compressor (and a 5 kHz Sallen-Key anti-alias filter) and the other half as a 1:2 expander (after the same reconstruction filter). Its clock: Time, the module's own triangle LFO (Mod, Rate) and Time CV summed onto a CD4046's VCO, halved into two phases by a CD4013 and driven by a CD4049UB. | The chip is 1024 buckets moved at the clock (gear's `Brigade`, the rack's Q Bucket's chip) and bent past its datasheet's swing; the compressor divides by its own rectified average and the expander multiplies by its input's, each with its averaging capacitor. The clock follows the VCO from R30, R31 and C20, the filters their parts, and the gains their netlists. |
+| Q Ladder | VCF, 24 dB/octave transistor ladder | 10 | A drive pair and four stages of matched NPN pairs on a tail current, 10 nF across each stage, their bases on a bias string. Two followers and a difference amplifier read the top capacitor; Res feeds it back into the drive pair, and a gain stage outside the loop brings it to Eurorack level. A two-NPN exponential converter sinks the tail. | The ladder's stage equations, four steps a sample: each capacitor moves with its pair's current less the pair's below, (I/2)(tanh(u below / 2VT) − tanh(u / 2VT)). I is the converter's current, and C, the dividers and the gains are the board's parts. |
 | Q Keys | MIDI to CV and clock | 6 | MIDI in at the back (an opto input), an ATtiny1614 and an MCP4822 DAC on their own 5 V, and a TL074 doubling each output: V/Oct from C2 at 0 V (trimmed by RT1), Gate 0 to 10 V, Vel 0 to 8 V, and the MIDI clock divided by Div. | The firmware's logic (last key held, the clock counted down), written to the DAC in its 1 mV steps, through the board's own output gains. |
 
 A module that switches (the clocks, the oscillators, the sample and hold) is read off its parts rather than solved each sample. A module that bends (OTAs, diodes) runs its netlist in the solver. A module that is linear mixes with its board's gain matrix. Change a part on a board and the sound follows: for example, C2 on Q Saw sets its pitch.
@@ -65,7 +67,7 @@ Each circuit is drawn from a textbook topology or a datasheet's application circ
 - **Bucket brigade, compander and clock** (Q Brigade): Coolaudio's V3208D datasheet ([coolaudio.com/en/products/V3208D](https://www.coolaudio.com/en/products/V3208D): the pinout, 4 to 10 V, VGG at 14/15 VDD, a 10 to 100 kHz two-phase clock, 0.36 V rms swing), onsemi's SA571 datasheet ([onsemi.com/pdf/datasheet/sa571-d.pdf](https://www.onsemi.com/pdf/datasheet/sa571-d.pdf): its basic compressor and basic expander, their gain laws, the internal 10k, 20k, 30k and 140 µA), and the CD4046's VCO and CD4013 flip-flop used as their datasheets have them. The textbook unity-gain Sallen-Key filter either side of the chip.
 - **NE555 and CD4017 datasheets** (Q Steps): the 555's astable equation, f = 1.44 / ((R1 + 2 R2) C), and the 4017 counting eight with Q8 on its reset.
 - **Noise and sample and hold** (Q Hiss): the textbook reverse-biased base-emitter noise source and a JFET track-and-hold, with the clock's edge differentiated into a comparator.
-- **Transistor ladder filter**, US patent 3,475,623 (1969, now expired; a scan is at [till.com](https://www.till.com/articles/moog/US03475623.html)). It is not on the wall yet. The solver can play one, but at about ten times what Q Filter costs (see [The ladder, measured](#the-ladder-measured)).
+- **Transistor ladder filter**, US patent 3,475,623 (1969, now expired; a scan is at [till.com](https://www.till.com/articles/moog/US03475623.html)). Q Ladder draws it with our own values: the patent's drive pair and stacked common-base pairs, a bias string, and the textbook matched-pair converter sinking the tail.
 - **Eurorack mechanics and power**, from Doepfer's A-100 construction details ([doepfer.de/a100_man/a100m_e.htm](https://doepfer.de/a100_man/a100m_e.htm)). Panels are 128.5 mm tall and 1 HP is 5.08 mm, with 84 HP to a row. The 10-pin power header has −12 V on the ribbon's red stripe, ground in the middle and +12 V at the other end.
 - **Footprints**, from KiCad's library: the 3.5 mm jack is `Connector_Audio/Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical`, the "Thonkiconn" type (pads S, TN, T at 0, 3.1 and 11.4 mm, bushing at 6.48 mm). The pot is `Potentiometer_THT/Potentiometer_Alpha_RD901F-40-00D_Single_Vertical` (legs 2.5 mm apart, shaft 7.5 mm off the leg row, two mounting tabs). Only their pad positions were taken.
 
@@ -108,8 +110,9 @@ It also writes `circuits/wall-<id>.circuit.json`, the netlist the sim reads. Eve
 | Q Hiss | 6 | 30 | 62 | 31 | TL074 |
 | Q Keys | 6 | 40 | 93 | 44 | LM78L05, HCPL-0601, ATtiny1614, MCP4822, TL074 |
 | Q Brigade | 12 | 85 | 200 | 165 | 2 × TL074, SA571, V3208D, LM78L09, CD4046, CD4013, CD4049UB |
+| Q Ladder | 10 | 63 | 127 | 95 | TL074, TL072 (and 12 MMBT3904) |
 
-The set fits the case's two 84 HP rows (`test/wall-panels.test.ts` checks it): the first ten fill 84 HP of the lower row, and Q Brigade starts the upper one.
+The set fits the case's two 84 HP rows (`test/wall-panels.test.ts` checks it): the first ten fill 84 HP of the lower row, and Q Brigade and Q Ladder start the upper one.
 
 **A finding about the power header.** tscircuit numbers a two-row header around its outline, like a chip: pins 1 and 2 down the first column, 3 to 6 along one row, 7 to 10 back along the other. A ribbon cable numbers it with odd pins on one row and even on the other. With ribbon numbering, +12 V would have landed on two of the board's ground pins. The kit labels the header's pins by where tscircuit puts them, and `pcb.ts` fails any module board whose ±12 V pads aren't its two end columns.
 
@@ -136,7 +139,7 @@ Before the transistor ladder low-pass is built as a module ([#5748](https://gith
 - **What would make it fit: its stage equations.** Each stage's capacitor moves with the difference between its pair's current and the pair's below: C du/dt = (I/2)(tanh(u below / 2VT) − tanh(u / 2VT)). Every number in it is the board's: the tail current from the converter, C, VT, the input and feedback dividers, and the output gain. It is how the wall already plays its switching modules, and it lands 5 to 7% from the solved ladder at 1.4 and 4.7 kHz cutoffs, and 18% at 19 kHz with Res high (its four steps a sample are explicit; more would close that).
 - **A cheaper transistor** would also help: the ladder's base-collector junctions never conduct, so a forward-active transistor (one junction to solve in place of two) halves Newton's ports. That is an estimate (very roughly 1.5 to 2× Q Filter), not measured, and it changes both solvers.
 
-Which one the module plays is the owner's call, and the build follows it ([#5812](https://github.com/QuinnsCode/RustyBuns/issues/5812)).
+Q Ladder plays the stage equations ([#5812](https://github.com/QuinnsCode/RustyBuns/issues/5812)), every number read off its board, as `Vco` and `Bbd` do. Its sim costs 0.13 µs a sample on the builder Mac (a twentieth of Q Filter's 2.8), and the first voice with it in Q Filter's place runs at 7.6× real time (`bun bench/ladder.ts`, its last two lines). The forward-active transistor stays an idea: built, it would let the solver check the equations against the board.
 
 ## Building one
 
@@ -158,6 +161,7 @@ The boards are made to be built, but none has been built yet. What a build takes
 - **Q Brigade's chip: stock first** (#5747). Bucket-brigade chips are hard to buy. On 2026-11-23 the V3208D (Coolaudio, 2048 stages, DIP-8, still on Coolaudio's home page) was in stock at several sellers: [StompBoxParts](https://stompboxparts.com/semiconductors/v3208d-bbd-ic/) said 1000, [UralTone](https://en.uraltone.com/coolaudio-v3208d-2048-stage-low-noise-bbd-analog-delay-line-ic-dip8.html) 67, [Musikding](https://www.musikding.de/V3208D_1) and Cabintech Global on Reverb had it, and synthCube was out. The 4096-stage V3205 was in stock at some sellers and gone at others, so the board uses the V3208D. Its clock driver, the V3102, isn't used: the board makes its own clock from 4000-series chips, so nothing but the BBD is hard to find. onsemi still makes the SA571 in one package (SA571DR2G, SOIC-16 wide); the other SA571 packages are discontinued. Check stock again before ordering.
 - **Q Brigade's clock edges:** the datasheet asks for the two phases to cross below 0.3 VDD and rise in under 500 ns into 2.8 nF a pin. Three CD4049UB inverters a phase should be quick enough; how the phases cross hasn't been looked at on a scope.
 - **Q Brigade's trims and spreads:** RT1 sets the chip's input bias; trim it for the least distortion, as the datasheet says (the sim plays it trimmed). The SA571's THD trim pins are left open. A CD4046's VCO spreads a lot from part to part, so Time's range may sit off the sim's 10 to 102 ms; R30 and R31 move its ends. The V3208D goes in an 8-pin socket.
+- **Q Ladder's pairs:** the ladder is DC-coupled, and the difference amplifier's gain of 47 turns a few millivolts of mismatch between a pair's two transistors into a DC offset at Out. Match each pair (or use dual parts) and the converter's Q1 and Q2. The sim's pairs are perfect, and it plays the ladder from its stage equations, not its transistors: 5 to 7% from the solved ladder at 1.4 and 4.7 kHz, 18% at 19 kHz with Res high.
 - **What the sim leaves out:** VCO drift, the 555's longer first cycle, Q Level's current-mirror mismatch, and the LM13700's Darlington buffers (not used here: op-amps buffer instead).
 
 ## What's where
@@ -178,10 +182,10 @@ The boards are made to be built, but none has been built yet. What a build takes
 | `packages/gear/src/circuit/mna.ts` | What the solver gained for the wall: several driven inputs (`supplyAt`, `drive`), current sources (`I`, `sourceInto`, `push`), pots folded into resistors (`fixPots`), and carrying a circuit's charge over a rebuild (`adopt`). TypeScript only. |
 | `test/gear-wall.test.ts` | The wall in a sesh: one page patches a voice and brings a module, the other plays the same wall on the same step. |
 | `test/wall-bbd.test.ts` | Q Brigade in a patch: a note's echo at the Time knob's delay and as loud as it went in, Repeats, Mod and Time CV. |
-| `bench/ladder.ts` | The transistor ladder's cost: in the solver and as its stage equations, against Q Filter and in the first voice. |
+| `test/wall-ladder.test.ts` | Q Ladder: its cutoff following Freq and CV, four poles off what is over it, Res ringing and singing, and the first voice with it in Q Filter's place. |
+| `bench/ladder.ts` | The transistor ladder's cost: in the solver, as its stage equations and as Q Ladder's sim, against Q Filter and in the first voice. |
 | `test/wall.test.ts` | The journey (patch a voice, hear it follow the sequencer, add a module, loop a send through the spring, lose a module's power), and each board doing what its panel says. |
 
 ## Next
 
-- More modules for the upper row: the transistor ladder filter, measured ([above](#the-ladder-measured)) and waiting on how its sim plays it ([#5812](https://github.com/QuinnsCode/RustyBuns/issues/5812)).
 - A prototype order and build, then the loop the pedals plan: record the built module, play the same patch in the sim, and compare. Whether to order one is the owner's call (a manual run).
