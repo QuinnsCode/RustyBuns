@@ -4,7 +4,7 @@
 // says which part each knob turns, and which parts a player can swap.
 // Pedals run on a split supply (op-amp rails ±4 V around ground) instead of a
 // 9 V battery and a 4.5 V bias divider: the same circuit, minus the bias parts.
-import type { MachineCircuits, Netlist } from "@rustybuns/gear/circuit";
+import type { MachineCircuits, Netlist, StageSpec, ToneSpec } from "@rustybuns/gear/circuit";
 import { DIODE_PARTS, boardToNetlist, readBoard, type BoardOptions, type Junction } from "./tscircuit.ts";
 import dist from "../../circuits/dist.circuit.json";
 import drive from "../../circuits/drive.circuit.json";
@@ -150,20 +150,7 @@ export function fuzz(drive = 0.7, swaps?: Swaps, json?: unknown): Netlist {
   return pedal("fuzz", 20e3 + drive ** 2 * 2e6, swaps, { noisy: ["R1"] }, json);
 }
 
-/** One 12AX7 gain stage: coupling cap and grid leak, grid stopper, plate load, cathode resistor (and bypass cap). */
-export interface StageSpec {
-  /** Cathode resistor: bigger is colder, cleaner and more asymmetric when it clips. */
-  rk: number;
-  /** Cathode bypass cap (0 for none): more gain above 1/(2π·rk·ck). Small values keep the lows tight. */
-  ck: number;
-  /** Coupling cap into the grid: smaller cuts more lows before this stage. */
-  cc?: number;
-  rp?: number;
-  bplus?: number;
-  /** Its grid stopper and plate load hiss (the first stage: everything after amplifies it). */
-  noisy?: boolean;
-}
-
+/** One 12AX7 gain stage, from the triode board (`StageSpec` and the heads are `@rustybuns/gear/circuit`'s). */
 export function triodeStage(s: StageSpec): Netlist {
   return boardToNetlist(BOARDS.triode, {
     values: { C1: s.cc ?? 22e-9, RK: s.rk, CK: s.ck, RP: s.rp ?? 100e3 },
@@ -187,9 +174,7 @@ export const MACHINES: MachineCircuits = {
   recordAmp: boardToNetlist(BOARDS.tape),
 };
 
-/** The passive bass/mid/treble network most guitar amps share. Knobs 0 to 10. */
-export interface ToneSpec { bass: number; mid: number; treble: number; slope?: number; cTreble?: number; cBass?: number; cMid?: number }
-
+/** The passive bass/mid/treble network most guitar amps share, from the tone board. Knobs 0 to 10. */
 export function toneStack(t: ToneSpec): Netlist {
   const pot = (k: number) => Math.min(Math.max(k / 10, 0.001), 0.999);
   const tr = pot(t.treble), bass = pot(t.bass) ** 2, mid = pot(t.mid) ** 2; // bass and mid are log-taper pots

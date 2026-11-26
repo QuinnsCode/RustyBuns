@@ -22,9 +22,9 @@ Open `docs/story.html` for the map: regions as columns, the four kinds as rows, 
 | S1 | every playable region has 1 main, 2 sub, 3 side, 1 unlock | 100% | 1.00 |
 | S2 | every playable region's world names all 7 senses (place, life, weather, sound, people, history, craft) | 100% | 1.00 |
 | S3 | written beats tied to another arc (40% is full marks) | 100% | 1.00 |
-| S4 | written beats the game plays (built) | 20% | 0.20 |
-| S5 | world wants the game has (built) | 23% | 0.23 |
-| | **total** | | **3.43 of 5** |
+| S4 | written beats the game plays (built) | 39% | 0.39 |
+| S5 | world wants the game has (built) | 32% | 0.32 |
+| | **total** | | **3.71 of 5** |
 
 ## Threads
 
@@ -38,7 +38,8 @@ Open `docs/story.html` for the map: regions as columns, the four kinds as rows, 
 | The Lamplighters *(game)* | sub | 8 | 8 | The Book is a cage with pages. A cage cannot walk, so it hires a hand. You are the hand. We read the tracks for years and we are sure. Do not ask the cage. A cage says what a cage says. |
 | Sighting boards *(game)* | side | 16 | 16 | Two cryptid contracts a region, pinned in a town: read the report, follow three signs, find the named creature. |
 | The Book wakes | main | 11 | 1 | The Book's ledger, region by region. Each mythic you bring it is a name it already knew, and each region shows a little more of why something is waking the cryptids. What the Book is stays the owner's to write; these beats only point at it. |
-| Gary's documentary | sub | 5 | 0 | Gary narrates the found tapes, always one region ahead of you and always just missing the shot. His tapes get stranger and closer, until you meet him at Fouke, where the old drive-in still shows a monster film. |
+| Gary's documentary | sub | 8 | 6 | Gary narrates the found tapes, always one region ahead of you and always just missing the shot. His tapes get stranger and closer, until you meet him at Fouke, where the old drive-in still shows a monster film. |
+| The Office's lost reels | sub | 8 | 8 | The Office films its subjects too, and Agent Quist loses a reel in every region. Each one is a page of the Office's file on you and the Book, read over the history of the place, with what the agents would never log said off the record. The last one says where Quist keeps the rest. |
 | The last bearer | sub | 3 | 0 | The rust thumbprint on every page belongs to someone. Their trail runs through lumber camps, a ghost town and a bayou: a hat, a field guide, a pirogue. Who they were is the owner's to write. |
 | Letters between the fires | sub | 8 | 8 | The eight believer groups write to each other but never meet. Carry their letters camp to camp along the road and, at the end, they hold their first convention at the Howl-Back Club's ridge. Each letter makes the next camp trust you sooner. |
 | Evenings in the east | side | 6 | 0 | One place, one evening each: a fire tower, a flooded bog, a logging train, a feud, a county fair, a portage. |
@@ -61,9 +62,10 @@ Region 1, from level 2.
 **sub**
 
 - **A letter in foil** (The Hatters of Ong's Hat; built). The Hatters of Ong's Hat give you a letter wrapped in tin foil for the Porchlight Vigil, 'so the mothmen can't read it'.
-- **Gary and the cedar water** (Pine Barrens: Mullica River, level 2; idea). The first Gary tape: cedar water, tannins, 'the water just moved'. Nobody knows who Gary is; the Lamplighters have heard of a man with a camera.
+- **Gary and the cedar water** (Pine Barrens: Batsto Village, level 2; built). The first Gary tape, in a stump at Batsto: cedar water, tannins, 'the water just moved'. Nobody knows who Gary is; the Lamplighters have heard of a man with a camera.
 - **First Lamp** (Lamplighters: First Lamp, level 3; built, from the game). Wren Ashby stopped me at a path light in Wharton Forest and asked why I carry the Book.
 - **Form 9-C** (the Office: Form 9-C, level 4; built, from the game). The Office stopped you under the fire tower on Apple Pie Hill and opened a file.
+- **Apple Pie Hill** (Pine Barrens: Apple Pie Hill, level 4; built). Agent Quist's first reel, dropped under the fire tower: the file on you opens, the Pine Barrens' iron and glass are read into it, and off the record nobody stands under the tower after dark. *After: Form 9-C.*
 - **Baseline** (the Institute: Baseline, level 6; built, from the game). Toby Reyes of the Halloway Institute asked for a baseline at Blue Hole.
 - **The hat in the pine** (Pine Barrens: Ong's Hat, level 7; idea). Ong's Hat is named for a hat thrown into a pine that never came down. It is still up there. Climb for it and the hat band has a rust thumbprint inside. *After: Item 1.*
 
@@ -102,7 +104,7 @@ Region 1, from level 2.
 - [x] sound: Whip-poor-wills calling at dusk, the tree frog's nasal quonk, thunder over the pines.
 - [ ] sound: Wind in pitch pine needles, sand squeaking underfoot.
 - [x] people: Pineys: old families who cut cedar, pick berries and know every sand road by name; the Hatters of Ong's Hat at the first fire.
-- [ ] history: Bog iron, glass works and charcoal pits of the 1700s and 1800s; cannonballs for the Revolution cast at Batsto.
+- [x] history: Bog iron, glass works and charcoal pits of the 1700s and 1800s; cannonballs for the Revolution cast at Batsto.
 - [ ] craft: Cedar shingles, wood-fired glass, cranberry scoops, a diner on the highway with a neon sign that hums.
 
 ## 2. Appalachian hollows
@@ -121,7 +123,8 @@ Region 2, from level 10.
 
 - **A moth-wing seal** (The Porchlight Vigil; built). The Porchlight Vigil reads the letter by porch light and writes back, sealed with a moth wing, to the Backwards Lodge. *After: A letter in foil.*
 - **Quiet Zone** (the Office: Quiet Zone, level 13; built, from the game). At Green Bank the Office ordered the Book switched off, and Agent Quist asked about the mothman. *After: Form 9-C.*
-- **Hold the shot** (Appalachian hollows: New River Gorge, level 13; idea). Gary at the New River Gorge bridge: something on the far cliff waves. If you go to that cliff, his tripod marks are still in the moss and there is a dropped lens cap with a name scratched on it. *After: Gary and the cedar water.*
+- **Hold the shot** (Appalachian hollows: New River Gorge, level 13; built). Gary at the New River Gorge bridge: something on the far cliff waves. If you go to that cliff, his tripod marks are still in the moss and there is a dropped lens cap with a name scratched on it. *After: Gary and the cedar water.*
+- **Green Bank** (Appalachian hollows: Green Bank, level 13; built). In the Radio Quiet Zone the Book makes a sound nothing should make; Pell files it as wind. The hollows' raid and feud go into the file, and Quist's question about the mothman gets an answer from the Book, not from you. *After: Quiet Zone.*
 - **Dead Drop** (Lamplighters: Dead Drop, level 14; built, from the game). Pip asked me to carry a paper message past the Office cordon on the Tug Fork. *After: First Lamp.*
 - **Cold Room** (the Institute: Cold Room, level 15; built, from the game). Dr. Vale offered Reagent 12 at the McClintic igloos, for data on the Book. *After: Baseline.*
 
@@ -149,7 +152,7 @@ Region 2, from level 10.
 - [ ] weather: Morning valley fog that burns off by ten; cold at night on the knobs even in summer.
 - [ ] sound: Creek water over rocks, a far coal train, a banjo on a porch, the hum of the ridge after dark.
 - [x] people: The Porchlight Vigil in moth capes; coal families; whitewater guides; the Office's sedan that won't start.
-- [ ] history: The 1859 raid at Harpers Ferry, the Hatfield and McCoy feud, the Silver Bridge's fall in 1967.
+- [x] history: The 1859 raid at Harpers Ferry, the Hatfield and McCoy feud, the Silver Bridge's fall in 1967.
 - [ ] craft: Quilts on porch rails, moonshine stills in the hollows, company-town houses all alike.
 
 ## 3. Great North Woods
@@ -168,6 +171,8 @@ Region 3, from level 18.
 - **Written backwards** (The Backwards Lodge; built). The Backwards Lodge answers in mirror writing. Hold it to your lamp at the Frog Watch's landing to read it. *After: A moth-wing seal.*
 - **The Wooden One** (the Office: The Wooden One, level 18; built, from the game). At Rhinelander, Agent Pell guarded a crate that holds the wired wooden hodag of the 1896 fair. *After: Quiet Zone.*
 - **Tall Tales** (Lamplighters: Tall Tales, level 19; built, from the game). Old Dutch asked me at the logging camp to leave the hidebehind alone. *After: Dead Drop.*
+- **Gary walks first** (Great North Woods: Logging camp, level 19; built). A Gary tape on a stump at the logging camp. Old Dutch told him never to walk last on a north-woods trail, so he walked first, alone, and heard a second set of boots stop when his did. He left the camera running for whoever came next. *After: Hold the shot, Tall Tales.*
+- **Wisconsin River** (Great North Woods: Wisconsin River, level 19; built). Agent Pell's reel on the river the logs came down: the white pine boom and the hodag hoax, read aloud like procedure, and the crate that moved in the night from the inside. *After: The Wooden One.*
 - **The camp ledger** (Great North Woods: Logging camp, level 19; idea, owner writes). The logging camp's 1908 ledger has one man paid in cryptids: hodag, squonk, agropelter, the Book's own starters, with the same thumbprint by his mark. *After: The hat in the pine, Tall Tales.*
 - **Field Guide** (the Institute: Field Guide, level 24; built, from the game). Dr. Vale asked for squonk tears at Cox's field guide. *After: Cold Room.*
 
@@ -181,7 +186,7 @@ Region 3, from level 18.
 **unlock**
 
 - **The canoe** (Great North Woods: Boundary Waters, level 21; idea). After the portage, the canoe is yours. Lakes and slow rivers in the north woods become roads. *Opens: paddling lakes and slow rivers.* *After: Portage.*
-- **The road to the Great Lakes and Lake Champlain** (Great North Woods: The hidebehind, level 26; built, from the game). Beating Hidebehind opens the road from the Great North Woods to the Great Lakes and Lake Champlain. *Opens: region 5, Great Lakes and Lake Champlain, from level 34.* *After: Hidebehind at The hidebehind.*
+- **The road to the Great Lakes and Lake Champlain** (Great North Woods: The hidebehind, level 26; built, from the game). Beating Hidebehind opens the road from the Great North Woods to the Great Lakes and Lake Champlain. *Opens: region 5, Great Lakes and Lake Champlain, from level 26.* *After: Hidebehind at The hidebehind.*
 
 **world**
 
@@ -194,41 +199,42 @@ Region 3, from level 18.
 - [ ] weather: Deep snow and lake-effect squalls in winter; northern lights on clear cold nights.
 - [ ] sound: The loon's wail across water at night, ice booming on a frozen lake, the axe and the crosscut saw.
 - [x] people: The Backwards Lodge with mirrors on their headbands; old lumberjacks; Ojibwe rice harvesters on the lakes (setting, told with care).
-- [ ] history: The white pine logging boom of 1870-1910; Eugene Shepard's hodag hoax of 1893.
+- [x] history: The white pine logging boom of 1870-1910; Eugene Shepard's hodag hoax of 1893.
 - [ ] craft: Peaveys and pike poles, birchbark canoes, wool plaid coats, a cook shack's tin plates.
 
 ## 4. Great Lakes and Lake Champlain
 
-Region 5, from level 34.
+Region 5, from level 26.
 
 *Water as wide as a sea, lighthouses and ferries, an island with no cars, and a long lake between mountains where something keeps surfacing.*
 
 **main**
 
-- **The torn page** (Great Lakes and Lake Champlain: The photograph, level 39; idea). In the corner of the 1977 Champ photograph there is a pale square on the water: a page. The Book has a stub where a leaf was cut. Champ's water holds it; beating Champ lets you dive for it. *After: Margin notes, 1910.*
-- **Champ at Champ's water** (Great Lakes and Lake Champlain: Champ's water, level 42; built, from the game). The last stone of the Great Lakes and Lake Champlain trail: the region's mythic, Champ, in its lair. Beat it and the Book can hold it.
-- **The page comes home** (Great Lakes and Lake Champlain: Champ's water, level 42; idea, owner writes). The wet page goes back in at the stub and the Book reads it out: a list of names, crossed through, region by region. Owner writes what the page says. *After: The torn page, Champ at Champ's water.*
+- **The torn page** (Great Lakes and Lake Champlain: The photograph, level 31; idea). In the corner of the 1977 Champ photograph there is a pale square on the water: a page. The Book has a stub where a leaf was cut. Champ's water holds it; beating Champ lets you dive for it. *After: Margin notes, 1910.*
+- **Champ at Champ's water** (Great Lakes and Lake Champlain: Champ's water, level 34; built, from the game). The last stone of the Great Lakes and Lake Champlain trail: the region's mythic, Champ, in its lair. Beat it and the Book can hold it.
+- **The page comes home** (Great Lakes and Lake Champlain: Champ's water, level 34; idea, owner writes). The wet page goes back in at the stub and the Book reads it out: a list of names, crossed through, region by region. Owner writes what the page says. *After: The torn page, Champ at Champ's water.*
 
 **sub**
 
 - **A wet letter** (The Frog Watch; built). The Frog Watch dry the letter by their torches and add a pressed frog (rubber) for the Blurry Society. *After: Written backwards.*
-- **The tripod at Niagara** (Great Lakes and Lake Champlain: Niagara, level 34; idea). Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose. *After: Hold the shot.*
-- **The Frames** (the Office: The Frames, level 37; built, from the game). The Office called your camcorder evidence and asked for the tape. *After: The Wooden One.*
-- **The Count** (the Institute: The Count, level 37; built, from the game). Ms. Carrow counted deliverables on Isle Royale: twelve needed, nine held. *After: Field Guide.*
-- **The Road Shut** (Lamplighters: The Road Shut, level 38; built, from the game). Wren Ashby shut the road west at Lake Champlain and asked me for a promise about the giant. *After: Tall Tales.*
+- **The tripod at Niagara** (Great Lakes and Lake Champlain: Niagara, level 26; idea). Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose. *After: Gary walks first.*
+- **The Frames** (the Office: The Frames, level 29; built, from the game). The Office called your camcorder evidence and asked for the tape. *After: The Wooden One.*
+- **The Count** (the Institute: The Count, level 29; built, from the game). Ms. Carrow counted deliverables on Isle Royale: twelve needed, nine held. *After: Field Guide.*
+- **The Road Shut** (Lamplighters: The Road Shut, level 30; built, from the game). Wren Ashby shut the road west at Lake Champlain and asked me for a promise about the giant. *After: Tall Tales.*
+- **Valcour Island** (Great Lakes and Lake Champlain: Valcour Island, level 32; built). The Office wanted your camcorder tape and did not get it. Quist's reel from Valcour Island reads the lake's battles, wrecks and one photograph into the file. *After: The Frames.*
 
 **side**
 
-- **No cars on Mackinac** (Great Lakes and Lake Champlain: Mackinac Island, level 37; idea). Cars have been banned on Mackinac Island since 1898. The Office's sedan is stuck at the ferry dock. Deliver their forms by bicycle before the last boat. *After: The Frames.*
-- **The wolf count** (Great Lakes and Lake Champlain: Isle Royale, level 37; idea). Wolves and moose on Isle Royale have been counted every winter since 1958, the longest study of its kind. Help the count from a snow camp; one set of tracks is not a wolf's. *After: The Isle Royale Brute.*
-- **The Lake Erie Prowler** (The Lake Erie Prowler, level 38; built, from the game). A sighting board in Lake Erie: the trucker saw the Dover Demon. Three signs lead to its lair.
-- **The Isle Royale Brute** (The Isle Royale Brute, level 41; built, from the game). A sighting board in Isle Royale: the trucker saw the Beast of Bray Road. Three signs lead to its lair.
+- **No cars on Mackinac** (Great Lakes and Lake Champlain: Mackinac Island, level 29; idea). Cars have been banned on Mackinac Island since 1898. The Office's sedan is stuck at the ferry dock. Deliver their forms by bicycle before the last boat. *After: The Frames.*
+- **The wolf count** (Great Lakes and Lake Champlain: Isle Royale, level 29; idea). Wolves and moose on Isle Royale have been counted every winter since 1958, the longest study of its kind. Help the count from a snow camp; one set of tracks is not a wolf's. *After: The Isle Royale Brute.*
+- **The Lake Erie Prowler** (The Lake Erie Prowler, level 30; built, from the game). A sighting board in Lake Erie: the trucker saw the Dover Demon. Three signs lead to its lair.
+- **The Isle Royale Brute** (The Isle Royale Brute, level 33; built, from the game). A sighting board in Isle Royale: the trucker saw the Beast of Bray Road. Three signs lead to its lair.
 
 **unlock**
 
-- **The road to the Pacific Northwest rainforest** (Great Lakes and Lake Champlain: Champ's water, level 42; built, from the game). Beating Champ opens the road from the Great Lakes and Lake Champlain to the Pacific Northwest rainforest. *Opens: region 4, Pacific Northwest rainforest, from level 26.* *After: Champ at Champ's water.*
-- **The road to the Ozarks and the southern plains** (Great Lakes and Lake Champlain: Champ's water, level 42; built, from the game). Beating Champ opens the road from the Great Lakes and Lake Champlain to the Ozarks and the southern plains. *Opens: region 8, Ozarks and the southern plains, from level 58.* *After: Champ at Champ's water.*
-- **The second pen** (Great Lakes and Lake Champlain: Champ's water, level 42; idea). The Book grows a second pen loop in its spine and wants it filled. With two pens, a bind gets a fourth try. *Opens: a fourth try when binding.* *After: The page comes home.*
+- **The road to the Pacific Northwest rainforest** (Great Lakes and Lake Champlain: Champ's water, level 34; built, from the game). Beating Champ opens the road from the Great Lakes and Lake Champlain to the Pacific Northwest rainforest. *Opens: region 4, Pacific Northwest rainforest, from level 34.* *After: Champ at Champ's water.*
+- **The road to the Ozarks and the southern plains** (Great Lakes and Lake Champlain: Champ's water, level 34; built, from the game). Beating Champ opens the road from the Great Lakes and Lake Champlain to the Ozarks and the southern plains. *Opens: region 8, Ozarks and the southern plains, from level 58.* *After: Champ at Champ's water.*
+- **The second pen** (Great Lakes and Lake Champlain: Champ's water, level 34; idea). The Book grows a second pen loop in its spine and wants it filled. With two pens, a bind gets a fourth try. *Opens: a fourth try when binding.* *After: The page comes home.*
 
 **world**
 
@@ -240,37 +246,39 @@ Region 5, from level 34.
 - [ ] weather: Gales in November that sink ships; lake-effect snow; still summer evenings with the water like glass.
 - [ ] sound: Foghorns, horse hooves on Mackinac's streets, waves on shingle, a freighter's horn.
 - [x] people: The Frog Watch in waders with torches; ferry crews; lighthouse keepers' families.
-- [ ] history: The 1977 Champ photograph; the Battle of Valcour Island in 1776; shipwrecks of the lakes.
+- [x] history: The 1977 Champ photograph; the Battle of Valcour Island in 1776; shipwrecks of the lakes.
 - [ ] craft: Fudge, birch-bark souvenirs, lake boats, a lighthouse lens of brass and glass.
 
 ## 5. Pacific Northwest rainforest
 
-Region 4, from level 26.
+Region 4, from level 34.
 
 *Green on green: moss over everything, giant trees, mist off the sea, a volcano with its side blown out.*
 
 **main**
 
-- **What the ash holds** (Pacific Northwest rainforest: Mount St. Helens, level 28; idea, owner writes). The 1980 ash under the Mount St. Helens forest has rust-coloured flecks in it, and the wild ones roam thickest where the ash lies deepest. Dr. Vale's ash cores say the flecks are not from the volcano. The land itself is waking them. *After: The page comes home, The Count.*
-- **Sasquatch at Sasquatch's ridge** (Pacific Northwest rainforest: Sasquatch's ridge, level 34; built, from the game). The last stone of the Pacific Northwest rainforest trail: the region's mythic, Sasquatch, in its lair. Beat it and the Book can hold it.
+- **What the ash holds** (Pacific Northwest rainforest: Mount St. Helens, level 36; idea, owner writes). The 1980 ash under the Mount St. Helens forest has rust-coloured flecks in it, and the wild ones roam thickest where the ash lies deepest. Dr. Vale's ash cores say the flecks are not from the volcano. The land itself is waking them. *After: The page comes home, The Count.*
+- **Sasquatch at Sasquatch's ridge** (Pacific Northwest rainforest: Sasquatch's ridge, level 42; built, from the game). The last stone of the Pacific Northwest rainforest trail: the region's mythic, Sasquatch, in its lair. Beat it and the Book can hold it.
 
 **sub**
 
 - **A blurry photograph** (The Blurry Society; built). The Blurry Society send their best photograph, which shows nothing at all, to the Antler Choir. *After: A wet letter.*
-- **The Long Study** (the Institute: The Long Study, level 28; built, from the game). Toby Reyes asked for one specimen out of the cold room at Mount St. Helens. *After: The Count.*
-- **The Tandem** (the Office: The Tandem, level 30; built, from the game). At Bluff Creek Control started Protocol QUIET, and Agent Quist asked what the Book does with them. *After: The Frames.*
-- **Night Boat** (Lamplighters: Night Boat, level 30; built, from the game). Pip asked me to ride the night boat down Redwood Creek with three passengers. *After: The Road Shut.*
+- **The Long Study** (the Institute: The Long Study, level 36; built, from the game). Toby Reyes asked for one specimen out of the cold room at Mount St. Helens. *After: The Count.*
+- **Bluff Creek** (Pacific Northwest rainforest: Bluff Creek, level 37; built). Control starts Protocol QUIET over the radio while Quist reads the road crew's 1958 tracks and the 1967 film into the file, then asks the question nobody answers: what does the Book do with them? *After: The Tandem.*
+- **The Tandem** (the Office: The Tandem, level 38; built, from the game). At Bluff Creek Control started Protocol QUIET, and Agent Quist asked what the Book does with them. *After: The Frames.*
+- **Night Boat** (Lamplighters: Night Boat, level 38; built, from the game). Pip asked me to ride the night boat down Redwood Creek with three passengers. *After: The Road Shut.*
+- **Gary at the sandbar** (Pacific Northwest rainforest: The film, level 38; built). Gary stands where the 1967 film was shot at Bluff Creek, after one frame nobody can argue with. Two Office agents ask for his camera, and ask if he has seen you. *After: The tripod at Niagara, The Tandem.*
 
 **side**
 
-- **Count the rings** (Pacific Northwest rainforest: Hoh Rain Forest, level 26; idea). Toby Reyes needs the rings of a fallen Sitka spruce in the Hoh counted before dark. Every ring has a year; one ring is scorched in a year with no fire on record. *After: The Count.*
-- **The Lake Quinault Brute** (The Lake Quinault Brute, level 30; built, from the game). A sighting board in Lake Quinault: the birdwatcher saw the Splintercat. Three signs lead to its lair.
-- **The missing frames** (Pacific Northwest rainforest: The film, level 30; idea). The 1967 Bluff Creek film runs about a minute. A collector says there were more frames, cut and lost. Find three cans of film at the creek's old camps. *After: The Bluff Creek Prowler.*
-- **The Bluff Creek Prowler** (The Bluff Creek Prowler, level 33; built, from the game). A sighting board in Bluff Creek: the farmhand saw the Wampus Cat. Three signs lead to its lair.
+- **Count the rings** (Pacific Northwest rainforest: Hoh Rain Forest, level 34; idea). Toby Reyes needs the rings of a fallen Sitka spruce in the Hoh counted before dark. Every ring has a year; one ring is scorched in a year with no fire on record. *After: The Count.*
+- **The Lake Quinault Brute** (The Lake Quinault Brute, level 38; built, from the game). A sighting board in Lake Quinault: the birdwatcher saw the Splintercat. Three signs lead to its lair.
+- **The missing frames** (Pacific Northwest rainforest: The film, level 38; idea). The 1967 Bluff Creek film runs about a minute. A collector says there were more frames, cut and lost. Find three cans of film at the creek's old camps. *After: The Bluff Creek Prowler.*
+- **The Bluff Creek Prowler** (The Bluff Creek Prowler, level 41; built, from the game). A sighting board in Bluff Creek: the farmhand saw the Wampus Cat. Three signs lead to its lair.
 
 **unlock**
 
-- **The road to the Southwest desert** (Pacific Northwest rainforest: Sasquatch's ridge, level 34; built, from the game). Beating Sasquatch opens the road from the Pacific Northwest rainforest to the Southwest desert. *Opens: region 6, Southwest desert, from level 42.* *After: Sasquatch at Sasquatch's ridge.*
+- **The road to the Southwest desert** (Pacific Northwest rainforest: Sasquatch's ridge, level 42; built, from the game). Beating Sasquatch opens the road from the Pacific Northwest rainforest to the Southwest desert. *Opens: region 6, Southwest desert, from level 42.* *After: Sasquatch at Sasquatch's ridge.*
 
 **world**
 
@@ -283,7 +291,7 @@ Region 4, from level 26.
 - [ ] weather: Rain most days, soft and steady; sea fog in the morning; snow on the volcano tops all year.
 - [ ] sound: Drip from every branch, the raven's knock, surf on Cape Flattery, a wood knock in the distance with no one there.
 - [x] people: The Blurry Society in smeared goggles; loggers and tree planters; the Sts'ailes hold the sásq'ets as real: setting, asked first, never a fighter.
-- [ ] history: The 1958 Bluff Creek tracks; the 1967 film; the 1980 eruption.
+- [x] history: The 1958 Bluff Creek tracks; the 1967 film; the 1980 eruption.
 - [ ] craft: Plaster track casts, cedar plank houses (setting), fire lookouts, a coffee stand by the highway.
 
 ## 6. Southwest desert
@@ -302,8 +310,9 @@ Region 6, from level 42.
 - **A sung letter** (The Antler Choir; built). The Antler Choir can't write; they sing the answer, and you carry the tune to the Thirteen Counters. *After: A blurry photograph.*
 - **Annex 9** (the Office: Annex 9, level 42; built, from the game). You stood inside Annex 9, the Office store at Roswell, and the cordon showed you out. *After: The Tandem.*
 - **Annex Raid** (Lamplighters: Annex Raid, level 43; built, from the game). Wren Ashby led a night raid on Annex 9 from the dunes at White Sands. *After: Night Boat.*
-- **Footprints at White Sands** (Southwest desert: White Sands, level 43; idea). At White Sands the gypsum keeps tracks for days. Gary's boot prints walk beside something with three toes, then the boot prints run. *After: The tripod at Niagara.*
+- **Footprints at White Sands** (Southwest desert: White Sands, level 43; built). At White Sands the gypsum keeps tracks for days. Gary's boot prints walk beside something with three toes, then the boot prints run. *After: Gary at the sandbar, Annex Raid.*
 - **Field Strength** (the Institute: Field Strength, level 44; built, from the game). Dr. Vale read the Book with her meter at Meteor Crater and did not say the result. *After: The Long Study.*
+- **Douglas** (Southwest desert: Douglas, level 47; built). After Annex 9, Pell insists on tape that the place does not exist. The desert's crash, its goat deaths and its jackalopes go into the file, and a postcard goes onto Pell's desk. *After: Annex 9.*
 
 **side**
 
@@ -326,7 +335,7 @@ Region 6, from level 42.
 - [ ] weather: Monsoon thunderstorms in July and August, flash floods in dry washes, very cold clear nights.
 - [ ] sound: Coyotes at night, wind over sand, a far freight train, the click of cooling rock after sunset.
 - [x] people: The Antler Choir round their fire; ranchers; road-trippers at a motel pool. The skinwalker is held sacred: never shown.
-- [ ] history: The 1947 Roswell report; the 1995 Puerto Rico goat deaths that named the chupacabra; Douglas, Wyoming's jackalopes.
+- [x] history: The 1947 Roswell report; the 1995 Puerto Rico goat deaths that named the chupacabra; Douglas, Wyoming's jackalopes.
 - [ ] craft: Neon motel signs, adobe walls, turquoise and silver (setting), a jackalope mount over the bar.
 
 ## 7. Bayou and Everglades
@@ -345,7 +354,9 @@ Region 7, from level 50.
 - **Thirteen beans** (The Thirteen Counters; built). The Thirteen Counters send a jar of beans, counted. Don't spill it on the way to the Ozarks. *After: A sung letter.*
 - **Jurisdiction** (the Office: Jurisdiction, level 52; built, from the game). In Barataria the Office chased Lamplighter boats in a pirogue and asked you where they go. *After: Annex 9.*
 - **Smugglers' Bay** (Lamplighters: Smugglers' Bay, level 52; built, from the game). Old Dutch and I held the bay at Barataria against an Office boat. *After: Annex Raid.*
+- **Barataria** (Bayou and Everglades: Barataria, level 52; built). The Office loses a Lamplighter boat in the marsh cuts in five minutes. Quist reads the Acadians and Lafitte's smugglers into the file, and Pell sleeps in the boat with the lamp on. *After: Jurisdiction.*
 - **Grant Review** (the Institute: Grant Review, level 53; built, from the game). At Okeechobee the grant review needed a tagged rougarou, and Toby Reyes was the lure. *After: Field Strength.*
+- **Gary heads north** (Bayou and Everglades: Big Cypress, level 54; built). Gary's last tape before you meet him, in Big Cypress: he has stopped filming animals, the Office has asked after him at every motel desk, and he is going to a town in Arkansas with one monster and one film about it. *After: Footprints at White Sands, Jurisdiction.*
 - **A pirogue in the cypress** (Bayou and Everglades: Big Cypress, level 54; idea, owner writes). In Big Cypress a sunk pirogue has a tin box under its seat. In it, the bearer's last note. Owner writes the note. *After: The camp ledger, Margin notes, 1910.*
 
 **side**
@@ -368,7 +379,7 @@ Region 7, from level 50.
 - [ ] weather: Heavy wet heat, an afternoon storm every day in summer, hurricanes in the fall.
 - [ ] sound: Bullfrogs and cicadas, an airboat far off, a Cajun accordion and fiddle from a dance hall.
 - [x] people: The Thirteen Counters on their jetty; Cajun families; shrimpers; the traiteur.
-- [ ] history: The Acadians' arrival after 1755; Lafitte's smugglers; the rougarou of Lent.
+- [x] history: The Acadians' arrival after 1755; Lafitte's smugglers; the rougarou of Lent.
 - [ ] craft: Pirogues, crawfish traps, a gumbo pot, Mardi Gras masks, a bottle tree.
 
 ## 8. Ozarks and the southern plains
@@ -388,7 +399,8 @@ Region 8, from level 58.
 - **The Long Haul** (Lamplighters: The Long Haul, level 61; built, from the game). Wren Ashby and the four who walk with her met me at Old Dutch's truck on Route 66. *After: Smugglers' Bay.*
 - **Two Forms** (the Office: Two Forms, level 62; built, from the game). In Texarkana, Section Chief Brandt came in person with two forms and Asset 0. *After: Jurisdiction.*
 - **Final Report** (the Institute: Final Report, level 62; built, from the game). On the plains Dr. Vale ran her last test: the Book on the scale. *After: Grant Review.*
-- **Gary in person** (Ozarks and the southern plains: Fouke, level 63; idea). In Fouke, Arkansas, Gary is editing his film in a motel room. He is not a hunter; he wants one true shot so people believe him. Show him the Book, or don't. Either way he joins the believers' fire at the Howl-Back Club's ridge. *After: Footprints at White Sands, Two Forms.*
+- **Texarkana** (Ozarks and the southern plains: Texarkana, level 62; built). Brandt comes in person with two forms, Fouke's 1971 night and its drive-in film go into the file, and Quist says off the record where every reel is kept. *After: Two Forms.*
+- **Gary in person** (Ozarks and the southern plains: Fouke, level 63; idea). In Fouke, Arkansas, Gary is editing his film in a motel room. He is not a hunter; he wants one true shot so people believe him. Show him the Book, or don't. Either way he joins the believers' fire at the Howl-Back Club's ridge. *After: Gary heads north, Two Forms.*
 
 **side**
 
@@ -411,7 +423,7 @@ Region 8, from level 58.
 - [ ] weather: Supercell thunderstorms and tornadoes in spring, hail, then hot still summers with fireflies.
 - [ ] sound: A tornado siren, cicadas, a fiddle at a pickin' night, rain on a tin roof.
 - [x] people: The Howl-Back Club with earmuffs and tin cups; storm spotters; float-trip outfitters.
-- [ ] history: The Fouke Monster sightings of the 1970s and the 1972 film; the old Route 66.
+- [x] history: The Fouke Monster sightings of the 1970s and the 1972 film; the old Route 66.
 - [ ] craft: Jon boats, quilts, fiddles, a diamond sieve at the crater park.
 
 ## Threads as a graph
@@ -436,9 +448,22 @@ flowchart LR
   subgraph gary_arc ["Gary's documentary"]
     gary_cedar_water("Gary and the cedar water")
     gary_gorge("Hold the shot")
+    gary_walks_first("Gary walks first")
     gary_tripod("The tripod at Niagara")
+    gary_film("Gary at the sandbar")
     gary_white_sands("Footprints at White Sands")
+    gary_big_cypress("Gary heads north")
     gary_fouke("Gary in person")
+  end
+  subgraph office_reels_arc ["The Office's lost reels"]
+    reel_apple_pie_hill("Apple Pie Hill")
+    reel_green_bank("Green Bank")
+    reel_wisconsin_river("Wisconsin River")
+    reel_valcour("Valcour Island")
+    reel_bluff_creek("Bluff Creek")
+    reel_douglas("Douglas")
+    reel_barataria("Barataria")
+    reel_texarkana("Texarkana")
   end
   subgraph last_bearer_arc ["The last bearer"]
     hat_in_the_pine("The hat in the pine")
@@ -494,13 +519,18 @@ flowchart LR
   institute_4["The Count"]
   mythic_bayou_and_everglades["Rougarou at The rougarou's swamp"]
   mythic_ozarks_and_the_southern_plains["Ozark Howler at The howler's hollow"]
-  office_8["Two Forms"]
   lamplighters_3["Tall Tales"]
+  office_5["The Tandem"]
+  lamplighters_6["Annex Raid"]
+  office_7["Jurisdiction"]
+  office_8["Two Forms"]
+  office_1["Form 9-C"]
+  office_3["The Wooden One"]
+  office_4["The Frames"]
+  office_6["Annex 9"]
   lamplighters_1["First Lamp"]
   board_2_6["The New River Gorge Shrieker"]
-  office_3["The Wooden One"]
   board_4_6["The Bluff Creek Prowler"]
-  office_4["The Frames"]
   board_5_6["The Isle Royale Brute"]
   institute_6["Field Strength"]
   lamplighters_7["Smugglers' Bay"]
@@ -523,10 +553,25 @@ flowchart LR
   curse_passes --> last_page_north
   mythic_ozarks_and_the_southern_plains --> last_page_north
   gary_cedar_water --> gary_gorge
-  gary_gorge --> gary_tripod
-  gary_tripod --> gary_white_sands
-  gary_white_sands --> gary_fouke
+  gary_gorge --> gary_walks_first
+  lamplighters_3 --> gary_walks_first
+  gary_walks_first --> gary_tripod
+  gary_tripod --> gary_film
+  office_5 --> gary_film
+  gary_film --> gary_white_sands
+  lamplighters_6 --> gary_white_sands
+  gary_white_sands --> gary_big_cypress
+  office_7 --> gary_big_cypress
+  gary_big_cypress --> gary_fouke
   office_8 --> gary_fouke
+  office_1 --> reel_apple_pie_hill
+  office_2 --> reel_green_bank
+  office_3 --> reel_wisconsin_river
+  office_4 --> reel_valcour
+  office_5 --> reel_bluff_creek
+  office_6 --> reel_douglas
+  office_7 --> reel_barataria
+  office_8 --> reel_texarkana
   item_one --> hat_in_the_pine
   hat_in_the_pine --> camp_ledger
   lamplighters_3 --> camp_ledger

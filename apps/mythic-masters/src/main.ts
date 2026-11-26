@@ -89,7 +89,7 @@ import { COLOURS, css as hueCss, firstColour, wornColour } from "./world/hues.ts
 import { invitedBy, joinParty, openParty, partyCode, signInToJoin } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
 import { ARENA, foeOf, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match } from "./sim.ts";
-import { lockCamera } from "./lock-camera.ts";
+import { lockCamera, sideTurn } from "./lock-camera.ts";
 import { tsSim, wasmSim, type Live, type Sim } from "./sim-wasm.ts";
 import simWasm from "./sim.wasm?url";
 
@@ -1718,8 +1718,13 @@ function draw(m: Match, alpha: number) {
   // side-on far enough back that both bodies and a flyer overhead fit, however close they stand
   const tall = Math.max(me.b.height, them.b.height);
   const side = 2.2 + tall * 1.05 + d * 0.45 + Math.abs(me.pos.y - them.pos.y) * 0.45;
+  // the side camera turns round them no faster than SIDE_TURN, slowest when they stand close (a new fight starts square)
+  const falling = m.f.some((f) => f.pos.y < 0 && Math.hypot(f.pos.x, f.pos.z) > ARENA.radius); // a ring-out follows the drop at once
+  sideLine = sideOf === m && camMode === "side" && !falling ? sideTurn(sideLine, Math.atan2(dz, dx), d, alpha) : Math.atan2(dz, dx);
+  sideOf = m;
+  const ux = Math.cos(sideLine), uz = Math.sin(sideLine);
   const want = camMode === "side"
-    ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - (dz / d) * side, (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + (dx / d) * side) // you on the left, as the bars are
+    ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - uz * side, (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + ux * side) // you on the left, as the bars are
     : new THREE.Vector3().copy(lockCamera(me.pos, them.pos, me.b, them.b));
   // A body going off the ring falls to ARENA.fallKo: the camera rises over the lip as it drops and stands out over the
   // drop, looking down at it, rather than following it under the pitch, where all you see is the ring's underside, or
@@ -1745,6 +1750,8 @@ function draw(m: Match, alpha: number) {
   const aim = camMode === "side" ? 0.5 : 0.58, chest = 0.3 + tall * 0.35;
   camera.lookAt(me.pos.x + dx * aim, me.pos.y + (them.pos.y - me.pos.y) * aim + chest, me.pos.z + dz * aim);
 }
+/** The side camera's line round the two (`sideTurn`), and the match it was turned in. */
+let sideLine = 0, sideOf: Match | null = null;
 /** The lowest the fight camera stands: over the ring's top (y 0), and higher by about the drop of a body below it. */
 const CAM_FLOOR = 1.2;
 

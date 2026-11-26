@@ -16,6 +16,19 @@ export function lockGap(cam: { x: number; z: number }, me: V3, them: V3, rMe: nu
   return apart - Math.asin(Math.min(1, rMe / da)) - Math.asin(Math.min(1, rThem / db));
 }
 
+/** How fast the side camera may turn round the two (rad/s): `close` when they stand within `near` m of each other (centre
+ * to centre), up to `far` by `apart` m. Close skirmisher exchanges whip the line between them through half a turn in a few
+ * tenths (p99 3 to 9 rad/s in bot fights, #6042 round 13) and the camera swung with it, cutting one body off the frame. */
+export const SIDE_TURN = { close: 1.2, far: 4, near: 3.5, apart: 8, lag: 0.5 } as const;
+
+/** The side camera's line (radians, from you to them) a frame of `dt` s later: `want` turned toward, no faster than SIDE_TURN allows at `d` m apart. */
+export function sideTurn(line: number, want: number, d: number, dt: number) {
+  const k = Math.max(0, Math.min(1, (d - SIDE_TURN.near) / (SIDE_TURN.apart - SIDE_TURN.near)));
+  const most = (SIDE_TURN.close + (SIDE_TURN.far - SIDE_TURN.close) * k) * dt, gap = Math.atan2(Math.sin(want - line), Math.cos(want - line));
+  // never more than `lag` behind: further, and the camera looks along the line and the near body hides the other
+  return want - Math.max(-SIDE_TURN.lag, Math.min(SIDE_TURN.lag, gap - Math.max(-most, Math.min(most, gap))));
+}
+
 /** Swung off the line to them by the least angle that keeps your own body clear of theirs on screen, so the near
  * fighter never covers the target, rising when even the widest swing can't. Bodies are wider than their hurtbox (arms, tails, fur), so each radius is padded. */
 export function lockCamera(me: V3, them: V3, mine: Body, theirs: Body) {
