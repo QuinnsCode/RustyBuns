@@ -370,23 +370,24 @@ const list: Gear[] = [
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 105, maxSpl: 146, ratedWatts: 6000, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 27, highCut: 95, rearLoss: 6 },
   },
-  // The tri-amp horn stack, the old touring way: a top with two horn-loaded 10" mids (bullet phase plugs) and a 1"
-  // waveguide, high-Q (about 35 x 25 degrees), over a bass of two horn-loaded 15"s. Typical of the class's sheets.
+  // The tri-amp horn stack, the old touring way, as the Turbosound Flashlight's datasheet gives it: the TFS-780H top (a
+  // 12" and a 6.5" on TurboMid horns with bar phase plugs, a 1" on a waveguide, tri-amped, high-Q 25 x 25 degrees)
+  // over the TFS-780L bass (one 21" on a TurboBass horn), both in one 574 x 825 x 773 mm shell.
   {
     id: "tri-amp-top",
     what: "tri-amp horn top",
-    size: box(0.76, 0.76, 0.9),
-    kg: 78,
+    size: box(0.574, 0.825, 0.773),
+    kg: 87,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
-    speaker: { sensitivity: 108, maxSpl: 138, ratedWatts: 1000, ohms: 8, coverage: { h: 35, v: 25 }, lowCut: 150, highCut: 19000, rearLoss: 26 },
+    speaker: { sensitivity: 108, maxSpl: 142, ratedWatts: 375, ohms: 8, coverage: { h: 25, v: 25 }, lowCut: 150, highCut: 20000, rearLoss: 26 },
   },
   {
     id: "tri-amp-bass",
-    what: 'tri-amp horn bass, 2 x 15"',
-    size: box(0.76, 0.76, 0.9),
-    kg: 82,
+    what: 'tri-amp horn bass, 21"',
+    size: box(0.574, 0.825, 0.773),
+    kg: 90,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
-    speaker: { sensitivity: 104, maxSpl: 136, ratedWatts: 1200, ohms: 4, coverage: { h: 120, v: 90 }, lowCut: 42, highCut: 160, rearLoss: 8 },
+    speaker: { sensitivity: 101, maxSpl: 136, ratedWatts: 600, ohms: 8, coverage: { h: 120, v: 90 }, lowCut: 50, highCut: 150, rearLoss: 8 },
   },
   {
     // A stage's amps: three 4-channel DSP amps in a 12U rack on casters. Mains at show level is about an eighth of the
