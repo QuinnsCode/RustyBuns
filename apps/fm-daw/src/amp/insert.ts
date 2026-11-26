@@ -38,9 +38,9 @@ export class AmpInserts {
    * track's amp, and `remote`: the other players' guitars plugged into a track. An amp only runs while it has
    * something to play: a take while the transport runs, the input, a remote guitar, or its synth sounding. `gain` is the master's, as on a take without an amp.
    */
-  mix(deck: TakeDeck, out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number, playing: boolean, input?: LiveIn, synth?: Float32Array, remote?: RemoteIn) {
+  mix(deck: TakeDeck, out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number, playing: boolean, input?: LiveIn, synth?: Float32Array, remote?: RemoteIn, duck?: (t: number) => Float32Array | undefined) {
     const n = TRACKS;
-    if (playing && deck.any) deck.mix(out, frames, pos, bpm, loopBeats, (t) => audible(t) && !this.live[t], gain);
+    if (playing && deck.any) deck.mix(out, frames, pos, bpm, loopBeats, (t) => audible(t) && !this.live[t], gain, duck);
     if (this.dry.length < frames) { this.dry = new Float32Array(frames); this.wet = new Float32Array(frames); }
     for (let t = 0; t < this.live.length; t++) {
       const l = this.live[t];
@@ -53,6 +53,9 @@ export class AmpInserts {
       if (hear) dry.set(input.input.subarray(0, frames)); else dry.fill(0, 0, frames);
       if (take) deck.one(t, dry, frames, pos, bpm, loopBeats, 1);
       if (far && remote) remote.add(t, dry, frames);
+      // the sidechain where the engine ducks the synth: into the amp (the synth's tap is ducked already)
+      const g = duck?.(t);
+      if (g) for (let f = 0; f < frames; f++) dry[f] *= g[f];
       if (voice && synth) for (let f = 0; f < frames; f++) dry[f] += synth[f * n + t];
       l.rig.process(dry, wet, frames);
       for (let f = 0; f < frames; f++) {

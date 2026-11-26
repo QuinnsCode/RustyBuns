@@ -60,9 +60,9 @@ export default {
 
 ## What RustyBuns would need
 
-- `rustybuns` deploys `export default { fetch }`. A `connect` export would have to reach the Worker unchanged, and
-  local dev would need to open the `connect` port. The installed alchemy has no Spectrum resource, so the app setup would be a
-  `cf spectrum apps create` step or a small resource of our own.
+- Done (#5506): `worker.connect: { port }` carries the `connect` port into wrangler.jsonc and `rustybuns dev` (which
+  opens the port and bridges it to the Worker), and a deploy ships the `connect` export as it is. Alchemy's Spectrum resource
+  has no Worker origin, so the app is a `cf spectrum apps create` step the zone's owner runs (REFERENCE.md, "Inbound TCP").
 - `Sockets` in `@rustybuns/util/room` handles WebSockets. A TCP room would need a framing layer (length-prefixed
   frames) so a room's `onMessage` gets the same messages from both kinds of connection.
 

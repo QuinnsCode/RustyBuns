@@ -1,3 +1,4 @@
+import { record } from "@rustybuns/util";
 import { expect, test } from "bun:test";
 import { GROUND_BIOMES, groundWeights, heaveOf, LAYERS, LAYER_COUNT, moundNoise, type Cover } from "../src/world/ground.ts";
 import { decodeNormals } from "../src/arena.ts";
@@ -6,7 +7,7 @@ const none: Cover = { litter: 0, grass: 0, sand: 0, mud: 0, path: 0, rock: 0, sn
 const at = (biome: Parameters<typeof groundWeights>[0], c: Partial<Cover> = {}) => {
   const w = new Float32Array(LAYER_COUNT);
   groundWeights(biome, { ...none, ...c }, w);
-  return Object.fromEntries(LAYERS.map((n, i) => [n, w[i]!])) as Record<(typeof LAYERS)[number], number>;
+  return record(LAYERS, (_, i) => w[i]!);
 };
 
 test("every vertex's layer weights sum to one, wherever it is and whatever lies over it", () => {

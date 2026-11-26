@@ -5,12 +5,13 @@
 // ground's feel (`groundFeel`), says how cracked, rippled and damp the biome's ground is and how much canopy is over it:
 // the normal map's blue channel marks each layer's feature (the dirt's and the mud's cracks, the sand's ripples), and
 // the shader fades a feature where the feel has none, so a forest's loam is not a desert's cracked pan.
+import { record } from "@rustybuns/util";
 import * as THREE from "three";
 import type { Biome } from "../regions.ts";
 
 export const LAYERS = ["needles", "leaves", "turf", "dirt", "mud", "sand", "rock", "snow"] as const;
 export type Layer = (typeof LAYERS)[number];
-const L = Object.fromEntries(LAYERS.map((n, i) => [n, i])) as Record<Layer, number>;
+const L = record(LAYERS, (_, i) => i);
 export const LAYER_COUNT = LAYERS.length;
 
 /** What the bare ground of each biome is made of, before grass, sand, mud, trails, rock and snow are laid over it. */

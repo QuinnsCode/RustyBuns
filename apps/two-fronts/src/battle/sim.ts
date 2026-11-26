@@ -14,7 +14,7 @@ import { radioFor } from "./lines.ts";
 import RADIO_SCRIPT from "../../content/radio.json";
 import { atan2, cos, hypot, sin } from "./fmath.ts";
 import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type MatchMode, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
-import { clamp, nextRandom } from "@rustybuns/util";
+import { clamp, nextRandom, record } from "@rustybuns/util";
 
 export type Trooper = "assault" | "heavy" | "sniper" | "engineer";
 export const TROOPERS: Trooper[] = ["assault", "heavy", "sniper", "engineer"];
@@ -395,7 +395,7 @@ export const facing = (yaw: number) => ({ x: -sin(yaw), z: -cos(yaw) });
 export const yawTo = (from: { x: number; z: number }, to: { x: number; z: number }) => atan2(-(to.x - from.x), -(to.z - from.z));
 
 export function startBattle(spec: BattleSpec): Battle {
-  const pool = (s: Side) => Object.fromEntries(VEHICLE_KINDS.map((k) => [k, spec.vehicles[s][k] ?? 0])) as Record<VehicleKind, number>;
+  const pool = (s: Side) => record(VEHICLE_KINDS, (k) => spec.vehicles[s][k] ?? 0);
   const mode = spec.mode ?? "conquest";
   // The keep starts the defender's; in an assault or a hold-out, every post does. A hill starts nobody's.
   const theirs = (i: number, n: number) => mode === "assault" || mode === "holdout" || (mode !== "hill" && i === n - 1);

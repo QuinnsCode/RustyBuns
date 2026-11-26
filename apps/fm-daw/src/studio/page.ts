@@ -31,6 +31,9 @@ import { partySync } from "./party-sync.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
 import { SKIN } from "../guest-list.ts";
+import { mountLessonCard } from "./lesson-card.ts";
+import { askedFor, PageLesson } from "./page-lesson.ts";
+import { PLAN_LESSON, PLAN_ROOM } from "./plan-lesson.ts";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 const plan = document.querySelector<SVGSVGElement>("#plan")!;
@@ -50,6 +53,8 @@ let picked: string | undefined = room.spots[0]?.id;
 let why = "";
 /** The PA stack picked on the plan (an index into the room's stacks), and whether the coverage map and the delay view show. */
 let stackPicked: number | null = null, showMap = false, showDelay = false;
+/** The Event Planner's lesson (plan-lesson.ts) and its card, and whether the gear list went out while it was on. */
+let listed = false, lessonCard: { frame(): void } | null = null;
 
 /** Keep the room: in the open party's scene, and as the room /jam.html walks into (the live party's stage while one is live). */
 function save() {
@@ -211,6 +216,7 @@ function render() {
   renderEdit();
   renderTools();
   if (view === "3d") build?.show(room, picked, walls, showMap ? paHeat() : null);
+  lessonCard?.frame();
 }
 
 // ---- build mode: one set of tools, on the blueprint and in the 3D view alike ----
@@ -647,6 +653,7 @@ function download(what: "list" | "plan"): { name: string; text: string } | null 
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], { type: what === "list" ? "text/plain" : "image/svg+xml" }));
   a.download = name; a.click();
+  if (what === "list" && lesson.on) { listed = true; lessonCard?.frame(); }
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   return { name, text };
 }
@@ -872,6 +879,14 @@ function load(id: string) {
 }
 select.addEventListener("change", () => load(select.value));
 
+/** The lesson starts on the Desert Gathering with its stacks taken away, each through the builder's own edits (undo brings them back). */
+const lesson = new PageLesson(PLAN_LESSON, () => ({ def: room, map: paMap(), listed }), () => {
+  load(PLAN_ROOM);
+  while (rigPlan(room)?.stacks.length && apply({ t: "unstack", index: 0 }));
+  listed = false;
+});
+lessonCard = mountLessonCard(document.body, lesson, { float: true, done: "Done. The plan is yours: walk in to hear it, or keep changing it", offer: { title: PLAN_LESSON.title, start: () => lesson.start() } });
+
 declare global { interface Window { qrooms: typeof harness } }
 const harness = {
   state: () => ({
@@ -948,8 +963,11 @@ const harness = {
   pick: (id: string) => { picked = id; render(); },
   /** The link into /jam.html (in sesh `sesh`) that carries this room (builder.ts builtLink), for a probe whose browser has none of this page's storage. */
   enter: (sesh?: string) => builtLink(location.origin, room, sesh),
+  /** The Event Planner's lesson (plan-lesson.ts): "plan" starts it, null leaves it; then the lesson as it stands. */
+  lesson: (id?: string | null) => { if (id === null) lesson.leave(); else if (id === PLAN_LESSON.id) lesson.start(); lessonCard?.frame(); return { lesson: lesson.state(), finished: lesson.finished }; },
 };
 window.qrooms = harness;
+if (askedFor(location.search, PLAN_LESSON.id)) lesson.start();
 render();
 // your account's parties: what it keeps opens here (another device's work); an account with none takes this browser's
 void eq.ready.then(() => sync.pull()).then((got) => {

@@ -90,8 +90,16 @@ export const P = {
   FOLD: 59,
   /** How much of this track goes to the desk's aux 2: the gear cabled into its return in the gear room. */
   SEND2: 60,
+  /**
+   * Sidechain: the track this one ducks under, 0 none, 1..12 its number (the kick pumping the bass). The other
+   * track's level (after its gain, before pan) drives a follower, 2 ms up and 150 ms back; this track's sound
+   * (and its sends) drops by DUCK times that level, all the way at a quarter of full scale. Not itself.
+   */
+  DUCK_FROM: 61,
+  /** How far the sidechain ducks: 0 not at all, 1 to silence on the other track's loudest hits. */
+  DUCK: 62,
 } as const;
-export const NPARAMS = 61;
+export const NPARAMS = 63;
 
 const OP_RANGES: [number, number][] = [[0.25, 16], [0, 1], [0.0005, 4], [0.005, 8], [0, 1], [0.005, 8]];
 export const RANGES: [number, number][] = [
@@ -133,6 +141,8 @@ export const RANGES: [number, number][] = [
   [0, 1],        // supersaw mix: 0 off
   [0, 1],        // wavefolder
   [0, 1],        // send to aux 2
+  [0, TRACKS],   // sidechain: 0 none, else the track (1-based) this one ducks under
+  [0, 1],        // sidechain depth
 ];
 
 /** Beats per LFO cycle for LFO_SYNC 1..8: 1 bar, 1/2, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/32. */
@@ -176,3 +186,7 @@ export const CEILING = 0.891;
 export const MOD_DEPTH = 1.5;
 /** Full feedback = this many cycles. Past ~0.5 FM feedback turns to noise. */
 export const FB_DEPTH = 0.4;
+/** The sidechain's follower: seconds up and back, and the level (times this) that ducks all the way. */
+export const DUCK_ATTACK = 0.002;
+export const DUCK_RELEASE = 0.15;
+export const DUCK_SENS = 4;

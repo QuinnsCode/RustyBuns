@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepHalfGone, sweepHalfRemoved, sweepScratch, sweepUntracked, WORKTREES } from "../live/sweep.ts";
+import { CLAUDE_TREES, cacheKey, dueDaily, inUse, lockVersions, playwrightBuilds, pruneBunCache, pruneBunDaily, prunePlaywright, slug, sweepBuilt, sweepClaudeTrees, sweepHalfGone, sweepHalfRemoved, sweepScratch, sweepUntracked, WORKTREES } from "../live/sweep.ts";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "rb-sweep-"));
 
@@ -32,6 +32,32 @@ test("a sent-home worker's scratch folder goes; live worktrees, their subfolders
   const done = await sweepScratch([repo, other], true, base);
   expect(done.paths).toEqual([path.join(base, names.gone)]);
   for (const [k, n] of Object.entries(names)) expect([k, existsSync(path.join(base, n))]).toEqual([k, k !== "gone"]);
+});
+
+// #4798: a worker sent home with unpushed work keeps its worktree, and its scratch (a 2.9 GB log in one) stayed with it
+test("an empty desk's scratch folder goes once idle a day; a seated worker's, a fresh one's, and any without the seating list stay", async () => {
+  const root = tmp();
+  const repo = path.join(root, "repo");
+  for (const t of ["nibble-1", "sprocket-2", "echo-3"]) mkdirSync(path.join(repo, WORKTREES, t), { recursive: true });
+  const base = path.join(root, "claude-501");
+  const scratch = (tree: string, hoursOld: number) => {
+    const dir = path.join(base, `${slug(path.join(repo, WORKTREES))}-${tree}`);
+    const file = path.join(dir, "session", "scratchpad", "desktop2.log");
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, Buffer.alloc(1 << 20));
+    const at = (Date.now() - hoursOld * 3_600_000) / 1000;
+    for (const p of [file, path.dirname(file), path.join(dir, "session"), dir]) utimesSync(p, at, at);
+    return dir;
+  };
+  const seated = scratch("nibble-1", 48), left = scratch("sprocket-2", 48), fresh = scratch("echo-3", 2);
+  const live = [path.join(repo, WORKTREES, "nibble-1")];
+
+  expect((await sweepScratch([repo], true, base)).paths).toEqual([]);
+  const done = await sweepScratch([repo], true, base, live);
+  expect(done.paths).toEqual([left]);
+  expect(done.bytes).toBeGreaterThanOrEqual(1 << 20);
+  expect([seated, left, fresh].map((p) => existsSync(p))).toEqual([true, false, true]);
+  expect(existsSync(path.join(repo, WORKTREES, "sprocket-2"))).toBe(true);
 });
 
 test("node_modules and ignored build output go from worktrees nobody sits at; a seated one, a fresh hire's, a checked-in dist and the code stay", async () => {
@@ -65,6 +91,34 @@ test("node_modules and ignored build output go from worktrees nobody sits at; a 
   expect([existsSync(path.join(seated, "apps/game/dist")), existsSync(path.join(hiring, "node_modules"))]).toEqual([true, true]);
   // the empty desk's root node_modules went to the pool for the next hire (#5656), not the bin
   expect(readdirSync(path.join(repo, ".agent-office/node-pool")).map((n) => readdirSync(path.join(repo, ".agent-office/node-pool", n)))).toEqual([["node_modules"]]);
+});
+
+test("Claude Code's own worktrees lose node_modules and ignored dist when idle a day; one a process runs in, one changed today and the code stay", async () => {
+  const repo = tmp();
+  const tree = (name: string, fresh = false) => {
+    const dir = path.join(repo, CLAUDE_TREES, name);
+    for (const m of ["node_modules/effect", "apps/game/node_modules/three", "apps/game/dist"]) mkdirSync(path.join(dir, m), { recursive: true });
+    writeFileSync(path.join(dir, "node_modules/effect/index.js"), Buffer.alloc(1 << 20));
+    writeFileSync(path.join(dir, ".gitignore"), "node_modules\ndist\n");
+    writeFileSync(path.join(dir, "apps/game/main.ts"), "work");
+    Bun.spawnSync(["git", "-C", dir, "init", "-q"], { stdout: "ignore", stderr: "ignore" });
+    const at = (Date.now() - 30 * 3_600_000) / 1000;
+    if (!fresh) for (const f of [".gitignore", "apps/game/main.ts"]) utimesSync(path.join(dir, f), at, at);
+    return dir;
+  };
+  const idle = tree("idle-1"), busy = tree("busy-2"), fresh = tree("fresh-3", true);
+  const procs = [{ pid: 999_999, ppid: 1, pgid: 999_999, age: 0, stat: "S", cwd: path.join(busy, "apps/game"), args: "claude" }];
+  const gone = ["node_modules", "apps/game/node_modules", "apps/game/dist"].map((p) => path.join(idle, p));
+
+  const dry = await sweepClaudeTrees(repo, false, procs);
+  expect([dry.paths.sort(), dry.skipped]).toEqual([[...gone].sort(), 2]);
+  expect(dry.bytes).toBeGreaterThanOrEqual(1 << 20);
+  expect(existsSync(path.join(idle, "node_modules"))).toBe(true);
+
+  await sweepClaudeTrees(repo, true, procs);
+  expect(gone.filter((p) => existsSync(p))).toEqual([]);
+  expect([idle, busy, fresh].map((t) => existsSync(path.join(t, "apps/game/main.ts")))).toEqual([true, true, true]);
+  expect([busy, fresh].map((t) => existsSync(path.join(t, "node_modules")))).toEqual([true, true]);
 });
 
 // 2026-11-22: six workers whose PR had merged sat at their desks with "go home once merged" off, 6 GB of node_modules each
@@ -158,6 +212,28 @@ test("with no lockfile to go by, the cache is left alone", async () => {
   const r = await pruneBunCache([path.join(root, "empty")], true, path.join(root, "cache"), 0);
   expect(r.refused).toContain("no bun.lock");
   expect(existsSync(path.join(root, "cache", "a@1.0.0@@@1"))).toBe(true);
+});
+
+test("the floor prunes the Bun cache once a day, and an install running puts it off without using up the day", async () => {
+  const root = tmp();
+  const day = 24 * 3_600_000, t0 = Date.now();
+  const stamp = path.join(root, "stamp");
+  expect([dueDaily(stamp, t0), dueDaily(stamp, t0 + 3_600_000), dueDaily(stamp, t0 + day - 1), dueDaily(stamp, t0 + day), dueDaily(stamp, t0 + day + 1)]).toEqual([true, false, false, true, false]);
+
+  const checkout = path.join(root, "repo"), cache = path.join(root, "install", "cache");
+  mkdirSync(checkout, { recursive: true });
+  writeFileSync(path.join(checkout, "bun.lock"), `{ "packages": { "a": ["a@1.0.0", "", {}, "sha512-x"] } }`);
+  const old = new Date(t0 - 2 * 3_600_000);
+  for (const d of ["a@1.0.0@@@1", "a@0.9.0@@@1"]) { mkdirSync(path.join(cache, d), { recursive: true }); utimesSync(path.join(cache, d), old, old); }
+
+  expect(await pruneBunDaily([checkout], cache, t0, () => true)).toBe("");
+  expect(existsSync(path.join(cache, "a@0.9.0@@@1"))).toBe(true);
+  expect(await pruneBunDaily([checkout], cache, t0, () => false)).toMatch(/^🧹 Bun cache: removed 1 version no bun.lock names/);
+  expect([existsSync(path.join(cache, "a@0.9.0@@@1")), existsSync(path.join(cache, "a@1.0.0@@@1"))]).toEqual([false, true]);
+  mkdirSync(path.join(cache, "a@0.8.0@@@1"));
+  utimesSync(path.join(cache, "a@0.8.0@@@1"), old, old);
+  expect(await pruneBunDaily([checkout], cache, t0 + 3_600_000, () => false)).toBe("");
+  expect(existsSync(path.join(cache, "a@0.8.0@@@1"))).toBe(true);
 });
 
 test("lockfile and cache names parse the same way, and odd ones parse to nothing", () => {

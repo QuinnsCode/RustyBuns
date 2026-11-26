@@ -7,7 +7,8 @@
 //      bun apps/agent-office/ester/ledger-daily.ts --install    (a launchd job at 10:07 every day; --uninstall takes it off)
 //      bun apps/agent-office/ester/ledger-daily.ts --budget 2026-11-05 76 [--fable 40] [--approx]
 //          (the plan's weekly usage, as /usage showed it, for the plan week that resets that morning, and the Fable limit's
-//          beside it; nothing on disk records them. The running week takes a reading too: it shows that, not an estimate)
+//          beside it. The status line (usage-reading.ts) records the weekly one by itself, up to the last reply before the
+//          reset; a higher entry here wins. The running week takes a reading too: it shows that, not an estimate)
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -15,6 +16,7 @@ import { arr, bool, num, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
 import { headless, install, uninstall } from "../../../scripts/launchd.ts";
 import { readSaved as readLocalSaved } from "../../../scripts/conflicts-saved.ts";
+import { readReadings, withReadings } from "./usage-reading.ts";
 
 const DAY_STARTS = 10;
 const WEEK = "https://claude.ai/artifact/FBNXoT3SnfvJvL8kyZPDo3"; // RustyBuns weekly ledger: last 8 days, or any recorded week, with overlays
@@ -176,7 +178,7 @@ const CODESPLITTER = process.env.CODESPLITTER_URL ?? "https://codesplitter.notry
 
 /** week.html and report.html from what is on disk: the last run's header, the history and the budget entries. */
 function page(ledger: Of<typeof Ledger>, history: Row[]) {
-  const budget = readBudget(), template = (name: string) => readFileSync(path.join(import.meta.dir, name), "utf8");
+  const budget = withReadings(readBudget(), readReadings()), template = (name: string) => readFileSync(path.join(import.meta.dir, name), "utf8");
   writeFileSync(path.join(out, "week.html"), weekPage(template("ledger-week.html"), ledger, history, budget));
   writeFileSync(path.join(out, "report.html"), reportPage(template("ledger-report.html"), ledger.generated, history, budget, readIssues(),
     savedDays(readRemoteSaved(), readLocalSaved(), history.map((r) => r.date))));
