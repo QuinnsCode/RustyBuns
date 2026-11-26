@@ -107,14 +107,14 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "shade", "cavity", "turbo", "pcblue", "pcgrey"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "satin", "shade", "cavity", "turbo", "pcblue", "pcgrey"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
  * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
- * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint), shade (that paint down a horn cell, darkened per vertex as the light falls off toward the throat: see `fade`) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured); and the connectors' pcblue and pcgrey (powerCON's blue power-in and grey power-out housings). */
+ * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint), satin (the Res2 top's own coat: a smooth near-black navy with a satin sheen), shade (that paint down a horn cell, darkened per vertex as the light falls off toward the throat: see `fade`) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured); and the connectors' pcblue and pcgrey (powerCON's blue power-in and grey power-out housings). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -126,7 +126,7 @@ export function gearLook(): GearLook {
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0xd9d6cf, 0.5), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
-    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x160a2b, 0.86), shade: Object.assign(std(0x160a2b, 0.86), { vertexColors: true }), turbo: std(0x0e1422, 0.82),
+    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x160a2b, 0.86), satin: std(0x15142a, 0.4), shade: Object.assign(std(0x160a2b, 0.86), { vertexColors: true }), turbo: std(0x0e1422, 0.82),
     pcblue: std(0x1f63c4, 0.42), pcgrey: std(0xa3a8ae, 0.5),
     cavity: new THREE.MeshStandardMaterial({ color: 0x050409, roughness: 1, envMapIntensity: 0.02 }),
   };
@@ -1387,12 +1387,15 @@ function frustum(slot: GearSlot, outer: number[], inner: number[], zf: number, d
   return { geo, slot };
 }
 
-/** A flat plate in the front plane: `outline` [x, y] round, `holes` cut through it, `t` thick back from z `f`. */
-function frontPlate(slot: GearSlot, outline: number[][], holes: number[][][], f: number, t: number): Piece {
+/** A flat plate in the front plane: `outline` [x, y] round, `holes` cut through it, `t` thick back from z `f`, its
+ * edges (holes too) chamfered `bevel` deep when given, so they catch a thin line of light. */
+function frontPlate(slot: GearSlot, outline: number[][], holes: number[][][], f: number, t: number, bevel = 0): Piece {
   const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
   for (const h of holes) shape.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
-  geo.translate(0, 0, f - t);
+  const geo = new THREE.ExtrudeGeometry(shape, bevel > 0
+    ? { depth: t - 2 * bevel, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelOffset: -bevel, bevelSegments: 1 }
+    : { depth: t, bevelEnabled: false });
+  geo.translate(0, 0, f - t + bevel);
   return { geo: toCreasedNormals(geo, 0.3), slot };
 }
 
@@ -1405,14 +1408,20 @@ const rect = (x: number, y: number, w: number, h: number) => [[x - w / 2, y - h 
 const BRACE_TURN = (55 * Math.PI) / 180;
 
 /** A brace plate standing at (x, y), its face `front` deep: `w` wide as seen from the front, `h` tall, turned `turn`
- * about its upright axis, round holes `d` across at `ys` up from its middle, 18 mm ply. */
-function brace(x: number, y: number, front: number, w: number, h: number, ys: number[], d: number, turn: number): Piece {
-  const holes = ys.map((hy) => Array.from({ length: 20 }, (_, j) => { const q = (j / 20) * Math.PI * 2; return [Math.cos(q) * d / 2, hy + Math.sin(q) * d / 2]; }));
-  const pw = w / Math.cos(turn), p = frontPlate("violet", rect(0, 0, pw, h), holes, 0.009, 0.018);
+ * about its upright axis, holes at `ys` up from its middle: round ones `d` across, or ovals [wide, tall] as seen from
+ * the front; 18 mm ply, its edges chamfered `bevel` deep when given. */
+function brace(x: number, y: number, front: number, w: number, h: number, ys: number[], d: number | [number, number], turn: number, bevel = 0): Piece {
+  const [hw, hh] = typeof d === "number" ? [d, d] : [d[0] / Math.cos(turn), d[1]], n = typeof d === "number" ? 20 : 32;
+  const holes = ys.map((hy) => Array.from({ length: n }, (_, j) => { const q = (j / n) * Math.PI * 2; return [Math.cos(q) * hw / 2, hy + Math.sin(q) * hh / 2]; }));
+  const pw = w / Math.cos(turn), p = frontPlate("violet", rect(0, 0, pw, h), holes, 0.009, 0.018, bevel);
   // set back so the edge the turn swings forward stays at `front`, behind the box's face
   p.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(x, y, front - (pw / 2) * Math.abs(Math.sin(turn))).multiply(new THREE.Matrix4().makeRotationY(turn)));
   return p;
 }
+
+/** How far the F215's brace plates turn from facing the front: a little, so the photo's front-right view sees their
+ * oval holes still tall and the plate's 18 mm edge down one side. */
+const F215_BRACE_TURN = (12 * Math.PI) / 180;
 
 /** A piece in the `shade` paint: its full colour at `lit` and in front of it, falling off along a curve to `floor` of
  * that colour at `dark` and behind (as the `k`th power of the way between), as daylight dies down a horn cell toward its throat. The fall is in the
@@ -1495,21 +1504,21 @@ function res2Pieces(): Record<string, Build> {
   const er = 0.012, ex = (z: number) => sideX(z) - er / Math.cos(Math.atan2((w - bw) / 2, d)); // a round's centre line
   const plan = [[-sideX(f), f], [sideX(f), f], [sideX(-d / 2), -d / 2], [-sideX(-d / 2), -d / 2]];
   const roof = [[-sideX(f) + er, f - er], [sideX(f) - er, f - er], [sideX(-d / 2) - er, -d / 2], [-sideX(-d / 2) + er, -d / 2]];
-  cab.pieces.push(slab("violet", plan, 0, t), slab("violet", roof, h - t, h));
+  cab.pieces.push(slab("satin", plan, 0, t), slab("satin", roof, h - t, h));
   for (const s of [-1, 1]) {
     const q = [[sideX(f - er), f - er], [sideX(f) - t, f - er], [sideX(-d / 2) - t, -d / 2], [sideX(-d / 2), -d / 2]];
-    cab.pieces.push(slab("violet", q.map(([x, z]) => [s * x!, z!]), t, h - er));
+    cab.pieces.push(slab("satin", q.map(([x, z]) => [s * x!, z!]), t, h - er));
     // the side's last `er` at the front, inside the round, so the face's frame stays full width
-    cab.pieces.push(slab("violet", [[sideX(f) - t, f - er], [ex(f), f - er], [ex(f), f], [sideX(f) - t, f]].map(([x, z]) => [s * x!, z!]), t, h - er));
-    cab.pieces.push(rod("violet", [s * ex(f), t, f - er], [s * ex(f), h - er, f - er], er, 8)); // the front upright
-    cab.pieces.push(rod("violet", [s * ex(f), h - er, f - er], [s * ex(-d / 2), h - er, -d / 2], er, 8)); // the roof's side
+    cab.pieces.push(slab("satin", [[sideX(f) - t, f - er], [ex(f), f - er], [ex(f), f], [sideX(f) - t, f]].map(([x, z]) => [s * x!, z!]), t, h - er));
+    cab.pieces.push(rod("satin", [s * ex(f), t, f - er], [s * ex(f), h - er, f - er], er, 8)); // the front upright
+    cab.pieces.push(rod("satin", [s * ex(f), h - er, f - er], [s * ex(-d / 2), h - er, -d / 2], er, 8)); // the roof's side
     const ball = new THREE.SphereGeometry(er, 8, 6);
     ball.translate(s * ex(f), h - er, f - er);
     ball.deleteAttribute("normal"); ball.deleteAttribute("uv");
-    cab.pieces.push({ geo: toCreasedNormals(ball.toNonIndexed(), 0.6), slot: "violet" });
+    cab.pieces.push({ geo: toCreasedNormals(ball.toNonIndexed(), 0.6), slot: "satin" });
   }
-  cab.pieces.push(rod("violet", [-ex(f), h - er, f - er], [ex(f), h - er, f - er], er, 8)); // the roof's front
-  cab.pieces.push(slab("violet", [[-(bw / 2 - t), -d / 2 + t], [bw / 2 - t, -d / 2 + t], [bw / 2 - t, -d / 2], [-(bw / 2 - t), -d / 2]], t, h - t));
+  cab.pieces.push(rod("satin", [-ex(f), h - er, f - er], [ex(f), h - er, f - er], er, 8)); // the roof's front
+  cab.pieces.push(slab("satin", [[-(bw / 2 - t), -d / 2 + t], [bw / 2 - t, -d / 2 + t], [bw / 2 - t, -d / 2], [-(bw / 2 - t), -d / 2]], t, h - t));
   // the hand slot in the top, near the back, and one in each side, sunk dark
   cab.pieces.push(box("knob", [0.2, 0.004, 0.034], [0, h + 0.0005, -d / 2 + 0.07], { bevel: 0.0015 }));
   const sa = Math.atan2((w - bw) / 2, d);
@@ -1554,17 +1563,17 @@ function res2Pieces(): Record<string, Build> {
   hf.pieces.push(disc("grime", 0.013, 0.004, "z", [0, hcy, hz - hd + 0.002], 14), disc("horn", 0.008, 0.012, "z", [0, hcy, hz - hd + 0.006], 12));
 
   // ---- band: the violet face between the panel and the bass mouth, round the panel
-  band.pieces.push(frontPlate("violet", [[-pw, top(551)], [pw, top(551)], [pw, top(t * 1000)], [-pw, top(t * 1000)]], [outline], f - 0.004, 0.03));
+  band.pieces.push(frontPlate("satin", [[-pw, top(551)], [pw, top(551)], [pw, top(t * 1000)], [-pw, top(t * 1000)]], [outline], f - 0.004, 0.03));
 
   // ---- bass horn: the mouth to the floor, its walls closing on the throat, the strut, a bracket, the corner fillets
   const by0 = t, by1 = top(551), ty0 = top(811), ty1 = top(655), tA = mm(141.5), bdeep = 0.36;
   // the walls painted violet just at the mouth, going to the near-black of a deep hollow an eighth in, as the light dies
   const mouthB = [-pw, pw, by0, by1], throatB = [-tA, tA, ty0, ty1], k = 0.12, part = mouthB.map((v, i) => v + (throatB[i]! - v) * k);
-  bass.pieces.push(frustum("violet", mouthB, part, f - 0.004, bdeep * k), frustum("cavity", part, throatB, f - 0.004 - bdeep * k, bdeep * (1 - k)));
+  bass.pieces.push(frustum("satin", mouthB, part, f - 0.004, bdeep * k), frustum("cavity", part, throatB, f - 0.004 - bdeep * k, bdeep * (1 - k)));
   bass.pieces.push(box("knob", [tA * 2, ty1 - ty0, 0.006], [0, (ty0 + ty1) / 2, f - 0.004 - bdeep - 0.003]));
-  bass.pieces.push(rod("violet", [0, by0, f - 0.04], [0, ty1, f - 0.004 - bdeep + 0.02], 0.012, 6));
+  bass.pieces.push(rod("satin", [0, by0, f - 0.04], [0, ty1, f - 0.004 - bdeep + 0.02], 0.012, 6));
   bass.pieces.push(box("metal", [0.028, 0.05, 0.006], [0.02, (ty0 + by0) / 2 + 0.03, f - 0.2], { bevel: 0.002 }));
-  for (const s of [-1, 1]) bass.pieces.push(prism("violet", [[f - 0.004, by0], [f - 0.004, by0 + 0.05], [f - 0.06, by0]], 0.05, s * (pw - 0.025)));
+  for (const s of [-1, 1]) bass.pieces.push(prism("satin", [[f - 0.004, by0], [f - 0.004, by0 + 0.05], [f - 0.06, by0]], 0.05, s * (pw - 0.025)));
 
   return { cabinet: cab, band, "bass-horn": bass, panel, "hf-horn": hf, driver: drv, "mid-horn": mid, plug: plugB };
 }
@@ -1590,18 +1599,23 @@ function f215Pieces(): Record<string, Build> {
   // the light dies down each cell toward its throat: the shelf, the horn walls, the fins and a liner on the box's
   // floor and roof go from the paint's full colour at the mouth to near black at the back (`fade`)
   const mouth = f - 0.04, hx0 = -w / 2 + t, hx1 = bx - bw / 2, deepZ = (f - 0.003 + zb) / 2, deepL = f - 0.003 - zb;
-  cab.pieces.push(fade(sheet([w - 2 * t, t, d - back], [0, mid, back / 2]), mouth, zb, 0.15));
-  for (const y of [t + 0.001, h - t - 0.001]) cab.pieces.push(fade(sheet([hx1 - hx0, 0.002, deepL], [(hx0 + hx1) / 2, y, deepZ]), mouth, zb, 0.15));
+  cab.pieces.push(fade(sheet([w - 2 * t, t, d - back], [0, mid, back / 2]), mouth, zb, 0.05, 4));
+  for (const y of [t + 0.001, h - t - 0.001]) cab.pieces.push(fade(sheet([hx1 - hx0, 0.002, deepL], [(hx0 + hx1) / 2, y, deepZ]), mouth, zb, 0.05, 4));
   for (const [y0, y1] of [[t, mid - t / 2], [mid + t / 2, h - t]]) {
     const ch = y1 - y0, cy = (y0 + y1) / 2;
     // the horn wall: a curve x(s) = throat + (mouth - throat) s^2 from the back (s = 0) to the front (s = 1)
     const xf = -w / 2 + t, xt = bx - bw / 2 - mm(50), z0 = zb + 0.005, z1 = f - 0.002, n = 10;
     const curve = Array.from({ length: n + 1 }, (_, i) => { const s = i / n; return [xt + (xf - xt) * s * s, z0 + (z1 - z0) * s]; });
-    walls.pieces.push(fade(slab("violet", [...curve, ...[...curve].reverse().map(([x, z]) => [x! - t, z!])], y0, y1), mouth, zb, 0.12, 6));
-    // the brace: set 20 mm back from the front and turned toward the channel, three round 95 mm holes through it (the
-    // drawing's ovals are those circles seen at the turn), and the fin behind its horn-side edge to the back
-    braces.pieces.push(brace(bx, cy, f - 0.02, bw, ch, [-1, 0, 1].map((k) => k * ch * 0.29), mm(95), BRACE_TURN));
-    braces.pieces.push(fade(sheet([t, ch, f - 0.038 - zb], [bx - bw / 2 + t / 2, cy, (f - 0.038 + zb) / 2]), mouth, zb, 0.15));
+    walls.pieces.push(fade(slab("violet", [...curve, ...[...curve].reverse().map(([x, z]) => [x! - t, z!])], y0, y1), mouth, zb, 0.05, 6));
+    // the brace: set 20 mm back from the front and turned a little toward the channel (the photo sees it near face on,
+    // its edge a dark strip down one side), three tall ovals through it, 52 x 95 as the drawing's front view has them,
+    // their rims chamfered so each catches a thin line of light, and the fin behind its horn-side edge to the back
+    braces.pieces.push(brace(bx, cy, f - 0.02, bw, ch, [-1, 0, 1].map((k) => k * ch * 0.29), [mm(52), mm(95)], F215_BRACE_TURN, 0.003));
+    // behind the brace's holes the channel is a dark slot: a black sheet just behind the plate, so each hole reads as
+    // a lit ply edge round a deep oval rather than a flat circle
+    const slot = brace(bx, cy, f - 0.02 - 0.03, bw, ch - 0.01, [], 0, F215_BRACE_TURN);
+    braces.pieces.push({ geo: slot.geo, slot: "cavity" });
+    braces.pieces.push(fade(sheet([t, ch, f - 0.038 - zb], [bx - bw / 2 + t / 2, cy, (f - 0.038 + zb) / 2]), mouth, zb, 0.05, 4));
     // the driver channel: near black at its back, a fixing block in its outer corner by the shelf
     chans.pieces.push(box("cavity", [w / 2 - t - cx0, ch, 0.004], [(w / 2 - t + cx0) / 2, cy, zb + 0.003]));
     chans.pieces.push(box("cavity", [bx - bw / 2 - xt, ch, 0.004], [(bx - bw / 2 + xt) / 2, cy, zb + 0.003]));
@@ -1613,12 +1627,9 @@ function f215Pieces(): Record<string, Build> {
     const by = y0 === t ? y0 + 0.02 : y1 - 0.02;
     chans.pieces.push(box("violet", [0.07, 0.022, 0.035], [w / 2 - t - 0.035, by, f - 0.06], { bevel: 0.003 }));
   }
-  // the kidney handles in the top, the drivers' access lid in the channel side, the fly points, the back's jack plate
+  // the kidney handles in the top and the back's jack plate; the sides stay one clean painted panel, as the photo shows
+  // them (the drivers' access lid sits flush and the fly points are inside the coat, so neither reads from the front)
   for (const s of [-1, 1]) hw.pieces.push(box("cavity", [mm(122), 0.004, mm(53)], [s * mm(212), h + 0.0004, -d / 2 + mm(250)], { bevel: 0.002 }));
-  hw.pieces.push(box("knob", [0.002, h - 0.03, mm(460)], [w / 2 + 0.0008, h / 2, -d / 2 + mm(240)]));
-  hw.pieces.push(box("violet", [0.003, h - 0.036, mm(454)], [w / 2 + 0.0015, h / 2, -d / 2 + mm(240)], { bevel: 0.001 }));
-  for (const s of [-1, 1]) for (const [y, z] of [[mm(40), -d / 2 + mm(55)], [h - mm(40), -d / 2 + mm(55)], [h / 2, f - mm(55)]])
-    hw.pieces.push(disc("metal", 0.009, 0.003, "x", [s * (w / 2 + 0.002), y, z], 10));
   plate(hw, 0.13, 0.09, [0, h / 2, -d / 2 - 0.004]);
   socketPanel(hw, "stack-mid-bass", "back", [0, h / 2, -d / 2 - 0.008], [0.13, 0.09]);
   mark(hw, "grab", [w / 2 + 0.012, h * 0.55, 0], [1, 0, 0]);
