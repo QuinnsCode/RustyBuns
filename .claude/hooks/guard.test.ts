@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { homedir } from "node:os";
-import { blenderLaunch, check, heavy, prCreate, wideRead, wideScan } from "./guard";
+import { blenderLaunch, check, heavy, prCreate, wideScan } from "./guard";
 
 const cwd = "/repo";
 const bash = (command: string, branch = "feature") => check({ tool_name: "Bash", tool_input: { command }, cwd }, () => branch);

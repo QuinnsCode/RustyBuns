@@ -73,7 +73,7 @@ import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { doorways } from "./doors.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Look, type Quality } from "./look.ts";
 import { gearKit, gearKitLook } from "./gear-kit.ts";
-import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
+import { Keys, Kit, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";

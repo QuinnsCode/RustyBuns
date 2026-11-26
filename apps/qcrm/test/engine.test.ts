@@ -54,7 +54,7 @@ describe("analysis", () => {
     const parts = splitRows(10_000, 8);
     expect(parts[0]![0]).toBe(0);
     expect(parts.at(-1)![1]).toBe(10_000);
-    parts.forEach(([, end], i) => { if (i) expect(parts[i - 1]![1]).toBe(parts[i]![0]); });
+    parts.forEach((_, i) => { if (i) expect(parts[i - 1]![1]).toBe(parts[i]![0]); });
     const pairs = parts.map(([a, b]) => { let t = 0; for (let r = a; r < b; r++) t += 10_000 - r - 1; return t; });
     expect(Math.max(...pairs) / Math.min(...pairs)).toBeLessThan(1.05);
   });

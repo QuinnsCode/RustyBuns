@@ -7,6 +7,11 @@ import { asksRoute, outboundRoute, pendingAsks } from "../live/floorguard.ts";
 import { mayReach } from "../sandbox/proxy.ts";
 import { boxRoute } from "../sandbox/server.ts";
 import { noDocker } from "./no-docker.ts";
+import { arr, obj, raw, str } from "@rustybuns/util/guard";
+
+// What the box route answers, read through a guard rather than cast.
+const Log = obj({ log: arr(obj({ what: str(), verdict: str() }), 1000) });
+const Perms = obj({ perms: obj({ allow: arr(str(), 1000), log: raw }), from: str() });
 
 let dir: string, office: ReturnType<typeof Bun.serve>;
 const TOKEN = "t0ken";
@@ -39,7 +44,7 @@ test("an unlisted host is asked about, answered, and logged; a listed one is onl
   expect(await ask("github.com")).toBe(true); // no card for a listed host
 
   const state = await boxRoute(() => dir, noDocker)("GET", new URL("http://x/__rb/box"));
-  const seen = (state?.body as { log: { what: string; verdict: string }[] }).log.map((l) => `${l.what} ${l.verdict}`);
+  const seen = Log(state?.body).log.map((l) => `${l.what} ${l.verdict}`);
   expect(seen).toEqual(["github.com:443 listed", "evil.example.net:443 denied", "registry.example.com:443 allowed"]);
 });
 
@@ -70,7 +75,7 @@ test("the log is a camera: it keeps to its size, drops the oldest first, and for
 test("the box route saves the first-run answers", async () => {
   const route = boxRoute(() => dir, noDocker);
   const saved = await route("POST", new URL("http://x/__rb/box?do=log&maxMb=50&keepDays=7"));
-  expect((saved?.body as { perms: { log: unknown } }).perms.log).toEqual({ maxMb: 50, keepDays: 7 });
+  expect(Perms(saved?.body).perms.log).toEqual({ maxMb: 50, keepDays: 7 });
   expect((await route("POST", new URL("http://x/__rb/box?do=log&maxMb=50&keepDays=5")))?.status).toBe(400); // not one of the four choices
 });
 
@@ -97,7 +102,7 @@ test("Always on the card saves the host to the allowlist, so the next box start 
   asksRoute("POST", new URL(`http://x/__rb/asks/${a!.id}?allow=1&always=1`), true);
   expect(await yes).toBe(true);
   const state = await boxRoute(() => dir, noDocker)("GET", new URL("http://x/__rb/box"));
-  const perms = (state?.body as { perms: { allow: string[] }; from: string });
+  const perms = Perms(state?.body);
   expect(perms.from).toBe("box.json");
   expect(perms.perms.allow).toContain("remember.example.com");
   // a plain Allow stays a one-off
@@ -105,13 +110,13 @@ test("Always on the card saves the host to the allowlist, so the next box start 
   await answer(true);
   await once;
   const after = await boxRoute(() => dir, noDocker)("GET", new URL("http://x/__rb/box"));
-  expect((after?.body as { perms: { allow: string[] } }).perms.allow).not.toContain("oneoff.example.com");
+  expect(Perms(after?.body).perms.allow).not.toContain("oneoff.example.com");
 });
 
 test("the whole log can be asked for, not just the last 15", async () => {
   const cam = parseCamera({});
   for (let i = 0; i < 40; i++) record(logFile(dir), { kind: "outbound", who: "box", what: `h${i}.example.com:443`, verdict: "listed" }, cam);
   const route = boxRoute(() => dir, noDocker);
-  const n = async (q: string) => ((await route("GET", new URL(`http://x/__rb/box${q}`)))?.body as { log: unknown[] }).log.length;
+  const n = async (q: string) => Log((await route("GET", new URL(`http://x/__rb/box${q}`)))?.body).log.length;
   expect([await n(""), await n("?log=all")]).toEqual([15, 40]);
 });

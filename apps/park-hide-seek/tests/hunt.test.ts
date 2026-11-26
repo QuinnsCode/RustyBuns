@@ -515,7 +515,7 @@ test("parseMsg rejects junk from the wire", () => {
 });
 
 describe("prone and tree climbing", () => {
-  const camper = (z: Zone) => {
+  const camper = () => {
     const g = new Room(11).game;
     let now = 1_000_000;
     g.join("h", "Host", now, { host: true });
@@ -538,7 +538,7 @@ describe("prone and tree climbing", () => {
   });
 
   test("hold climb by a tree: up for five seconds, a scrape on letting go, a thud if you hold the lot", () => {
-    const { g, c, z, now: t0 } = camper(zoneById(ZONES[0]!.id));
+    const { g, c, z, now: t0 } = camper();
     const r = g.round!, a = r.actors.get(c)!;
     const tree = z.near(a.x, a.y, 400).find((p) => (p.kind === "pine" || p.kind === "sequoia") && dropOk(z, p.x + p.r + 1, p.y))!;
     let now = t0;
@@ -567,7 +567,7 @@ describe("prone and tree climbing", () => {
   });
 
   test("no climbing with 15 seconds left, or away from a tree", () => {
-    const { g, c, z, now: t0 } = camper(zoneById(ZONES[0]!.id));
+    const { g, c, z, now: t0 } = camper();
     const a = g.round!.actors.get(c)!;
     const [ox, oy] = openSpot(z, 3);
     a.x = ox; a.y = oy;
