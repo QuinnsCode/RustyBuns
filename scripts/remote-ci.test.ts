@@ -157,6 +157,40 @@ test("Bob's battery at 13% kills a running suite's whole tree, and it reads cut 
   expect([outcome(next.exitCode), next.stdout.toString()]).toEqual(["cut off", ""]);
 }, 15000);
 
+// An agent's harness SIGTERMs `bun run builder` mid-suite. Killing the local ssh doesn't end the suite on Bob (no tty),
+// so giving the slot back ends what still runs there first: the next claim never resets the slot under it (#6192).
+test("a SIGTERM mid-suite ends the suite on Bob, then gives the slot back", async () => {
+  const root = mkdtempSync(`${tmpdir()}/remote-ci-stop-`), work = `${root}/work`, home = `${root}/home`, builder = `${home}/builder`;
+  const id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  await Bun.write(`${work}/package.json`, `{"name":"w"}`);
+  await Bun.$`git init -q && git add -A && git commit -qm one`.cwd(work).env({ ...process.env, ...id });
+  await Bun.$`mkdir -p ${builder}/locks && git clone -q ${work} ${builder}/slot-1 && touch ${builder}/serving`;
+  // the fake "Bob" is a local shell: like the real one, it keeps running the suite when the run that sent it goes
+  const nap = `sleep ${(600 + Math.random()).toFixed(4)}`, ssh = `${root}/ssh`, pmset = `${root}/bin/pmset`;
+  await Bun.write(ssh, `#!/bin/sh\nshift\nexport PATH="${root}/bin:$PATH"\ncd "${home}" && exec sh -c "$*"\n`);
+  await Bun.write(pmset, `#!/bin/sh\necho "Now drawing from 'AC Power'"\n`);
+  chmodSync(ssh, 0o755);
+  chmodSync(pmset, 0o755);
+  await Bun.write(`${root}/rb/valve`, "off\n");
+  const running = async () => (await Bun.$`pgrep -f ${nap}`.quiet().nothrow().text()).split("\n").filter(Boolean);
+  const run = Bun.spawn(["bun", `${import.meta.dir}/remote-ci.ts`, "run", ".", "sh", "-c", nap], {
+    cwd: work, stdout: "ignore", stderr: "ignore",
+    env: { ...process.env, ...id, BUILDER_HOST: "max", BUILDER_SSH: ssh, GIT_SSH_VARIANT: "simple", RUSTYBUNS_HOME: `${root}/rb`, BUILDER_WHO: "byte" },
+  });
+  try {
+    for (let i = 0; !(await running()).length && i < 300; i++) await Bun.sleep(50);
+    expect(readdirSync(`${builder}/locks`)).toEqual(["slot-1"]);
+    run.kill("SIGTERM");
+    expect(await run.exited).toBe(130);
+    expect(await running()).toEqual([]);
+    expect(readdirSync(`${builder}/locks`)).toEqual([]);
+    expect(readRuns(builder).done.map((r) => [r.who, r.code])).toEqual([["byte", 130]]);
+  } finally {
+    run.kill("SIGKILL");
+    await Bun.$`pkill -f ${nap}`.quiet().nothrow();
+  }
+}, 30000);
+
 // A push packs what the slot's refs don't reach. Once a run's commit stays there, the next run one commit on sends
 // just that commit, not all the history since the slot was set up (seven 200 MB packs at once restarted the office Mac).
 test("after a run the slot keeps its commit, so the next push packs only what is new", async () => {
