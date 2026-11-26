@@ -68,6 +68,7 @@ Jump links: `/?battle=theater` (or `quick`, `armada`, `campaign`), `&seed=4`, `&
 | `src/sim/scenarios.ts` | the battles: the assault on a base, a picket, a strike on a half-built base, the Armada |
 | `src/sector.ts` | the campaign map: worlds, lanes, supply, bases that spread, refits |
 | `src/view/scene.ts`, `models.ts` | the view: hulls made in code, tracer streams, bolts, drive plumes, explosions, the orders overlay, holo and cinema looks |
+| `src/view/sheets.ts`, `ships.ts` | the hull drawing sheets (our own: size in metres and every named piece) and each piece built from its sheet, with a cheap far level for the Theater. Built so far: the Lance-class destroyer and the Bastion cruiser; the other hulls and the craft are still plain shapes in `models.ts`. See them on `/ships.html?ship=destroyer` (`~exploded`, `~<piece>`, `~far`; `&view=three\|top\|side\|front\|below\|stern`) |
 | `src/main.ts` | the page: input, the HUD, the sector screen, the harness |
 | `src/names.ts` | every faction, hull and wing name the player reads |
 

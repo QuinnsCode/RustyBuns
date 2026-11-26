@@ -71,6 +71,51 @@ export const LANCE: WedgeSheet = {
   lights: { count: 70, size: 6 },
 };
 
+/** The Bastion cruiser's sheet: the Compact builds round a girder. A square truss keel runs stern to prow, rib frames
+ *  are welded across it, an armoured ram sits on the front, and whatever plate and tankage the yard had is bolted on
+ *  between the ribs. One big drive cylinder and two small ones burn orange at the back. */
+export type GirderSheet = HullSheet & {
+  /** The keel girder: a box truss from `from` to `to` (x), `wide` by `high`, its chords `bar` thick. */
+  spine: { from: number; to: number; wide: number; high: number; bar: number; bays: number };
+  /** The ram: a side profile (x, y pairs, closed) pushed `wide` across. */
+  prow: { profile: readonly Plan[]; wide: number };
+  /** Rib frames welded across the keel: `count` of them evenly from `from` to `to` (x), each a rectangle `wide` by
+   *  `high` of flat bar `bar` thick. */
+  ribs: { from: number; to: number; count: number; wide: number; high: number; bar: number };
+  /** Plate and cargo blocks bolted into the bays between ribs: `count` placed by chance, up to `size` metres. */
+  modules: { count: number; size: number };
+  /** A long fuel tank down each flank, slung from the ribs. */
+  tanks: { from: number; to: number; radius: number; z: number; y: number; bands: number };
+  /** The bridge cab on stilts over the keel near the ram: `[length, high, wide]` at `x`, `lift` above the keel's top. */
+  bridge: { x: number; size: readonly [number, number, number]; lift: number; windows: number };
+  /** Broadside guns on sponsons at the ribs' tops, a pair (one each side) per x, each a block and one long barrel. */
+  guns: { at: readonly number[]; block: number; barrel: number };
+  /** The drive: a cylinder `length` long and `radius` round behind the keel, a flared bell, and two small drives. */
+  drive: { length: number; radius: number; bell: number; aux: readonly (readonly [z: number, radius: number])[] };
+  /** Weld patches in a lighter ochre over the plates, and lamps. */
+  patches: { count: number; size: number };
+  lights: { count: number; size: number };
+};
+
+export const BASTION: GirderSheet = {
+  id: "cruiser",
+  title: "Bastion cruiser",
+  side: "rim",
+  length: 1180, beam: 300, height: 250,
+  gameLength: 170,
+  seed: 0xb457,
+  spine: { from: -470, to: 400, wide: 76, high: 84, bar: 12, bays: 14 },
+  prow: { profile: [[380, -70], [500, -70], [565, -24], [565, 30], [510, 74], [380, 74]], wide: 170 },
+  ribs: { from: -400, to: 300, count: 7, wide: 220, high: 190, bar: 14 },
+  modules: { count: 26, size: 70 },
+  tanks: { from: -380, to: 180, radius: 30, z: 98, y: -46, bands: 6 },
+  bridge: { x: 290, size: [76, 36, 64], lift: 54, windows: 7 },
+  guns: { at: [-280, -40, 200], block: 34, barrel: 96 },
+  drive: { length: 70, radius: 66, bell: 70, aux: [[-104, 24], [104, 24]] },
+  patches: { count: 40, size: 34 },
+  lights: { count: 28, size: 5 },
+};
+
 /** The sheets drawn so far, by ship kind. A kind without one keeps its plain shapes in `models.ts`. */
-export const SHEETS = { destroyer: LANCE } as const;
+export const SHEETS = { destroyer: LANCE, cruiser: BASTION } as const;
 export type SheetKind = keyof typeof SHEETS;

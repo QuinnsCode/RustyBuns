@@ -22,5 +22,5 @@ test("each sheet-built hull matches its sheet, pieces and all, and goes cheap fa
     expect(g.scale.x * sheet.length).toBeCloseTo(sheet.gameLength);
     expect(tris(lod.levels[1]!.object)).toBeLessThan(tris(lod.levels[0]!.object) / 2);
   }
-  expect(shipModel("destroyer", "navy").userData.sheet).toBe("destroyer");
+  expect([shipModel("destroyer", "navy").userData.sheet, shipModel("cruiser", "rim").userData.sheet]).toEqual(["destroyer", "cruiser"]);
 });

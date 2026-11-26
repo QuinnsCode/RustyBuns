@@ -32,12 +32,12 @@ function engines(g: THREE.Group, x: number, zs: number[], r: number, side: Side)
 /** A capital ship's model, about `HULL[kind].r * 2` long, nose along +x. */
 export function shipModel(kind: ShipKind, side: Side): THREE.Group {
   // A hull with a drawing sheet is built piece by piece from it (ships.ts); the rest keep their plain shapes for now.
-  if (side === "navy" && hasSheet(kind)) return sheetModel(kind);
+  if (hasSheet(kind, side)) return sheetModel(kind);
   const g = new THREE.Group();
   if (side === "navy") {
     const hull = navyHull(), dark = navyDark();
-    const L = kind === "dreadnought" ? 470 : kind === "destroyer" ? 190 : 85;
-    const W = kind === "dreadnought" ? 120 : kind === "destroyer" ? 115 : 42;
+    const L = kind === "dreadnought" ? 470 : 85;
+    const W = kind === "dreadnought" ? 120 : 42;
     const T = L * 0.07;
     g.add(wedge(L, W, T, hull));
     const top = wedge(L * 0.62, W * 0.55, T * 0.9, hull); top.position.set(-L * 0.17, T * 0.8, 0); g.add(top);
@@ -66,14 +66,7 @@ export function shipModel(kind: ShipKind, side: Side): THREE.Group {
     return g;
   }
   const hull = rimHull(), dark = rimDark();
-  if (kind === "cruiser") {
-    // A long spine: armoured prow, ribbed mid-section, drive cylinder.
-    g.add(box(150, 22, 30, hull));
-    const prow = box(40, 28, 38, dark); prow.position.x = 70; g.add(prow);
-    for (let i = 0; i < 6; i++) { const rib = box(5, 34, 44, dark); rib.position.x = -40 + i * 16; g.add(rib); }
-    const drive = cyl(18, 30, dark, 12); drive.position.x = -88; g.add(drive);
-    engines(g, -104, [0], 12, side);
-  } else if (kind === "carrier") {
+  if (kind === "carrier") {
     // A broad body with a flight pod down each flank.
     g.add(box(140, 18, 50, hull));
     for (const z of [-42, 42]) { const pod = box(120, 14, 22, dark); pod.position.set(-6, 0, z); g.add(pod); const bay = box(100, 3, 16, glow(0x2a1a10)); bay.position.set(-6, 7.6, z); g.add(bay); }
