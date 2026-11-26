@@ -1,16 +1,18 @@
-// The door between the agent and the page. Its Layer puts the page's WebMCP tools up (`@rustybuns/util/commands`:
-// document.modelContext when the browser has one, window.__commands always) for as long as the page is mounted, and
-// takes them down when it goes. A tool call is checked against its Schema, goes into the page as a message
-// (`calls`), and waits for the page to say what came of it (`report`): the page after it, or why it couldn't.
-import { addCommands, type Command, type InputSchema } from "@rustybuns/util/commands";
+// The door between agents and the page, in the page. Its Layer, for as long as the page is mounted:
+// - puts the page's tools up (`@rustybuns/util/commands`): WebMCP when the browser has document.modelContext, and
+//   window.__commands always;
+// - keeps a socket to the page's room on the relay (relay.ts), so an agent in a terminal reaches the same tools:
+//   each call that comes down the socket runs through the same registry, and its answer goes back up.
+// A call is checked against its Schema, goes into the page as a message (`calls`) and waits for the page to say
+// what came of it (`report`): the page after it, or why it couldn't.
+import { addCommands, type Command, runCommand } from "@rustybuns/util/commands";
+import { check, field } from "@rustybuns/util/guard";
+import { connectSocket } from "@rustybuns/util/socket";
 import { Context, Effect, Layer, Queue, Schema, Stream } from "effect";
-import { AddBlock, EditBlock, MoveBlock, type Page, RemoveBlock, Reset, SetProfile, SetTheme, starter } from "./page.ts";
+import { type Page } from "./page.ts";
+import { decode, type FromPage, inputSchema, READ, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
 
-export const Undo = Schema.TaggedStruct("Undo", {});
-/** What a call asks the page for: an action on the page, or undo (which needs the page's history). */
-export const Request = Schema.Union([SetProfile, SetTheme, AddBlock, EditBlock, RemoveBlock, MoveBlock, Reset, Undo]);
-export type Request = typeof Request.Type;
-
+export { Request };
 export const Call = Schema.Struct({ call: Schema.Number, tool: Schema.String, request: Request });
 export type Call = typeof Call.Type;
 
@@ -19,43 +21,27 @@ export interface Report { readonly call: number; readonly error: string | null; 
 export class Agent extends Context.Service<Agent, {
   /** The agent's calls, in the order they came. */
   readonly calls: Stream.Stream<Call>;
+  /** Whether the room's relay is connected: agents in a terminal can reach the page while it is. */
+  readonly online: Stream.Stream<boolean>;
   /** What came of a call (0 for a person's click): answers the agent waiting on it. */
   readonly report: (r: Report) => Effect.Effect<void>;
 }>()("effect-ui-page/Agent") {}
 
-type Tagged = typeof SetProfile | typeof SetTheme | typeof AddBlock | typeof EditBlock | typeof RemoveBlock | typeof MoveBlock | typeof Reset | typeof Undo;
-interface Tool { name: string; title: string; description: string; schema: Tagged; hints?: Command["annotations"] }
+/** Where the page is kept between visits, per room: this browser only. */
+export const savedKey = (room: string) => `agent-page:${room}`;
 
-const block = "A block is {kind, title, body, items}: text (title and body), links (items with label and an https url), stats (items with label and value), quote (body, title says who) or tags (items with a label).";
+/** The relay's socket for this room, on the server the page came from. */
+const socketUrl = (room: string) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/r/${room}/socket`;
 
-export const TOOLS: readonly Tool[] = [
-  { name: "page_set_profile", title: "Set the name and tagline", schema: SetProfile, description: "Set the page's name (the big heading) and tagline (the line under it). Leave one out to keep it." },
-  { name: "page_set_theme", title: "Set the theme", schema: SetTheme, description: "Set the colors (#rrggbb: accent, paper behind everything, ink for text) and the font (sans, serif, mono, rounded). Leave any out to keep it." },
-  { name: "page_add_block", title: "Add a block", schema: AddBlock, description: `Add a block at index \`at\` (the end when left out). ${block} The answer has its id.` },
-  { name: "page_edit_block", title: "Edit a block", schema: EditBlock, description: `Change the fields given of the block with this id; items, when given, replaces the whole list. ${block}` },
-  { name: "page_move_block", title: "Move a block", schema: MoveBlock, description: "Move the block with this id to index `to` (0 is the top)." },
-  { name: "page_remove_block", title: "Remove a block", schema: RemoveBlock, description: "Remove the block with this id. page_undo puts it back.", hints: { destructiveHint: true } },
-  { name: "page_undo", title: "Undo", schema: Undo, description: "Take back the last change, the agent's or the person's." },
-  { name: "page_reset", title: "Start over", schema: Reset, description: "Put the page back to the starter. page_undo puts it back.", hints: { destructiveHint: true } },
-];
+/** A command's answer as a reply frame: a write that the page refused (`{ ok: false, error }`) is a refusal. */
+const replyOf = (id: number, r: unknown): FromPage =>
+  field(r, "ok") === false ? { t: "reply", id, ok: false, result: r, error: String(field(r, "error") ?? "refused") } : { t: "reply", id, ok: true, result: r };
 
-/** A tool's arguments as JSON Schema, from the same Schema that checks them (without the `_tag`). */
-export const inputSchema = (schema: Tagged): InputSchema => {
-  const { _tag, ...fields } = schema.fields;
-  const s: { properties?: unknown; required?: unknown } = Schema.toJsonSchemaDocument(Schema.Struct(fields)).schema;
-  const objects = (v: unknown) => Object.entries(typeof v === "object" && v !== null ? v : {}).filter((e): e is [string, object] => typeof e[1] === "object" && e[1] !== null);
-  const required = Array.isArray(s.required) ? s.required.filter((r) => typeof r === "string") : [];
-  return { type: "object", properties: Object.fromEntries(objects(s.properties)), ...(required.length ? { required } : {}) };
-};
-
-/** Check a tool's arguments: the request it makes, or a thrown error that says what was wrong. */
-export const decode = (tool: Tool, args: unknown): Request =>
-  Schema.decodeUnknownSync(Request)({ ...(typeof args === "object" && args !== null ? args : {}), _tag: tool.schema.fields._tag.schema.literal });
-
-export const layer = Layer.effect(Agent, Effect.gen(function* () {
+export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect.gen(function* () {
   const queue = yield* Queue.unbounded<Call>();
+  const online = yield* Queue.unbounded<boolean>();
   const waiting = new Map<number, (r: Report) => void>();
-  let page: Page = starter, next = 1;
+  let page = initial, next = 1;
   const call = (tool: Tool, args: unknown) => {
     const request = decode(tool, args);
     const id = next++;
@@ -65,16 +51,26 @@ export const layer = Layer.effect(Agent, Effect.gen(function* () {
     });
   };
   const off = addCommands([
-    { name: "page_read", title: "Read the page", group: "Page", description: `The page as it stands: name, tagline, theme and blocks (each with its id). ${block}`,
-      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, palette: false, execute: () => page },
+    { ...READ, group: "Page", palette: false, execute: () => page },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       annotations: t.hints, palette: false, execute: (args) => call(t, args) })),
   ]);
-  yield* Effect.addFinalizer(() => Effect.sync(off));
+  const link = connectSocket<ToPage, FromPage>(() => socketUrl(room), {
+    decode: (v) => check(ToPage, v),
+    onMessage: (m) => {
+      runCommand(m.name, m.args, "agent").then((r) => replyOf(m.id, r), (e: unknown) => ({ t: "reply" as const, id: m.id, ok: false, result: null, error: e instanceof Error ? e.message : String(e) }))
+        .then((frame) => link.send(frame));
+    },
+    onOpen: () => Queue.offerUnsafe(online, true),
+    onClose: ({ tries }) => { Queue.offerUnsafe(online, false); return Math.min(10_000, 500 * 2 ** tries); },
+  });
+  yield* Effect.addFinalizer(() => Effect.sync(() => { off(); link.close(); }));
   return Agent.of({
     calls: Stream.fromQueue(queue),
+    online: Stream.fromQueue(online),
     report: (r) => Effect.sync(() => {
       page = r.page;
+      try { localStorage.setItem(savedKey(room), JSON.stringify(r.page)); } catch { /* private window: kept for this visit only */ }
       waiting.get(r.call)?.(r);
       waiting.delete(r.call);
     }),

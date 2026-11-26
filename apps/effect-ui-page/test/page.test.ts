@@ -2,11 +2,12 @@ import { HtmlLocator, HtmlScene } from "@effect/ui/html/testing";
 import { Locator, Story } from "@effect/ui/testing";
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { decode, inputSchema, TOOLS } from "../src/agent.ts";
+import { decode, inputSchema, TOOLS } from "../src/tools.ts";
 import { apply, starter } from "../src/page.ts";
-import { PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { connectLines, CopyText, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
+const props = { room: "testroom0001", origin: "http://localhost", initial: starter };
 const run = <A>(e: Effect.Effect<A, never, import("effect").Scope.Scope>) => Effect.runPromise(Effect.scoped(e));
 
 describe("an agent's tool call", () => {
@@ -45,7 +46,7 @@ describe("an agent's tool call", () => {
 
   test("changes the page and answers with it; undo takes it back", () =>
     run(Effect.gen(function* () {
-      const s = yield* Story.make(ProfilePageNoDeps, {});
+      const s = yield* Story.make(ProfilePageNoDeps, props);
       s.send(PageMessage.ReceivedAgentCall({ call: { call: 1, tool: "page_set_profile", request: { _tag: "SetProfile", name: "Ada" } } }));
       expect(s.model.page.name).toBe("Ada");
       s.expectExact(ReportPage);
@@ -62,9 +63,20 @@ describe("an agent's tool call", () => {
 
 test("a person's Start over shows in the agent's log", () =>
   run(Effect.gen(function* () {
-    const s = yield* HtmlScene.make(ProfilePageNoDeps, {});
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, props);
     s.click(HtmlLocator.role("button", { name: "Start over" }))
       .expectExact(ReportPage)
       .resolve(ReportPage, PageMessage.CompletedReportPage())
       .expect(Locator.text("start over (you)")).toExist();
+  })));
+
+test("a copy button copies its agent's line for this room, and says so", () =>
+  run(Effect.gen(function* () {
+    const claude = connectLines(props.origin, props.room)[0]!;
+    expect(claude.text).toBe("claude mcp add --transport http agent-page http://localhost/api/r/testroom0001/mcp");
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, props);
+    s.click(HtmlLocator.role("button", { name: "Copy the Claude Code line" }))
+      .expectExact(CopyText)
+      .resolve(CopyText, PageMessage.CompletedCopy({ what: "Claude Code" }))
+      .expect(HtmlLocator.role("button", { name: "Copied the Claude Code line" })).toExist();
   })));

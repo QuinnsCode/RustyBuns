@@ -243,9 +243,6 @@
         "@rustybuns/util": "^0.1.12",
         "effect": "4.1.4",
       },
-      "devDependencies": {
-        "vite": "^6.4.4",
-      },
     },
     "apps/eqosys": {
       "name": "eqosys",

@@ -216,7 +216,7 @@
       {
         "app": "effect-ui-page",
         "name": "Agent Page",
-        "line": "An Effect UI profile page your agent builds through WebMCP tools: name, theme and blocks, each call checked by a Schema, with undo."
+        "line": "An Effect UI profile page that Claude Code, Codex, opencode or a browser agent builds while you watch: paste one prompt or add one MCP line, and every call is checked by a Schema."
       },
       {
         "app": "hemyviz",
