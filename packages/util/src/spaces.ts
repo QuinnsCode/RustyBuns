@@ -315,8 +315,8 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     return [head, tabs, el("div", { className: "rb-spaces-body" }, el("div", { className: "rb-spaces-chat" }, find, older, log(shown)), who()), typed, drop, noteEl()];
   }
 
-  /** Whether this is the person looking: by account id (names are anyone's to copy), by name when the token says none. */
-  const isMe = (id: string, called: string) => { const own = sp.me?.(); return own ? id === own : called === name(); };
+  /** Whether this is the person looking: by account id (names are anyone's to copy); by name when nobody online has their id. */
+  const isMe = (id: string, called: string) => { const own = sp.me?.(); return own && online.some((m) => m.id === own) ? id === own : called === name(); };
 
   /** A voice channel: join it, or, once in, who Qlave has in the room (talking, muted), your mute and hang up. */
   function drawVoice(v: SpaceVoice) {

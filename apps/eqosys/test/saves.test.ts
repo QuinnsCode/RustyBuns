@@ -1,9 +1,9 @@
 // A game saves, overwrites and reads back through the token: a slot keeps five versions, the reply names the one it replaced,
 // a body or a person's total over the cap is refused, and another app's token sees nothing.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { newKey } from "@rustybuns/util/token";
+import { newKey, peek } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
-import { MAX_BODY, QUOTA, SLOTS } from "../src/qollab/saves.ts";
+import { MAX_BODY, put, QUOTA, SLOTS } from "../src/qollab/saves.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -59,7 +59,8 @@ test("save, overwrite, previous version, drop the oldest, and the caps", async (
 });
 
 test("saves sent all at once still stop at the slot cap", async () => {
-  const dee = await signUp("Dee", "park-hide-seek", PARK);
-  const got = await Promise.all(Array.from({ length: SLOTS + 8 }, (_, i) => save("PUT", `slot-${i}`, dee, bytes(4, 1))));
-  expect(got.map((r) => r.status).sort()).toEqual([...Array(SLOTS).fill(200), ...Array(8).fill(409)]);
+  const dee = peek(await signUp("Dee", "park-hide-seek", PARK))!.sub;
+  // `put` itself, so every one is between its check and its write together.
+  const got = await Promise.all(Array.from({ length: SLOTS + 8 }, (_, i) => put(conf, dee, "park-hide-seek", `slot-${i}`, bytes(4, 1))));
+  expect(got.filter((r) => r.ok)).toHaveLength(SLOTS);
 });
