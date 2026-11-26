@@ -12,6 +12,8 @@ test.each([
   ["fuzz", { D1: "led", D3: "none", C4: "0.47" }],
   ["drive", { D1: "mosfet", C2: "4.7" }],
   ["dist", { D1: "none" }],
+  ["phase", { R1: "2.2" }], // an effect: its LFO runs through all three, the same each time (#6118)
+  ["comp", { R1: "2.2" }], // and an envelope, which listens to the output
 ] as const)("%s %o: the remake plays as your board, not as the stock one", (id, swaps) => {
   const r = retest(builderPedal(id), 7, swaps, input);
   expect(r.same).toBe(true);

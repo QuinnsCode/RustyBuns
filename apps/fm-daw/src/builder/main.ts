@@ -1,6 +1,8 @@
-// Q Builder (/builder.html): change it, scope it, retest it, order it. A clip pedal's board (Q Fuzz, Q Drive,
-// Q Dist): click a diode, capacitor or resistor to swap it (the board view, ../amp/board.ts), click a trace to put the
-// scope on its net, and Play runs the riff through the circuit with the scope following along. Remake writes your
+// Q Builder (/builder.html): change it, scope it, retest it, order it. Any pedal with a board, the clip pedals and the
+// effects: click a diode, capacitor or resistor to swap it (the board view, ../amp/board.ts), click a trace to put the
+// scope on its net, and Play runs the riff through the circuit with the scope following along. An effect's LFO or
+// envelope moves its parts as on Q Amp, and its control net (GATE, LED, FOOT) scopes the control itself.
+// The knobs and swaps are Q Amp's (../amp/parts-store.ts): a part swapped here is on Q Amp's pedal too, and back. Remake writes your
 // parts into the board (circuit JSON and tscircuit source, ../circuit/builder.ts), plays the same riff through the
 // remake and through your board, and says whether they match. The build sheet and the kit zip stay on Q Amp.
 // The riff runs in a worker (worker.ts). window.qbuilder drives it (scripts/probe.ts).
@@ -8,25 +10,25 @@ import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./builder.css";
-import { check, num, obj, or, rec, str } from "@rustybuns/util/guard";
+import { check, obj, or, rec, str } from "@rustybuns/util/guard";
 import { BoardView } from "../amp/board.ts";
 import { h, iconButton } from "../amp/dom.ts";
 import { icon } from "../amp/icons.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
 import { BUILDER_PEDALS, INPUT_VOLTS, SR, WINDOW, builderPedal, changes, isBuilderPedal, remakeJson, remakeTsx, restAt, scopeNets, theRiff, type BuilderPedal, type Retest, type ScopeNet } from "../circuit/builder.ts";
 import type { Swaps } from "../circuit/circuits.ts";
+import { onParts, readParts, writeParts } from "../amp/parts-store.ts";
 import type { BenchReply, Unsent } from "./messages.ts";
 
+/** The page's own: the pedal open and the net the scope sits on, per pedal. The knobs and swaps are Q Amp's. */
 const KEY = "qbuilder:v1";
 const Saved = obj({
   pedal: or(str(12), "fuzz"),
-  drive: or(rec(num(0, 10), 8), {}),
-  swaps: or(rec(rec(str(12), 40), 8), {}),
-  probe: or(rec(str(400), 8), {}),
+  probe: or(rec(str(400), 16), {}),
 });
 const S = (() => {
   try { return check(Saved, JSON.parse(localStorage.getItem(KEY) ?? "{}")) ?? check(Saved, {}); } catch { return check(Saved, {}); }
-})() ?? { pedal: "fuzz", drive: {}, swaps: {}, probe: {} };
+})() ?? { pedal: "fuzz", probe: {} };
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } };
 
 const TSX = import.meta.glob<string>("../../circuits/*.tsx", { query: "?raw", import: "default" });
@@ -37,10 +39,11 @@ let probe: ScopeNet | null = null;
 let wave: { out: Float32Array; at: Float32Array; swing: { hi: number; lo: number; flat: number }; misses: number } | null = null;
 let result: Retest | null = null;
 let busy = 0, retesting = false, why = "";
+let parts = readParts();
 
 const def = () => builderPedal(pedal);
-const drive = () => S.drive[pedal] ?? 7;
-const swaps = (): Swaps => S.swaps[pedal] ?? {};
+const drive = () => parts.drive[pedal] ?? 5;
+const swaps = (): Swaps => parts.swaps[pedal] ?? {};
 
 // ---- the page ----
 const app = h("main", "qb");
@@ -51,13 +54,14 @@ const pedalTabs = BUILDER_PEDALS.map((id) => {
   return b;
 });
 const driveIn = h("input", "qb-drive");
-driveIn.type = "range"; driveIn.min = "0"; driveIn.max = "10"; driveIn.step = "0.5"; driveIn.setAttribute("aria-label", "Drive");
+driveIn.type = "range"; driveIn.min = "0"; driveIn.max = "10"; driveIn.step = "0.5";
+const knobName = h("span", "");
 const driveVal = h("output", "qb-drive-val");
 driveIn.addEventListener("input", () => { setDrive(Number(driveIn.value)); });
 const playBtn = iconButton("play", "Play the riff through the board", () => void togglePlay());
 playBtn.classList.add("qb-play");
 const head = h("header", "qb-head", h("h1", "", icon("circuit-board", 18), "Q Builder"), h("nav", "qb-pedals", ...pedalTabs),
-  h("label", "qb-knob", h("span", "", "Drive"), driveIn, driveVal), playBtn);
+  h("label", "qb-knob", knobName, driveIn, driveVal), playBtn);
 
 const board = new BoardView((socket, choice) => swap(socket, choice), (key) => setProbe(key));
 
@@ -110,17 +114,19 @@ async function run(): Promise<void> {
 // ---- what the player does ----
 function pick(id: BuilderPedal): void {
   pedal = id; S.pedal = id; save();
+  parts = readParts();
   nets = scopeNets(def().board);
-  // First the net a clipper holds down to ground (no op-amp on it), else one with diodes on it.
+  // First the net a clipper holds down to ground (no op-amp on it), else one with diodes on it, else what comes out.
   const diodes = (n: ScopeNet) => n.parts.some((p) => p.startsWith("D")) && n.node !== "OUT";
-  probe = nets.find((n) => n.key === S.probe[id]) ?? nets.find((n) => diodes(n) && !n.parts.some((p) => p.startsWith("U"))) ?? nets.find(diodes) ?? nets[0] ?? null;
+  probe = nets.find((n) => n.key === S.probe[id]) ?? nets.find((n) => diodes(n) && !n.parts.some((p) => p.startsWith("U"))) ?? nets.find(diodes) ?? nets.at(-1) ?? null;
   wave = null; result = null; files.replaceChildren();
   showBoard();
   void run();
 }
 
 function setDrive(v: number): void {
-  S.drive[pedal] = Math.max(0, Math.min(10, v)); save();
+  writeParts(pedal, Math.max(0, Math.min(10, v)), swaps());
+  parts = readParts();
   result = null; files.replaceChildren();
   paint();
   void run();
@@ -143,8 +149,8 @@ function swap(socket: string | null, choice: string | null): string {
   if (socket !== null) { if (choice === null) delete mine[socket]; else mine[socket] = choice; }
   const no = swapWontPlay(def(), mine);
   if (no.length) { showBoard(no.join("; ")); return no.join("; "); }
-  if (Object.keys(mine).length) S.swaps[pedal] = mine; else delete S.swaps[pedal];
-  save();
+  writeParts(pedal, drive(), mine);
+  parts = readParts();
   result = null; files.replaceChildren();
   showBoard();
   void run();
@@ -239,6 +245,7 @@ function draw(): void {
 const volts = (v: number) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} V`;
 function paint(): void {
   for (const b of pedalTabs) b.setAttribute("aria-pressed", String(b.dataset.pedal === pedal));
+  knobName.textContent = def().knob ?? "Drive"; driveIn.setAttribute("aria-label", knobName.textContent);
   driveIn.value = String(drive()); driveVal.textContent = drive().toFixed(1);
   playBtn.replaceChildren(icon(src ? "square" : "play"));
   playBtn.title = src ? "Stop" : "Play the riff through the board"; playBtn.setAttribute("aria-label", playBtn.title);
@@ -264,6 +271,17 @@ function paint(): void {
 
 addEventListener("resize", () => draw());
 pick(pedal);
+
+// A part swapped or a knob turned on Q Amp (another tab): this pedal's board and scope follow. Q Amp saves its whole
+// store often (every amp knob), so only a change to this pedal's own knob or parts reruns the riff.
+onParts((p) => {
+  const was = JSON.stringify([drive(), swaps()]);
+  parts = p;
+  if (JSON.stringify([drive(), swaps()]) === was) return;
+  result = null; files.replaceChildren();
+  showBoard();
+  void run();
+});
 
 /** Resolves once nothing is running (the scope's riff and any retest). */
 const idle = async () => { while (busy || retesting) await new Promise((r) => setTimeout(r, 50)); };
