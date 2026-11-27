@@ -57,3 +57,38 @@ button { font: inherit; color: inherit; }
 /* The board is the page here: let the schematic take the height. */
 .qb .board-art svg { height: clamp(280px, 68vh, 760px); }
 @media (max-width: 900px) { .qb .board-art svg { height: clamp(240px, 48vh, 520px); } }
+
+/* Build it: the board from its Gerbers, Top or Bottom, then Print and the files. */
+.qb-sides { display: flex; gap: 2px; margin-left: auto; padding: 2px; border-radius: 9px; background: rgba(255, 255, 255, 0.05); }
+.qb-side-btn { padding: 4px 10px; border: 0; border-radius: 7px; background: none; cursor: pointer; font: 500 11px/1.2 var(--mono); color: var(--dim); }
+.qb-side-btn[aria-pressed="true"] { background: rgba(255, 176, 0, 0.16); color: var(--warn); }
+.qb-side-btn:disabled { opacity: 0.4; cursor: default; }
+.qb-mock { display: grid; place-items: center; padding: 10px; border-radius: 8px; background: radial-gradient(90% 90% at 50% 40%, #1b232b, #07090b); }
+.qb-mock svg { width: 100%; height: auto; max-height: 340px; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55)); }
+.qb-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.qb-act { padding: 7px 12px; }
+
+/* The print sheet: off screen (so the schematic can be measured and cropped) until the page prints. */
+.qb-print { position: absolute; left: -10000px; top: 0; width: 186mm; background: #fff; color: #111; font: 400 10pt/1.4 var(--body); }
+.qb-print h1 { margin: 0 0 2mm; font: 600 20pt/1 var(--silk); letter-spacing: 0.06em; text-transform: uppercase; }
+.qb-print h2 { margin: 6mm 0 2mm; font: 600 12pt/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; border-bottom: 0.3mm solid #111; padding-bottom: 1mm; }
+.qb-print p { margin: 0 0 1mm; }
+.qb-print .qp-dim { color: #555; font-size: 9pt; }
+.qb-print .qp-art svg { display: block; width: 100%; height: auto; }
+.qb-print .qp-sch svg { max-height: 120mm; }
+.qb-print .qp-sch .boundary { fill: #fff; }
+.qb-print .qp-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+.qb-print .qp-side { margin: 0; }
+.qb-print .qp-side svg { max-height: 95mm; }
+.qb-print figcaption { margin-top: 1mm; text-align: center; color: #555; font-size: 9pt; }
+.qb-print table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+.qb-print th, .qb-print td { padding: 1mm 1.5mm; border-bottom: 0.2mm solid #ccc; text-align: left; vertical-align: top; }
+.qb-print tr.yours td { font-weight: 600; }
+.qb-print section { break-inside: avoid; }
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body { background: #fff !important; min-height: 0; }
+  body > *:not(.qb-print) { display: none !important; }
+  .qb-print { position: static; width: auto; }
+  .qb-print .qp-art svg { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}

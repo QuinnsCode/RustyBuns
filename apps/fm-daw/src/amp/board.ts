@@ -34,7 +34,7 @@ const valueAt = (s: Exclude<Socket, { kind: "clipper" }>, step: number): string 
   s.kind === "cap" ? farads(stepValue(s.farads, step)) : `${ohms(stepValue(s.ohms, step))}Ω`;
 
 /** Crops an SVG to what's drawn on it (tscircuit leaves a wide margin), less its background. */
-function fit(svg: SVGSVGElement | null): void {
+export function fit(svg: SVGSVGElement | null): void {
   if (!svg) return;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const el of svg.children) {

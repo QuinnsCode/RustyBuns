@@ -19,7 +19,7 @@ Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.
 | BUILD | [QDAW](#2-build-qdaw) | A music maker in the browser is a toy, or an install and an account first | bedroom producers | `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | BUILD | [Q Instruments](#4-build-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
 | BUILD | [Q Amps](#6-build-q-amps-and-q-builder) | Amp sims are black boxes: you can't see why a pedal sounds the way it does | guitarists, speaker DIYers | `/amp.html`, Q Amp; `/speakers.html` | Yes: an amp and pedals solved as circuits; speaker boxes from the makers' drawings |
-| BUILD | [Q Builder](#6-build-q-amps-and-q-builder) | A DIY kit is a parts list with no feedback: it hums and you can't tell which part did it | pedal and synth DIYers, EE students | `/amp.html`, B on a pedal (its board and build sheet) | Partly: change parts, drop in a tscircuit board, download the kit; no scope yet |
+| BUILD | [Q Builder](#6-build-q-amps-and-q-builder) | A DIY kit is a parts list with no feedback: it hums and you can't tell which part did it | pedal and synth DIYers, EE students | `/amp.html`, B on a pedal (its board and build sheet) | Mostly: change parts, scope a net, remake and retest, see the board drawn from its Gerbers, print it, download the Gerbers or the kit; layout changes still happen in the repo |
 | PLAY | [The Event](#3-play-the-event) | A plan is a drawing until someone stands in it; a far-away crowd gets a flat stream | the band, the client, the crowd | `/jam.html`, the lobby (sign in, make a room) | Yes indoors: invite link, guest list, the room's PA from where you stand |
 
 All of them share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
@@ -197,7 +197,7 @@ No wave solver: a fair try at the physics from the standards.
 ## 6. BUILD: Q Amps and Q Builder
 
 Q Amps is playing it (step 1, and the speaker boxes on `/speakers.html`); Q Builder is opening it up (steps 2 to 7).
-Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/QuinnsCode/RustyBuns/issues/6021)): the clip pedals' boards (Q Fuzz, Q Drive, Q Dist) with a scope and the remake. The build sheet and the kit zip are still on Q Amp (B on a pedal).
+Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/QuinnsCode/RustyBuns/issues/6021)): every pedal with a board, with a scope, the remake, and **Build it**: the board as a fab would make it, drawn from the kit's own Gerbers and drill file (top and bottom, `src/kit/gerber.ts`), Print (the schematic, both sides of the board and the parts list with your swaps, on A4), and the Gerbers or the whole kit as a zip. Q Amp's build sheet (B on a pedal) has the same kit.
 
 **Who:** a guitarist or synth DIYer who wants to hear a pedal or a module, change its parts, and solder the real one.
 
@@ -214,7 +214,7 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
    instead of 0.5, flatter. Remake and retest writes your parts into the board (`<board>-yours.tsx`, tscircuit
    source with your values and diode part numbers, and its circuit JSON), plays the same riff through the remake and
    your board, and says whether they match, and how far yours is from the stock board (`src/circuit/builder.ts`).
-5. Build it: B opens the build sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
+5. Build it: Q Builder's Build it card (or B on Q Amp) shows the board from its Gerbers and prints the sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
    number for every part), the front panel and a plain-words build sheet (`src/kit/`). `bom.csv` and `order.csv`
    carry your parts. A change is always a value in the same holes, so the Gerbers stay the stock board's, and the
    sheet says so.
