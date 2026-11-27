@@ -496,7 +496,7 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
     const two = cable.held(cables).length > 1;
     return jack ? `F plug the ${named} into ${jack.owner} ${jack.jack}` : at?.key === cables.caseKey ? "F coil it back" : two ? `${named.replace(/^./, (ch) => ch.toUpperCase())} end in each hand. F or G let go of the last` : `${named.replace(/^./, (ch) => ch.toUpperCase())} end in hand. F drop it (or grab another with your free hand), G drop it`;
   }
-  if (world.held) return "F put down, Q / E turn";
+  if (world.held) return "Press F to put it down, Q / E to turn it";
   const plugged = jack && cables.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === jack.owner && e.plug[1] === jack.jack));
   if (plugged) return `F unplug ${jack.owner} ${jack.jack}`;
   if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a roll of cable";
@@ -504,7 +504,7 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   if (at && wheeled(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
   // Under the F line, the venue's own keys for this piece of gear (turn, tilt, stand, fader).
   const own = bar ? aimHint(world) : "";
-  if (at) return `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}${own && `\n${own}`}`;
+  if (at) return `Press F to pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}${own && `\n${own}`}`;
   const room = bar && "look" in bar ? bar.look() : "";
   if (room) return room;
   return idlePrompt(world, cables, switchedOn, { doors: !!(bar || big || gig || band || arena || ar), open: doorsOpen });

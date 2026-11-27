@@ -78,16 +78,16 @@ export function towardName(w: World, c: Cables, key: string): string {
 }
 
 // One thing at a time: first lift the speaker (named by the tape on it), then, in your hands, carry it to the stand.
-const grabTop = (s: At) => { const t = bareTop(s)!; return `Grab ${tapeLabel(t.key, t.gear) ?? "the speaker"}: F`; };
+const grabTop = (s: At) => { const t = bareTop(s)!; return `Press F to pick up ${tapeLabel(t.key, t.gear) ?? "the speaker"}`; };
 
 /** Each step is done while its job doesn't apply: the first one that does is what to do next. */
 const FIRST_MINUTE: Step<At>[] = [
-  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : offMark(w, h) ? "Set it on its tape on the stage: F" : isTop(h) && freeStand(w) ? "Carry it to the stand: F sets it on" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? standFor(w, h)?.key : undefined; } },
+  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : offMark(w, h) ? "Carry it to its tape, press F to set it down" : isTop(h) && freeStand(w) ? "Carry it to the stand, press F to set it on" : "Press F to set it down where it goes"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? standFor(w, h)?.key : undefined; } },
   { job: "Plug it in: look at a jack and press F", done: ({ c }) => !inHand(c) },
   { job: (s) => `Bring the ${callName(s.w, s.c, outdoors(s)!.key)} in`, done: (s) => !outdoors(s), key: (s) => outdoors(s)?.key },
-  { job: (s) => `Take ${standName(strayStand(s)!.key)} to its tape on the stage: F`, done: (s) => !strayStand(s), key: (s) => strayStand(s)?.key },
+  { job: (s) => `Look at ${standName(strayStand(s)!.key)}, press F to pick it up, take it to its tape`, done: (s) => !strayStand(s), key: (s) => strayStand(s)?.key },
   { job: grabTop, done: (s) => !bareTop(s), key: (s) => bareTop(s)?.key },
-  { job: "Take a cable from the cable case: F", done: ({ c }) => !c.caseKey || c.runs.some((r) => "plug" in r.a || "plug" in r.b), key: ({ c }) => c.caseKey ?? undefined },
+  { job: "Look at the cable case, press F to take a cable", done: ({ c }) => !c.caseKey || c.runs.some((r) => "plug" in r.a || "plug" in r.b), key: ({ c }) => c.caseKey ?? undefined },
   { job: (s) => `Switch on the ${callName(s.w, s.c, switchedOff(s)!.key)}: look at it, press P`, done: (s) => !switchedOff(s), key: (s) => switchedOff(s)?.key },
 ];
 
