@@ -531,9 +531,11 @@ export class Circuit {
         i[t.gk] = IG0;
         J[t.gk * K + t.gk] = GMIN;
       } else {
-        const cv = CG * vgk, eg = Math.exp(cv), sp = (cv > 30 ? cv : Math.log1p(eg)) / CG, pw = Math.exp((XI - 1) * Math.log(sp));
+        // Past cv = 30 softplus is cv and its slope 1: a Newton guess that flies the grid up tens of volts
+        // would otherwise take exp to Infinity and the slope to Inf/Inf, NaN (#6296).
+        const cv = CG * vgk, big = cv > 30, eg = big ? 0 : Math.exp(cv), sp = (big ? cv : Math.log1p(eg)) / CG, pw = Math.exp((XI - 1) * Math.log(sp));
         i[t.gk] = GG * pw * sp + IG0;
-        J[t.gk * K + t.gk] = GG * XI * pw * (eg / (1 + eg)) + GMIN;
+        J[t.gk * K + t.gk] = GG * XI * pw * (big ? 1 : eg / (1 + eg)) + GMIN;
       }
     }
     for (const q of this.bjts) {
