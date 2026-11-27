@@ -210,6 +210,11 @@ button { cursor: pointer; }
   width: 26px; height: 26px; border-radius: 50%; padding: 0; cursor: grab;
   border: 3px solid #5c6168; background: radial-gradient(circle, #050607 0 34%, #2a2d32 36%);
 }
+.jack { position: relative; }
+.jack[data-label]::after {
+  content: attr(data-label); position: absolute; top: calc(100% + 3px); left: 50%; transform: translateX(-50%);
+  font: 600 0.6rem/1 var(--silk); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim, #9aa1ab); white-space: nowrap; pointer-events: none;
+}
 .jack.instrument { border-color: #b37c00; }
 .jack.speaker { border-color: #3d86b0; }
 .jack.plugged { background: radial-gradient(circle, #d8dbe0 0 30%, #2a2d32 34%); }

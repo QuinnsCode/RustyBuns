@@ -16,7 +16,8 @@ import { AmpThreads, type Threads } from "./threads.ts";
 import { arr, check, num, nul, obj, oneOf, opt, or, rec, str } from "@rustybuns/util/guard";
 import { AMPS, PEDALS, boardLinks, type AmpDef, type Knobs } from "../circuit/amps.ts";
 import { SCOPE_SAMPLES, nodeNumbers, type LoopSpec } from "@rustybuns/gear/circuit";
-import { STAGE, compile, heard, type Cable, type End, type Patch } from "../circuit/patch.ts";
+import { GEAR, STAGE, audibleChains, compile, heard, type Cable, type End, type Patch } from "../circuit/patch.ts";
+import { cabledChain, cabledOrder, relay } from "./cabled.ts";
 import { patchView } from "./patch-view.ts";
 import { riff } from "../circuit/riff.ts";
 import { BoardView } from "./board.ts";
@@ -84,7 +85,7 @@ const Saved = obj({
   cc: num(0, 119, 11),
   loop: opt(LoopGuard),
   /** The cables on the stage; left out (a page saved before the patch) is the stage as it comes. */
-  cables: opt(arr(CableGuard, 16, { drop: true })),
+  cables: opt(arr(CableGuard, 64, { drop: true })),
   /** The board's tiles in chain order, the amp one of them (pedalboard.ts); left out is a fresh board. */
   order: opt(arr(str(20), 32, { drop: true })),
   /** The pedals switched on, any number of them; left out is the one `pedal` of a page saved before the board. */
@@ -104,10 +105,10 @@ function loadState(): State {
     const raw = localStorage.getItem(KEY);
     const saved = raw ? check(Saved, JSON.parse(raw)) : null;
     if (saved) {
-      return {
-        ...saved, knobs: { ...fresh.knobs, ...saved.knobs }, loop: saved.loop ?? fresh.loop, cables: saved.cables ?? fresh.cables,
-        order: tidyOrder(saved.order ?? fresh.order), lit: saved.lit ?? (saved.pedal ? [saved.pedal] : []),
-      };
+      const order = tidyOrder(saved.order ?? fresh.order);
+      // A page saved when the pedalboard was one box: its pedals cabled in a row in the order its tiles were.
+      const cables = saved.cables?.every((c) => [c.from, c.to].every(([item]) => GEAR[item])) ? saved.cables : relay(order, fresh.cables);
+      return { ...saved, knobs: { ...fresh.knobs, ...saved.knobs }, loop: saved.loop ?? fresh.loop, cables, order, lit: saved.lit ?? (saved.pedal ? [saved.pedal] : []) };
     }
   } catch { /* private window or bad JSON: start fresh */ }
   // Q Builder may have kept knobs and swaps here before Q Amp was ever opened.
@@ -141,30 +142,30 @@ function machineSpec(kind: MachineId): LoopSpec | null {
 /** The machines that are on, in board order. */
 const loopSpecs = (): LoopSpec[] => S.order.flatMap((id) => (isMachine(id) ? machineSpec(id) ?? [] : []));
 
-/** The board as the audio thread plays it, and each slot's tile id: pedals that are on, the amp, machines that are on. */
-function board(): { chain: ChainSlot[]; ids: string[] } {
-  const chain: ChainSlot[] = [], ids: string[] = [];
-  for (const id of S.order) {
-    let slot: ChainSlot | null = null;
-    if (id === AMP_SLOT) slot = { amp: true };
-    // Q Bucket is the stereo one: a second chip on the right, its LFO half a turn behind.
-    else if (isMachine(id)) { const sp = machineSpec(id); slot = sp ? { machine: sp, ...(id === "bbd" ? { stereo: true } : {}) } : null; }
-    // A pedalboard cabled out of the chain is out of the sound, whatever its switches say; the amp's loop stays.
-    else if (!S.lit.includes(id) || !sound.pedals) slot = null;
-    else if (id === "bench") { const net = ui.bench.net(); slot = net ? { pedal: "bench", drive: 0, bench: net } : null; }
-    else slot = { pedal: id, drive: S.drive[id] ?? 5, swaps: S.swaps[id] ?? {} };
-    if (slot) { chain.push(slot); ids.push(id); }
-  }
-  return { chain, ids };
+/** A pedal or machine as it plays now, or null when it is switched off (or isn't one). */
+function slotOf(id: string): ChainSlot | null {
+  // Q Bucket is the stereo one: a second chip on the right, its LFO half a turn behind.
+  if (isMachine(id)) { const sp = machineSpec(id); return sp ? { machine: sp, ...(id === "bbd" ? { stereo: true } : {}) } : null; }
+  if (!S.lit.includes(id)) return null;
+  if (id === "bench") { const net = ui.bench.net(); return net ? { pedal: "bench", drive: 0, bench: net } : null; }
+  return PEDALS.some((p) => p.id === id) ? { pedal: id, drive: S.drive[id] ?? 5, swaps: S.swaps[id] ?? {} } : null;
 }
-/** Which tile each of the last report's slot loads is for. */
+/**
+ * The board as the audio thread plays it, and each slot's tile id: what the cables run from the guitar through
+ * the amp into the cabinet (patch.ts, cabled.ts), the pedals and machines that are on. A pedal cabled out of
+ * that is out of the sound, whatever its switch says.
+ */
+const board = (): { chain: ChainSlot[]; ids: string[] } => cabledChain(audibleChains(patch(), compiled), slotOf);
+/** Which tile each of the last report's slot loads is for, and the slots. */
 let chainIds: string[] = [];
-/** Where tile `id`'s links start in the meter's levels, null when it isn't playing: a pedal is one link, the amp its tubes and tone stack, a machine none. */
+let chainSlots: ChainSlot[] = [];
+/** Where tile `id`'s links start in the meter's levels, null when it isn't playing: a pedal is one link, a split one per pedal, the amp its tubes and tone stack, a machine none. */
 function linksAt(id: string): number | null {
   let n = 0;
-  for (const c of chainIds) {
+  for (const [i, c] of chainIds.entries()) {
     if (c === id) return n;
-    n += c === AMP_SLOT ? ampOf(S.amp).stages.length + 1 : isMachine(c) ? 0 : 1;
+    const slot = chainSlots[i];
+    n += c === AMP_SLOT ? ampOf(S.amp).stages.length + 1 : !slot || "machine" in slot ? 0 : "split" in slot ? slot.split.flat().length : 1;
   }
   return null;
 }
@@ -173,6 +174,12 @@ function linksAt(id: string): number | null {
 const patch = (): Patch => ({ placed: STAGE.placed, cables: S.cables });
 let compiled = compile(patch());
 let sound = heard(patch(), compiled);
+/** The tiles in the order the cables run them; tiles cabled out of the sound go back near where a fresh board has them. */
+function readOrder() {
+  const cabled = cabledOrder(audibleChains(patch(), compiled), new Set(S.order));
+  if (cabled.length) S.order = tidyOrder(cabled);
+}
+readOrder();
 
 function settings(): AmpSettings {
   return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4, mic: { at: S.micAt / 10, angle: S.micAngle * 9 }, loop: loopSpecs(), chain: board().chain };
@@ -185,7 +192,7 @@ function setLevel() {
 }
 function send() {
   save();
-  chainIds = board().ids;
+  ({ ids: chainIds, chain: chainSlots } = board());
   threads?.send(patched(settings()));
   sendScope();
 }
@@ -215,11 +222,15 @@ function takeScope(v: readonly number[] | undefined) {
   const s = probeSwing;
   for (const x of v) { if (!s.samples || x > s.hi) s.hi = x; if (!s.samples || x < s.lo) s.lo = x; s.samples++; }
 }
+/** New cables: what the speakers hear, and the board's tiles in the order they now run. */
 function setCables(cables: Cable[]) {
   S.cables = cables;
   compiled = compile(patch());
   sound = heard(patch(), compiled);
   ui.patch.show(patch(), compiled.problems);
+  readOrder();
+  layBoard();
+  stage3d?.setAmp(stageAmp());
   setLevel();
   send();
 }
@@ -246,12 +257,10 @@ function footswitch(id: string, isOn = !S.lit.includes(id)) {
   send();
 }
 
-/** A tile moves to place `to` on the board: after the amp is in its loop, before it in front. */
+/** A tile moves to place `to` on the board: after the amp is in its loop, before it in front. The board is cabled again in that row. */
 function moveSlot(id: string, to: number) {
   S.order = moveTo(S.order, id, to);
-  layBoard();
-  stage3d?.setAmp(stageAmp());
-  send();
+  setCables(relay(S.order, S.cables));
 }
 
 /** Each tile in its place on the board, and which ones sit in the amp's loop. */
@@ -724,7 +733,7 @@ onParts((p) => {
 /** Q Amps' lesson (lesson.ts) and Q Builder's (build-lesson.ts), read from the page's state as it stands, one on at a
  *  time; the cap button in the corner lists them, and ?lesson=amp or ?lesson=build starts one. */
 const ampLesson = new PageLesson(AMP_LESSON, () => ({
-  gain: (S.knobs[S.amp] ?? ampOf(S.amp).knobs).gain, lit: S.lit, drive: S.drive, tape: loopOf().tape.on === 1, order: S.order, pedalsHeard: sound.pedals,
+  gain: (S.knobs[S.amp] ?? ampOf(S.amp).knobs).gain, lit: S.lit, drive: S.drive, tape: loopOf().tape.on === 1, order: S.order, driveHeard: sound.heard.includes("drive"),
 }));
 /** The parts Q Drive's D1 and D2 have held while Q Builder's lesson is on: its last step asks for both ends. */
 const tried = new Set<string>();
@@ -780,7 +789,7 @@ Object.assign(window, {
     unplug: (item: string, jack: string) => setCables(S.cables.filter((c) => !(c.from[0] === item && c.from[1] === jack) && !(c.to[0] === item && c.to[1] === jack))),
     /** Run a cable, out jack first: plug(["guitar", "out"], ["cab", "in"], "instrument"). */
     plug: (from: End, to: End, kind: Cable["kind"]) => setCables([...S.cables, { from, to, kind }]),
-    /** Back to guitar, pedalboard, amp, cabinet. */
+    /** Back to the stage as it comes: the guitar through every pedal into the amp, the machines in its loop, into the cabinet. */
     restage: () => setCables([...STAGE.cables]),
     /** That pedal on alone (null: every pedal off). */
     pedal: (id: string | null) => { S.pedal = PEDALS.some((p) => p.id === id) || (id === "bench" && ui.bench.state()?.ok) ? id : null; S.lit = S.pedal ? [S.pedal] : []; showPedals(); send(); },
