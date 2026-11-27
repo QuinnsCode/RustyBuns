@@ -1,7 +1,8 @@
 // The stack builder's model (src/stacker/plan.ts): what "Just do it" builds, gravity when you drop a box, the warnings
 // a bad stack gets, the stage plan's coverage, and a save that comes back wrong.
 import { describe, expect, test } from "bun:test";
-import { EVEN, RIGS, TARGET, cover, justDoIt, readDesign, settle, sizeFor, sources, stats, wallFor, type Box } from "../src/stacker/plan.ts";
+import { PREMADES } from "@rustybuns/gear";
+import { EVEN, RIGS, TARGET, cover, justDoIt, premadeStack, readDesign, settle, sizeFor, sources, stats, usePremade, wallFor, type Box } from "../src/stacker/plan.ts";
 
 describe("stack builder", () => {
   test("Just do it: every rig, sized for a 25 m floor, makes the targets and stands up", () => {
@@ -14,6 +15,27 @@ describe("stack builder", () => {
     const horn = RIGS[0]!;
     expect(sizeFor(horn, 50).subs).toBeGreaterThan(sizeFor(horn, 25).subs);
     expect(stats(wallFor(horn, 50), 50).boxes).toBeGreaterThan(stats(wallFor(horn, 25), 25).boxes);
+  });
+
+  test("a premade drops in whole on the floor it fills, stands up, and stays editable box by box", () => {
+    for (const p of PREMADES) {
+      const d = usePremade(p.id), s = d.stacks[0]!, st = stats(s, d.plan.floor.d);
+      expect({ id: p.id, boxes: st.boxes }).toEqual({ id: p.id, boxes: p.rows.reduce((n, r) => n + r.across, 0) });
+      // the horn wall is 2.9 m on a 0.87 m base: it says strap it down, and nothing else
+      expect(st.warnings.map((w) => w.kind)).toEqual(p.id === "horn-wall" ? ["tall"] : []);
+      expect(d.plan.placed.length).toBe(2);
+      expect(cover(d).tops.mean).toBeGreaterThan(95); // the floor map fills
+      if (p.id !== "bar-pair") expect([p.id, st.back.highOk, st.back.lowOk]).toEqual([p.id, true, true]);
+    }
+    // the purple horn stack: two bins side by side, the mid-bass and the horn on them, a bigger floor than the small one's
+    const side = usePremade("horn-side");
+    expect(side.stacks[0]!.boxes.map((b) => [b.gear, Math.sign(b.x)])).toEqual([["horn-sub-21", -1], ["horn-sub-21", 1], ["stack-mid-bass", 0], ["stack-mid-high", 0]]);
+    expect(side.plan.floor.d).toBeGreaterThan(usePremade("horn-small").plan.floor.d);
+    // take its horn off and it says so
+    const edited = { name: "", boxes: settle(side.stacks[0]!.boxes.slice(0, 3)) };
+    expect(stats(edited).warnings.map((w) => w.kind)).toEqual(["no-top"]);
+    // an unknown id is the purple horn stack
+    expect(premadeStack("nope").boxes).toEqual(premadeStack("horn-side").boxes);
   });
 
   test("gravity: a box lands on what is under it, and one dropped low goes in underneath", () => {

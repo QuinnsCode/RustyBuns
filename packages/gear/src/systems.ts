@@ -73,6 +73,40 @@ export const SYSTEMS: Record<SystemId, System> = {
   },
 };
 
+/** A ready-made stack to drop in whole (the stack builder's and Qollab Studio's first pick): its boxes bottom to top,
+ *  a row at a time, `across` of them side by side. `rig` is the open-air rig it is one stack of, where there is one
+ *  (Qollab Studio stands that rig's own column; the bar pair has none there). Names say what it is, never a maker's. */
+export type Premade = {
+  id: string; name: string; about: string; rig: SystemId | null;
+  rows: readonly { box: string; across: number }[];
+};
+const rows = (...r: [string, number][]) => r.map(([box, across]) => ({ box, across }));
+export const PREMADES: readonly Premade[] = [
+  { id: "horn-side", name: "Purple horn stack, a side", rig: "dance-stack",
+    about: "The classic dance stack: two folded 21-inch bins side by side, the horn-loaded 15 mid-bass on them, the mid-high horn on top.",
+    rows: rows(["horn-sub-21", 2], ["stack-mid-bass", 1], ["stack-mid-high", 1]) },
+  { id: "horn-small", name: "Purple horn stack, small", rig: "dance-stack",
+    about: "One bin, one mid-bass, one mid-high horn: the same sound for a smaller floor.",
+    rows: rows(["horn-sub-21", 1], ["stack-mid-bass", 1], ["stack-mid-high", 1]) },
+  { id: "horn-wall", name: "Purple horn wall", rig: "dance-stack",
+    about: "Four bins in two rows of two, two mid-basses and two horns on top: a big floor, a side.",
+    rows: rows(["horn-sub-21", 2], ["horn-sub-21", 2], ["stack-mid-bass", 2], ["stack-mid-high", 2]) },
+  { id: "sculpted", name: "Sculpted array", rig: "sculpted",
+    about: "A hybrid-horn triple 21 with two moulded three-way shells on it: deep, smooth sub and a sweet, open top.",
+    rows: rows(["triple-21-sub", 1], ["sculpted-3way", 1], ["sculpted-3way", 1]) },
+  { id: "synergy", name: "Synergy pair", rig: "synergy",
+    about: "Two tapped-horn 18s side by side under one three-way synergy horn: flat, coherent and very low.",
+    rows: rows(["tapped-horn-18", 2], ["synergy-horn", 1]) },
+  { id: "line-array", name: "Line array on subs", rig: "line-array",
+    about: "Three powered line array boxes stood on two 18-inch subs: very wide and even across the floor.",
+    rows: rows(["sub-18", 2], ["line-array-10", 1], ["line-array-10", 1], ["line-array-10", 1]) },
+  { id: "bar-pair", name: "Bar pair", rig: null,
+    about: "A 15-inch two-way on an 18-inch sub: the bar, the party, the backyard.",
+    rows: rows(["sub-18", 1], ["top-15-passive", 1]) },
+];
+/** A premade by id, or the purple horn stack for anything else. */
+export const premade = (id: string): Premade => PREMADES.find((p) => p.id === id) ?? PREMADES[0]!;
+
 /** How many amp channels a passive box takes: one a way, as each family's sheet wires it (the three-way tops tri-amped,
  *  the horn stack's mid-high horn two ways); one for a box left out, the synergy horn too (its crossover is inside:
  *  the SH50 sheet's "single channel amplified"). A powered box brings its own amps: none. */

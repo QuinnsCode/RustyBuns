@@ -15,7 +15,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";
-import { boothMiddle, builtLink, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, type Surface, venueSrc, yours, YOURS } from "./builder.ts";
+import { boothMiddle, builtLink, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, STUDIO_PREMADES, type Surface, venueSrc, yours, YOURS } from "./builder.ts";
 import { BuildView, type Hit, type WallsMode } from "./build-view.ts";
 import { footprint, gearPlace } from "./gear-wall.ts";
 import type { Side, SpotKind, StudioDef } from "./room.ts";
@@ -599,6 +599,7 @@ function renderPa() {
   const st = stackPicked !== null ? stacks[stackPicked] : undefined, line = roomRig(room).stack.filter((b) => b.startsWith("line-array")).length;
   const pins = st?.pins ?? [0.14, 0.07, 0.02];
   host.innerHTML = `<h2>PA</h2>
+    <div class="row"><label>Stack<select id="premade" aria-label="Start from a premade stack"><option value="">Start from…</option>${STUDIO_PREMADES.map((p) => `<option value="${p.id}" title="${esc(p.about)}">${esc(p.name)}</option>`).join("")}</select></label></div>
     <div class="big">${map.stats.mean.toFixed(0)} dB <small>over the floor, ${map.stats.even.toFixed(1)} dB from its quiet tenth to its loud</small></div>
     <p class="hint">Quietest ${map.stats.min.toFixed(0)} dB, loudest ${map.stats.max.toFixed(0)} dB at ear height, mids and highs. ${showMap ? "The map is against the ring on the floor: gold louder, orange within 3 dB, teal 9 down, blue past 15." : "Coverage (the waves over the view) draws it on the floor."}</p>
     ${rp ? `${st ? `<h2>Stack ${stackPicked! + 1}</h2>
@@ -615,6 +616,7 @@ function renderPa() {
     <h2>Take it away</h2>
     <div class="row"><button type="button" id="dl-list">Gear list</button><button type="button" id="dl-plan">Plan drawing</button></div>` : `<p class="hint">With none of its own, the PA is a stack either side of the decks: the PA tool stands your own.</p>`}`;
   const q = <T extends Element>(sel: string) => [...host.querySelectorAll<T>(sel)];
+  document.getElementById("premade")?.addEventListener("change", (e) => { const id = (e.target as HTMLSelectElement).value; if (id) apply({ t: "premade", id }); });
   for (const i of q<HTMLInputElement>("[data-aim]")) i.addEventListener("change", () => { if (stackPicked !== null) apply({ t: "aimStack", index: stackPicked, [i.dataset.aim!]: rad(Number(i.value)) }); });
   for (const i of q<HTMLInputElement>("[data-pin]")) i.addEventListener("change", () => {
     if (stackPicked === null) return;
