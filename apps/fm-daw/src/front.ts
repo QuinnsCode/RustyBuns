@@ -74,7 +74,7 @@ document.getElementById("field-back")!.addEventListener("click", () => hero.lane
 const air = document.getElementById("air")!, egg = document.getElementById("air-egg")!;
 egg.innerHTML = iconSvg(ICON.thermometer, 15);
 const showAir = (open: boolean) => { air.hidden = !open; egg.setAttribute("aria-expanded", String(open)); };
-egg.addEventListener("click", () => showAir(air.hidden));
+egg.addEventListener("click", () => showAir(air.hidden !== false));
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (!air.hidden) showAir(false); else if (hero.state().lane) hero.lane(null);
