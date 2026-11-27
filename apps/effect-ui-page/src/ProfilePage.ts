@@ -164,22 +164,22 @@ type Show =
   | { kind: "shelf"; items: readonly string[] };
 const PIECES: readonly { c: string; tag: string; title: string; says: string; show: Show; soon?: boolean }[] = [
   { c: "pink", tag: "WebMCP · MCP", title: "The buttons",
-    says: "Your page has a set of buttons, like a TV remote. Your AI can see them and press them. An AI in your browser finds them right on the page (WebMCP). An AI in your terminal reaches the same buttons through the line you copied (MCP).",
+    says: "A TV remote for your page. Your AI presses the buttons.",
     show: { kind: "keys", items: ["Set the name", "Pick colors", "Add a card", "Edit a card", "Move a card", "Remove a card", "Set the backdrop", "Undo", "Start over", "Read the page"] } },
   { c: "violet", tag: "Effect · Schema", title: "The bouncer",
-    says: "Every press gets checked at the door before it touches your page. A color has to look like a color. A link has to start with https. If your AI gets it wrong, the press bounces and your AI is told exactly why, so it can fix it and try again.",
+    says: "Bad presses bounce, and your AI is told why.",
     show: { kind: "door", rows: [[true, 'accent: "#ff3d8b"', "let in"], [false, 'accent: "red"', "bounced: a color looks like #rrggbb"], [false, 'url: "javascript:…"', "bounced: a link starts with https://"]] } },
   { c: "cyan", tag: "Effect UI", title: "The screen",
-    says: "The whole page is one loop. It holds what the page is right now. A press arrives as a message. The page works out what it becomes next, then redraws. A click on Undo goes around the same loop, so your AI and you can never get out of sync.",
+    says: "One loop for you and your AI, so you stay in sync.",
     show: { kind: "flow", loop: true, items: [["Your page", ""], ["A press arrives", ""], ["Work out what's next", ""], ["Redraw", ""]] } },
   { c: "amber", tag: "Your page is a list", title: "No code, just a list",
-    says: "Your AI never writes code for your page. Your page is a short list of things: a name, a line under it, a few colors, and some cards. Your AI only changes that list, and the page draws it. That's why it can't break anything.",
+    says: "Your AI only changes this list. It can't break anything.",
     show: { kind: "data", rows: [["name", '"Night Rider"'], ["tagline", '"Skating the city after dark."'], ["colors", "accent #ff3d8b · paper #0a0918 · ink #e9ecf8"], ["font", "mono"], ["cards", "About · My boards · Spots I skate"]] } },
   { c: "green", tag: "Cloudflare", title: "Your room",
-    says: "Each page gets its own room on Cloudflare, with a secret link. The room passes presses from your AI to your open page and sends back what happened. The link is the key, so only share it with AIs you trust.",
+    says: "The secret link is the key. Share it only with AIs you trust.",
     show: { kind: "flow", items: [["Your AI", ""], ["Your room", "Cloudflare Worker"], ["Your page", "this tab"]] } },
   { c: "amber", tag: "Cloudflare Artifacts · coming", title: "Your stuff, kept", soon: true,
-    says: "Today your page lives in this browser. Next, it's saved in Cloudflare Artifacts, so it opens anywhere. Then your AI can make a 3D model of you, any way it likes (with code, with Blender, or with a model-making service), and keep it in your room too.",
+    says: "Soon: your page opens anywhere, with a 3D you.",
     show: { kind: "shelf", items: ["your page", "your 3D character", "your pictures"] } },
 ];
 
@@ -199,7 +199,7 @@ const deepView = Def.fragment((h) => h.section.class("l-deep").attrs({ id: "how"
   h.header.class("l-deep-head").children(
     h.p.class("l-eyebrow").children("For the curious"),
     h.h2("How it's built"),
-    h.p("Five pieces, each doing one job. Here's what happens when your AI hears ", h.q("make it about my skateboarding"), "."),
+    h.p("You say ", h.q("make it about my skateboarding"), ". Then:"),
   ),
   ...PIECES.map((p) => h.article.class("l-piece", `c-${p.c}`, p.soon === true && "soon").key(p.title).children(
     h.div.class("l-tell").children(h.span.class("l-ptag").children(p.tag), h.h3(p.title), h.p(p.says)),
