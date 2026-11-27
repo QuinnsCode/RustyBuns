@@ -6,7 +6,7 @@ import { Music } from "./audio.ts";
 import { accountChip, achieve, achievements, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { backplate, bandScale, brushed, readoutGlass, faderCap, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
+import { backplate, bandScale, brushed, readoutGlass, faderCap, faderPlate, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
@@ -244,7 +244,7 @@ window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
 // ---- controls ----
 /** The radio is the theme: a black fascia, cold white ink and hairlines, monospace like the display. The lanes keep the colour. */
 const NEON = { "--ui-bg": "#0b0c10", "--ui-ink": "#e9ecf2", "--ui-dim": "#9aa0b4", "--ui-line": "#e9ecf259", "--ui-border": "1px", "--ui-panel": backplate, "--ui-soft": "#14161c", "--ui-accent": "#e9ecf2", "--ui-on-accent": "#0b0c10", "--ui-accent-soft": "#20232b", "--ui-scrim": "#000c", "--ui-radius": "10px", "--ui-radius-sm": "6px", "--ui-font": "ui-monospace, SFMono-Regular, Menlo, monospace",
-  "--ui-track": faderSlot, "--ui-track-h": "8px", "--ui-thumb": `${faderCap} center / 100% 100%`, "--ui-thumb-w": "16px", "--ui-thumb-h": "28px",
+  "--ui-track": faderSlot, "--ui-track-h": "12px", "--ui-thumb": `${faderCap} center / 100% 100%`, "--ui-thumb-w": "21px", "--ui-thumb-h": "34px",
   "--ui-knob": switchKnob, "--ui-knob-on": switchLit, "--ui-knob-radius": "3px", "--ui-knob-on-glow": `0 0 6px ${LANE_COLOURS[3]}` };
 
 mountControls({
@@ -292,6 +292,7 @@ const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
   if (keys) keyStrip(keys);
   // Each read-out in a lit window, and the preset keys under a band window whose pointer stands over the key in use.
   sheet.style.setProperty("--glass", readoutGlass);
+  sheet.style.setProperty("--fader-plate", faderPlate);
   sheet.style.setProperty("--band", bandScale);
   sheet.style.setProperty("--toggle-off", toggleOff);
   sheet.style.setProperty("--toggle-on", toggleOn);
