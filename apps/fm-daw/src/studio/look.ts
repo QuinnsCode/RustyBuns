@@ -7,7 +7,8 @@
 // the room's absorbers (wedge foam cut as real ridges) and curtains hung where its data says, paint rolled on by hand, a framed
 // control-room window whose glass reflects the room, the cables, tape, wall plates and road cases a room in use collects,
 // the marks and paper of one people work in (scuffed walls, worn floor, posters, a music stand, a set list, a clock, sockets, air grilles), and on high a camera's depth of field focused on what is at the middle of the view, a little bloom, lens fringing toward the edges, a vignette and grain.
-// Two settings: `high` (shadows, post) and `low` (neither, for a weak laptop or a phone); ?quality= or Q picks one.
+// Graphics settings (graphics.ts, #6475): four presets (low, medium, high, ultra) and the knobs behind them; ?quality=,
+// Q or Settings, Graphics picks them, and `running` steps the picture down for the music.
 // Other files build their meshes with `surface(name, color)` and mark a lamp or a screen with userData.glow.
 import * as THREE from "three";
 import { paintDesertFloor } from "@rustybuns/models/ground";
@@ -27,23 +28,21 @@ import { mulberry32 } from "@rustybuns/util";
 import { floorAt, propBlocks, thingBox, wallPieces, type Side, type Spot, type StudioDef } from "./room.ts";
 import { inFootprint } from "./gear-wall.ts";
 import { MATERIALS, type Material } from "./sound.ts";
+import { ALL_LIGHTS, pickGraphics, qualityOf, type Graphics, type Quality, type Running } from "./graphics.ts";
 
-export type Quality = "low" | "high";
-/** How many downlights light the room on low (the rest glow): the cost of each light is paid in every lit shader. */
-const LOW_CANS = 4;
+export type { Quality };
+/** Kept per browser: the knobs as JSON (an older visit kept "low" or "high" here, which still reads). */
 const KEY = "qollab-studio:quality";
 
-/** The setting: ?quality= first, then what this browser chose last, else high unless it's a phone. */
-export function pickQuality(search: string, stored: string | null, coarse: boolean): Quality {
-  const q = new URLSearchParams(search).get("quality") ?? stored;
-  return q === "low" || q === "high" ? q : coarse ? "low" : "high";
-}
-export function loadQuality(): Quality {
+/** The old two settings, from the same place the graphics come from. */
+export const pickQuality = (search: string, stored: string | null, coarse: boolean): Quality => qualityOf(pickGraphics(search, stored, coarse));
+export function loadGraphics(): Graphics {
   let stored: string | null = null;
   try { stored = localStorage.getItem(KEY); } catch { /* no storage */ }
-  return pickQuality(location.search, stored, matchMedia("(pointer: coarse)").matches);
+  return pickGraphics(location.search, stored, matchMedia("(pointer: coarse)").matches);
 }
-export function saveQuality(q: Quality) { try { localStorage.setItem(KEY, q); } catch { /* this visit only */ } }
+export const loadQuality = (): Quality => qualityOf(loadGraphics());
+export function saveGraphics(g: Graphics) { try { localStorage.setItem(KEY, JSON.stringify(g)); } catch { /* this visit only */ } }
 
 // ---- textures, painted on a canvas: one tile covers `metres` of surface, UVs are in metres (metreUV) ----
 interface Painted { map: THREE.Texture; bump?: THREE.Texture; rough?: THREE.Texture; metres: number }
@@ -1649,20 +1648,20 @@ export function practicals(def: StudioDef): [number, number][] {
   return free.sort((a, b) => near(b) - near(a)).slice(0, 2);
 }
 
-export interface LookState { quality: Quality; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" | "none" }
+export interface LookState { quality: Quality; graphics?: Graphics; running?: Running & { level: number }; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" | "none" }
 
 /** The renderer set up for one room: call `render` every frame and `resize` with the canvas. */
 export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality }
 
-export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, quality: Quality): Look {
-  const high = quality === "high";
+export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, g: Graphics): Look {
+  const quality = qualityOf(g), high = quality === "high", full = g.shadows === "full";
   renderer.info.autoReset = false; // a frame through the post is several passes: count them all
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = g.tone ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
   renderer.toneMappingExposure = 0.95;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.shadowMap.enabled = high;
+  renderer.shadowMap.enabled = full;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setPixelRatio(Math.min(high ? 1.5 : 1, devicePixelRatio));
+  renderer.setPixelRatio(Math.min(g.scale, devicePixelRatio));
   // reflections and the soft fill a real room's bounce light gives, from a generated room (no download)
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -1694,10 +1693,10 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   // no two cans alike, as in a real room: lamps of different ages, a touch warmer or brighter, the same every visit
   const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7));
   const warm = new THREE.Color(0xffd2a0), cool = new THREE.Color(0xffe8cc), aim = mulberry32(6032);
-  // low lights only the LOW_CANS nearest the middle, a little brighter: every lit material's shader carries every light,
-  // and software GL took ~37 s to compile a room's 16 (#5919); the other cans still glow
-  const lit = new Set(high ? spots : [...spots].sort((a, b) => Math.hypot(...a) - Math.hypot(...b)).slice(0, LOW_CANS));
-  const boost = high ? 1 : Math.min(2, spots.length / lit.size);
+  // `g.lights` lights only that many nearest the middle (low: 4), a little brighter: every lit material's shader carries
+  // every light, and software GL took ~37 s to compile a room's 16 (#5919); the other cans still glow
+  const lit = new Set(g.lights >= ALL_LIGHTS ? spots : [...spots].sort((a, b) => Math.hypot(...a) - Math.hypot(...b)).slice(0, g.lights));
+  const boost = Math.min(2, spots.length / lit.size);
   for (const spot of spots) {
     const [x, z] = spot, tint = rnd(), strength = power * (0.72 + rnd() * 0.45) * boost;
     const c = new THREE.Mesh(can, bulb); c.position.set(x, h - 0.012, z);
@@ -1713,10 +1712,10 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     group.add(l, l.target);
     lights.push(l);
   }
-  const shadowers = high ? [...lights].sort((a, b) => Math.hypot(a.position.x, a.position.z) - Math.hypot(b.position.x, b.position.z)).slice(0, 3) : [];
+  const shadowers = full ? [...lights].sort((a, b) => Math.hypot(a.position.x, a.position.z) - Math.hypot(b.position.x, b.position.z)).slice(0, 3) : [];
   for (const l of shadowers) {
     l.castShadow = true;
-    l.shadow.mapSize.set(1024, 1024);
+    l.shadow.mapSize.setScalar(g.preset === "ultra" ? 2048 : 1024);
     l.shadow.bias = -0.0004; l.shadow.normalBias = 0.03; l.shadow.radius = 4;
     l.shadow.camera.near = 0.2; l.shadow.camera.far = h + 1;
   }
@@ -1764,7 +1763,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   // baked once the room stands: the shade where things meet the floor, then the reflections, taken from this room
   // under its own lights (from head height in the middle, lit by the generated room as its first bounce), so the
   // floor and the glass show the walls, the lights and the gear in front of them rather than a white box
-  const bake = ground(renderer, scene, group, def, high);
+  const bake = g.shadows === "off" ? 0 : ground(renderer, scene, group, def, high);
   // on low the generated room stays the reflection: baking this one renders the room six times and, at another size,
   // compiles every material a second time
   if (high) {
@@ -1783,12 +1782,12 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const post: string[] = [];
   // (no screen-space AO: its depth pass takes the glass for a wall and fogs the view through it, and it costs the most)
   let composer: EffectComposer | null = null, film: ShaderPass | null = null;
-  if (high) {
+  if (g.bloom || g.lens) {
     composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1) }));
     composer.addPass(new RenderPass(scene, camera));
-    composer.addPass(new Focus(camera)); // before the bloom, so a blurred lamp still blooms round its blur
+    if (g.lens) composer.addPass(new Focus(camera)); // before the bloom, so a blurred lamp still blooms round its blur
     // only light sources bloom (the cans glow at 6): a lit surface under a can, like white keys, stays crisp
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.18, 0.35, 4));
+    if (g.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.18, 0.35, 4));
     composer.addPass(new OutputPass());
     film = new ShaderPass({
       uniforms: { tDiffuse: { value: null }, t: { value: 0 } },
@@ -1806,8 +1805,8 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
           gl_FragColor = c;
         }`,
     });
-    composer.addPass(film);
-    post.push("focus", "bloom", "fringe", "vignette", "grain");
+    if (g.lens) composer.addPass(film);
+    post.push(...(g.lens ? ["focus"] : []), ...(g.bloom ? ["bloom"] : []), ...(g.lens ? ["fringe", "vignette", "grain"] : []));
   }
 
   // every mesh casts and takes shadows, glowing ones get their light: checked now and then, as people come and go
@@ -1853,6 +1852,29 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       renderer.setSize(wpx, hpx, false);
       if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(wpx, hpx); }
     },
-    state: () => ({ quality, lights: lights.length + lamps.length + lampLights.length + 1, shadows: shadowers.length, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: bake, env: high ? "room" : "generated" }),
+    state: () => ({ quality, lights: lights.length + lamps.length + lampLights.length + 1, shadows: shadowers.length, post, tone: g.tone ? "aces" : "none", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: bake, env: high ? "room" : "generated" }),
+  };
+}
+
+/** Any room's look with the knobs that change while it runs (#6475): the render scale, frozen shadows and the frame cap. */
+export interface Governed extends Look { run(r: Running, level: number): void }
+export function runningLook(look: Look, renderer: THREE.WebGLRenderer, g: Graphics): Governed {
+  let now: Running & { level: number } = { scale: g.scale, freezeShadows: false, cap: g.cap, level: 0 }, size: [number, number] = [1, 1], last = 0;
+  renderer.setPixelRatio(Math.min(g.scale, devicePixelRatio)); // the open air sets its own: the knob wins
+  return {
+    quality: look.quality,
+    render(cam) {
+      // a cap skips a draw, never the frame: walking and the clock still run every frame
+      if (now.cap) { const t = performance.now(); if (t - last < 1000 / now.cap - 2) return; last = t; }
+      look.render(cam);
+    },
+    resize(w, h) { size = [w, h]; look.resize(w, h); },
+    run(r, level) {
+      if (r.scale !== now.scale) { renderer.setPixelRatio(Math.min(r.scale, devicePixelRatio)); look.resize(...size); }
+      // frozen, the cans' shadow maps stop being drawn every frame: what stands still keeps its shadow, and no shader recompiles
+      if (r.freezeShadows !== now.freezeShadows) { renderer.shadowMap.autoUpdate = !r.freezeShadows; renderer.shadowMap.needsUpdate = true; }
+      now = { ...r, level };
+    },
+    state: () => ({ ...look.state(), graphics: g, running: now }),
   };
 }

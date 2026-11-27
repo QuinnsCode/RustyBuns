@@ -91,8 +91,9 @@ export class AudioOut {
     fx.connect(on && this.playing.has(t) ? this.webPost[t]! : this.ret[t]!);
   }
 
-  static async start(onMessage: (m: FromWorklet) => void, speakers: (ctx: AudioContext) => AudioNode = (ctx) => ctx.destination): Promise<AudioOut> {
-    const ctx = new AudioContext({ latencyHint: "interactive" });
+  /** @param latency "playback" asks for a bigger buffer: more delay, and room for a busy page (picture first, #6475) */
+  static async start(onMessage: (m: FromWorklet) => void, speakers: (ctx: AudioContext) => AudioNode = (ctx) => ctx.destination, latency: "interactive" | "playback" = "interactive"): Promise<AudioOut> {
+    const ctx = new AudioContext({ latencyHint: latency });
     await ctx.audioWorklet.addModule(workletUrl);
     // inputs: yours (a guitar or mic), nothing (it was the page's own plugins, which come back on the returns now), the aux sends of guitars heard on calls (CALL_SENDS), the
     // page's plugins one track a channel, and the page's returns (two channels a track: web effects and page plugins). Outputs: the mix, each track's sound for its web effect, a channel each,

@@ -68,7 +68,7 @@
   <section id="settings" hidden aria-label="Settings">
     <header>
       <h2>Settings</h2>
-      <div class="tabs" role="tablist"><button id="tab-room" type="button" role="tab">The gathering</button><button id="tab-you" type="button" role="tab">You</button></div>
+      <div class="tabs" role="tablist"><button id="tab-room" type="button" role="tab">The gathering</button><button id="tab-you" type="button" role="tab">You</button><button id="tab-gfx" type="button" role="tab">Graphics</button></div>
       <button id="settings-done" type="button" class="go">Done</button>
     </header>
     <div id="set-room" class="set-body">
@@ -107,6 +107,14 @@
         <div class="set-col"><h4>Font</h4><div id="set-fonts" class="set-list" aria-label="Font"></div></div>
         <div class="set-col"><h4>Also yours</h4><div id="set-mine" class="set-list" aria-label="Also yours"></div></div>
       </div>
+    </div>
+    <div id="set-gfx" class="set-body" hidden>
+      <div class="set-pick">
+        <h4>Preset</h4>
+        <div id="set-gfx-presets" class="set-list" aria-label="Graphics preset"></div>
+        <p class="keys">Kept in this browser. A change loads the room again: the lights and shadows are built once.</p>
+      </div>
+      <div id="set-gfx-knobs" class="set-lists set-gfx-knobs"></div>
     </div>
   </section>
   <section id="modules" hidden aria-label="Sound wall modules">

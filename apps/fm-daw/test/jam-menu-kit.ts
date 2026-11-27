@@ -56,7 +56,7 @@ async function wayIn(tab: Awaited<ReturnType<typeof openTab>>, w: number, h: num
   // Settings: the owner's gathering tab, Desert Gathering picked, every list in its own box
   await page(`(document.getElementById("settings-open").click(), 1)`);
   const opened = await page<{ tab: string; tabs: string[]; setup: { studio: string; tops: string } }>(`qjam.settings()`);
-  expect(opened).toMatchObject({ tab: "room", tabs: ["room", "you"], setup: { studio: "desert-gathering" } });
+  expect(opened).toMatchObject({ tab: "room", tabs: ["room", "you", "graphics"], setup: { studio: "desert-gathering" } });
   expect(await page<boolean>(`document.getElementById("menu").hidden`)).toBe(true);
   expect(await page<string[]>(`[...document.querySelectorAll("#set-studios [aria-pressed=true] b")].map((b) => b.textContent)`)).toEqual(["Desert Gathering"]);
   const settings = await box("settings");
