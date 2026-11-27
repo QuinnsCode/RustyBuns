@@ -147,11 +147,11 @@ export class Party {
     }
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
     if (url.pathname === "/peek") return json(await this.peek(url.searchParams.get("id") ?? "", now));
-    // Signed out (members.ts closeSockets): the person's socket here closes if their cut tokens were this party's app's. They stay a member and may come back.
+    // Signed out (members.ts closeMany): these people's sockets here (one `id` each) close if their cut tokens were this party's app's. They stay members and may come back.
     if (url.pathname === "/out") {
-      const id = url.searchParams.get("id"), app = url.searchParams.get("app") ?? "*";
-      if (id && (app === "*" || app === await this.ctx.storage.get<string>("app")))
-        for (const ws of this.sockets.open()) if (this.sockets.who(ws)?.id === id) try { ws.close(4003, "signed out"); } catch { /* closing */ }
+      const ids = new Set(url.searchParams.getAll("id")), app = url.searchParams.get("app") ?? "*";
+      if (ids.size && (app === "*" || app === await this.ctx.storage.get<string>("app")))
+        for (const ws of this.sockets.open()) if (ids.has(this.sockets.who(ws)?.id ?? "")) try { ws.close(4003, "signed out"); } catch { /* closing */ }
       return json({ ok: true });
     }
     if (url.pathname !== "/socket" || !who) return json({ error: "not found" }, 404);

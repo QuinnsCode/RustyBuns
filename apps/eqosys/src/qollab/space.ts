@@ -33,6 +33,7 @@ import { json, type Env } from "../env.ts";
 import { flush, Present, queue, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
 import { file, reporterId } from "../reports.ts";
 import { mintCode } from "./party.ts";
+import { studioLeft } from "../members.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;
 /** The direct messages a space keeps at once, and the entries its audit log keeps (the newest). */
@@ -82,6 +83,8 @@ type Roster = { in: Of<typeof Present>; at: number };
 type Kept = { channel: string; msg: number; by: string; key: string; size: number };
 /** A line of the audit log (SpaceAudit in @rustybuns/util/eqosys): who did what to whom, and when. */
 type Audit = SpaceAudit;
+/** Who an audit line names once their account is deleted (#6238): the act stays, the person doesn't. */
+const GONE = { id: "", name: "a deleted account" };
 /** What a file is called, and its type, as the uploader's page says: no slashes or control characters, a plain `type/subtype`. */
 const fileName = (v: string | null) => v?.replace(/[\u0000-\u001f\u007f/\\]+/g, " ").trim().slice(0, 200) || "file";
 const fileType = (v: string | null) => {
@@ -115,6 +118,8 @@ export const spaceOf = (spaces: Spaces, id: string): Stub => spaces.get(spaces.i
 /** The ids of every space a person is in (bind their id as ?1): the ones they joined, and their studios' spaces. */
 export const SPACES_OF = `SELECT space_id AS id FROM space_members WHERE user_id = ?1
   UNION SELECT s.id FROM spaces s JOIN studio_members sm ON sm.studio_id = s.studio_id WHERE sm.user_id = ?1`;
+/** SPACES_OF for any of `n` people at once (bind their ids as ?1 to ?n). */
+export const spacesOfAny = (n: number) => SPACES_OF.replaceAll("user_id = ?1", `user_id IN (${Array.from({ length: n }, (_, i) => `?${i + 1}`).join(", ")})`);
 /** Those and the ones they have left or were taken out of (`space_past`), where what they wrote still is. */
 export const SPACES_EVER = `${SPACES_OF}
   UNION SELECT space_id FROM space_past WHERE user_id = ?1`;
@@ -167,9 +172,9 @@ export async function makeSpace(conf: Pick<Env, "DB">, owner: string, name: stri
 
 /**
  * Takes someone out of a studio by their email (the Studio tab, eq_studio_remove), by studios.ts removeMember's rules, and closes the
- * sockets they have open in the studio's space: they are out of every channel at once.
+ * sockets they have open in the studio's space: they are out of every channel at once, and out of the studio's unlisted games.
  */
-export async function studioRemove(conf: Pick<Env, "DB" | "SPACE">, studio: string, by: string, email: string): Promise<Made> {
+export async function studioRemove(conf: Env, studio: string, by: string, email: string): Promise<Made> {
   const who = await conf.DB.prepare(`SELECT u.id FROM "user" u JOIN studio_members m ON m.user_id = u.id AND m.studio_id = ? WHERE lower(u.email) = lower(?)`)
     .bind(studio, email.trim()).first<string>("id");
   // Not in it yet: an invite still waiting is taken back.
@@ -177,6 +182,7 @@ export async function studioRemove(conf: Pick<Env, "DB" | "SPACE">, studio: stri
   const r = await removeMember(conf, studio, by, who);
   const sid = r.ok && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
   if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: who, by, sid })}`)).catch(() => null);
+  if (r.ok) await studioLeft(conf, studio, who).catch(() => null);
   return r;
 }
 
@@ -256,10 +262,10 @@ export class Space {
     if (iss) await this.ctx.storage.put("iss", iss);
     if (url.pathname === "/drop") return this.drop();
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
-    // Signed out (members.ts closeSockets): the person's sockets that `app`'s tokens opened close; they stay a member.
+    // Signed out (members.ts closeMany): the sockets that `app`'s tokens opened for these people (one `id` each) close; they stay members.
     if (url.pathname === "/out") {
-      const id = url.searchParams.get("id"), app = url.searchParams.get("app") ?? "*";
-      if (id) this.close((m) => m.id === id && (app === "*" || m.app === app), 4003, "signed out");
+      const ids = new Set(url.searchParams.getAll("id")), app = url.searchParams.get("app") ?? "*";
+      if (ids.size) this.close((m) => ids.has(m.id) && (app === "*" || m.app === app), 4003, "signed out");
       return json({ ok: true });
     }
     // Out of the studio that owns this space (studioLeft): their sockets close and Qlave drops them from its voice channels.
@@ -420,6 +426,7 @@ export class Space {
       const r = await removeMember(this.env, studio, me.id, id);
       if (!r.ok) return r.error;
       await this.out(id, "removed from the studio");
+      await studioLeft(this.env, studio, id).catch(() => null);
     }
     await this.log({ act: everywhere ? "everywhere" : "kick", by: { id: me.id, name: me.name }, who: id });
     return null;
@@ -828,7 +835,7 @@ export class Space {
     if (!filed.ok) this.sockets.send(ws, { t: "refused", why: filed.error });
   }
 
-  /** Their account was deleted: their sockets close and every message they wrote goes. */
+  /** Their account was deleted: their sockets close, every message they wrote goes, and the audit log keeps what was done but not by or to whom. */
   private async erase(id: string): Promise<Response> {
     if (!id) return json({ error: "bad" }, 400);
     this.close((m) => m.id === id, 4001, "account deleted");
@@ -838,6 +845,9 @@ export class Space {
     await this.dropDms(id);
     await this.ctx.storage.put("muted", (await this.ctx.storage.get<string[]>("muted") ?? []).filter((x) => x !== id));
     await this.ctx.storage.put("private", Object.fromEntries(Object.entries(await this.locked()).map(([c, ids]) => [c, ids.filter((x) => x !== id)])));
+    const audit = await this.ctx.storage.get<Audit[]>("audit") ?? [];
+    if (audit.some((a) => a.by.id === id || a.who === id))
+      await this.ctx.storage.put("audit", audit.map(({ who, ...a }) => ({ ...a, ...(a.by.id === id ? { by: GONE } : {}), ...(who && who !== id ? { who } : {}) })));
     return json({ ok: true });
   }
 
