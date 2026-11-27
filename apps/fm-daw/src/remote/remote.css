@@ -12,7 +12,7 @@ h1, h2 { font: 600 22px/1 "Barlow Condensed", system-ui, sans-serif; letter-spac
 .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--dim); flex: none; }
 .dot.online { background: #7bd389; }
 .dot.offline, .dot.full { background: var(--accent); }
-.sign { margin-left: auto; color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; text-decoration: none; white-space: nowrap; }
+.sign { font: inherit; cursor: pointer; margin-left: auto; color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; text-decoration: none; white-space: nowrap; }
 
 button { display: grid; place-items: center; min-width: 56px; min-height: 56px; border-radius: 14px; border: 1px solid var(--line); background: var(--soft); color: var(--ink); cursor: pointer; padding: 0; }
 button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }

@@ -8,10 +8,11 @@ import { eqosys, hub, type HubNote } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, sign } from "@rustybuns/util/token";
 import { cleanAvatar, PARTS, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
+import { invitedBy } from "@rustybuns/util/lobby";
 import World from "../packages/desktop/world.ts";
 import worker from "../src/worker.ts";
 import { APP, eqosysAvatar, saveEqosysAvatar, SIGN_IN_FROM } from "../src/account.ts";
-import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent } from "../src/studio/door.ts";
+import { doorWords, follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent } from "../src/studio/door.ts";
 import { demoProject } from "../src/presets.ts";
 import { decodeOp, decodeServer } from "../src/project.ts";
 import { body, hear, newJam, walkTo } from "../src/studio/jam.ts";
@@ -22,6 +23,7 @@ const signer = { EQOSYS_SIGNING_KEY: await newKey() };
 const people: Record<string, { id: string; name: string; look: unknown }> = {
   eq_ada: { id: "u_ada", name: "Ada", look: randomAvatar(mulberry32(3)) },
   eq_bo: { id: "u_bo", name: "Bo", look: randomAvatar(mulberry32(9)) },
+  eq_cy: { id: "u_cy", name: "Cy", look: randomAvatar(mulberry32(5)) },
 };
 const handoff = (p: { id: string; name: string }) => ({ user: { id: p.id, email: `${p.name.toLowerCase()}@example.com`, name: p.name }, app: APP, source: APP, access: ["play"] });
 let EQ = "";
@@ -241,6 +243,18 @@ test("the leader moves the room to the console room, everyone walks into it, and
   expect(ops(C.ws).map((m) => m?.t === "op" && m.op.t === "replace" && m.op.project.rig)).toEqual(["synergy"]);
   expect(decodeOp({ t: "rig", id: "wall-of-sound" })).toBeNull();
 
+  // so is what the tops sit on, edited in Settings (#6420): Bo's goes nowhere; Ada's reaches everyone, sits on the
+  // sesh for whoever comes in later, and an undo keeps it
+  await world.webSocketMessage(B.ws, JSON.stringify({ t: "op", op: { t: "setup", tops: "stands" } }));
+  expect(ops(A.ws)).toEqual([]);
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "setup", tops: "stands" } }));
+  expect(ops(C.ws)).toEqual([{ t: "op", op: { t: "setup", tops: "stands" } }]);
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "replace", project: demoProject() } }));
+  const E = await walkIn(b.login.token, "h".repeat(32));
+  const later = E.ws.sent.find((m) => m.t === "snapshot")?.project;
+  expect(later?.tops).toBe("stands");
+  expect(decodeOp({ t: "setup", tops: "a crane" })).toBeNull();
+
   // the room Ada built goes with her move to "yours": someone coming in later gets her room, not their own
   const mine = { ...structuredClone(LIVE_ROOM), id: "adas-room", name: "Ada's room" };
   await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "studio", id: "yours", built: mine } }));
@@ -274,4 +288,25 @@ test("Ada invites Bo from her room through eqosys: it lands in his notes, and hi
   expect(fromLink(location.search)).toEqual({ room: id, studio: LIVE_ROOM.id, name: "Desert set" });
   const B = await walkIn(b.login.token, "d".repeat(32));
   expect(B.status).not.toBe(401);
+});
+
+test("Cy has no account yet: Ada's copied link names her on his door, and signing up brings him back into her room", async () => {
+  const ada = browser(), cy = browser();
+  await signIn(ada, "eq_ada");
+  const id = roomId("Desert set", mulberry32(6));
+  // the Invite button's link: the room, signed with who sent it
+  cy.address = inviteLink(SITE, id, LIVE_ROOM.id, "Desert set", "Ada"); use(cy);
+  const door = doorWords(fromLink(location.search), invitedBy(location.search));
+  expect(door.invited).toBe("Ada invited you to Desert set.");
+  expect(door.lead).toContain("New here?");
+  // the bare door, and a link nobody signed, still read right
+  expect(doorWords(null, null).button).toBe("Sign in with eqosys");
+  expect(doorWords({ room: id, name: "" }, null).invited).toBe(`You're invited to ${id}.`);
+
+  // eqosys made his account and sent him back: the same room, Ada's name still on the address, and he walks in
+  const c = await signIn(cy, "eq_cy");
+  expect(c.login.name).toBe("Cy");
+  expect(fromLink(location.search)).toEqual({ room: id, studio: LIVE_ROOM.id, name: "Desert set" });
+  expect(invitedBy(location.search)).toBe("Ada");
+  expect((await walkIn(c.login.token, "e".repeat(32))).status).not.toBe(401);
 });

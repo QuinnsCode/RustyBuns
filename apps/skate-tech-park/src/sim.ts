@@ -5,7 +5,7 @@
 // under the corners, two at the nose) fire in time with what the board does, as if the rockets did
 // the tricks. `firing` is derived from the board's state after each step and never feeds back, so
 // swapping skins changes nothing in the ride.
-import { clamp } from "@rustybuns/util";
+import { clamp, clamp01 } from "@rustybuns/util";
 import { across, GRIND_NAME, GRIND_POINTS, type GrindKind, grindFor, LEDGE_NAME, landing, leanStep, type Nose, restOf, STALL_NAME, STALL_POINTS, stallFor, tippiness } from "./grinds.ts";
 import { BOARD, FOOT, hitObstacle, type Level, nextRail, onRail, type Rail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
@@ -56,6 +56,10 @@ export const JETS = {
 };
 const BOOST = JETS.boost;
 const BOOST_TOP = JETS.boostTop;
+const JET_FADE = 0.8; // radians (46 degrees, a wall: WALL): a gap's kicker curves up to about here and needs every bit of the push to clear, so the jets only start to bleed off past it
+const JET_OFF = 0.9; // radians (52 degrees): by here, up the wall, they have let go
+/** How much of the jets' push is left with the deck `rise` radians up the way it rolls: all of it on a run-up, none up a steep face. */
+const jetsOnFace = (rise: number) => clamp01((JET_OFF - rise) / (JET_OFF - JET_FADE));
 /** How far the ground pokes up through the leading half of the deck (the nose, or the tail riding fakie, and both edges). The deck is the
  * plane through the wheels at `y` rising `pitch` per metre ahead, tilted across as the ground under its two halves is (the
  * gentler half, so a box side under one edge is not taken for a sidehill), and tilted it covers less ground. On an even slope
@@ -311,6 +315,9 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza, planted = f
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** How far the board's nose is up over its path from an ollie's pop: up fast as the tail snaps, then eased level. A nollie is the same pop the other way: the tail kicks up (negative). */
+/** The board's speed in km/h: along its wheels on the ground, its whole flight in the air (rising, it slows; falling, it speeds up). */
+export const kmh = (s: Pick<State, "air" | "speed" | "vx" | "vy" | "vz">): number => Math.round(Math.abs(s.air ? Math.hypot(s.vx, s.vy, s.vz) : s.speed) * 3.6);
+
 export function noseUp(s: Pick<State, "popT" | "nollie">): number {
   if (s.popT < 0) return 0;
   const way = s.nollie ? -1 : 1;
@@ -660,7 +667,7 @@ function advance(s: State, inp: Input, level: Level): State {
       else if (inp.throttle > 0 && foot && s.speed > -push * 0.5) s.speed -= inp.throttle * (tune.accel + uphill(-1)) * DT; // pushing fakie only goes so fast
     } else if (inp.throttle < 0 && s.speed > 0) s.speed += inp.throttle * tune.brake * DT;
     else if (foot && (inp.throttle > 0 ? s.speed < push : inp.throttle < 0 && s.speed > -push * 0.5)) s.speed += inp.throttle * (tune.accel + uphill(Math.sign(inp.throttle))) * DT;
-    if (boosting && s.pitch * Math.sign(s.speed || 1) < WALL) s.speed += BOOST * DT; // up a wall the deck points at the sky: the jets let go rather than fire it up the face
+    if (boosting) s.speed += BOOST * jetsOnFace(s.pitch * Math.sign(s.speed || 1)) * DT; // up a face the jets bleed off and let go, rather than fire it up into the sky
     // past what pushing reaches (a downhill, or the jets let go) only the wheels and the air slow it, as when coasting
     if (!boosting && (!inp.throttle || Math.abs(s.speed) > push)) s.speed -= Math.sign(s.speed) * Math.min(Math.abs(s.speed), (ROLL + DRAG * s.speed * s.speed) * DT);
     s.speed = clamp(s.speed, -top, top); // rolling back down a wall fakie is as fast as rolling down it forwards

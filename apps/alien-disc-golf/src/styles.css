@@ -68,7 +68,8 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 button { font: inherit; color: var(--ink); background: #10233a; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 button:hover { border-color: var(--teal); }
 button:disabled { opacity: 0.5; cursor: default; }
-button.primary { background: var(--teal); color: var(--on-teal); border-color: var(--teal); font-weight: 600; }
+/* The lit plate: the same ring and glow as the report form's Send (account.ts SKIN), so the game has one main button. */
+button.primary { background: var(--teal); color: var(--on-teal); border-color: var(--teal); font-weight: 600; box-shadow: inset 0 0 0 2px var(--teal), inset 0 0 0 3px rgba(4, 34, 28, 0.45), 0 0 16px rgba(94, 230, 200, 0.35); }
 button.primary:hover { filter: brightness(1.08); }
 button.right { background: #1d4a3b; border-color: var(--teal); }
 button.wrong { background: #4a1d1d; border-color: var(--red); }
@@ -218,7 +219,7 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .mark.eagle { box-shadow: 0 0 0 1.5px var(--card), 0 0 0 3px var(--card-under); }
 .mark.bogey, .mark.double { border-color: var(--card-over); border-radius: 2px; }
 .mark.double { box-shadow: 0 0 0 1.5px var(--card), 0 0 0 3px var(--card-over); }
-.credit { position: fixed; left: 12px; bottom: 10px; font-size: 11px; color: var(--dim); max-width: 50%; pointer-events: none; }
+.credit { position: fixed; left: 12px; bottom: 10px; font-size: 11px; color: var(--dim); max-width: 50%; pointer-events: none; padding: 4px 9px; border-radius: 6px; background: rgba(4, 12, 22, 0.72); border: 1px solid var(--line); backdrop-filter: blur(4px); }
 .credit a { color: var(--dim); pointer-events: auto; }
 kbd { font-family: var(--mono); font-size: 11px; background: #0a1626; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .toast { position: fixed; z-index: 3; left: 50%; top: 56px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--edge); box-shadow: inset 3px 0 0 var(--teal); border-radius: 8px; padding: 8px 14px; font-size: 14px; max-width: 90vw; text-align: center; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
@@ -288,8 +289,10 @@ body:has(.eq-toast) .toast { top: 150px; }
 @media (min-width: 721px) {
   html body .rb-report { right: 60px; }
   html body:has(.rb-report) .rb-pal-btn { bottom: max(10px, env(safe-area-inset-bottom)); }
-  /* The report form opens beside the panel, its foot on the panel's foot, so it never covers the scorecard or the throw. */
-  html body .rb-report .eq-form { position: fixed; right: 364px; bottom: 58px; width: min(340px, calc(100vw - 388px)); max-height: calc(100% - 128px); overflow-y: auto; }
+  /* The report form opens in the panel's own place, on top of it: the camera keeps the tee in the middle of the
+   * screen, so a form beside the panel sat on the tee's glow at laptop widths. Nobody throws while writing a report. */
+  html body .rb-report .eq-form { position: fixed; right: 12px; bottom: 58px; width: 340px; max-height: calc(100% - 116px); overflow-y: auto; }
+  html body:has(.rb-report .eq-form:not([hidden])) .panel { visibility: hidden; }
 }
 /* The Controls card as one more scanner panel: the brackets come with its glass (--panel-art-solid), the heading is the
  * panels' amber caps over a dashed rule, and a row's name stays on one line. `html` outranks the skin's injected rules. */

@@ -4,7 +4,7 @@
 // (`skate_line`), so an agent writes a run as code instead of pressing keys one round trip at a time.
 // They are the page's commands (@rustybuns/util/commands), so a person finds the same ones in the Cmd/Ctrl+K palette.
 import type { Level } from "./level.ts";
-import { DT, grabName, type Input, type State } from "./sim.ts";
+import { DT, grabName, type Input, kmh, type State } from "./sim.ts";
 import { TRICKS } from "./tricks.ts";
 import { arr, bool, check, maybe, num, obj, oneOf, raw, str } from "@rustybuns/util/guard";
 import { flick } from "./flick.ts";
@@ -73,7 +73,7 @@ export function report(s: State, level: Level) {
   }).filter((r) => r.metres < 60 && Math.abs(r.bearing) < 60).sort((a, b) => a.metres - b.metres).slice(0, 5);
   return {
     at: { x: r1(s.x), y: r1(s.y), z: r1(s.z), heading: r1(((s.yaw * 57.2958) % 360 + 360) % 360) },
-    kmh: Math.round(Math.abs(s.air ? Math.hypot(s.vx, s.vz) : s.speed) * 3.6),
+    kmh: kmh(s),
     doing: s.bail > 0 ? "bailing" : s.grind >= 0 ? (s.stall ? "stalled on the coping" : `grinding (${s.grindKind})`) : s.wall >= 0 ? "riding a wall" : s.manual ? (s.manual > 0 ? "manual" : "nose manual") : s.grab ? grabName({ kind: s.grab, rail: s.grabRail, seconds: s.grabTime }) : s.air ? "in the air" : s.speed < -1 ? "rolling fakie" : "rolling",
     balance: s.grind >= 0 || s.manual ? r1(s.balance) : null,
     score: s.score, chain: s.chain, combo: s.combo, last: s.last,

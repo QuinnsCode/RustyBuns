@@ -21,7 +21,7 @@ test("every body and hat a look can pick builds, stands on its feet, and a range
   const all = [...BODIES.map((_, body) => makeCharacter("camper", look({ body, hat: HATS[body % HATS.length]! }), "c")), makeCharacter("ranger", look({ body: 4 }), "r"), makeBigfoot()];
   const heights = new Set<number>();
   for (const ch of all) {
-    expect(ch.body.mesh.geometry.index!.count / 3).toBeLessThan(22500);       // the heaviest, a beanie, lidded eyes and the fine mouth mesh (#6277): about 21,200
+    expect(ch.body.mesh.geometry.index!.count / 3).toBeLessThan(25000);       // the heaviest, a beanie, the fine mouth mesh (#6277) and the 22 x 96 hair sheet (#6386): about 24,400
     walk(ch, 0.5, 0);
     // standing: both ankles a boot's height off the ground, the head near the top of the body
     for (const foot of ["footR", "footL"] as const) expect(at(ch, foot).y).toBeCloseTo(0.09 * (ch.body.height / 1.75), 2);

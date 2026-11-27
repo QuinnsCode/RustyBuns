@@ -5,8 +5,8 @@
 // room (?studio=yours is the one you built in /rooms.html).
 // With no room it's the front door (door.ts): sign in with eqosys, your character, Make a room, your rooms. An invite link
 // takes a friend through the same sign-in and back into the room, wearing the character kept on their eqosys account.
-import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
+import "./fonts.css";
 import "../room/studio.css";
 import "./door.css";
 import * as THREE from "three";
@@ -19,8 +19,11 @@ import { mountWay } from "../way.ts";
 import { characterDialog } from "./character.ts";
 import { FOLLOW_MS, invitedWords, LiveParty, partyFollow, partyFrom } from "./party.ts";
 import { getJson } from "@rustybuns/util/http";
-import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, loadSetup, remember, roomId, saveRecent, saveSetup, studios } from "./door.ts";
-import { sideways, studioCards } from "./picker.ts";
+import { invitedBy } from "@rustybuns/util/lobby";
+import { FIRST_STUDIO } from "./door.ts";
+import { doorWords, follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
+import { sideways } from "./picker.ts";
+import { mountSettings } from "./settings.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
 import { AudioOut, CALL_SENDS, START_DB, dbToGain } from "../ui/audio.ts";
@@ -40,7 +43,7 @@ import { b64url } from "@rustybuns/util/bytes";
 import { OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
 import { FarSound } from "./plugin-line.ts";
 import { brickWall, peerCeilingSetting } from "./limiter.ts";
-import { connect, type Net, type NetStatus } from "../ui/net.ts";
+import { connect, savedCode, saveCode, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, blendShot, body, cameraPose, orbitPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
@@ -48,7 +51,6 @@ import type { Aim } from "./fingers.ts";
 import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
 import { VenueSplat } from "./venue-splat.ts";
 import { SYSTEMS, system } from "@rustybuns/gear";
-import { rigCards } from "./rig-cards.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { fromBuilt, yours, Studio } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -124,6 +126,9 @@ const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.sear
 const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
 const jam = newJam(def);
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
+// Back from eqosys? Read before anything else waits: in the small sign-in window this hands the code to the room that
+// opened it and closes, before the room would start loading in there too. The door picks up the answer (below).
+const signInBack = eq.finishSignIn();
 // The kept sign-in comes back from IndexedDB (and renews) before the page reads who you are.
 await eq.ready;
 const signedIn = () => !!eq.login();
@@ -902,13 +907,13 @@ function people() {
     list.append(li);
   }
   $("people-none").hidden = jam.others.size > 0;
+  hereLine();
   const me = marksOf(rights.me ?? undefined);
   $("me-may").textContent = !lastGrants ? "" : me.lead ? "You lead" : me.listen ? (me.hand === "play" ? "Hand up" : "Listening") : "You play";
   $("raise").hidden = !lastGrants || !me.listen || me.hand === "play";
 }
 $("mute-room").addEventListener("click", () => muteAll());
 $("raise").addEventListener("click", () => raise());
-$("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar").textContent = myGuitar === null ? "Plug in" : "Unplug"; }));
 function onGone(from: number) {
   mutes.peers.delete(from); levels.peers.delete(from);
   plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from); recorder.unplugged(from);
@@ -974,23 +979,22 @@ function walkOver(p: Project) {
 /** The leader moves the whole sesh to this studio; anyone else is told no (the World refuses it too). */
 function moveStudio(id: string): Answer {
   if (!here) return { ok: false, why: "Not in a room" };
-  if (!iLead()) return { ok: false, why: "Only the leader moves the room" };
+  if (!owner()) return { ok: false, why: "Only the owner moves the room" };
   if (!studios().some((x) => x.id === id)) return { ok: false, why: `No studio ${id}` };
   // your built room goes with the move, so everyone walks into it, not their own
   const built = id === "yours" ? yours() : null;
   player.edit(built ? { t: "studio", id, built } : { t: "studio", id });
   return { ok: true };
 }
-/** The room's studio cards in the Esc menu: the leader's to pick, read-only for everyone else. */
-function roomStudios() {
-  if (!here) return;
-  const lead = iLead();
-  $("studios-note").hidden = lead;
-  studioCards($("studios"), studios(), here.studio, lead ? (id) => void moveStudio(id) : undefined);
-  // out of doors, the rig too: the leader's to change, for everyone (rig-cards.ts)
-  $("rigs").hidden = $("rigs-title").hidden = !def.outdoor;
-  if (def.outdoor) rigCards($("rigs"), def, roomRig(def).id, lead ? (id) => player.edit({ t: "rig", id }) : undefined);
-}
+/**
+ * The gathering is the owner's to set (the leader, in the World's grants), and only in Settings. Alone in a room with no
+ * live line yet (offline, or still connecting), it's yours: nobody else is there to ask, and the World turns away an
+ * edit of it from anyone it doesn't grant Lead.
+ */
+const owner = () => iLead() || (!rights.grants && status.state !== "online");
+/** Settings (settings.ts), once it's mounted below; the sesh changing redraws it. */
+let settings: ReturnType<typeof mountSettings> | null = null;
+function roomStudios() { settings?.render(); }
 /** The sesh's rig isn't the one standing here: reload onto it, as a studio move does (the stacks and the PA are built once). */
 function rigOver(p: Project) {
   if (!def.outdoor || !here || !p.rig || p.rig === roomRig(def).id || movingTo) return;
@@ -1136,7 +1140,25 @@ const help = mountHelp({
   onToggle: (open) => { if (open) document.exitPointerLock?.(); else if (phase === "play") lock(); },
   learn: (id) => void say(lessons.start(id, jam)),
 });
-$("help-open").addEventListener("click", () => help.open());
+settings = mountSettings({
+  owner,
+  setup: () => ({ studio: here?.studio ?? pick, rig: def.outdoor ? roomRig(def).id : null, tops: project.tops ?? "subs", locked: !!status.locked }),
+  studios,
+  pickStudio: (id) => void moveStudio(id),
+  pickRig: (id) => { if (owner()) player.edit({ t: "rig", id }); },
+  pickTops: (tops) => { if (owner()) { player.edit({ t: "setup", tops }); settings?.render(); } },
+  // the World takes it from the room's maker only, and tells everyone in the new one so their reconnects still work
+  setPassword: (code) => { if (owner()) net?.lock(code); },
+  // what the entry panel's old buttons did
+  mine: [
+    { name: "Character", line: () => "How you look", act: () => void character.open() },
+    { name: "Controls", line: () => "Keys, mouse, gamepad", act: () => help.open() },
+    { name: "Plug in", line: () => myGuitar === null ? "Your instrument" : "Plugged in: press to unplug", act: () => void guitar().then(() => settings?.render()) },
+    { name: "Sound", line: () => "Your volume and mic, who's here", act: () => { $("set-sound").hidden = !$("set-sound").hidden; } },
+  ],
+  onClose: () => menu(),
+});
+$("settings-open").addEventListener("click", () => { $("menu").hidden = true; settings?.open(); });
 
 if (here) net = connect({
   onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); roomStudios(); card.draw(); },
@@ -1163,7 +1185,10 @@ if (here) net = connect({
     if (s.state === "online" && s.peers > status.peers) wear();
     // online again: ask for the sesh's gear, and which hand at the wall is yours
     if (s.state === "online" && status.state !== "online") net?.studio({ t: "drop" });
+    const gateWas = gated();
     status = s;
+    if (gated() !== gateWas) door();
+    settings?.render();
   },
   onChat(m) { if (m.t === "chat") rights.me = m.you; },
   onTakeBytes(m) { if (takes.add(m)) syncTakes(project); },
@@ -1265,7 +1290,7 @@ function openModules(open: boolean) {
 }
 $("modules-close").addEventListener("click", () => openModules(false));
 /** Something over the room has the mouse: a panel, the decks, the help card, the module list. */
-const panelOpen = () => character.isOpen() || !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen();
+const panelOpen = () => !!settings?.isOpen() || character.isOpen() || !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen();
 /** Esc in the menu takes you back into the room; out of it, Esc steps back out of whatever is over the room, one at a time. */
 document.addEventListener("keydown", (e) => {
   if (e.code !== "Escape" || e.repeat) return;
@@ -1273,6 +1298,7 @@ document.addEventListener("keydown", (e) => {
   if (decks?.isOpen() || help.isOpen()) return;
   // the character dialog closes itself on Esc, back to wherever you were
   if (character.isOpen()) return;
+  if (settings?.isOpen()) return settings.close();
   if (phase === "menu" && here && !$("door-room").hidden) return play();
   if (phase !== "play") return;
   if (lane?.isOpen()) return lane.close();
@@ -1325,18 +1351,43 @@ async function followParty() {
 if (partyOwner) { void followParty(); setInterval(() => { if (document.visibilityState === "visible") void followParty(); }, FOLLOW_MS); }
 
 // ---- the front door ----
+/** The entry panel's line under the name: whose gathering it is and how many are here, with a face for each of the first few. */
+function hereLine() {
+  const ids = rights.grants ? leaders(rights.grants) : [];
+  const ownerName = owner() ? name : [...jam.others].find(([p]) => ids.includes(peerIds[p] ?? ""))?.[1].name;
+  const count = jam.others.size + 1;
+  const line = `${ownerName ? `${ownerName}'s gathering · ` : ""}${count} here`;
+  $("here-line").textContent = line;
+  $("set-sample-name").textContent = here ? here.name || here.room : def.name;
+  $("set-sample-line").textContent = line;
+  const faces = [name, ...[...jam.others.values()].map((o) => o.name || "Someone")].slice(0, 4).map((n, i) => {
+    const s = document.createElement("span");
+    s.textContent = n.trim().charAt(0).toUpperCase() || "?";
+    s.dataset.i = String(i);
+    return s;
+  });
+  $("here-faces").replaceChildren(...faces);
+}
+/** This room's link to hand a friend, signed with your name when you're signed in ("Ada invited you" on their door). */
+const shareLink = () => here ? inviteLink(location.origin, here.room, here.studio, here.name, signedIn() ? name : "") : location.href;
 function door() {
   const out = !signedIn() && eq.canSignIn();
   $("door-out").hidden = !out;
   $("door-lobby").hidden = out || !!here;
   $("door-room").hidden = out || !here;
+  const words = doorWords(here, invitedBy(location.search));
   const invited = $("invited");
   invited.hidden = !here;
-  invited.textContent = here ? partyLive ? invitedWords(partyLive, Date.now()) : `You're invited to ${here.name || here.room}.` : "";
-  $("sign-in").textContent = here ? "Sign in and walk in" : "Sign in with eqosys";
+  invited.textContent = here && partyLive ? invitedWords(partyLive, Date.now()) : words.invited;
+  $("door-lead").textContent = words.lead;
+  $("sign-in").textContent = words.button;
   if (here) $("room-title").textContent = here.name || here.room;
-  $("room-studio-name").textContent = def.name;
-  $("room-about").textContent = def.about ?? "";
+  hereLine();
+  // a password field only when the room has one and hasn't let this page in yet
+  const gate = gated();
+  $("code-gate").hidden = !gate;
+  if (gate && here) $("code-why").textContent = status.full === "tries" ? "Too many wrong passwords from here. Wait a minute, then try again."
+    : savedCode(here.room) ? "That isn't the password. Ask whoever made the room." : "This room has a password.";
   roomStudios();
   $("me-name").textContent = name;
   $("me-from").textContent = signedIn() ? (lookFrom === "eqosys" ? "Signed in with eqosys, wearing your eqosys character" : "Signed in with eqosys") : "A guest in this browser";
@@ -1356,40 +1407,39 @@ function door() {
     a.append(t, m); li.append(a); list.append(li);
   }
 }
-// the studio your rooms are made in: asked on the front door until you make your first room, then kept (door.ts loadSetup)
-// and only shown, with Settings to change it
-let doorStudio = loadSetup() ?? LIVE_ROOM.id;
-function doorStudios() {
-  const kept = loadSetup() !== null;
-  $("room-studio").hidden = kept;
-  $("room-studio-kept").hidden = !kept;
-  $("room-studio-kept-name").textContent = studios().find((x) => x.id === doorStudio)?.name ?? "";
-  if (!kept) studioCards($("room-studio"), studios(), doorStudio, (id) => { doorStudio = id; doorStudios(); });
-}
-doorStudios();
-function setSetup(id: string) { doorStudio = id; saveSetup(id); doorStudios(); }
+// a room made here, with no event behind it, opens in the desert gathering: nobody is asked at the door. An event's room
+// comes with the setup its Stage Builder build has (page.ts eventLink), and the owner edits either one in Settings.
+const doorStudio = FIRST_STUDIO;
 $("make").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $("room-name"), label = input instanceof HTMLInputElement ? input.value.trim().slice(0, 40) : "";
   const studio = doorStudio;
-  saveSetup(studio);
   const room = roomId(label);
   saveRecent(remember(loadRecent(), { room, name: label, studio, mine: true, at: Date.now() }));
   // the first in with a key is the sesh's maker (its leader), and that's you: you walk in before anyone has the link
   location.assign(inviteLink(location.origin, room, studio, label));
 });
-$("sign-in").addEventListener("click", () => void eq.signIn(location.search));
+// eqosys opens in a small window beside the room (sign in, or make an account there), and the page stays on this
+// invite. The login back, the same address opens fresh, so the room's socket carries the token. A blocked window
+// makes the whole-page trip instead, which comes back to this address too (`finishSignIn` below).
+$("sign-in").addEventListener("click", () => {
+  $("door-error").hidden = true;
+  void eq.signInHere(location.search).then((r) => {
+    if (r.login) { location.reload(); return; }
+    if (r.error) { const e = $("door-error"); e.hidden = false; e.textContent = r.error; }
+  });
+});
 $("sign-out").addEventListener("click", () => { eq.signOut(); location.reload(); });
 $("invite").addEventListener("click", () => {
   if (!here) return;
-  const b = $("invite");
-  void navigator.clipboard?.writeText(inviteLink(location.origin, here.room, here.studio, here.name)).then(
-    () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Invite"; }, 1600); },
+  const b = $("invite").querySelector(".lbl");
+  void navigator.clipboard?.writeText(shareLink()).then(
+    () => { if (b) { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy link"; }, 1600); } },
     () => { flash = { text: "Copy didn't work: the link is in the address bar", until: performance.now() + 2500 }; });
 });
 if (here) saveRecent(remember(loadRecent(), { room: here.room, name: here.name, studio: here.studio, mine: false, at: Date.now() }));
 // back from eqosys: the invite's room came along as `then`, so open it signed in (a fresh page, so the socket carries the token)
-void eq.finishSignIn().then((back) => {
+void signInBack.then((back) => {
   if (back?.login) { if (back.then.startsWith("?")) location.replace(`${location.pathname}${back.then}`); else location.reload(); return; }
   if (back?.error) { const e = $("door-error"); e.hidden = false; e.textContent = back.error; }
 });
@@ -1405,9 +1455,18 @@ async function refreshHub(force = false) {
   hubView = await friendHub.state();
   invites();
 }
+/** Invite friends opens your eqosys friends under the share row, each with an Invite. */
+let friendsOpen = false;
+$("friends-open").addEventListener("click", () => {
+  if (!signedIn()) { flash = { text: "Sign in with eqosys to invite friends: Copy link works for anyone", until: performance.now() + 2500 }; return; }
+  friendsOpen = !friendsOpen;
+  invites();
+  void refreshHub(true);
+});
 function invites() {
   const box = $("friends-box"), list = $("friends");
-  box.hidden = !here || !signedIn() || !hubView;
+  box.hidden = !friendsOpen || !here || !signedIn() || !hubView;
+  $("friends-open").setAttribute("aria-expanded", String(!box.hidden));
   const shareable = typeof navigator.share === "function";
   $("share").hidden = !here || !shareable;
   const add = $("friends-add");
@@ -1447,11 +1506,22 @@ async function inviteFriend(id: string) {
 }
 $("share").addEventListener("click", () => {
   if (!here) return;
-  void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: inviteLink(location.origin, here.room, here.studio, here.name) }).catch(() => {});
+  void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: shareLink() }).catch(() => {});
 });
 
-function menu() { decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play"; door(); people(); invites(); if (phase === "menu") void refreshHub(); }
-function play() { if (!here) return; phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
+function menu() { decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play" || !!settings?.isOpen(); door(); people(); invites(); if (phase === "menu") void refreshHub(); }
+/** The room has a password and turned this page away for it (world.ts locked): the entry panel asks for it. */
+function gated() { return !!here && status.state === "full" && (status.full === "code" || status.full === "tries"); }
+/** Enter with the password typed: kept in this browser for this room (net.ts saveCode), and the page knocks again with it. */
+function tryCode(): boolean {
+  const input = $("room-code"), v = input instanceof HTMLInputElement ? input.value.trim() : "";
+  if (!here || v.length < 4) { input.focus(); return false; }
+  saveCode(here.room, v);
+  location.reload();
+  return true;
+}
+$("code-gate").addEventListener("submit", (e) => { e.preventDefault(); tryCode(); });
+function play() { if (!here) return; if (gated()) { tryCode(); return; } phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => void character.open());
 mountControls({
@@ -1459,21 +1529,6 @@ mountControls({
   keys: keysTable(),
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
-  // the room setup you picked once on the front door, to change any time (it never moves the sesh you're in: the leader's studio cards do that)
-  titles: { game: "Your rooms" },
-  extras: (card) => {
-    const label = Object.assign(document.createElement("label"), { textContent: "New rooms start in" });
-    const sel = Object.assign(document.createElement("select"), { id: "setup-studio" });
-    label.append(sel);
-    card.append(label);
-    const sync = () => {
-      sel.replaceChildren(...studios().map((x) => Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
-      sel.value = doorStudio;
-    };
-    sel.addEventListener("change", () => setSetup(sel.value));
-    sync();
-    return { sync };
-  },
 });
 
 function resize() {
@@ -1621,13 +1676,13 @@ function frame(now: number) {
 }
 if (here) requestAnimationFrame(frame); // the front door has no room to draw or walk in
 // the menu's lists are sideways rows of cards, like the studios: a wheel or a drag scrolls them, touch swipes
-for (const id of ["rooms", "invites", "friends", "people"]) { $(id).classList.add("cards"); sideways($(id)); }
+for (const id of ["rooms", "invites", "friends"]) { $(id).classList.add("cards"); sideways($(id)); }
 menu();
 
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, setup: loadSetup(), look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
+  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
     gear: atWall.state(jam), lanterns: lit.state(jam), venue: venue.state, levels: harness.levels(),
@@ -1750,7 +1805,9 @@ const harness = {
   /** How you hear the others: "loop" (a loop late), "now", or (the leader) "desk"; then the clock. */
   listen: (l: Listen) => { setListen(l); return harness.clock(); },
   /** The studio: this page's and the sesh's, and every one the picker shows; with an id, the leader moves the sesh there. */
-  studio: (id?: string) => ({ ...(id ? moveStudio(id) : {}), here: pick, sesh: project.studio ?? null, lead: iLead(), studios: studios().map((x) => x.id), moving: movingTo }),
+  /** Settings (settings.ts): open it on a tab ("room" is the owner's), or with no tab just read it: the tabs this viewer sees, the font, the gathering's setup. */
+  settings: (tab?: "room" | "you" | "close") => { if (tab === "close") settings?.close(); else if (tab) { $("menu").hidden = true; settings?.open(tab); } return settings?.state() ?? null; },
+  studio: (id?: string) => ({ ...(id ? moveStudio(id) : {}), here: pick, sesh: project.studio ?? null, lead: iLead(), owner: owner(), studios: studios().map((x) => x.id), moving: movingTo }),
   /** The groove and its click on the shared beat, for everyone (P). */
   groove: (on: boolean) => { playGroove(on); return harness.clock(); },
   /** A live event as the sesh brings it from `peer` ({ t: 'wear', avatar, name }, { t: 'body', at: [x, 0, z], yaw, seat? }, note on/off): someone else in the room without a server. */
