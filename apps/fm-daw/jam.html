@@ -34,8 +34,6 @@
         <ul id="invites"></ul>
       </div>
       <h2>Make a room</h2>
-      <div id="room-studio" class="studios" aria-label="Studio"></div>
-      <p id="room-studio-kept" class="keys" hidden>In <b id="room-studio-kept-name"></b>. Settings (the cog) changes it.</p>
       <form id="make" class="row">
         <input id="room-name" maxlength="40" placeholder="Name your room" aria-label="Room name" autocomplete="off" />
         <button type="submit" class="go">Make a room</button>
@@ -43,33 +41,68 @@
       <h2>Your rooms</h2>
       <ul id="rooms"></ul>
     </div>
-    <div id="door-room" hidden>
-      <h2 id="room-title"></h2>
-      <details class="about"><summary id="room-studio-name"></summary><p id="room-about" class="keys"></p></details>
-      <p class="row"><button id="play" type="button" class="go">Enter</button><button id="invite" type="button" class="ghost">Invite</button><button id="share" type="button" class="ghost" hidden>Share</button><button id="guitar" type="button" class="ghost">Plug in</button><button id="help-open" type="button" class="ghost">Controls</button><a id="lobby" href="/jam.html" class="ghost">Lobby</a></p>
-      <div id="friends-box" hidden>
+    <div id="door-room" class="entry" hidden>
+      <div class="entry-who">
+        <h2 id="room-title"></h2>
+        <p class="entry-here"><span id="here-faces" class="faces" aria-hidden="true"></span><span id="here-line"></span></p>
+      </div>
+      <div class="entry-go">
+        <button id="settings-open" type="button" class="ghost square" aria-label="Settings" title="Settings"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="lbl">Settings</span></button>
+        <a id="lobby" href="/jam.html" class="ghost square-ish" title="Leave: back to the lobby"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>Leave</a>
+        <button id="play" type="button" class="go enter"><svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>Enter</button>
+      </div>
+      <div class="entry-share">
+        <span class="bring">Bring people</span>
+        <button id="invite" type="button" class="ghost" aria-label="Copy link" title="Copy link"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span class="lbl">Copy link</span></button>
+        <button id="friends-open" type="button" class="ghost" aria-label="Invite friends" title="Invite friends" aria-expanded="false"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg><span class="lbl">Invite friends</span></button>
+        <button id="share" type="button" class="ghost" aria-label="Share" title="Share" hidden><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg><span class="lbl">Share</span></button>
+      </div>
+      <div id="friends-box" class="entry-friends" hidden>
         <ul id="friends"></ul>
         <p id="friends-none" class="keys" hidden><a id="friends-add" target="_blank" rel="noopener">Add friends</a></p>
       </div>
-      <details class="about"><summary>How it works</summary>
-        <p class="keys">Invite copies a link: anyone with it walks into this room, and eqosys friends get it in their notes.</p>
-        <p class="keys">Sit at an instrument and your keys play its track for everyone. WASD walk (Shift runs), mouse look, Space hops. E or click sits; Space stands. Seated, A to &#39; are notes (Z / X octave), or a MIDI keyboard. V camera, P groove, Esc out.</p>
-        <p class="keys">Plug in takes your computer's audio input: a guitar goes through the amp at your seat (the bass, else the first track with an amp); in the vocal booth, your mic goes straight to everyone. Wear headphones.</p>
-        <p class="keys">Mutes are yours alone; the leader can mute someone for everyone.</p>
-      </details>
-      <h2>Studio</h2>
-      <p id="studios-note" class="keys" hidden>The leader picks</p>
-      <div id="studios" class="studios" aria-label="Studio"></div>
-      <h2 id="rigs-title" hidden>Rig</h2>
-      <div id="rigs" class="studios" aria-label="Rig" hidden></div>
-      <h2>Who's here</h2>
-      <div class="levels" role="group" aria-label="What you hear">
-        <label class="level" title="Music: the band, the DJ's set, the room's videos, guitars, the sound wall"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><input id="level-music" type="range" min="0" max="1" step="0.01" aria-label="Music"></label>
-        <label class="level" title="Crowd: people's mics, the dancers, the night air, the generator"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><input id="level-crowd" type="range" min="0" max="1" step="0.01" aria-label="Crowd"></label>
+    </div>
+  </section>
+  <section id="settings" hidden aria-label="Settings">
+    <header>
+      <h2>Settings</h2>
+      <div class="tabs" role="tablist"><button id="tab-room" type="button" role="tab">The gathering</button><button id="tab-you" type="button" role="tab">You</button></div>
+      <button id="settings-done" type="button" class="go">Done</button>
+    </header>
+    <div id="set-room" class="set-body">
+      <div class="set-pick">
+        <div id="set-shot" class="set-shot"></div>
+        <h3 id="set-studio-name"></h3>
+        <p id="set-studio-about" class="keys"></p>
+        <p class="set-chips"><span id="set-chip-rig"></span><span id="set-chip-door"></span></p>
+        <p class="keys set-lock"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Only the owner changes these. Everyone in the room gets them.</p>
       </div>
-      <p class="row"><span id="me-may"></span><button id="raise" type="button" class="ghost" hidden>Raise hand</button><button id="mute-room" type="button" class="ghost">Mute room</button><label for="loudest">Loudest</label><select id="loudest"></select></p>
-      <ul id="people"></ul>
-      <p id="people-none" class="keys">Just you</p>
+      <div class="set-lists">
+        <div class="set-col"><h4>Studio</h4><div id="set-studios" class="set-list" aria-label="Studio"></div></div>
+        <div id="set-speakers" class="set-col"><h4>Speakers</h4><div id="set-rigs" class="set-list" aria-label="Speakers"></div>
+          <h5>Tops sit on</h5><div id="set-tops" class="set-chip-row" aria-label="Tops sit on"></div></div>
+        <div class="set-col set-wide"><h4>Who can come in</h4><div id="set-doors" class="set-chip-row" aria-label="Who can come in"></div></div>
+      </div>
+    </div>
+    <div id="set-you" class="set-body" hidden>
+      <div class="set-pick">
+        <div id="set-sample" class="set-sample"><b id="set-sample-name" class="h"></b><span id="set-sample-line"></span><b class="accent">Enter · Settings · Leave</b></div>
+        <p class="keys"><span id="set-font-name"></span>. This changes how Qollab looks for you only.</p>
+        <div id="set-sound" class="set-sound" hidden>
+          <h4>Sound</h4>
+          <div class="levels" role="group" aria-label="What you hear">
+            <label class="level" title="Music: the band, the DJ's set, the room's videos, guitars, the sound wall"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><input id="level-music" type="range" min="0" max="1" step="0.01" aria-label="Music"></label>
+            <label class="level" title="Crowd: people's mics, the dancers, the night air, the generator"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><input id="level-crowd" type="range" min="0" max="1" step="0.01" aria-label="Crowd"></label>
+          </div>
+          <p class="row"><span id="me-may"></span><button id="raise" type="button" class="ghost" hidden>Raise hand</button><button id="mute-room" type="button" class="ghost">Mute room</button><label for="loudest">Loudest</label><select id="loudest"></select></p>
+          <ul id="people"></ul>
+          <p id="people-none" class="keys">Just you</p>
+        </div>
+      </div>
+      <div class="set-lists">
+        <div class="set-col"><h4>Font</h4><div id="set-fonts" class="set-list" aria-label="Font"></div></div>
+        <div class="set-col"><h4>Also yours</h4><div id="set-mine" class="set-list" aria-label="Also yours"></div></div>
+      </div>
     </div>
   </section>
   <section id="modules" hidden aria-label="Sound wall modules">

@@ -243,6 +243,18 @@ test("the leader moves the room to the console room, everyone walks into it, and
   expect(ops(C.ws).map((m) => m?.t === "op" && m.op.t === "replace" && m.op.project.rig)).toEqual(["synergy"]);
   expect(decodeOp({ t: "rig", id: "wall-of-sound" })).toBeNull();
 
+  // so is the rest of the gathering's setup in Settings (#6420): what the tops sit on and who can come in. Bo's goes
+  // nowhere; Ada's reaches everyone, sits on the sesh for whoever comes in later, and an undo keeps it
+  await world.webSocketMessage(B.ws, JSON.stringify({ t: "op", op: { t: "setup", tops: "stands" } }));
+  expect(ops(A.ws)).toEqual([]);
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "setup", tops: "stands", door: "friends" } }));
+  expect(ops(C.ws)).toEqual([{ t: "op", op: { t: "setup", tops: "stands", door: "friends" } }]);
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "replace", project: demoProject() } }));
+  const E = await walkIn(b.login.token, "h".repeat(32));
+  const later = E.ws.sent.find((m) => m.t === "snapshot")?.project;
+  expect([later?.tops, later?.door]).toEqual(["stands", "friends"]);
+  expect(decodeOp({ t: "setup", tops: "a crane" })).toBeNull();
+
   // the room Ada built goes with her move to "yours": someone coming in later gets her room, not their own
   const mine = { ...structuredClone(LIVE_ROOM), id: "adas-room", name: "Ada's room" };
   await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "studio", id: "yours", built: mine } }));
