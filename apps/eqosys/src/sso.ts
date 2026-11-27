@@ -21,7 +21,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { arr, check, nul, num, obj, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { b64url } from "@rustybuns/util/bytes";
 import { JwksKeyring, verifiedClaims } from "./jwks.ts";
-import { signOutEverywhere } from "./members.ts";
+import { closeMany, closeSockets, signOutEverywhere, studioLeft } from "./members.ts";
 import { Role, roleIn, type Made } from "./studios.ts";
 import type { Env } from "./env.ts";
 
@@ -116,21 +116,22 @@ export async function proveDomain(conf: Pick<Env, "DB">, studio: string, by: str
 
 /**
  * Statements ending every sign-in the users `who` hold (a SELECT of user ids, its ?1 bound to `arg`): their sessions, their refresh
- * tokens and the tokens already signed for them (door.ts `standing`). Sockets already open stay until they drop.
+ * tokens and the tokens already signed for them (door.ts `standing`). The last one returns whose they were, for closeMany: sockets
+ * already open are the caller's to close.
  */
 const signedOut = (db: Env["DB"], who: string, arg: string, now: number) => [
   db.prepare(`DELETE FROM "session" WHERE "userId" IN (${who})`).bind(arg),
   db.prepare(`DELETE FROM refresh WHERE user_id IN (${who})`).bind(arg),
   db.prepare(`INSERT INTO token_cuts (user_id, app, before) SELECT id, '*', ?2 FROM "user" WHERE id IN (${who})
-    ON CONFLICT (user_id, app) DO UPDATE SET before = excluded.before`).bind(arg, Math.floor(now / 1000)),
+    ON CONFLICT (user_id, app) DO UPDATE SET before = excluded.before RETURNING user_id`).bind(arg, Math.floor(now / 1000)),
 ];
 
 /**
  * The owner makes company sign-in the only way in for the studio's proved domain (`on`), or not. Turned on, everyone with an
- * email there is signed out, apps too, so their next sign-in is the company's. An owner on the domain must have signed in
+ * email there is signed out, apps too, and the sockets they have open close, so their next sign-in is the company's. An owner on the domain must have signed in
  * through it once first, or they would lock themselves out.
  */
-export async function ssoOnly(conf: Pick<Env, "DB">, studio: string, by: string, on: boolean, now = Date.now()): Promise<Made> {
+export async function ssoOnly(conf: Env, studio: string, by: string, on: boolean, now = Date.now()): Promise<Made> {
   if (await roleIn(conf, studio, by) !== "owner") return { ok: false, status: 403, error: "only a studio's owner sets who must use company sign-in" };
   const row = await conf.DB.prepare("SELECT domain, proved_at FROM studio_sso WHERE studio_id = ?").bind(studio).first<{ domain: string; proved_at: number | null }>();
   if (!row?.proved_at) return { ok: false, status: 400, error: "prove the domain first" };
@@ -139,10 +140,11 @@ export async function ssoOnly(conf: Pick<Env, "DB">, studio: string, by: string,
       .bind(ssoProvider(studio), by).first<{ email: string; linked: number }>();
     if (mine && domainOf(mine.email) === row.domain && !mine.linked) return { ok: false, status: 409, error: "sign in through your company once first" };
   }
-  await conf.DB.batch([
+  const done = await conf.DB.batch<{ user_id: string }>([
     conf.DB.prepare("UPDATE studio_sso SET only_sso = ? WHERE studio_id = ?").bind(on ? 1 : 0, studio),
     ...(on ? signedOut(conf.DB, `SELECT id FROM "user" WHERE lower(email) LIKE ?1`, `%@${row.domain}`, now) : []),
   ]);
+  if (on) await closeMany(conf, (done.at(-1)?.results ?? []).map((r) => r.user_id), "*");
   return { ok: true, id: studio };
 }
 
@@ -152,16 +154,17 @@ export const ssoRequired = async (conf: Pick<Env, "DB">, email: string) =>
 
 /**
  * The daily sweep: seats from company sign-in not renewed in SSO_SEAT_DAYS go (never an owner's), and `gone` closes each one's
- * sockets in the studio's space. Someone whose only way in was that company's sign-in (or whose domain requires it) is signed
- * out of eqosys and its apps too.
+ * sockets in the studio's space, as do the ones they opened with the studio's unlisted games. Someone whose only way in was that
+ * company's sign-in (or whose domain requires it) is signed out of eqosys and its apps too, and every socket they have open closes.
  */
-export async function lapseSeats(conf: Pick<Env, "DB">, gone: (studio: string, user: string) => Promise<unknown>, now = Date.now()): Promise<number> {
+export async function lapseSeats(conf: Env, gone: (studio: string, user: string) => Promise<unknown>, now = Date.now()): Promise<number> {
   const { results } = await conf.DB.prepare(`DELETE FROM studio_members WHERE sso_at IS NOT NULL AND sso_at < ? AND role <> 'owner' RETURNING studio_id, user_id`)
     .bind(now - SSO_SEAT_DAYS * 86_400_000).all<{ studio_id: string; user_id: string }>();
   for (const r of results) {
-    await conf.DB.batch(signedOut(conf.DB, `SELECT id FROM "user" u WHERE u.id = ?1 AND (NOT EXISTS (SELECT 1 FROM "account" WHERE "userId" = ?1 AND "providerId" NOT LIKE 'sso:%')
+    const done = await conf.DB.batch<{ user_id: string }>(signedOut(conf.DB, `SELECT id FROM "user" u WHERE u.id = ?1 AND (NOT EXISTS (SELECT 1 FROM "account" WHERE "userId" = ?1 AND "providerId" NOT LIKE 'sso:%')
       OR EXISTS (SELECT 1 FROM studio_sso s WHERE s.only_sso = 1 AND s.proved_at IS NOT NULL AND lower(u.email) LIKE '%@' || s.domain))`, r.user_id, now));
     await gone(r.studio_id, r.user_id).catch(() => null);
+    await (done.at(-1)?.results.length ? closeSockets(conf, r.user_id, "*") : studioLeft(conf, r.studio_id, r.user_id)).catch(() => null);
   }
   return results.length;
 }

@@ -6,7 +6,7 @@ import { Hub, hubAsk, type HubOut, type HubState } from "../src/qollab/hub.ts";
 import { handle } from "../src/handle.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
-import { deleteAccount, signOutEverywhere } from "../src/members.ts";
+import { closeMany, deleteAccount, signOutEverywhere } from "../src/members.ts";
 
 setDefaultTimeout(30_000);
 
@@ -109,14 +109,17 @@ test("deleting an account from inside an app: gone everywhere, friends hear, the
   await op(cy.token, { op: "befriend", email: "di@example.com" });
   await op(di.token, { op: "accept", id: cy.id });
   expect((await op(cy.token, { op: "state" })).body.friends).toHaveLength(1);
+  await op(cy.token, { op: "notify", id: di.id, text: "rematch?" });
+  expect((await op(di.token, { op: "state" })).body.notes.some((n) => n.from.id === cy.id && n.kind === "app")).toBe(true);
 
   // Without her token nothing is deleted; with it, her app's own call does it.
   expect((await call("/api/account/delete", { json: {} })).res.status).toBe(401);
   const gone = await call("/api/account/delete", { json: {}, bearer: cy.token, origin: PARK });
   expect(await gone.res.json()).toEqual({ ok: true });
 
-  // Her friend's list loses her, and the same email can sign up again as a new person.
-  expect((await op(di.token, { op: "state" })).body.friends).toEqual([]);
+  // Her friend's list loses her, and every note she left there, and the same email can sign up again as a new person.
+  const dis = (await op(di.token, { op: "state" })).body;
+  expect([dis.friends, dis.notes.filter((n) => n.from.id === cy.id)]).toEqual([[], []]);
   const again = await signUp("Cy", "park-hide-seek", PARK);
   expect(again.id).not.toBe(cy.id);
   expect((await op(again.token, { op: "state" })).body.friends).toEqual([]);
@@ -151,6 +154,18 @@ test("signed out everywhere (Apple's consent-revoked), the hub tabs that person'
     headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13", "sec-websocket-protocol": `eqosys, ${gus.token}`, origin: PARK },
   });
   expect(knock.status).toBe(401);
+});
+
+test("closing many people's sockets at once (a company's domain): one order reaches every one of their hubs", async () => {
+  const people = await Promise.all(["Hy", "Io", "Jy"].map((n) => signUp(n, "park-hide-seek", PARK)));
+  const tabs = people.map((p) => open(p.token, PARK)), closed: number[] = [];
+  tabs.forEach((t, n) => { t.ws.onclose = (e) => { closed[n] = e.code; }; });
+  await until(() => tabs.every((t) => t.state()));
+  // Only Hy's and Jy's: Io's tab stays.
+  await closeMany(conf, [people[0]!.id, people[2]!.id], "*");
+  await until(() => closed[0] && closed[2]);
+  expect([closed[0], closed[1], closed[2]]).toEqual([4003, undefined, 4003]);
+  tabs[1]!.ws.close();
 });
 
 test("the home's folded rows live on the person's hub: saved, read back on the next state, cleared when none are folded", async () => {

@@ -110,17 +110,18 @@ export const markFor = (d: number) => (d <= -2 ? "eagle" : d === -1 ? "birdie" :
 /** The disc-in-orbit mark, big, for the title splash: a planet with its graticule, an orbit tilted across it and a disc
  * riding the orbit (CSS spins `.orbit-spin`). Behind the planet the disc is the copy drawn first, so the planet hides
  * it; in front, a second copy clipped to the orbit's near half sits on top. */
-export function orbitMark(): string {
+export function orbitMark(id = "orbit"): string {
   const disc = `<g class="orbit-spin"><ellipse class="orbit-disc" cx="58" rx="7" ry="7"/></g>`;
   const tilt = `transform="rotate(-18) scale(1 0.3)"`;
+  // `id` keeps a second copy's gradient and clip its own (the splash's are display:none once it is gone).
   return `<svg class="orbit-mark" viewBox="-70 -70 140 140" role="img" aria-label="A disc in orbit round the planet">
-<defs><clipPath id="orbit-near" clipPathUnits="userSpaceOnUse"><rect x="-80" y="0" width="160" height="80"/></clipPath>
-<radialGradient id="orbit-sea" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#16395a"/><stop offset="1" stop-color="#050b14"/></radialGradient></defs>
+<defs><clipPath id="${id}-near" clipPathUnits="userSpaceOnUse"><rect x="-80" y="0" width="160" height="80"/></clipPath>
+<radialGradient id="${id}-sea" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#16395a"/><stop offset="1" stop-color="#050b14"/></radialGradient></defs>
 <g ${tilt}><ellipse class="orbit-ring far" rx="58" ry="58"/>${disc}</g>
-<circle class="planet" r="40" fill="url(#orbit-sea)"/>
+<circle class="planet" r="40" fill="url(#${id}-sea)"/>
 <g class="planet-lines"><ellipse rx="40" ry="13"/><ellipse rx="40" ry="28"/><ellipse rx="14" ry="40"/><ellipse rx="29" ry="40"/><path d="M-40 0H40M0-40V40"/></g>
 <circle class="planet-rim" r="40"/>
-<g ${tilt}><path class="orbit-ring near" d="M-58 0A58 58 0 0 0 58 0"/><g clip-path="url(#orbit-near)">${disc}</g></g></svg>`;
+<g ${tilt}><path class="orbit-ring near" d="M-58 0A58 58 0 0 0 58 0"/><g clip-path="url(#${id}-near)">${disc}</g></g></svg>`;
 }
 
 /** A hole on the title's route map: its number and its flight from tee to basket as [lon, lat] points. */

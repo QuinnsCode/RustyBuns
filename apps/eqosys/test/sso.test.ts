@@ -3,6 +3,7 @@
 // token endpoint answer from a local RS256 key, and its "sign-in page" is the test handing back a code.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { b64url } from "@rustybuns/util/bytes";
+import { arr, check, obj, str } from "@rustybuns/util/guard";
 import { authFor } from "../src/auth.ts";
 import { studiosOf } from "../src/studios.ts";
 import { DOH, lapseSeats, proofOf, proveDomain, SSO_SEAT_DAYS } from "../src/sso.ts";
@@ -12,6 +13,12 @@ import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 setDefaultTimeout(30_000);
 const ISSUER = "https://idp.acme.dev", CLIENT = "eqosys-acme", SECRET = "s3cret-from-the-provider";
 const { conf, call } = await boot();
+/** Whose hub tabs were told to close (members.ts closeMany): the hub an order reaches, and the others it passes it on to. */
+const shut: string[] = [];
+conf.HUB = { idFromName: (name: string) => name, get: (id: unknown) => ({ fetch: async (req: Request) => {
+  if (new URL(req.url).pathname === "/out") shut.push(String(id), ...(check(obj({ more: arr(str(), 100) }), await req.json())?.more ?? []));
+  return Response.json({ ok: true });
+} }) };
 
 const RS256 = { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" } as const;
 const key = await crypto.subtle.generateKey(RS256, true, ["sign", "verify"]);
@@ -183,8 +190,9 @@ test("a proved domain's studio makes company sign-in the only way in for its ema
   const adaCo = (await company("ada@acme.dev", { sub: "okta|ada", email: "ada@acme.dev" }, { session: ada.cookie })).back!;
   const appKept = await mintRefresh(conf, (await userOf("jo@acme.dev"))!, "park-hide-seek");
   expect((await only(adaCo.cookie, "1")).to).toBe("/?tab=studio");
-  // An app a password sign-in left behind is signed out too.
+  // An app a password sign-in left behind is signed out too, and the tabs already open close.
   expect(await spendRefresh(conf, "park-hide-seek", appKept)).toBeNull();
+  expect(shut).toContain((await userOf("jo@acme.dev"))!);
   expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!))[0]!.sso?.only).toBe(true);
   // Everyone on acme.dev was signed out; a password sign-in or sign-up there is refused, and the company's own works.
   expect((await call("/do/continue", { cookie: adaCo.cookie, form: {} })).to).not.toBe("/");
@@ -216,6 +224,8 @@ test("a seat from company sign-in lapses without another one; a seat the owner h
   // The company's sign-in was Max's only way in, so Max is signed out too; Ada, the owner, stays.
   expect((await call("/do/continue", { cookie: back!.cookie, form: {} })).to).not.toBe("/");
   expect(await spendRefresh(conf, "park-hide-seek", appKept)).toBeNull();
+  // And the tabs Max already had open close.
+  expect(shut).toContain(max);
   expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!)).map((x) => x.name)).toEqual(["Acme"]);
 });
 

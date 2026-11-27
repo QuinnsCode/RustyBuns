@@ -1582,7 +1582,7 @@ function res2Pieces(): Record<string, Build> {
   const key = new THREE.Vector3(-0.5, -0.2, 0.85), lit = (q: Piece) => facets(q, key, f - 0.02, zt);
   mid.pieces.push(ringWalls("horn", [lip, mouth]), lit(ringWalls("horn", [mouth, ...bands, throat])));
   // the throat's back, round the driver: a flat dark face closing the hexagon the walls end on
-  mid.pieces.push(frontPlate("grime", throat.map((v) => [v.x, v.y]), [Array.from({ length: 20 }, (_, i) => [Math.cos((i / 20) * Math.PI * 2) * drR, mcy + Math.sin((i / 20) * Math.PI * 2) * drR])], zt + 0.004, 0.006));
+  mid.pieces.push(frontPlate("cavity", throat.map((v) => [v.x, v.y]), [Array.from({ length: 20 }, (_, i) => [Math.cos((i / 20) * Math.PI * 2) * drR, mcy + Math.sin((i / 20) * Math.PI * 2) * drR])], zt + 0.004, 0.006));
 
   // ---- the plug: the axe head across the throat, blunt back on the driver, a ridge forward, pointed at both tips
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, mcy + y, zt + z), pt: THREE.Vector3[] = [];

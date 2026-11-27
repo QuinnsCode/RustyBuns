@@ -16,6 +16,7 @@ import { APPS, GENRES, genreOf, HOME, type QApp } from "./apps.ts";
 import { checksOf, check as machineCheck, type Checks } from "./checks.ts";
 import type { Env } from "./env.ts";
 import { roleIn } from "./studios.ts";
+import { gamePulled } from "./members.ts";
 
 export const STATES = ["draft", "in review", "listed", "refused", "pulled"] as const;
 export type State = (typeof STATES)[number];
@@ -192,10 +193,12 @@ export async function review(conf: Env, id: string, verdict: "list" | "refuse", 
   return move(conf, id, verdict === "list" ? "listed" : "refused", verdict === "refuse" ? note.trim() : "", now);
 }
 
-/** Take a game down: the super admin, or its own studio's owner or admin. Its tile goes and its sign-ins and tokens stop; its saves go in 30 days. */
+/** Take a game down: the super admin, or its own studio's owner or admin. Its tile goes, its sign-ins and tokens stop and the sockets they opened close; its saves go in 30 days. */
 export async function pull(conf: Env, who: string, admin: boolean, id: string, now = Date.now()): Promise<Done> {
   const l = await listing(conf, id);
   if (!l || (!admin && !(await owns(conf, l.studio.id, who)))) return no(404, `no game "${id}" in a studio you run`);
   if (l.state === "pulled") return no(409, `"${id}" is pulled already`);
-  return move(conf, id, "pulled", null, now);
+  const r = await move(conf, id, "pulled", null, now);
+  if (r.ok) await gamePulled(conf, id);
+  return r;
 }
