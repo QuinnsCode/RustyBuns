@@ -101,7 +101,16 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .ms.solo.on { background: var(--ok); color: #04210f; border-color: var(--ok); }
 
 .center { display: grid; align-content: start; gap: 14px; padding: 14px 20px 18px; min-width: 0; }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.toolbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 12px; min-width: 0; }
+/* like with like: each group keeps its pieces together; a narrow screen wraps whole groups, never sideways */
+.toolbar .tool-group { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.toolbar .tool-group + .tool-group, .toolbar .add-menu + .tool-group { padding-left: 12px; border-left: 1px solid var(--edge); }
+.toolbar .tabs { flex: none; }
+.toolbar .strength { display: inline-flex; align-items: center; gap: 6px; }
+.toolbar .strength input { width: 84px; }
+.toolbar .strength .silk { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) { .toolbar { flex-wrap: wrap; } .toolbar .spacer { display: none; } }
+@media (max-width: 520px) { .toolbar .tabs { max-width: 100%; overflow-x: auto; } .toolbar .tool-group + .tool-group, .toolbar .add-menu + .tool-group { padding-left: 0; border-left: 0; } }
 .toolbar .check { padding: 0; }
 
 /* drum grid */
