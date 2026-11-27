@@ -194,21 +194,27 @@ body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] b { transform: transla
 body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] .gc-led { top: 9px; background: var(--led); box-shadow: 0 0 8px var(--led); }
 body > .gc-dialog .gc-presets .gc-prof:hover b, body > .gc-dialog .gc-presets .gc-prof:focus-visible b { outline: 1.5px solid #e9ecf2; outline-offset: 1px; }
 body > .gc-dialog .gc-presets .gc-prof:focus-visible { outline: none; }
-/* Sections: no boxes; a hairline engraved across the panel, the name on its own strip of tape with a lane's colour code. */
-body > .gc-dialog .gc-sec { border: 0; border-top: 1px solid #e9ecf22e; border-radius: 0; }
-body > .gc-dialog .gc-sec-h { min-height: 40px; padding: 10px 2px 4px; }
-body > .gc-dialog .gc-sec-h:hover { background: none; }
+/* Sections are hardware too: each header is its own screwed strip of brushed metal (--head-plate) with the name on tape and a
+   lane's colour code, and a flight-case latch at its end in place of the web chevron: lever down and lamp lit while the
+   section is open, folded flat and dark when it is shut. */
+body > .gc-dialog .gc-sec { border: 0; border-radius: 0; margin-top: 4px; }
+body > .gc-dialog .gc-sec-h { min-height: 42px; padding: 6px 20px 6px 22px; border: 1px solid #000; border-radius: 6px; background: var(--head-plate);
+  box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0008, 0 2px 0 #0006; }
+body > .gc-dialog .gc-sec-h:hover { background: var(--head-plate); }
+body > .gc-dialog .gc-sec-h:focus-visible { outline: 1.5px solid #e9ecf2; outline-offset: 2px; }
 body > .gc-dialog .gc-sec-h > svg { display: none; }
 body > .gc-dialog .gc-sec-h > span:not(.gc-chev) { padding: 3px 10px 3px 13px; background: var(--fibre) 0 0 / 96px 48px, #dfe5ec; color: #11141a; font: 700 11px/1.3 ui-monospace, Menlo, monospace;
   letter-spacing: 0.16em; text-transform: uppercase; clip-path: var(--clip); transform: rotate(var(--tilt, 0deg)); box-shadow: inset 5px 0 0 var(--code, var(--lane-0)); }
 body > .gc-dialog .gc-sec[data-sec="lookX"] .gc-sec-h > span { --code: var(--lane-1); }
 body > .gc-dialog .gc-sec[data-sec="lookY"] .gc-sec-h > span { --code: var(--lane-2); }
 body > .gc-dialog .gc-sec[data-sec="music"] .gc-sec-h > span { --code: var(--lane-3); }
-body > .gc-dialog .gc-chev { margin-left: auto; opacity: 0.55; }
+body > .gc-dialog .gc-chev { width: 36px; height: 24px; margin-left: auto; opacity: 1; background: var(--latch-open) center / 100% 100% no-repeat; filter: drop-shadow(0 2px 0 #000); }
+body > .gc-dialog .gc-sec.shut .gc-chev { transform: none; background-image: var(--latch-shut); }
+body > .gc-dialog .gc-chev > svg { display: none; }
 /* The rows read like the fascia's engraving: small capitals in the label grey. */
 body > .gc-dialog .gc-sec-b .gc-lab { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: #e9ecf2; }
 /* The rows are hardware on a plate: each section's rows sit on brushed black metal screwed to the panel, sunk a little. */
-body > .gc-dialog .gc-sec-b { gap: 0; margin: 2px 0 12px; padding: 6px 18px; border: 1px solid #000; border-radius: 6px; background: var(--plate);
+body > .gc-dialog .gc-sec-b { gap: 0; margin: 4px 0 8px; padding: 6px 18px; border: 1px solid #000; border-radius: 6px; background: var(--plate);
   box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0008, 0 2px 0 #0006; }
 /* Keyboard: the radio's printed legend strip on the same plate. The pads are four columns, each a letter key and an arrow key
    with its lane's colour under the caps; Hold, M and Esc follow, each legend printed under its cap. */
@@ -231,12 +237,21 @@ body > .gc-dialog .gc-sec-b label:last-child { border: 0; box-shadow: none; }
 /* A fader is a channel strip's: a painted plate set into the brushed panel (dark enamel worn to the metal in specks, a
    bevelled edge), the slot cut through it, the dished cap riding in the slot, and its own range printed under it (Side and
    Up 0.25x to 3x, Volume 0 to 100%) lined up with the cap's travel, the numbers a size up on desktop. */
-body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x); --sh: 17px; box-sizing: content-box; width: calc(100% - 20px); margin-right: 8px; padding: 5px 6px 20px; border-radius: 6px;
-  background: var(--s) 16px calc(100% - 2px) / calc(100% - 33px) var(--sh) no-repeat, var(--fader-plate) 0 0 / 160px 60px, linear-gradient(#1d212b, #13161d);
+/* The plate is the row's own grid item (its ::before) spanning the fader and its read-out, so the read-out's window is set in
+   the same plate rather than floating beside it. */
+body > .gc-dialog .gc-sec-b label:has(input[type=range]) { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.65fr) 5.6em; column-gap: 0; }
+@media (max-width: 599px) { body > .gc-dialog .gc-sec-b label:has(input[type=range]) > .gc-lab { gap: 6px; letter-spacing: 0.07em; } }
+body > .gc-dialog .gc-sec-b label:has(input[type=range])::before { content: ""; grid-area: 1 / 2 / 2 / 4; align-self: stretch; margin: 6px 0; border-radius: 6px;
+  background: var(--fader-plate) 0 0 / 160px 60px, linear-gradient(#1d212b, #13161d);
   box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0009, 0 0 0 1px #000, 0 1px 0 1px #ffffff0d, 0 3px 6px #0008; }
+body > .gc-dialog .gc-sec-b label:has(input[type=range]) > .gc-lab { grid-area: 1 / 1; padding-right: 8px; }
+body > .gc-dialog .gc-sec-b label:has(input[type=range]) > input { grid-area: 1 / 2; position: relative; }
+body > .gc-dialog .gc-sec-b label:has(input[type=range]) > output { grid-area: 1 / 3; justify-self: stretch; margin-right: 8px; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x); --sh: 17px; box-sizing: content-box; width: calc(100% - 18px); margin-right: 6px; padding: 11px 6px 26px; border-radius: 6px;
+  background: var(--s) 16px calc(100% - 8px) / calc(100% - 33px) var(--sh) no-repeat; }
 body > .gc-dialog .gc-card .gc-sec-b input[type=range][name=music] { --s: var(--scale-pct); }
 @media (min-width: 600px) {
-  body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x-lg); --sh: 19px; padding-bottom: 22px; }
+  body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x-lg); --sh: 19px; padding-bottom: 28px; }
   body > .gc-dialog .gc-card .gc-sec-b input[type=range][name=music] { --s: var(--scale-pct-lg); }
 }
 /* The read-out is a lit window set in the plate: a chrome bezel round smoked glass (--glass), the number glowing in the
@@ -273,7 +288,8 @@ body > .gc-dialog .gc-reset { border: 1px solid #000; background: linear-gradien
   body > .gc-dialog .gc-presets .gc-led { top: 4px; left: 5px; width: 5px; height: 5px; }
   body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] .gc-led { top: 6px; }
   body > .gc-dialog .gc-presets .gc-name { padding: 1px 7px; font-size: 10px; }
-  body > .gc-dialog .gc-sec-h { min-height: 32px; padding: 6px 2px 2px; }
+  body > .gc-dialog .gc-sec-h { min-height: 34px; padding: 3px 18px 3px 20px; }
+  body > .gc-dialog .gc-chev { width: 30px; height: 20px; }
   body > .gc-dialog .gc-sec[data-sec="keys"] .gc-sec-b { padding: 10px 14px 8px; }
   body > .gc-dialog .dr-keys { grid-template-columns: 1.6fr 1fr; gap: 10px; }
   body > .gc-dialog .dr-rest { grid-template-columns: repeat(3, auto); padding: 0 0 0 10px; border: 0; border-left: 1px solid #00000080; box-shadow: inset 1px 0 0 #ffffff0d; }
