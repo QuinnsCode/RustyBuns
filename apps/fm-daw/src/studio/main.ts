@@ -45,7 +45,7 @@ import { FarSound } from "./plugin-line.ts";
 import { brickWall, peerCeilingSetting } from "./limiter.ts";
 import { connect, savedCode, saveCode, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
-import { type Answer, BODY_HZ, DRUM_KEYS, blendShot, body, cameraPose, orbitPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
+import { type Answer, BODY_HZ, DRUM_KEYS, SIT_REACH, sitter, blendShot, body, cameraPose, orbitPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
 import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
@@ -62,6 +62,7 @@ import { withKeysVoice } from "./keys-voice.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { monoSteal, withMonoBass } from "./mono-bass.ts";
 import { Overlay, bendEvent, keyMap } from "./overlay.ts";
+import { TouchControls, touchScreen } from "./touch.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
 import { heard as heardAt, loadLevels, peerLevel, saveLevels, setPeer } from "./levels.ts";
 import { isMuted, leaders, may as mayDo, type GrantServer } from "../grants.ts";
@@ -1127,7 +1128,7 @@ function deckView(side: Side): DeckView | null {
 }
 /** A click or tap on the DJ table: a deck's key presses it (cue held while the button is), and anywhere on it opens the whole setup, both decks and the mixer. */
 let heldCue: Side | null = null;
-function touchDecks(e: MouseEvent): boolean {
+function touchDecks(e: { clientX: number; clientY: number }): boolean {
   const seat = spotOf(jam, jam.me.seat);
   if (seat?.kind !== "dj" && !boothGear.count) return false;
   const ndc = locked() ? new THREE.Vector2(0, 0) : new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
@@ -1226,6 +1227,66 @@ function sitOrStand() {
   if (!s) return void say({ ok: false, why: "Walk up to an instrument or a seat" });
   if (say(sit(jam, s.id)).ok) live(body(jam));
 }
+// ---- touch (touch.ts, #6425): the stick walks, a drag looks, a tap on an instrument walks you up to it and sits you ----
+/** Where a spot's instrument shows on the screen now, px, or null when it's behind you or off the screen. */
+function spotOnScreen(id: string): [number, number] | null {
+  const s = spotOf(jam, id);
+  if (!s) return null;
+  const v = new THREE.Vector3(s.at[0], 0.8, s.at[1]).project(camera);
+  if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null;
+  return [Math.round((v.x + 1) / 2 * innerWidth), Math.round((1 - v.y) / 2 * innerHeight)];
+}
+/** The free instrument or seat a tap at (x, y) lands on: the nearest drawn within a thumb's width, up to 12 m off. */
+function spotAt(x: number, y: number): string | null {
+  let best: string | null = null, bestD = 64;
+  for (const s of jam.def.spots) {
+    if (sitter(jam, s.id) !== null || Math.hypot(s.at[0] - jam.me.x, s.at[1] - jam.me.z) > 12) continue;
+    const p = spotOnScreen(s.id), d = p ? Math.hypot(p[0] - x, p[1] - y) : Infinity;
+    if (d < bestD) { best = s.id; bestD = d; }
+  }
+  return best;
+}
+/** The spot a tap sent you walking to, sat at once you're in reach; how far off it was last frame, and how long the
+ *  walk has been held up (something in the way: you try the seat from there). */
+let tapGoal: string | null = null, goalWas = Infinity, goalStuck = 0;
+function tapRoom(x: number, y: number) {
+  if (phase !== "play") return;
+  if (lane?.isOpen()) return lane.close();
+  if (desk.isOpen()) return desk.close();
+  if (touchDecks({ clientX: x, clientY: y })) return;
+  if (jam.me.seat) return; // seated, Stand gets you up
+  if (atWall.wants(jam)) return void say(atWall.click(jam));
+  if (lit.wants(jam)) return void say(lit.use(jam));
+  tapGoal = spotAt(x, y); goalWas = Infinity; goalStuck = 0;
+}
+/** One frame of walking to the tapped spot: the walk it takes (relative to where you look), or null when there's none. */
+function towardGoal(dt: number): { forward: number; right: number } | null {
+  const s = spotOf(jam, tapGoal);
+  if (!s || jam.me.seat) return (tapGoal = null);
+  const dx = s.at[0] - jam.me.x, dz = s.at[1] - jam.me.z, d = Math.hypot(dx, dz);
+  goalStuck = d > goalWas - 0.001 ? goalStuck + dt : 0;
+  goalWas = d;
+  if (d <= SIT_REACH * 0.9 || goalStuck > 0.4) {
+    tapGoal = null;
+    if (say(sit(jam, s.id)).ok) live(body(jam));
+    return null;
+  }
+  // turn toward it as you go, and walk straight at it
+  const want = Math.atan2(-dx, -dz);
+  jam.me.yaw += Math.atan2(Math.sin(want - jam.me.yaw), Math.cos(want - jam.me.yaw)) * Math.min(1, 5 * dt);
+  const fx = -Math.sin(jam.me.yaw), fz = -Math.cos(jam.me.yaw), ux = dx / d, uz = dz / d;
+  return { forward: ux * fx + uz * fz, right: -ux * fz + uz * fx };
+}
+const touch = touchScreen() ? new TouchControls(canvas, {
+  tap: tapRoom,
+  stand: () => { if (jam.me.seat) sitOrStand(); },
+  note(code, down) {
+    if (!down) return noteOff(`touch:${code}`);
+    const n = jam.me.seat && phase === "play" ? keyNote(jam, project, code, octave) : null;
+    if (n) noteOn(`touch:${code}`, n, 0.75);
+  },
+  octave: (dir) => { releaseAll(); octave = clamp(octave + dir, -3, 3); },
+}) : null;
 canvas.addEventListener("mousedown", (e) => {
   if (phase !== "play") return;
   if (lane?.isOpen()) return lane.close();
@@ -1642,7 +1703,18 @@ function frame(now: number) {
     if (gp.pressed.has("sit")) sitOrStand();
     if (gp.pressed.has("cam")) toggleCam(jam);
     const on = (c: string) => (keys.has(c) && !jam.me.seat ? 1 : 0);
-    step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
+    // touch: the stick walks (and lets go of a tapped spot), a drag on the room looks, except at the keys or the bass,
+    // where the view holds still for the touch keyboard and the wheels
+    const thumb = touch?.stick ?? { x: 0, y: 0 }, drag = touch?.takeLook() ?? { x: 0, y: 0 };
+    if (thumb.x || thumb.y) tapGoal = null;
+    const playing = touch && jam.me.seat && keyMap(jam, project, octave);
+    if (touch && !playing) {
+      const s = 0.005 * ctl.touch;
+      jam.me.yaw -= drag.x * s * ctl.lookX;
+      jam.me.pitch = clamp(jam.me.pitch - drag.y * s * ctl.lookY * (ctl.invertY ? -1 : 1), -1.2, 1.1);
+    }
+    const goal = tapGoal ? towardGoal(dt) : null;
+    step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y || -thumb.y || (goal?.forward ?? 0), right: on("KeyD") - on("KeyA") || gp.left.x || thumb.x || (goal?.right ?? 0), turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
   }
   const beat = musicOn() && band.synced ? band.beat() : null;
   dancers?.tick(t, beat);
@@ -1682,7 +1754,9 @@ function frame(now: number) {
   lit.frame(jam, camera.position, t, palmOf);
   dust.frame(dt);
   gearScene.sync(atWall.reach(jam), atWall.aim(jam));
-  overlay.frame(phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null, holding.keys(), dt, t);
+  const atMap = phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null;
+  overlay.frame(atMap, holding.keys(), dt, t);
+  touch?.frame({ play: phase === "play" && !panelOpen(), seated: !!jam.me.seat, caps: atMap?.caps ?? null, held: holding.keys() });
   hearGuitars();
   hearWall();
   // a YouTube deck as loud as the PA is where you stand, at your mutes and the leader's
@@ -1761,6 +1835,10 @@ const harness = {
   cam: () => { toggleCam(jam); return jam.me.cam; },
   /** Q at the keys or the bass: hold the view still, the mouse free for the wheels (left out: the other way round); then whether it is held. */
   hold: (on?: boolean) => { holdView(on); return viewHeld; },
+  /** The touch controls on a touch screen (null on one with a mouse): what shows, the stick, the keyboard's keys, and the spot a tap is walking you to. */
+  touch: () => (touch ? { ...touch.state(), goal: tapGoal } : null),
+  /** Where a spot's instrument shows on the screen now (px), or null when it doesn't: where to tap it. */
+  onScreen: (id: string) => spotOnScreen(id),
   /** The "What you can do here" card (?): open or closed (left out: as it is); then whether it's open, the key strip and the card's groups. */
   help: (open?: boolean) => { if (open !== undefined) (open ? help.open() : help.close()); return help.state(); },
   /** The lane (Tab, seated): open or closed (left out: as it is), on a tab; then its state. */
