@@ -53,6 +53,16 @@ export function tapeLabel(key: string, id: string): string | undefined {
   return key.split("-").join(" ").toUpperCase();
 }
 
+/** What the edge arrow calls the piece it points at, and how far it is: a speaker by its tape, the stand you carry a
+ *  speaker to as that speaker's ("stand for TOP R, 3 m"), anything else by its name. */
+export function towardName(w: World, c: Cables, key: string): string {
+  const i = w.items.find((x) => x.key === key), h = heldItem(w);
+  if (!i) return "";
+  const held = h && tapeLabel(h.key, h.gear), m = Math.max(1, Math.round(Math.hypot(i.x - w.you.x, i.z - w.you.z)));
+  const name = tapeLabel(i.key, i.gear) ?? (held && i.gear.startsWith("stand") ? `stand for ${held}` : callName(w, c, key));
+  return `${name}, ${m} m`;
+}
+
 // One thing at a time: first lift the speaker (named by the tape on it), then, in your hands, carry it to the stand.
 const grabTop = (s: At) => { const t = bareTop(s)!; return `Grab ${tapeLabel(t.key, t.gear) ?? "the speaker"}: F`; };
 
