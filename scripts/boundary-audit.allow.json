@@ -6,7 +6,5 @@
   "packages/cms/src/locale.ts": 3,
   "packages/ports/src/index.ts": 1,
   "packages/shell-bun/src/bindings/kv.ts": 1,
-  "packages/shell-bun/src/bindings/storage.ts": 1,
-  "packages/shell-bun/src/client.ts": 1,
-  "packages/shell-bun/src/webmcp.ts": 1
+  "packages/shell-bun/src/bindings/storage.ts": 1
 }
