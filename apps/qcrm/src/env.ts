@@ -4,7 +4,7 @@ import type { WorkerLoaderLike } from "@rustybuns/util/codemode";
 
 /** A table row, or an entity's fields before `validate` (crm.ts) checks them against ENTITIES: the one shapeless bag the app passes around. */
 export type Row = Record<string, unknown>;
-export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes?: number; last_row_id?: number } }
+export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes: number; last_row_id: number } }
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;
   first<T = Row>(column?: string): Promise<T | null>;
@@ -14,6 +14,7 @@ export interface D1Statement {
 export interface D1 {
   prepare(sql: string): D1Statement;
   batch<T = Row>(stmts: D1Statement[]): Promise<D1Result<T>[]>;
+  exec(sql: string): Promise<unknown>;
 }
 
 /** A webhook delivery: one message per try (src/webhooks.ts). */

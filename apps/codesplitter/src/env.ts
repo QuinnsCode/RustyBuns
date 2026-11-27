@@ -52,7 +52,7 @@ export interface R2Like {
 
 /** A row as D1 hands it over: name the columns you selected with `first<Row>()` / `all<Row>()`. */
 export type Row = Record<string, unknown>;
-export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes?: number; last_row_id?: number; rows_read?: number; rows_written?: number; duration?: number } }
+export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes: number; last_row_id: number; rows_read?: number; rows_written?: number; duration?: number } }
 export interface D1Statement {
   bind(...params: unknown[]): D1Statement;
   first<T = Row>(): Promise<T | null>;

@@ -228,12 +228,15 @@ body > .gc-dialog .dr-keys dd { margin: 0; font: 600 10px/1.2 ui-monospace, Menl
 body > .gc-dialog .dr-lane dd { color: var(--c); text-shadow: 0 0 6px color-mix(in srgb, var(--c) 45%, #0000); }
 body > .gc-dialog .gc-sec-b label { border-bottom: 1px solid #00000080; box-shadow: 0 1px 0 #ffffff0d; }
 body > .gc-dialog .gc-sec-b label:last-child { border: 0; box-shadow: none; }
-/* A fader: the slot with its own range printed under it (Side and Up 0.25x to 3x, Volume 0 to 100%), lined up with the cap's
-   travel, the numbers a size up on desktop. The read-out in a small window. */
-body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x); box-sizing: content-box; padding: 6px 0 19px; background: var(--s) 8px calc(100% - 1px) / calc(100% - 16px) 17px no-repeat; }
+/* A fader is a channel strip's: a painted plate set into the brushed panel (dark enamel worn to the metal in specks, a
+   bevelled edge), the slot cut through it, the dished cap riding in the slot, and its own range printed under it (Side and
+   Up 0.25x to 3x, Volume 0 to 100%) lined up with the cap's travel, the numbers a size up on desktop. */
+body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x); --sh: 17px; box-sizing: content-box; width: calc(100% - 20px); margin-right: 8px; padding: 5px 6px 20px; border-radius: 6px;
+  background: var(--s) 16px calc(100% - 2px) / calc(100% - 33px) var(--sh) no-repeat, var(--fader-plate) 0 0 / 160px 60px, linear-gradient(#1d212b, #13161d);
+  box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0009, 0 0 0 1px #000, 0 1px 0 1px #ffffff0d, 0 3px 6px #0008; }
 body > .gc-dialog .gc-card .gc-sec-b input[type=range][name=music] { --s: var(--scale-pct); }
 @media (min-width: 600px) {
-  body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x-lg); padding-bottom: 21px; background-size: calc(100% - 16px) 19px; }
+  body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x-lg); --sh: 19px; padding-bottom: 22px; }
   body > .gc-dialog .gc-card .gc-sec-b input[type=range][name=music] { --s: var(--scale-pct-lg); }
 }
 /* The read-out is a lit window set in the plate: a chrome bezel round smoked glass (--glass), the number glowing in the
@@ -263,11 +266,13 @@ body > .gc-dialog .gc-reset { border: 1px solid #000; background: linear-gradien
   body > .gc-dialog .gc-presets::after { top: 6px; height: 10px; left: calc(6px + (100% - 12px) * (var(--at) * 2 + 1) / 8 - 1.5px); }
   body > .gc-dialog .gc-sec-b output { padding: 5px 9px; font-size: 13px; }
   body > .gc-dialog .gc-sec-b output::before { right: 9px; top: 5px; }
-  body > .gc-dialog .gc-presets .gc-prof { flex-direction: row; align-items: center; gap: 0; }
-  body > .gc-dialog .gc-presets .gc-prof b { flex: 0 0 38px; height: 34px; font-size: 16px; }
-  body > .gc-dialog .gc-presets .gc-led { top: 4px; left: 4px; width: 5px; height: 5px; }
+  /* Each key keeps its cell's width with its tape under it, as on a phone held upright, just shorter: the tape no longer
+     crowds the key and the band pointer stands over the key's middle. */
+  body > .gc-dialog .gc-presets .gc-prof { gap: 4px; }
+  body > .gc-dialog .gc-presets .gc-prof b { height: 28px; font-size: 15px; }
+  body > .gc-dialog .gc-presets .gc-led { top: 4px; left: 5px; width: 5px; height: 5px; }
   body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] .gc-led { top: 6px; }
-  body > .gc-dialog .gc-presets .gc-name { flex: 1; align-self: center; text-align: left; }
+  body > .gc-dialog .gc-presets .gc-name { padding: 1px 7px; font-size: 10px; }
   body > .gc-dialog .gc-sec-h { min-height: 32px; padding: 6px 2px 2px; }
   body > .gc-dialog .gc-sec[data-sec="keys"] .gc-sec-b { padding: 10px 14px 8px; }
   body > .gc-dialog .dr-keys { grid-template-columns: 1.6fr 1fr; gap: 10px; }

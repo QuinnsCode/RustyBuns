@@ -1,7 +1,5 @@
 {
   "apps/codesplitter/src/env.ts": 1,
-  "apps/codesplitter/src/identity.ts": 1,
-  "apps/qcrm/src/auth.ts": 1,
   "apps/qcrm/src/env.ts": 1,
   "packages/cli/src/gen/wrangler.ts": 1,
   "packages/cli/src/glue/deploy-deps.ts": 1,

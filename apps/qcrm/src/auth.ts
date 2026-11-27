@@ -73,8 +73,7 @@ const eqosysProvider = (url: string) => {
 };
 
 const make = (env: Env, origin: string) => betterAuth({
-  // better-auth wants Cloudflare's D1Database class; Env.DB is the part of it this app calls.
-  database: env.DB as never,
+  database: env.DB,
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",
