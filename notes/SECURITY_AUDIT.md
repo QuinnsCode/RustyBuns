@@ -649,8 +649,10 @@ Spaces, the hub and the board:
 
 - A studio seats any email with no consent: #6232.
 - A native-scheme sign-in goes on with no Continue page: #6233.
-- A studio's game has full space powers with the player's token (owner's call): #6234.
-- A refresh racing sign-out or deletion: #6235.
+- A studio's game has full space powers with the player's token (owner's call): #6234. Since fixed: it opens only its own studio's
+  space (`studio-space.test.ts`); letting a player hand it more is a choice to build later.
+- A refresh racing sign-out or deletion: #6235. Since fixed: the next refresh token is written in the transaction that spends the
+  old one, and the tokens it comes with are signed as of the spend (`token-life.test.ts`).
 - No limit on `eq_execute` runs: #6236. Unbounded visit rows: #6237.
 - A deleted account's name in space audit logs and its rows in other hubs: #6238.
 - Sockets already open after company-only, a lapse or a pull: #6239.

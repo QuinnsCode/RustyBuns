@@ -82,6 +82,30 @@ test("a page's refresh token is bound to its key: copied out of the page it spen
   expect((await renew(next, key)).status).toBe(200);
   // copied out of the page: with no proof, or with the copier's own key, it spends nowhere
   const jkt = await thumbprint(await crypto.subtle.exportKey("jwk", key.publicKey) as { crv: string; kty: string; x: string; y: string });
-  const bound = () => mintRefresh(conf, got.user.id, "park-hide-seek", Date.now(), true, jkt);
+  const bound = async () => (await mintRefresh(conf, got.user.id, "park-hide-seek", Date.now(), true, jkt))!;
   expect([(await renew(await bound())).status, (await renew(await bound(), thief)).status]).toEqual([400, 400]);
+});
+
+test("a sign-out everywhere landing while a native app renews leaves it no refresh token", async () => {
+  const fi = await signUp("Fi"), first = await mintRefresh(conf, fi.id, "park-hide-seek");
+  const renew = (refresh_token: string) => call("/oauth/token", { form: { grant_type: "refresh_token", client_id: "park-hide-seek", refresh_token } });
+  // The sign-out lands just after the old token is spent, while eqosys reads who it was for.
+  const prepare = conf.DB.prepare.bind(conf.DB);
+  let racing = true;
+  conf.DB.prepare = (sql: string) => {
+    const st = prepare(sql);
+    if (!racing || !sql.startsWith("SELECT u.id, u.email")) return st;
+    racing = false;
+    const bind = st.bind.bind(st);
+    st.bind = (...args: unknown[]) => {
+      const bound = bind(...args), first = bound.first.bind(bound);
+      bound.first = (async () => { await signOutEverywhere(conf, fi.id); return first(); }) as typeof bound.first;
+      return bound;
+    };
+    return st;
+  };
+  try {
+    const next = await (await renew(first)).res.json() as { refresh_token: string };
+    expect((await renew(next.refresh_token)).res.status).toBe(400);
+  } finally { conf.DB.prepare = prepare; }
 });
