@@ -154,7 +154,7 @@ const character = characterDialog({
   },
   wear: (a) => { look = a; wear(); door(); },
 });
-const way = mountWay("jam", { character: () => void character.open() });
+const way = mountWay("jam", { character: () => void character.open(), right: 68 }); // clear of the settings cog
 
 let phase: "menu" | "play" = "menu";
 let ctl: Settings = DEFAULTS;
@@ -1198,10 +1198,20 @@ if (here) net = connect({
 
 // ---- input ----
 const locked = () => document.pointerLockElement === canvas;
-const lock = () => void Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
+/** Taking the mouse back to look about lets go of a held view (Q at the keys). */
+const lock = () => { viewHeld = false; void Promise.resolve(canvas.requestPointerLock?.()).catch(() => {}); };
+/** Q at the keys or the bass: the view holds still and the mouse is free, to drag the pitch and mod wheels. */
+let viewHeld = false;
+function holdView(on = !viewHeld) {
+  const k = spotOf(jam, jam.me.seat)?.kind;
+  if (!on || (k !== "keys" && k !== "bass")) return lock();
+  viewHeld = true;
+  document.exitPointerLock?.();
+  flash = { text: "View held: drag the wheels with the mouse. Q or a click on the room looks about again", until: performance.now() + 2600 };
+}
 const say = (a: Answer) => { if (!a.ok) flash = { text: a.why, until: performance.now() + 1800 }; return a; };
 function sitOrStand() {
-  if (jam.me.seat) { releaseAll(); stand(jam); live(body(jam)); return; }
+  if (jam.me.seat) { releaseAll(); stand(jam); live(body(jam)); if (viewHeld) lock(); return; }
   const s = nearSpot(jam);
   if (!s) return void say({ ok: false, why: "Walk up to an instrument or a seat" });
   if (say(sit(jam, s.id)).ok) live(body(jam));
@@ -1231,6 +1241,10 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyM") return void startAudio();
   if (code === "Slash" && shift) return help.toggle();
   if (phase !== "play") return;
+  // at an instrument the whole note row is notes (A to ', the kit's home row), ahead of the keys that do other things
+  // standing: P is a note there, and so is H once you may play (before that, H still raises your hand)
+  const note = jam.me.seat ? keyNote(jam, project, code, octave) : null;
+  if (note && (code !== "KeyH" || may(player).play)) return noteOn(`kb:${code}`, note, shift ? 1 : 0.75);
   if (code === "KeyV") return toggleCam(jam);
   if (code === "KeyN") return muteAll();
   if (code === "Escape" && !$("modules").hidden) return openModules(false);
@@ -1249,8 +1263,7 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyJ" && !jam.me.seat) return void openDecks();
   if (code === "KeyI") return void guitar();
   if (code === "KeyR") return record();
-  // P plays the groove, but at an instrument P is a note (A to ')
-  if (code === "KeyP" && !(jam.me.seat && keyNote(jam, project, code, octave))) return playGroove(!transport.playing);
+  if (code === "KeyP") return playGroove(!transport.playing);
   if (code === "KeyC") return void setListen();
   if (code === "KeyF" && !atWall.wants(jam) && lit.wants(jam)) return void say(lit.use(jam));
   if (!jam.me.seat && code === "KeyF") return void say(atWall.click(jam));
@@ -1259,14 +1272,13 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyE" && !jam.me.seat) return sitOrStand();
   if (code === "KeyQ" && !jam.me.seat) return setQuality(picture.quality === "high" ? "low" : "high");
   if (jam.me.seat) {
+    if (code === "KeyQ") return holdView();
     if (code === "KeyZ") { releaseAll(); octave = Math.max(-3, octave - 1); return; }
     if (code === "KeyX") { releaseAll(); octave = Math.min(3, octave + 1); return; }
     // the see-through keys and the wheels (overlay.ts)
     if (code === "Slash") return overlay.toggle();
     if (code === "ArrowUp" || code === "ArrowDown") return overlay.wheels.push(code === "ArrowUp" ? 1 : -1);
     if (code === "BracketLeft" || code === "BracketRight") return overlay.wheels.modPush(code === "BracketRight" ? 1 : -1);
-    const n = keyNote(jam, project, code, octave);
-    if (n) noteOn(`kb:${code}`, n, shift ? 1 : 0.75);
   }
 }
 document.addEventListener("keydown", (e) => {
@@ -1290,7 +1302,7 @@ function openModules(open: boolean) {
 }
 $("modules-close").addEventListener("click", () => openModules(false));
 /** Something over the room has the mouse: a panel, the decks, the help card, the module list. */
-const panelOpen = () => !!settings?.isOpen() || character.isOpen() || !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen();
+const panelOpen = () => viewHeld || !!settings?.isOpen() || character.isOpen() || !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen();
 /** Esc in the menu takes you back into the room; out of it, Esc steps back out of whatever is over the room, one at a time. */
 document.addEventListener("keydown", (e) => {
   if (e.code !== "Escape" || e.repeat) return;
@@ -1546,7 +1558,7 @@ function hint(): string {
     const n = keyNote(jam, project, "KeyA", octave);
     if (!may(player).play) return `At ${s.label}, listen only: ${rights.asked === "play" ? "your hand is up" : "H raises your hand to play"}. Space stands up`;
     if (s.kind === "drums") return `At ${s.label}: A S D F G H J K L are the drums. Tab opens the instrument's panel. Space stands up`;
-    if (n) return `At ${s.label}, playing ${project.tracks[n.track].name}: A to ' are notes, Z / X octave (${octave >= 0 ? "+" : ""}${octave}), arrows bend, / the keys. Tab opens the instrument's panel. Space stands up`;
+    if (n) return `At ${s.label}, playing ${project.tracks[n.track].name}: A to ' are notes, Z / X octave (${octave >= 0 ? "+" : ""}${octave}), arrows bend, Q holds the view for the wheels, / the keys. Tab opens the instrument's panel. Space stands up`;
     return `At ${s.label}. Space stands up, V camera, P the groove`;
   }
   const near = nearSpot(jam), gear = atWall.hint(jam);
@@ -1682,7 +1694,7 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
+  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, viewHeld, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
     gear: atWall.state(jam), lanterns: lit.state(jam), venue: venue.state, levels: harness.levels(),
@@ -1732,6 +1744,8 @@ const harness = {
     return out;
   },
   cam: () => { toggleCam(jam); return jam.me.cam; },
+  /** Q at the keys or the bass: hold the view still, the mouse free for the wheels (left out: the other way round); then whether it is held. */
+  hold: (on?: boolean) => { holdView(on); return viewHeld; },
   /** The "What you can do here" card (?): open or closed (left out: as it is); then whether it's open, the key strip and the card's groups. */
   help: (open?: boolean) => { if (open !== undefined) (open ? help.open() : help.close()); return help.state(); },
   /** The lane (Tab, seated): open or closed (left out: as it is), on a tab; then its state. */

@@ -10,7 +10,9 @@
     "binding": "ASSETS",
     "directory": "dist/client",
     "run_worker_first": [
-      "/"
+      "/",
+      "/desk",
+      "/paths"
     ]
   },
   "r2_buckets": [

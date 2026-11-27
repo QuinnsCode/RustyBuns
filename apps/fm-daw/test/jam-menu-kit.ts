@@ -4,7 +4,8 @@
 // a phone (Enter on top, Settings and Leave side by side). A room made with no event is the desert gathering; alone in
 // it with no live line you are its owner, so Settings > The gathering shows it, and an edit there goes on the sesh. You
 // picks a font for this browser only. (The password's door is world.test.ts's: the World holds it.)
-// (A guest's view, no gathering tab, rests on the World refusing their edits: door.test.ts.)
+// (A guest's view, no gathering tab, rests on the World refusing their edits: door.test.ts.) The way to the other rooms
+// is one pill that drops them down, and closes once you play.
 // One screen size a file (jam-menu-*.test.ts), so CI's lanes can run them side by side (#5922).
 import { expect, test } from "bun:test";
 import { load, openTab, until } from "../../../scripts/chrome.ts";
@@ -79,11 +80,18 @@ async function wayIn(tab: Awaited<ReturnType<typeof openTab>>, w: number, h: num
   // Character, Controls, Plug in and Sound live here now
   expect(await page<string[]>(`[...document.querySelectorAll("#set-mine b")].map((b) => b.textContent)`)).toEqual(["Character", "Controls", "Plug in", "Sound"]);
 
-  // Done: back to the entry panel, and in the room the row of places folds to the one you're in
+  // Done: back to the entry panel
   await page(`(document.getElementById("settings-done").click(), 1)`);
   expect(await page<boolean>(`document.getElementById("menu").hidden`)).toBe(false);
-  const places = () => page<number>(`[...document.getElementById("qs-way").children].filter((e) => e.getClientRects().length).length`);
-  expect(await places()).toBe(Object.keys(PLACES).length);
+
+  // the way to the other rooms is one pill naming this one; pressing it drops a door to each of the others (Paths
+  // first, #5880), and playing closes it again
+  const doors = () => page<string[]>(`[...document.querySelectorAll("#qs-way a")].filter((e) => e.getClientRects().length).map((a) => a.dataset.to)`);
+  expect(await doors()).toEqual([]);
+  await page(`(document.querySelector("#qs-way [aria-current]").click(), 1)`);
+  const open = await doors();
+  expect(open.length).toBe(Object.keys(PLACES).length - 1);
+  expect(open[0]).toBe("paths");
   await page(`window.qjam.start()`);
-  expect(await places()).toBe(1);
+  expect(await doors()).toEqual([]);
 }
