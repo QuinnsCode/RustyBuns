@@ -954,3 +954,30 @@ html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:not(:disable
   html .ui-house .gc-binds > .gc-key[name="bind-gun13"] { anchor-name: --gun13; } html .ui-house .gc-binds > .gc-key[name="bind-gun13"] + .gc-icon { position-anchor: --gun13; }
   html .ui-house .gc-binds > .gc-key[name="bind-gun14"] { anchor-name: --gun14; } html .ui-house .gc-binds > .gc-key[name="bind-gun14"] + .gc-icon { position-anchor: --gun14; }
 }
+
+/* Round 23 (#6389): a changed gun slot's reset is a real target. Round 22's stamp in the chip's corner was about 14px
+   and crowded the key. Now it is a tear-off stub hung under the chip: the chip's own width, 32px tall (44px on a
+   phone), pale carbon behind a perforated top edge, the turning-arrow stamp and a stencilled RESET. The chip leaves
+   room under itself for it, so its row grows and nothing is covered; the other chips in that row keep their height. */
+@supports (anchor-name: --a) {
+  html .ui-house .gc-binds { --stub: 32px; }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] { align-self: start; }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:not(:disabled)) { margin-bottom: calc(var(--stub) + 2px);
+    border-bottom-left-radius: 2px; border-bottom-right-radius: 2px; }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:not(:disabled),
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:hover:not(:disabled) {
+    top: calc(anchor(bottom) + 1px); bottom: auto; left: anchor(left); right: anchor(right); width: auto; height: var(--stub, 32px);
+    aspect-ratio: auto; margin: 0; justify-self: stretch; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 4px;
+    border: 1.5px solid #e8590c; border-top: 2px dashed #e8590c; border-radius: 0 0 7px 7px;
+    background: url(/menu/scuff.svg) 0 0 / 100% 100% no-repeat, #fff3ea; box-shadow: 0 2px 0 #b8440655; transform: rotate(-1.2deg);
+    color: #e8590c; font: 800 11px/1 var(--br-stencil); letter-spacing: 0.14em; text-transform: uppercase; }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:not(:disabled)::before { position: static; flex: none; width: 15px; height: 15px; inset: auto;
+    transform: rotate(-10deg); }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:not(:disabled)::after { content: "Reset"; }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:hover:not(:disabled) { color: #c94a07; background-color: #ffe6d3; }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:hover:not(:disabled)::before { transform: rotate(-10deg) scale(1.1); }
+  @media (max-width: 520px) {
+    html .ui-house .gc-binds { --stub: 44px; }
+    html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:not(:disabled) { flex-direction: column; justify-content: center; gap: 4px; padding: 2px; font-size: 10px; line-height: 1; letter-spacing: 0.1em; background-color: #ffeadb; }
+  }
+}
