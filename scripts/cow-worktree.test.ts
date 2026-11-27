@@ -27,6 +27,8 @@ test.skipIf(process.platform !== "darwin")("dedupe shares an idle clean worktree
   expect(plan.map((t) => [path.basename(t.path), t.files, t.skipped]).sort()).toEqual([["busy", 0, "in use"], ["dirty", 0, "uncommitted changes"], ["idle", 1, undefined]]);
   expect(statSync(path.join(idle, "asset.bin")).mtime).toEqual(before); // a dry run changes nothing
 
+  expect(dedupe(repo, false, inUse, [path.join(top, "elsewhere")])).toEqual([]); // --under leaves the rest out
+
   dedupe(repo, true, inUse);
   expect(statSync(path.join(idle, "asset.bin")).mtime).toEqual(old); // now the donor's clone
   expect(git(idle, "status", "--porcelain")).toBe("");

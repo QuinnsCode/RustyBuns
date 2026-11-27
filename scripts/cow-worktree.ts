@@ -4,6 +4,7 @@
 //   bun scripts/cow-worktree.ts dedupe               dry run: what each worktree would give back; changes nothing
 //   bun scripts/cow-worktree.ts dedupe --go          swap those files for clones of the donor's
 //   bun scripts/cow-worktree.ts add <path> <commit>  a new detached worktree, filled with clones
+//   bun scripts/cow-worktree.ts dedupe --under <dir>  only the worktrees inside <dir> (give it again for more)
 //   --from <dir>                                     the donor checkout (default: the repo's main one)
 //
 // `dedupe` skips a worktree that is dirty, locked, on another volume or has a file open or a process in it. It replaces a
@@ -53,7 +54,7 @@ function openPaths() {
 export type Tree = { path: string; files: number; bytes: number; skipped?: string };
 
 /** What swapping each worktree's copies for clones of `donor`'s gives back; with `go`, does it. */
-export function dedupe(donor: string, go = false, inUse: () => string[] = openPaths): Tree[] {
+export function dedupe(donor: string, go = false, inUse: () => string[] = openPaths, under: string[] = []): Tree[] {
   if (process.platform !== "darwin") throw new Error("dedupe measures with APFS, so it runs on macOS only");
   donor = realpathSync(donor);
   const privateSize = privateSizer();
@@ -68,7 +69,8 @@ export function dedupe(donor: string, go = false, inUse: () => string[] = openPa
     if (Date.now() - at > 30_000) { seen = inUse(); at = Date.now(); }
     return seen;
   };
-  return trees.filter((t) => t.path !== donor).map(({ path: tree, locked }): Tree => {
+  const chosen = (tree: string) => !under.length || under.some((u) => tree.startsWith(`${path.resolve(u)}/`));
+  return trees.filter((t) => t.path !== donor && chosen(t.path)).map(({ path: tree, locked }): Tree => {
     const skip = (skipped: string) => ({ path: tree, files: 0, bytes: 0, skipped });
     if (locked || !existsSync(tree)) return skip("locked or missing");
     if (statSync(tree).dev !== statSync(donor).dev) return skip("another volume");
@@ -129,13 +131,19 @@ if (import.meta.main) {
   const at = args.indexOf("--from");
   const from = at >= 0 ? args.splice(at, 2)[1] : undefined;
   const donor = from ?? git(process.cwd(), "worktree", "list", "--porcelain").split("\n")[0]!.slice("worktree ".length);
+  const under: string[] = [];
+  for (let i = args.indexOf("--under"); i >= 0; i = args.indexOf("--under")) {
+    const dir = args.splice(i, 2)[1];
+    if (!dir) throw new Error("--under needs a folder"); // never fall back to every worktree
+    under.push(dir);
+  }
   const [command, to, commit] = args;
   if (command === "add" && to && commit) console.log(`${path.resolve(to)}: ${add(donor, to, commit)} files cloned from ${donor}`);
   else if (command === "dedupe") {
     const go = args.includes("--go");
     const free = () => { const d = statfsSync(donor); return `${((d.bavail * d.bsize) / 1024 ** 3).toFixed(1)} GB free`; };
     console.log(`donor ${donor} · ${free()}`);
-    const trees = dedupe(donor, go);
+    const trees = dedupe(donor, go, openPaths, under);
     for (const t of trees.filter((x) => x.files)) console.log(`  ${(t.bytes / 1024 ** 2).toFixed(0).padStart(6)} MB  ${t.files} files  ${t.path}`);
     for (const why of new Set(trees.flatMap((t) => t.skipped ?? []))) {
       const these = trees.filter((t) => t.skipped === why);
