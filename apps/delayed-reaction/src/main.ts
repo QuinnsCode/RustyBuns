@@ -259,15 +259,30 @@ mountControls({
   onChange: (s) => { ctl = s; if (music) music.volume = volumeOf(s, "music"); },
   onToggle: (open) => {
     paused = open;
+    // The sheet's dial stands where the radio's does: the level you are on, or last pointed at.
+    if (open) sheet.style.setProperty("--needle", fascia.style.getPropertyValue("--needle") || "0.5");
     for (const l of [...down]) padUp(l);
     if (!music) return;
     music.hold(open);
   },
 });
 // The sheet wears the radio's tape: the title on a torn strip, each section's name on its own strip with a lane's colour code.
+const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
 {
-  const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
   sheet.style.setProperty("--fibre", fibre);
+  // The sheet's own station display under its title, the fascia's pieces over the speaker grille: the tuning dial, and a VU
+  // meter that swings on the beat as loud as the Volume fader says (resting when the music is off).
+  const monitor = Object.assign(document.createElement("div"), { className: "dr-monitor" });
+  monitor.innerHTML = `<div class="display tuner">${tuningScale()}</div><figure class="live">${vuMeter("MUSIC")}</figure>`;
+  monitor.style.setProperty("--grille", grille);
+  sheet.querySelector(".gc-head")?.after(monitor);
+  // On a touch screen there is no keyboard to learn, so the Keyboard section starts folded and the faders come first,
+  // until the player folds or opens sections themselves (the panel remembers that).
+  if (matchMedia("(pointer: coarse)").matches && localStorage.getItem("delayed-reaction.controls.fold") === null) {
+    const keys = sheet.querySelector<HTMLElement>('.gc-sec[data-sec="keys"]');
+    keys?.classList.add("shut");
+    keys?.querySelector(".gc-sec-h")?.setAttribute("aria-expanded", "false");
+  }
   // The rows' hardware: the faders' printed scale, the bat-handle toggle, and the brushed plate each section's rows sit on.
   sheet.style.setProperty("--scale-x", swayScale());
   sheet.style.setProperty("--scale-x-lg", swayScale(11));
@@ -340,9 +355,10 @@ function frame(now: number) {
   }
   if (now > judgeUntil) hud.judge.textContent = "";
   // The menu's live meter, on the idle beat the tunnel rolls to: a kick on every beat, the one hardest, a little flutter.
-  if (!menu.hidden) {
-    const b = now / 500, kick = Math.exp(-(b % 1) * 5) * (b % 4 < 1 ? 1 : 0.72);
-    fascia.style.setProperty("--live", vuTurn(0.22 + kick * 0.5 + Math.sin(now / 37) * 0.02));
+  if (!menu.hidden || paused) {
+    const b = now / 500, kick = Math.exp(-(b % 1) * 5) * (b % 4 < 1 ? 1 : 0.72), level = 0.22 + kick * 0.5 + Math.sin(now / 37) * 0.02;
+    if (!menu.hidden) fascia.style.setProperty("--live", vuTurn(level));
+    if (paused) sheet.style.setProperty("--live", vuTurn(level * volumeOf(ctl, "music")));
   }
   // scene.speed (1 = normal) is how fast the tunnel rushes and how far the runner leans in.
   // Between runs the tunnel still rolls, at an idle 120 bpm, so the menu has something turning behind it.

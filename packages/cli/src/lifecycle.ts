@@ -10,6 +10,8 @@
 // pid, and lockState treats the lock as held while that child runs.
 import type { Subprocess, SpawnOptions } from "bun";
 import { Cause, Effect, Exit, Fiber, Schema, Scope } from "effect";
+// Root scripts/ can't resolve `effect` (it is installed under packages/cli only): they take it from here (scripts/remote-ci-run.ts).
+export { Cause, Data, Effect, Exit, Schedule, Scope } from "effect";
 
 const SIGNALS = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 } as const;
 type Signal = keyof typeof SIGNALS;

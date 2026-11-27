@@ -17,6 +17,8 @@ import { ourApp, APPS, HOME } from "./apps.ts";
 import type { Env } from "./env.ts";
 
 const DAY = 86_400_000, KEEP_DAYS = 30;
+/** New rows one address may add a day: `who` hashes the user-agent too, which a client sets as it likes. Past this its new callers aren't counted. */
+export const ROWS_PER_ADDRESS = 50;
 /** How long an isolate gathers visits before writing them: a row per caller a second, not a write per request. */
 export const VISITS_MS = 1000;
 
@@ -26,6 +28,8 @@ async function whoOf(conf: Env, req: Request, day: number): Promise<string | nul
   if (!ip) return null;
   return (await sha256(`${day}:${ip}:${req.headers.get("user-agent") ?? ""}:${conf.BETTER_AUTH_SECRET ?? ""}`)).slice(0, 12);
 }
+/** The address alone, salted the same way: what ROWS_PER_ADDRESS counts by. */
+const addrOf = async (conf: Env, ip: string, day: number) => (await sha256(`${day}:${ip}:${conf.BETTER_AUTH_SECRET ?? ""}`)).slice(0, 12);
 
 /** Which site a request is for: the app whose page sent it, else eqosys. */
 const originSite = (req: Request) => {
@@ -33,16 +37,19 @@ const originSite = (req: Request) => {
   return (origin && APPS.find((a) => a.origins.includes(origin))?.id) || HOME;
 };
 
-type Row = { day: number; site: string; who: string; kind: Kind; via: string; hits: number; engaged: number; errors: number; first_at: number; last_at: number; ua: string | null; ref: string | null };
+type Row = { day: number; site: string; who: string; kind: Kind; via: string; hits: number; engaged: number; errors: number; first_at: number; last_at: number; ua: string | null; ref: string | null; addr: string };
 type Batch = { rows: Map<string, Row>; done?: Promise<void> };
 const batches = new WeakMap<object, Batch>();
 let swept = 0;
 
 async function write(conf: Env, b: Batch, now: number) {
-  const out = [...b.rows.values()].map((r) => conf.DB.prepare(`INSERT INTO visits (day, site, who, kind, via, hits, engaged, errors, first_at, last_at, ua, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  const out = [...b.rows.values()].map((r) => conf.DB.prepare(`INSERT INTO visits (day, site, who, kind, via, hits, engaged, errors, first_at, last_at, ua, ref, addr)
+    SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
+    WHERE EXISTS (SELECT 1 FROM visits WHERE day = ?1 AND site = ?2 AND who = ?3 AND kind = ?4 AND via = ?5)
+      OR (SELECT COUNT(*) FROM visits WHERE day = ?1 AND addr = ?13) < ?14
     ON CONFLICT (day, site, who, kind, via) DO UPDATE SET hits = hits + excluded.hits, engaged = engaged + excluded.engaged, errors = errors + excluded.errors,
       last_at = MAX(last_at, excluded.last_at), ua = excluded.ua, ref = COALESCE(ref, excluded.ref)`)
-    .bind(r.day, r.site, r.who, r.kind, r.via, r.hits, r.engaged, r.errors, r.first_at, r.last_at, r.ua, r.ref));
+    .bind(r.day, r.site, r.who, r.kind, r.via, r.hits, r.engaged, r.errors, r.first_at, r.last_at, r.ua, r.ref, r.addr, ROWS_PER_ADDRESS));
   // Once an hour an isolate sweeps the days past keeping.
   if (now - swept > 3_600_000) {
     swept = now;
@@ -56,15 +63,16 @@ async function write(conf: Env, b: Batch, now: number) {
  * visit, else straight away. Only requests from the internet count (Cloudflare stamps them with cf-connecting-ip).
  */
 export async function count(conf: Env, req: Request, v: { site: string; hits: number; engaged: number; errors: number; ref?: string | null }, later?: (p: Promise<unknown>) => void) {
-  const now = Date.now(), day = dayOf(now), who = await whoOf(conf, req, day);
-  if (!who) return;
+  const now = Date.now(), day = dayOf(now), who = await whoOf(conf, req, day), ip = req.headers.get("cf-connecting-ip");
+  if (!who || !ip) return;
+  const addr = await addrOf(conf, ip, day);
   const { kind, via } = kindOf(req.headers);
   const ua = (req.headers.get("user-agent") ?? "").slice(0, 160) || null;
   let b = batches.get(conf.DB);
   if (!b) batches.set(conf.DB, b = { rows: new Map() });
   const key = `${day} ${v.site} ${who} ${kind} ${via}`, r = b.rows.get(key);
   if (r) r.hits += v.hits, r.engaged += v.engaged, r.errors += v.errors, r.last_at = now, r.ua = ua, r.ref ??= v.ref ?? null;
-  else b.rows.set(key, { day, site: v.site, who, kind, via, hits: v.hits, engaged: v.engaged, errors: v.errors, first_at: now, last_at: now, ua, ref: v.ref ?? null });
+  else b.rows.set(key, { day, site: v.site, who, kind, via, hits: v.hits, engaged: v.engaged, errors: v.errors, first_at: now, last_at: now, ua, ref: v.ref ?? null, addr });
   if (!later) {
     batches.delete(conf.DB);
     return write(conf, b, now);
@@ -102,6 +110,7 @@ function refOf(ref: string | undefined, origin: string): string | null {
 export async function beacon(conf: Env, req: Request): Promise<Response> {
   const nothing = new Response(null, { status: 204 });
   if (req.method !== "POST") return new Response(null, { status: 405 });
+  if (conf.VISIT_LIMIT && !(await conf.VISIT_LIMIT.limit({ key: req.headers.get("cf-connecting-ip") ?? "local" })).success) return new Response(null, { status: 429 });
   const text = await req.text().catch(() => "");
   let parsed: unknown = null;
   try { parsed = JSON.parse(text.slice(0, 2000)); } catch { /* not JSON: refused below */ }

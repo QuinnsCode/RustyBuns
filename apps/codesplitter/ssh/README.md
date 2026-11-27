@@ -4,7 +4,9 @@
 Object and a container running `sshd`. The container keeps no repos: each connection is bridged to the repo's
 smart-HTTP remote (Artifacts) with the user's token, so a push over ssh lands where an HTTP push does (#5505). A key gets in as the codeSplitter user who
 added it (#5504). It works
-locally under `wrangler dev`, from a cold container, in about 30 s (#5500). Background:
+locally under `wrangler dev`, from a cold container, in about 30 s (#5500). It is codeSplitter's own Worker (#6195):
+`connect()` on its default export (`worker.connect` in rustybuns.config.ts), and the `SshGate` container bound only with
+`CODESPLITTER_SSH=1`, like the other containers. Background:
 [notes/INBOUND_TCP_GRPC.md](../../../notes/INBOUND_TCP_GRPC.md).
 
 ```sh
@@ -14,21 +16,20 @@ bun ssh/try.ts --keep   # leave it up and try git by hand
 ```
 
 ```
-git -> tcp 127.0.0.1:8788 -> worker.ts connect() -> SshGate DO connect() -> container :2222 sshd -> git-serve.sh
+git -> tcp 127.0.0.1:8788 -> src/worker.ts connect() -> SshGate DO connect() -> container :2222 sshd -> git-serve.sh
     -> lookup (remote + token) -> scratch bare repo <-> the repo's smart-HTTP remote
 
 sshd's AuthorizedKeysCommand: authorized-keys.sh %u %f -> http://192.0.2.1/key?fingerprint= -> (caught by the DO)
-    -> worker.ts KeyLookup -> codeSplitter GET /api/ssh/key -> {user, key} -> command="/git-serve.sh <user>" ...
+    -> src/ssh-gate.ts KeyLookup -> GET /api/ssh/key, in the same Worker -> {user, key} -> command="/git-serve.sh <user>" ...
 ```
 
 | File | What it is |
 |---|---|
-| `worker.ts` | The Worker's `connect()` handler, the `SshGate` DO, which starts the container and joins the sockets, and `KeyLookup`, which answers sshd's key lookups from codeSplitter |
+| `../src/ssh-gate.ts` | codeSplitter's `connect()` handler (`sshConnect`), the `SshGate` DO, which starts the container and joins the sockets, and `KeyLookup`, which answers sshd's key lookups from the Worker's own `GET /api/ssh/key` (or `SSH_KEYS_URL`'s, as `try.ts` sets it) |
 | `Dockerfile`, `entry.sh` | Alpine with `openssh-server`, `git` and `curl`. One `git` user, key login only, no authorized_keys file |
 | `authorized-keys.sh` | sshd's `AuthorizedKeysCommand`: asks whose the offered key is (fingerprint in) and prints one line, forced through `git-serve.sh <user>` |
 | `git-serve.sh` | Allows only `git-upload-pack` and `git-receive-pack` on `owner/repo`, and bridges it to the repo's HTTP remote (below) |
-| `wrangler.jsonc` | The spike's own config, because codeSplitter's generated one can't carry `connect` yet |
-| `try.ts` | The proof, against a stand-in codeSplitter on the Mac (the lookup, and `git http-backend` behind Bearer tokens): push, it landed in the HTTP remote, a second push, ls-remote, clone, the remote's refusal reaching the client, a repo the lookup refuses, a key nobody added, a bad path, and the key once it's removed. The key is added and removed through codeSplitter's real API (booted in-process), and the stand-in hands every path but its own to it |
+| `try.ts` | Runs codeSplitter's Worker under `wrangler dev` from the config rustybuns generates with `CODESPLITTER_SSH=1` alone (written beside wrangler.jsonc, deleted after), then the proof, against a stand-in codeSplitter on the Mac (the lookup, and `git http-backend` behind Bearer tokens): push, it landed in the HTTP remote, a second push, ls-remote, clone, the remote's refusal reaching the client, a repo the lookup refuses, a key nobody added, a bad path, and the key once it's removed. The key is added and removed through codeSplitter's real API (booted in-process), and the stand-in hands every path but its own to it |
 
 ## Keys (#5504)
 
@@ -45,7 +46,7 @@ hands it to `KeyLookup`. That works under `wrangler dev` with the internet on, a
 
 ## The bridge (#5505)
 
-`git-serve.sh <user>` asks `LOOKUP_URL` (with `GATE_SECRET` as a Bearer token) for `user`, `repo` and `mode` (`read` for a
+`git-serve.sh <user>` asks `LOOKUP_URL` (the site's own `/api/ssh/remote`, or the Worker's `SSH_LOOKUP_URL` when set), with `GATE_SECRET` (the Worker's `SSH_GATE_SECRET`) as a Bearer token, for `user`, `repo` and `mode` (`read` for a
 fetch, `write` for a push). The reply is two lines, the repo's smart-HTTP remote and a token for that user; an error
 status's body is the reason, which the client sees. Then it makes a scratch bare repo for this connection, fetches every
 ref of the remote into it, and runs `git-upload-pack` or `git-receive-pack` on it. The scratch repo goes when git is done.

@@ -500,6 +500,9 @@ mountControls({
   hide: ["lookX", "lookY", "touch", "invertY"],
   keys: [["Arrows", "Aim and power"], ["L", "Loft"], ["Space", "Throw"], ["Left stick", "Aim and power"]],
 });
+// Controls gets the course's art too: the title's disc-in-orbit etched beside its heading, and a faint frond by Reset.
+document.querySelector(".gc-head h2")?.insertAdjacentHTML("afterbegin", `<i class="gc-mark" aria-hidden="true">${orbitMark("gc-orbit")}</i>`);
+document.documentElement.style.setProperty("--flora-faint", cssUrl(fronds(seed + 2, 260, 180, 0.85)));
 
 // ?speed=4 runs the game clock four times as fast (flights and swims), for a test or an agent playing a round.
 const speed = clamp(Number(params.get("speed")) || 1, 0.25, 20);
