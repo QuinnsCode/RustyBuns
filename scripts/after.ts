@@ -48,6 +48,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Data, Effect, Schedule } from "../packages/cli/src/lifecycle.ts";
 import { arr, bool, check, int, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { LINE, blockers } from "./after-line.ts";
 import { help } from "./help.ts";
 import { type Allowance, type Finding, allowance, lint } from "./lint.ts";
 import { AFTER_BOT, RUN_FIELDS, Runs, headRuns } from "./pr.ts";
@@ -171,14 +172,6 @@ const gitStep = (git: Git) => (...a: string[]): Effect.Effect<string, Failed | M
 
 /** The labels a Claude Code watch or the cloud PR Steward puts on a PR it holds. */
 export const WATCHED = /^claude-(?:pr-steward|ship)-/;
-
-const LINE = /^merge after (#\d+(?:(?:,\s*|\s+and\s+|\s+)#\d+)*)/im;
-
-/** The PRs a body says to merge after, from its `Merge after #N` line (none without one). */
-export function blockers(body: string): number[] {
-  const m = body.match(LINE);
-  return m ? [...m[1]!.matchAll(/#(\d+)/g)].map((x) => Number(x[1])) : [];
-}
 
 /** The body with its `Merge after` line's words swapped for `to` (the PR numbers stay). */
 export const marked = (body: string, to: string) => body.replace(LINE, (all) => all.replace(/^merge after/i, to));
