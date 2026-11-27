@@ -61,7 +61,7 @@ async function card(path: string) {
   return tags;
 }
 
-const click = (tab: Tab, label: string) => tab.eval(`[...document.querySelectorAll("button")].find((b) => b.textContent === ${JSON.stringify(label)}).click()`);
+const click = (tab: Tab, label: string) => tab.eval(`document.querySelector('button[aria-label="${label}"]').click()`);
 
 test("an agent's world gets a picture, its link previews it, and Export GIF hands over a moving one", async () => {
   const room = "picturesroom01";
