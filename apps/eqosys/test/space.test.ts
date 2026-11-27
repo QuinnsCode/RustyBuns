@@ -13,7 +13,7 @@ import { space, type SpaceMessage } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, verify } from "@rustybuns/util/token";
 import { hmacHex, unb64url } from "@rustybuns/util/bytes";
 import { handle } from "../src/handle.ts";
-import { FILE_MAX, Space } from "../src/qollab/space.ts";
+import { FILE_MAX, makeSpace, Space, SPACES_OWNED } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -243,6 +243,13 @@ test("guessing invites: past the tries a minute an account, then its address, is
   expect(await join(eve.token, guess(0), "203.0.113.7")).toBe(404); // one already tried isn't a new guess
   expect(await join(eve2.token, guess(21), "203.0.113.7")).toBe(429); // nor does a new account from the same address
   expect(await join(cy.token, made.invite, "198.51.100.4")).toBe(200);
+});
+
+test("two tabs making spaces at once: the owned-space cap still holds", async () => {
+  const ada = await signUp("Ada9", "park-hide-seek", PARK);
+  const made = await Promise.all(Array.from({ length: SPACES_OWNED + 3 }, (_, i) => makeSpace(conf, ada.id, `Room ${i}`, null)));
+  expect(made.filter((r) => r.ok).length).toBe(SPACES_OWNED);
+  expect(made.filter((r) => !r.ok).map((r) => !r.ok && r.status)).toEqual([409, 409, 409]);
 });
 
 /** Qlave's POST of who is in a room, signed the way Qlave signs it (`sig` overrides the signature). */

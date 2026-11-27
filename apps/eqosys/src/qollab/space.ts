@@ -155,14 +155,21 @@ export async function makeSpace(conf: Pick<Env, "DB">, owner: string, name: stri
     const role = await roleIn(conf, studio, owner);
     if (role !== "owner" && role !== "admin") return { ok: false, status: 403, error: "only a studio's owner or admin makes its space" };
     if (await conf.DB.prepare("SELECT 1 AS y FROM spaces WHERE studio_id = ?").bind(studio).first("y")) return { ok: false, status: 409, error: "that studio has its space already" };
-  } else if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM spaces WHERE owner = ? AND studio_id IS NULL").bind(owner).first<number>("n")) ?? 0) >= SPACES_OWNED)
-    return { ok: false, status: 409, error: `you own ${SPACES_OWNED} spaces already` };
-  const id = crypto.randomUUID();
+  }
+  const id = crypto.randomUUID(), full = { ok: false, status: 409, error: `you own ${SPACES_OWNED} spaces already` } as const;
   for (let i = 0; i < 5; i++) {
     const invite = mintInvite();
-    const made = await conf.DB.prepare("INSERT INTO spaces (id, name, owner, invite, at, studio_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id")
-      .bind(id, name, owner, invite, now, studio).first<string>("id");
-    if (!made) continue;
+    // The cap is counted in the insert itself, so two tabs making a space at once can't both slip in under it (#6290).
+    const made = await conf.DB.prepare(`INSERT INTO spaces (id, name, owner, invite, at, studio_id) SELECT ?1, ?2, ?3, ?4, ?5, ?6
+      WHERE ?6 IS NOT NULL OR (SELECT COUNT(*) FROM spaces WHERE owner = ?3 AND studio_id IS NULL) < ?7 ON CONFLICT DO NOTHING RETURNING id`)
+      .bind(id, name, owner, invite, now, studio, SPACES_OWNED).first<string>("id");
+    if (!made) {
+      // Not made: the cap was full, the studio's space was made by another tab just now, or the invite was taken (try another).
+      if (studio ? await conf.DB.prepare("SELECT 1 AS y FROM spaces WHERE studio_id = ?").bind(studio).first("y")
+        : ((await conf.DB.prepare("SELECT COUNT(*) AS n FROM spaces WHERE owner = ? AND studio_id IS NULL").bind(owner).first<number>("n")) ?? 0) >= SPACES_OWNED)
+        return studio ? { ok: false, status: 409, error: "that studio has its space already" } : full;
+      continue;
+    }
     if (studio) return { ok: true, id };
     await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?)").bind(id, owner, now).run();
     return { ok: true, id, invite };
