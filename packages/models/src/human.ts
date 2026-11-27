@@ -405,6 +405,9 @@ function buildMesh(d: Dims, b: Build, o: Outfit, face: Face): THREE.BufferGeomet
   const beltLo = hem - 0.022 * k, beltHi = hem + 0.022 * k;
   const stripeLo = t.ribs.y - 0.005 * k, stripeHi = stripeLo + 0.04 * k;
   const torsoCtl: Ctl[] = (Object.keys(t) as (keyof Dims["torso"])[]).map((key) => ({ ...t[key], p: key === "crotch" || key === "hip" ? 2.5 : key === "trap" || key.startsWith("neck") ? 2 : 2.3 }));
+  // The neck goes on up inside the head, narrowing toward the back of it, so it meets the skull under the jaw and at the
+  // nape instead of ending in a flat top behind the jaw.
+  if (!fur) torsoCtl.push({ y: t.neckTop.y + 0.045 * k, w: t.neckTop.w * 0.85, f: t.neckTop.f * 0.35, b: t.neckTop.b * 0.9, p: 2 });
   m.tube(torsoCtl, {
     seg: 20, step: 0.022 * k, capBottom: 0.05 * k,
     cuts: fur ? [] : [hem, collar, collarTop, ...(tucked ? [beltLo, beltHi] : []), ...(o.stripe ? [stripeLo, stripeHi] : [])],
@@ -582,7 +585,7 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     let dz = 0;
     // eye sockets: an almond, wider than tall, a little deeper toward the nose, shallow enough that the lids lie on the skin
     dz -= 0.0058 * er * gauss(ax - ex + 0.002, 0.0165 * er) * gauss(y + 0.0005, 0.0072 * er);
-    dz += 0.0035 * brow * gauss(y - 0.019, 0.007) * smooth(0.058, 0.03, ax);                  // the brow ridge
+    dz += 0.0045 * brow * gauss(y - 0.019, 0.0075) * smooth(0.058, 0.03, ax);                  // the brow ridge
     dz += 0.0014 * brow * gauss(ax - ex - 0.012, 0.012) * gauss(y - 0.016, 0.006);              // its outer end, over the eye's corner
     dz += 0.0022 * gauss(ax - ex - 0.014, 0.013) * gauss(y + 0.027, 0.0065);                    // the cheekbone, under the eye's outer half
     dz += 0.0026 * gauss(ax - ex, 0.014) * gauss(y + 0.014, 0.006);                            // the soft fullness under the lower lid
@@ -607,12 +610,23 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
       + 0.4 * smooth(-0.095, -0.115, y);
     return [flush, shade];
   };
+  // The bones under the sides of the face: the cheekbone under the eye's outer corner and its arch back toward the ear,
+  // the hollow under it (less in a fuller face), the temple dipping in above it, and the angle of the jaw under the ear.
+  // Each is how far (head scale 1) it pushes the side of the head out, at (x, y, z) with z forward from the head's centre.
+  const lean = 1 - smooth(0, 0.8, full);
+  const bones = (x: number, y: number, z: number) => smooth(0.03, 0.055, Math.abs(x)) * (
+    0.0042 * (1 + 0.4 * fc.cheeks) * gauss(y + 0.022, 0.009) * gauss(z - 0.045, 0.02)
+    - 0.0038 * lean * gauss(y + 0.054, 0.012) * gauss(z - 0.05, 0.016)
+    - 0.0016 * gauss(y - 0.032, 0.012) * gauss(z - 0.045, 0.014)
+    + 0.006 * (1 + 0.6 * fc.jaw + 0.3 * d.mu) * gauss(y + 0.079, 0.009) * gauss(z - 0.008, 0.016));
+  const bone = (p: THREE.Vector3) => { p.x += Math.sign(p.x) * bones(p.x / hs, (p.y - eyeY) / hs, (p.z - z0) / hs) * hs; };
   const skull = ctl();
   m.tube(skull, {
     tone: fur ? undefined : faceTone,
     seg: 52, step: 0.0044 * hs, capTop: CROWN * hs, capBottom: 0.02 * hs, front: 0.62,
     bump: (p) => {
       face(p);
+      bone(p);
       if (!fur || (p.z > z0 + 0.05 * hs && p.y < Y(0.03))) return;
       const n = 1 + 0.2 * hash(p.x * 31.7, p.y * 17.3, p.z * 23.9);
       p.x *= n; p.z = z0 + (p.z - z0) * n;
@@ -622,9 +636,18 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
   });
   /** How far forward the skin of the face is at (x, y), head scale 1 (y from the eye line). */
   const surf = (yy: number, xx: number) => {
-    const ring = sample(skull, Y(yy)), t = clamp01(Math.abs(X(xx) - ring.x) / ring.w);   // on the ring's superellipse, as the tube lays it
-    const v = new THREE.Vector3(X(xx), Y(yy), (ring.f + ring.b) / 2 + ((ring.f - ring.b) / 2) * (1 - t ** ring.p) ** (1 / ring.p));
-    face(v);
+    const ring = sample(skull, Y(yy)), v = new THREE.Vector3();
+    // the bones move points sideways, so start from the point that lands at x
+    let from = X(xx);
+    for (let i = 0; i < 3; i++) {
+      const t = clamp01(Math.abs(from - ring.x) / ring.w);   // on the ring's superellipse, as the tube lays it
+      v.set(from, Y(yy), (ring.f + ring.b) / 2 + ((ring.f - ring.b) / 2) * (1 - t ** ring.p) ** (1 / ring.p));
+      face(v);
+      const z = v.z;
+      bone(v);
+      from -= v.x - X(xx);
+      v.z = z;
+    }
     return v.z;
   };
   if (!fur) nose(m, X, Y, z0, hs, tip, nw, surf);
