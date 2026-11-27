@@ -19,7 +19,10 @@ import { PluginPump, bounceInserts, bouncePlugins, effectChoices, pluginChoices,
 /** A plugin track this page's own plugin is playing (started, not failed). */
 const playing = (s: PluginShown | undefined) => !!s && !s.starting && s.error === null;
 import { InsertPanel, PluginPanel, TrackSound } from "./PluginPanel.tsx";
-import { AddMenu, MidiLand } from "./AddMenu.tsx";
+import { AddMenu, MidiLand, Icon, ICONS } from "./AddMenu.tsx";
+import { deskTools, type Desk, type DeskView } from "./desk-tools.ts";
+import { addCommands } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
 import { SongStrip } from "./SongStrip.tsx";
 import { useImports } from "./import.ts";
 import { withValue, type TrackPlugin } from "../plugin-track.ts";
@@ -149,7 +152,7 @@ export function App() {
   const midiOut = useRef<MidiOut | null>(null);
   const [outPorts, setOutPorts] = useState<{ ports: string[]; picked: string | null }>({ ports: [], picked: null });
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
-  const [view, setView] = useState<"pattern" | "shape" | "amp" | "desk" | "engines">("pattern");
+  const [view, setView] = useState<DeskView>("pattern");
   /** Which Shape the tab shows: "master", or a channel on the desk by id (`track-1`, `player-<who>`, `aux-1`). */
   const [shapeOn, setShapeOn] = useState("master");
   /** What the drum grid and the roll show (view.ts): any stretch of the loop, as the user zoomed and scrolled it. */
@@ -215,8 +218,8 @@ export function App() {
   const allowed = { play: may1("play"), edit: may1("edit"), mix: may1("mix"), lead: may1("lead") };
   // a grant of some tracks plays the selected track when it is one of them
   const locked = !may1("play", selected);
-  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor, allowed });
-  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor, allowed };
+  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, view, transportOn, countIn, repeat, bend, locked, floor, allowed });
+  live.current = { selected, octave, recording, gridIdx, strength, inputQ, view, transportOn, countIn, repeat, bend, locked, floor, allowed };
 
   const send = (m: ToWorklet, transfer?: Transferable[]) => audioRef.current?.send(m, transfer);
 
@@ -493,7 +496,9 @@ export function App() {
       view: (from: number, span: number) => changeView(() => ({ from, span })),
       plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
       insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
-      mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
+      mute: (track: number, mute: boolean) => deskNow.current.mute(track, mute),
+      // the editor toolbar's actions (desk-tools.ts), the same functions its buttons, the palette and WebMCP call
+      desk: () => deskNow.current,
       // song mode's chain (patterns 0 to 7, A to H), as the Song strip sets it; null leaves song mode
       // QDAW's lesson (beat-lesson.ts): "beat" starts it, null leaves it; then the lesson as it stands
       chain: (chain: number[] | null) => commit({ t: "song", chain }),
@@ -934,6 +939,45 @@ export function App() {
   const step = gridFor(shownView.span, editorPx, t.kind === "drum" ? 0.25 : grid.beats, L);
   const win: View = snapView(shownView, step, L);
   viewRef.current = win;
+
+  // The editor toolbar's actions, one function each (desk-tools.ts): its buttons, the Cmd/Ctrl+K palette, WebMCP and
+  // window.fmdaw all call these. They read the refs, so a call between renders sees what is there now.
+  const desk: Desk = {
+    state: () => {
+      const p = proj.current, l = live.current, tr = p.tracks[l.selected];
+      return {
+        view: l.view, grid: GRIDS[l.gridIdx].label, strength: l.strength, inputQuantize: l.inputQ, selected: l.selected,
+        playing: l.transportOn, recording: l.recording, mayEdit: l.allowed.edit,
+        tracks: p.tracks.map((x) => ({ name: x.name, notes: x.notes.length, mute: x.mute, solo: !!x.solo })),
+        notes: (tr?.notes ?? []).map((n) => ({ s: n.s, l: n.l, m: n.m, v: n.v })),
+      };
+    },
+    view: setView,
+    grid: setGridIdx,
+    strength: setStrength,
+    inputQuantize: setInputQ,
+    quantize: () => {
+      const l = live.current, tr = proj.current.tracks[l.selected];
+      if (tr) commit({ t: "notes", track: l.selected, notes: quantize(tr.notes, GRIDS[l.gridIdx].beats, l.strength, loopBeats(proj.current)) });
+    },
+    clear: () => commit({ t: "notes", track: live.current.selected, notes: [] }),
+    undo: () => history("undo"),
+    redo: () => history("redo"),
+    select: setSelected,
+    play: () => { if (audioRef.current && !live.current.transportOn) play(); },
+    stop: () => { if (live.current.transportOn) stop(); },
+    record: () => { if (audioRef.current) toggleRecord(); },
+    mute: (track, mute) => commit({ t: "track", track, mute }),
+    solo: (track, solo) => commit({ t: "track", track, solo }),
+  };
+  const deskNow = useRef(desk);
+  deskNow.current = desk;
+  useEffect(() => {
+    mountPalette({ placeholder: "Quantize, undo, play, a view…", foot: "Every command here is a WebMCP tool an agent in the browser can call too." });
+    return addCommands(deskTools(() => deskNow.current));
+  }, []);
+  const pct = Math.round(strength * 100);
+
   const windowed = (tr: TrackDoc) => windowNotes(tr.notes, win);
   const color = TRACK_COLORS[selected];
   // a track's Insert: an FM track's, or a web plugin track's (#5551), the effect's pick and then its sliders
@@ -1053,31 +1097,42 @@ export function App() {
 
         <main className="center">
           <div className="toolbar">
-            <div className="seg tabs">
-              <button className={view === "pattern" ? "on" : ""} onClick={() => setView("pattern")}>Pattern</button>
-              <button className={view === "shape" ? "on" : ""} onClick={() => setView("shape")} title="Shape: an EQ on the master or on any one track (cuts, shelves, bells, notch)">Shape</button>
-              <button className={view === "amp" ? "on" : ""} onClick={() => setView("amp")} title="Amp: play this track's take, or your guitar live, through a Q Amp head">Amp</button>
-              <button className={view === "desk" ? "on" : ""} onClick={() => setView("desk")} title="Mixer: the sesh's desk, a strip per track (level, pan, Shape, Space send, mute, solo) and the Space return, for everyone in the sesh">Mixer</button>
-              <button className={view === "engines" ? "on" : ""} onClick={() => setView("engines")}>Engine race</button>
+            <div className="seg tabs" role="group" aria-label="View">
+              {([
+                ["pattern", "Pattern", "Pattern: the notes or the drum grid of the selected track"],
+                ["shape", "Shape", "Shape: an EQ on the master or on any one track (cuts, shelves, bells, notch)"],
+                ["amp", "Amp", "Amp: play this track's take, or your guitar live, through a Q Amp head"],
+                ["desk", "Mixer", "Mixer: the sesh's desk, a strip per track (level, pan, Shape, Space send, mute, solo) and the Space return, for everyone in the sesh"],
+                ["engines", "Engines", "Engine race: the TypeScript and Rust engines side by side"],
+              ] as const).map(([v, word, tip]) => (
+                <button key={v} className={view === v ? "on" : ""} aria-pressed={view === v} onClick={() => desk.view(v)} title={tip}>{word}</button>
+              ))}
             </div>
-            <label className="field inline"><span className="silk">Grid</span>
-              <select value={gridIdx} onChange={(e) => setGridIdx(Number(e.currentTarget.value))}>
+            <div className="tool-group" role="group" aria-label="Quantize">
+              <button className="ghost" onClick={desk.quantize} title={`Quantize ${t.name}: pull its notes to ${grid.label} at ${pct}%`}>Quantize</button>
+              <select value={gridIdx} onChange={(e) => desk.grid(Number(e.currentTarget.value))} aria-label="Quantize grid" title="Grid: what Quantize and input quantize snap to">
                 {GRIDS.map((g, i) => <option key={g.label} value={i}>{g.label}</option>)}
               </select>
-            </label>
-            <label className="field inline"><span className="silk">Strength {Math.round(strength * 100)}%</span>
-              <input type="range" min={0} max={100} value={Math.round(strength * 100)} onChange={(e) => setStrength(Number(e.currentTarget.value) / 100)} />
-            </label>
-            <button className="ghost" onClick={() => commit({ t: "notes", track: selected, notes: quantize(t.notes, grid.beats, strength, L) })}>Quantize {t.name}</button>
-            <button className="ghost" onClick={() => commit({ t: "notes", track: selected, notes: [] })}>Clear {t.name}</button>
+              <label className="strength" title={`Strength ${pct}%: how far Quantize pulls each note (100 snaps, 50 keeps half the feel)`}>
+                <input type="range" min={0} max={100} value={pct} onChange={(e) => desk.strength(Number(e.currentTarget.value) / 100)} aria-label="Quantize strength" />
+                <span className="silk">{pct}%</span>
+              </label>
+              <button className={inputQ ? "icon-btn on" : "icon-btn"} aria-pressed={inputQ} onClick={() => desk.inputQuantize(!inputQ)} aria-label="Quantize input"
+                title={inputQ ? `Quantize input is on: recorded MIDI snaps to the Grid (${grid.label})` : "Quantize input is off: recorded MIDI lands where you played it"}><Icon>{ICONS.snap}</Icon></button>
+            </div>
             <AddMenu track={t.name} ready={!!audio} counting={counting} input={armed !== null ? project.tracks[armed].name : null}
               rec={recording ? (armed !== null ? { kind: "audio", track: project.tracks[armed].name } : { kind: "midi", track: t.name }) : null}
-              onRecordAudio={() => { void recordAudio(); }} onRecordMidi={recordMidi} snap={inputQ} onSnap={setInputQ} grid={grid.label} onStop={stopRec} onInputOff={closeInput}
+              onRecordAudio={() => { void recordAudio(); }} onRecordMidi={recordMidi} onStop={stopRec} onInputOff={closeInput}
               onFile={(kind, f) => { void imports.importFile(kind, f, selected, win.from); }} />
-            {clipsOf(t).length > 0 && <button className="ghost" onClick={() => commit({ t: "take", track: selected, take: null })} title="Take the recorded audio off this track">Clear take</button>}
+            <div className="tool-group" role="group" aria-label="Clear">
+              <button className="ghost" onClick={desk.clear} title={`Clear ${t.name}: every note off it (undo puts them back)`}>Clear</button>
+              {clipsOf(t).length > 0 && <button className="ghost" onClick={() => commit({ t: "take", track: selected, take: null })} title={`Take the recorded audio off ${t.name}`}>Clear take</button>}
+            </div>
             <span className="spacer" />
-            <button className="ghost" onClick={() => history("undo")} title="Undo (⌘Z)">Undo</button>
-            <button className="ghost" onClick={() => history("redo")} title="Redo (⇧⌘Z)">Redo</button>
+            <div className="tool-group" role="group" aria-label="History">
+              <button className="icon-btn" onClick={desk.undo} title="Undo (⌘Z)" aria-label="Undo"><Icon>{ICONS.undo}</Icon></button>
+              <button className="icon-btn" onClick={desk.redo} title="Redo (⇧⌘Z)" aria-label="Redo"><Icon>{ICONS.redo}</Icon></button>
+            </div>
           </div>
 
           {imports.ask && <MidiLand song={imports.ask.song} file={imports.ask.file} project={project} track={imports.ask.track} at={imports.ask.at}

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { parseFeed, podcastRoute, seconds, type Feed } from "../podcast/feed.ts";
 import { after, start } from "../podcast/queue.ts";
+import { arr, obj, raw } from "@rustybuns/util/guard";
 
 const rss = (n: number) => `<rss><channel><title>Half &amp; Half</title>${Array.from({ length: n }, (_, i) => `
   <item><title><![CDATA[Episode ${n - i}]]></title><guid isPermaLink="false">g${n - i}</guid><pubDate>Mon, 01 Jun 2026 10:00:00 GMT</pubDate>
@@ -40,7 +41,7 @@ test("the route serves only feeds in your list, and says so when one can't be re
   expect((await at("/__rb/podcast/episodes?feed=nope"))?.status).toBe(404);
   expect(fetched).toBe(0);
   const eps = await at("/__rb/podcast/episodes?feed=hah");
-  expect((eps?.body as { episodes: unknown[] }).episodes).toHaveLength(2);
+  expect(obj({ episodes: arr(raw, 100) })(eps?.body).episodes).toHaveLength(2);
   await at("/__rb/podcast/episodes?feed=hah");
   expect(fetched).toBe(1); // cached
   expect(await at("/__rb/other")).toBeNull();

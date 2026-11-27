@@ -15,7 +15,7 @@ async function signUp(name: string, app: string, origin: string) {
   return (await (await call("/api/exchange", { json: { app, code: codeIn(up.to), verifier: a.verifier } })).res.json() as { token: string }).token;
 }
 const save = (method: "PUT" | "GET", slot: string, token: string, body?: Uint8Array<ArrayBuffer>, q = "") =>
-  handle(new Request(`${ORIGIN}/q/save/${slot}${q}`, { method, headers: { authorization: `Bearer ${token}`, origin: PARK }, body }), conf).then((r) => r!);
+  handle(new Request(`${ORIGIN}/q/save/${slot}${q}`, { method, headers: { authorization: `Bearer ${token}`, origin: PARK }, ...(body && { body }) }), conf).then((r) => r!);
 const bytes = (n: number, fill: number): Uint8Array<ArrayBuffer> => new Uint8Array(n).fill(fill);
 
 test("save, overwrite, previous version, drop the oldest, and the caps", async () => {

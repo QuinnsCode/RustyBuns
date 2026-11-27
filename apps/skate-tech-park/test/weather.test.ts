@@ -2,7 +2,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 
 setDefaultTimeout(60000); // seventy levels take a while on CI
-import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { MOODS, moodFor } from "../src/render/weather.ts";
