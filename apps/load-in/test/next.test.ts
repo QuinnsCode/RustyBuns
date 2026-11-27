@@ -53,11 +53,11 @@ test("at a venue with doors, L strike waits for the doors to open", () => {
 
 test("in the dive bar the first job is the speakers in front of you, then the cable case", () => {
   const w = newWorld(DIVE_BAR), c = newCables(w), on = new Set<string>(), next = () => nextStep(w, c, on);
-  expect(next()).toEqual({ text: "Put a speaker on a stand: F to lift it", key: "top-r", to: "stand-r" });
+  expect(next()).toEqual({ text: "Grab TOP R: F", key: "top-r", to: "stand-r" });
   walkWith(w, c, -0.4, 11.2);
   w.you.yaw = 0;
   expect(pickUp(w, "top-r")).toEqual({ ok: true });
-  expect(next()).toEqual({ text: "Set it on the stand: F", key: "stand-r", to: "stand-r" });
+  expect(next()).toEqual({ text: "Carry it to the stand: F sets it on", key: "stand-r", to: "stand-r" });
   // Both tops up on their stands (the dive bar's settle puts a top on the pole it is set over).
   for (const [top, stand] of [["top-r", "stand-r"], ["top-l", "stand-l"]] as const) {
     w.held = null;
