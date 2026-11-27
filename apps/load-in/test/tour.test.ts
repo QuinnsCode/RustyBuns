@@ -51,8 +51,8 @@ test("every rung's rig is at least the one below it, count by count", () => {
 
 test("rent what you lack, a miss books you back, pay buys a distro and the van, and the rent drops", () => {
   let t = { ...newTour(), booked: "bigger-bar", cash: 300 };
-  // Two subs, two passive tops and a rack: 239 kg, too much for the hatchback, so a van is rented too.
-  expect(ready(t, BIGGER_BAR)).toMatchObject({ kg: 239, fits: false, rentTruck: "van", rent: 269, fee: 300 });
+  // Two subs, two passive tops, a rack and the spider box: 242 kg, too much for the hatchback, so a van is rented too.
+  expect(ready(t, BIGGER_BAR)).toMatchObject({ kg: 242, fits: false, rentTruck: "van", rent: 269, fee: 300 });
   // The cooler's circuit tripped at doors: paid short, booked back, and some of your friends stay home.
   const heads = crowd(t, BIGGER_BAR).heads;
   expect(heads).toBe(100 + FIRST_FOLLOWING);

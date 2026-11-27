@@ -80,6 +80,8 @@ import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
 import { paBoxes, PaRoom, paSpeakers, rigStacks, roomLevel, roomRig } from "./pa-room.ts";
+import { crossoverCommands, crossoverState, setCrossover, type CrossoverDeps } from "./crossover-commands.ts";
+import { rigCrossover } from "@rustybuns/gear/crossover";
 import { playWalkSet } from "./walk-set.ts";
 import { NightAir } from "./night-air.ts";
 import { turnWheels } from "@rustybuns/models/monosynth";
@@ -1031,6 +1033,13 @@ const player: Player = {
   beat: () => (band.synced ? band.beat() : null),
 };
 addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
+// the open-air rig's crossover, as its amps' DSP has it (#6473): heard through the room's PA once the speakers are up
+const xo: CrossoverDeps = {
+  preset: () => (def.outdoor ? rigCrossover(roomRig(def).id) : []),
+  bands: () => paRoom?.bands() ?? null,
+  set: (bands) => paRoom?.setBands(bands) ?? false,
+};
+addCommands(crossoverCommands(xo));
 // Tab, seated: the track's lane over the room (lane.tsx), its edits over the sesh as the player's
 lane = mountLane({
   project: () => project, edit: player.edit, may: () => may(player),
@@ -1816,6 +1825,9 @@ const harness = {
   },
   /** Someone's YouTube deck as this page plays it (src/dj/room-tube.ts): each deck's video, whether it's moving, where, and why it can't play. */
   tubes: () => ({ decks: roomTubes.state(), note: roomTubes.note() }),
+  /** The open-air rig's crossover (#6473): each band, the sum's deepest hole and the drivers' warnings; with an argument
+   *  (band, and any of hp, lp, gainDb, delayMs, polarity), move one band first. Null before the speakers are up (M). */
+  crossover: (set?: unknown) => (set === undefined ? crossoverState(xo) : setCrossover(xo, set)),
   /** The PA: on, a test tone (a 220 Hz hum) played to the whole room, as a DJ's set goes; off, stopped. With no argument, its state. */
   pa: async (on?: boolean) => {
     if (on === true && !myPa) {
