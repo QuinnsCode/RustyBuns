@@ -5,11 +5,39 @@
 import { gear } from "./catalog.ts";
 import { circuitLoad, generatorLoad, type Circuit, type Feed } from "./power.ts";
 import { source, type Grid, type Source } from "./sound.ts";
-import { boxChannels, type System } from "./systems.ts";
+import { boxChannels, stackWidth, type System } from "./systems.ts";
 
-/** One stack on the ground: where it stands (x, z), its front turned `yaw` from +z, its tops `splay` further, and a
- *  ground-stacked line array's pins (radians down from level, bottom box up). */
-export type StackPlace = { at: readonly [number, number]; yaw: number; splay?: number; pins?: readonly number[] };
+/** What a stack's tops sit on: the subs (one column), a pole out of the top sub, or their own stand beside the subs. */
+export const TOPS_ON = ["subs", "pole", "stands"] as const;
+export type TopsOn = (typeof TOPS_ON)[number];
+
+/** One stack on the ground: where it stands (x, z), its front turned `yaw` from +z, its tops `splay` further, a
+ *  ground-stacked line array's pins (radians down from level, bottom box up), what its tops sit on (the subs when left
+ *  out) and, on stands, which side of the subs the stand goes (`out`: 1 to the stack's own +x, -1 the other way). */
+export type StackPlace = { at: readonly [number, number]; yaw: number; splay?: number; pins?: readonly number[]; tops?: TopsOn; out?: -1 | 1 };
+
+/** How much pole shows between the top sub and the tops' bottom, metres. */
+export const POLE_M = 0.6;
+/** A tops stand's height: where the lowest top's bottom sits, metres. */
+export const STAND_M = 1.4;
+/** The air between the subs and the stand's boxes beside them, metres. */
+export const STAND_GAP = 0.25;
+
+/**
+ * Where a stack's tops stand against its subs: `from`, the first box that is a top (the boxes from there up are the
+ * tops); `base`, the height the lowest top's bottom sits at; `side`, how far the tops stand along the stack's own x
+ * from its middle (0 over the subs); `subs`, the height of the boxes under the tops (where a pole comes out).
+ */
+export function topsMount(sys: Pick<System, "stack">, st: Pick<StackPlace, "tops" | "out">): { from: number; base: number; side: number; subs: number } {
+  const ids = sys.stack, at = ids.findIndex((id) => isLine(id) || (!!gear(id).speaker && isTop(id))), from = at < 0 ? ids.length : at;
+  const subs = ids.slice(0, from).reduce((t, id) => t + gear(id).size.h, 0);
+  if (st.tops === "pole" && from < ids.length) return { from, base: subs + POLE_M, side: 0, subs };
+  if (st.tops === "stands" && from > 0 && from < ids.length) {
+    const w = (part: readonly string[]) => stackWidth({ stack: part });
+    return { from, base: STAND_M, side: (st.out ?? 1) * (w(ids.slice(0, from)) / 2 + w(ids.slice(from)) / 2 + STAND_GAP), subs };
+  }
+  return { from, base: subs, side: 0, subs };
+}
 
 /** A ground-stacked line array's pins as a crew first sets them, bottom box up: the lowest aimed at the front of the floor. */
 export const LINE_PINS: readonly number[] = [0.14, 0.07, 0.02];
@@ -25,17 +53,20 @@ const isLine = (id: string) => id.startsWith("line-array");
  * the boxes under it) and aimed as the stack is: its yaw, the tops' splay, a line array box tipped down by its pin.
  */
 export function stackSources(sys: Pick<System, "stack">, st: StackPlace): Source[] {
-  const out: Source[] = [];
+  const out: Source[] = [], m = topsMount(sys, st);
   let y = 0, k = 0;
-  for (const id of sys.stack) {
+  for (const [i, id] of sys.stack.entries()) {
     const h = gear(id).size.h;
+    if (i === m.from) y = m.base;
+    // a top on a stand stands `side` along the stack's own x, which faces `yaw` (three.js turns +x to (cos, -sin))
+    const x = st.at[0] + (i >= m.from ? m.side * Math.cos(st.yaw) : 0), z = st.at[1] - (i >= m.from ? m.side * Math.sin(st.yaw) : 0);
     if (isLine(id)) {
       const pins = st.pins ?? LINE_PINS, aim = pins[Math.min(k++, pins.length - 1)] ?? 0;
-      out.push(source(id, { x: st.at[0], y: y + (h / 2) * Math.cos(aim), z: st.at[1] }, { yaw: st.yaw, pitch: -aim }));
+      out.push(source(id, { x, y: y + (h / 2) * Math.cos(aim), z }, { yaw: st.yaw, pitch: -aim }));
       y += h * Math.cos(aim);
       continue;
     }
-    if (gear(id).speaker && isTop(id)) out.push(source(id, { x: st.at[0], y: y + h / 2, z: st.at[1] }, { yaw: st.yaw + (st.splay ?? 0) }));
+    if (gear(id).speaker && isTop(id)) out.push(source(id, { x, y: y + h / 2, z }, { yaw: st.yaw + (st.splay ?? 0) }));
     y += h;
   }
   return out;

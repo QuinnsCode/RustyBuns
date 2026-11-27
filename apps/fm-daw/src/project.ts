@@ -10,7 +10,7 @@ import { ClipGuard, MAX_CLIPS, MAX_TAKES, MIN_CLIP_FRAMES, TAKE_RATE, TakeBytesG
 import { ROOM_M } from "./studio.ts";
 import { Instrument, MAX_MADE } from "./studio/made.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
-import { SYSTEM_IDS, type SystemId } from "@rustybuns/gear";
+import { SYSTEM_IDS, TOPS_ON, type SystemId, type TopsOn } from "@rustybuns/gear";
 import { Studio } from "./studio/builder.ts";
 import type { StudioDef } from "./studio/room.ts";
 import { RUNG, type Rung } from "./rewind.ts";
@@ -107,9 +107,9 @@ export type Op =
   | { t: "song"; chain: number[] | null }
   | { t: "replace"; project: Project };
 
-/** What a rig's tops sit on: the subs, a pole over the subs, or their own stands. */
-export const TOPS = ["subs", "pole", "stands"] as const;
-export type Tops = (typeof TOPS)[number];
+/** What a rig's tops sit on: the subs, a pole over the subs, or their own stands (@rustybuns/gear topsMount draws and sounds them). */
+export const TOPS = TOPS_ON;
+export type Tops = TopsOn;
 
 /** The room's level at its lowest, dB: silence. */
 export const MASTER_MIN = -60;

@@ -100,6 +100,6 @@ export function systemSound(s: System): { coverage: SpeakerSpec["coverage"]; low
 }
 
 /** One stack's footprint, metres across: its widest box. */
-export function stackWidth(s: System): number {
+export function stackWidth(s: Pick<System, "stack">): number {
   return Math.max(...s.stack.map((id) => gear(id).size.w));
 }

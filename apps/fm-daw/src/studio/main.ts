@@ -24,7 +24,7 @@ import { FIRST_STUDIO } from "./door.ts";
 import { doorWords, follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
 import { sideways } from "./picker.ts";
 import { mountSettings } from "./settings.ts";
-import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
+import { apply, loopBeats, roomGain, TOPS, type Live, type Op, type Project, type Tops } from "../project.ts";
 import { demoProject } from "../presets.ts";
 import { AudioOut, CALL_SENDS, START_DB, dbToGain } from "../ui/audio.ts";
 import { startMidi } from "../ui/input.ts";
@@ -123,7 +123,11 @@ const picked = (pick === "yours" ? fromBuilt(location.search) ?? seshBuilt() ?? 
 const rigAsked = new URLSearchParams(location.search).get("rig");
 // ?keys= tries another family at the keys seat (wood-poly, fm-slab, drawbar, tine-ep, combo, strings); the spot's id picks one otherwise
 const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.search).get("keys"));
-const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
+// ?tops= stands the rig's tops on the subs, a pole or their own stands (the sesh's pick, Settings > The gathering)
+const topsAsked = TOPS.find((t) => t === new URLSearchParams(location.search).get("tops"));
+const def: StudioDef = picked.outdoor && (rigAsked || topsAsked)
+  ? { ...picked, outdoor: { ...picked.outdoor, ...(rigAsked ? { rig: system(rigAsked).id } : {}), ...(topsAsked ? { tops: topsAsked } : {}) } }
+  : picked;
 const jam = newJam(def);
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
 // Back from eqosys? Read before anything else waits: in the small sign-in window this hands the code to the room that
@@ -196,7 +200,7 @@ function buildRoom() {
   // a room with decks but no PA of its own gets a stack either side of the DJ table (pa-room.ts); open air draws its own
   // indoors, the stacks the builder placed (the room's own pa) in its rig, else a club's sub-and-top either side of the
   // decks (out of doors the rig is open-air.ts's)
-  if (!def.outdoor && def.pa?.stacks.length) for (const st of rigStacks(def)) scene.add(paStack(st.at, st.yaw, undefined, roomRig(def).stack, st.splay, st.pins));
+  if (!def.outdoor && def.pa?.stacks.length) for (const st of rigStacks(def)) scene.add(paStack(st, undefined, roomRig(def).stack));
   else if (!def.outdoor) for (const sp of paSpeakers(def)) scene.add(clubStack(sp.at, sp.yaw));
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
@@ -995,15 +999,21 @@ const owner = () => iLead() || (!rights.grants && status.state !== "online");
 /** Settings (settings.ts), once it's mounted below; the sesh changing redraws it. */
 let settings: ReturnType<typeof mountSettings> | null = null;
 function roomStudios() { settings?.render(); }
-/** The sesh's rig isn't the one standing here: reload onto it, as a studio move does (the stacks and the PA are built once). */
+/** The sesh's rig isn't the one standing here, or its tops sit elsewhere: reload onto it, as a studio move does (the
+ *  stacks and the PA are built once). */
 function rigOver(p: Project) {
-  if (!def.outdoor || !here || !p.rig || p.rig === roomRig(def).id || movingTo) return;
+  if (!def.outdoor || !here || movingTo) return;
+  const rig = p.rig && p.rig !== roomRig(def).id ? p.rig : null, tops = p.tops && p.tops !== (def.outdoor.tops ?? "subs") ? p.tops : null;
+  if (!rig && !tops) return;
   const to = new URL(location.href);
-  to.searchParams.set("rig", p.rig);
+  if (rig) to.searchParams.set("rig", rig);
+  if (tops) to.searchParams.set("tops", tops);
   movingTo = to.toString();
-  flash = { text: `Bringing out the ${SYSTEMS[p.rig].name.toLowerCase()}`, until: performance.now() + 2000 };
+  flash = { text: rig ? `Bringing out the ${SYSTEMS[rig].name.toLowerCase()}` : TOPS_MOVE[tops ?? "subs"], until: performance.now() + 2000 };
   setTimeout(() => location.replace(to.toString()), 300);
 }
+/** What the crew is doing while the tops move. */
+const TOPS_MOVE: Record<Tops, string> = { subs: "Stacking the tops on the subs", pole: "Putting the tops up on poles", stands: "Setting the tops on their stands" };
 
 // ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----
 const rights: Rights = { floor: null, grants: null, me: null, asked: null };
