@@ -34,19 +34,21 @@ export function patchView(placed: Patch["placed"], change: (cables: Cable[]) => 
     const g = GEAR[p.gear];
     if (!g) continue;
     const box = document.createElement("div");
-    box.className = `patch-gear ${g.kind}`;
+    box.className = `patch-gear gear-${g.kind}`;
     const name = document.createElement("span");
     name.className = "patch-name";
     name.textContent = g.name;
     box.append(name);
+    // Inputs to the left of the name, in the order the gear lists them; outputs to the right.
     for (const j of g.jacks) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = `jack ${j.kind} ${j.dir}`;
       b.dataset.item = p.id; b.dataset.jack = j.id;
-      b.title = `${g.name} ${j.dir === "in" ? "input" : "output"} (${j.kind})`;
+      b.title = `${g.name} ${j.label ?? (j.dir === "in" ? "input" : "output")} (${j.kind})`;
+      if (j.label) b.dataset.label = j.label;
       b.setAttribute("aria-label", b.title);
-      (j.dir === "in" ? box.prepend(b) : box.append(b));
+      if (j.dir === "in") name.before(b); else box.append(b);
       jacks.set(`${p.id}:${j.id}`, b);
     }
     boxes.set(p.id, box);

@@ -8,6 +8,8 @@ import { FULL_SCALE, applySettings, chainLoads, limit, rigSpec, type Live } from
 import type { AmpSettings, ChainSlot, ToPart } from "../src/amp/messages.ts";
 import { Head, Ring } from "../src/amp/ring.ts";
 import { partsFor } from "../src/amp/threads.ts";
+import { audibleChains, compile, seriesCables, type Cable, type Patch } from "../src/circuit/patch.ts";
+import { cabledChain, relay } from "../src/amp/cabled.ts";
 
 setDefaultTimeout(30_000);
 const SR = 48000, BLOCK = 128;
@@ -245,4 +247,71 @@ test("the pedalboard: pedals stacked, reordered and moved into the loop while th
     tail.process(tap, pl, BLOCK, pr);
     expect([k, Array.from(pl), Array.from(pr)]).toEqual([k, Array.from(wl), Array.from(wr)]);
   }
+});
+
+test("each pedal on its own cables: fuzz into drive into the amp, swapped by re-cabling while the tape echoes, then split A/B; a pedal cabled into itself", () => {
+  const dry = riff(SR), quiet = new Float32Array(BLOCK), out = new Float32Array(BLOCK);
+  const base: AmpSettings = { amp: "brit", pedal: null, drive: 0, knobs: { ...AMPS[0].knobs, noise: 0 }, bypass: false, oversample: 4, swaps: {}, mic: { at: 0.3, angle: 0 } };
+  const placed = ["guitar", "fuzz", "drive", "split", "blend", "head", "tape", "cab"].map((id) => ({ id, gear: id }));
+  // The page's switches: both pedals on, Q Tape on in the loop.
+  const tape: ChainSlot = { machine: { kind: "tape", time: 3, repeats: 6, mix: 6, heads: [1, 3] } };
+  const slotOf = (id: string): ChainSlot | null => (id === "fuzz" ? { pedal: "fuzz", drive: 8 } : id === "drive" ? { pedal: "drive", drive: 6 } : id === "tape" ? tape : null);
+  const chainOf = (cables: readonly Cable[]) => { const p: Patch = { placed, cables }; return cabledChain(audibleChains(p, compile(p)), slotOf); };
+  let live: Live | null = null, at = 0;
+  const play = (blocks: number, src: "riff" | "quiet" = "riff") => {
+    const got = new Float32Array(blocks * BLOCK);
+    for (let b = 0; b < blocks; b++, at = (at + BLOCK) % (dry.length - BLOCK)) {
+      live?.rig.process(src === "riff" ? dry.subarray(at, at + BLOCK) : quiet, out, BLOCK);
+      got.set(out.map((v) => limit(v / FULL_SCALE)), b * BLOCK);
+    }
+    return got;
+  };
+  const rms = (x: Float32Array) => Math.sqrt(x.reduce((a, v) => a + v * v, 0) / x.length);
+  const lay = (cables: readonly Cable[]) => (live = applySettings({ ...base, chain: chainOf(cables).chain }, live, SR));
+
+  // Guitar, Q Fuzz, Q Drive, the amp, Q Tape between its send and return, the cab: the slots in the order of the cables.
+  const fuzzFirst = seriesCables(["fuzz", "drive"], ["tape"]);
+  expect(chainOf(fuzzFirst).ids).toEqual(["fuzz", "drive", "amp", "tape"]);
+  lay(fuzzFirst);
+  play(150);
+  // The same riff through each order from cold: re-cabled the other way round sounds different.
+  const cold = (cables: readonly Cable[]) => { live = null; lay(cables); at = 0; return play(120); };
+  const drivenFirst = seriesCables(["drive", "fuzz"], ["tape"]);
+  const a = cold(fuzzFirst), b = cold(drivenFirst);
+  expect(rms(a.map((v, i) => v - b[i]))).toBeGreaterThan(0.1 * rms(a));
+
+  // Swapped by hand while the tape echoes: pull the four front cables, run them the other way. The tape keeps its echoes.
+  live = null; lay(fuzzFirst); play(150);
+  const swapped: Cable[] = [
+    { from: ["guitar", "out"], to: ["drive", "in"] }, { from: ["drive", "out"], to: ["fuzz", "in"] }, { from: ["fuzz", "out"], to: ["head", "in"] },
+    ...fuzzFirst.filter((c) => c.from[0] === "head" || c.from[0] === "tape"),
+  ];
+  expect(chainOf(swapped).ids).toEqual(["drive", "fuzz", "amp", "tape"]);
+  const before = live!.rig;
+  lay(swapped);
+  expect(live!.rig).not.toBe(before);
+  const echoes = rms(play(60, "quiet"));
+  // The same swap with nothing in the loop: only the amp ringing down and Q Fuzz.s own hiss.
+  const dryLoop = (cables: readonly Cable[]) => cables.filter((c) => c.from[0] !== "tape" && c.to[0] !== "tape" && c.from[1] !== "send");
+  live = null; lay(dryLoop(fuzzFirst)); play(150); lay(dryLoop(swapped));
+  expect(echoes).toBeGreaterThan(3 * rms(play(60, "quiet")));
+  // The tile drag cables the board in its new row: the same chain as cabling it by hand.
+  expect(chainOf(relay(["drive", "fuzz", "amp", "tape"], fuzzFirst))).toEqual(chainOf(swapped));
+
+  // An A/B split: Q Fuzz on A, Q Drive on B, blended back into the amp: both sides at once.
+  const ab: Cable[] = [
+    { from: ["guitar", "out"], to: ["split", "in"] }, { from: ["split", "a"], to: ["fuzz", "in"] }, { from: ["split", "b"], to: ["drive", "in"] },
+    { from: ["fuzz", "out"], to: ["blend", "a"] }, { from: ["drive", "out"], to: ["blend", "b"] }, { from: ["blend", "out"], to: ["head", "in"] },
+    ...fuzzFirst.filter((c) => c.from[0] === "head" || c.from[0] === "tape"),
+  ];
+  expect(chainOf(ab).chain).toEqual([{ split: [[{ pedal: "fuzz", drive: 8 }], [{ pedal: "drive", drive: 6 }]], mix: [0.5, 0.5] }, { amp: true }, tape]);
+  lay(ab);
+  expect(rms(play(100))).toBeGreaterThan(0.05);
+  expect(live!.rig.misses).toBe(0);
+
+  // Q Fuzz's out into its own in: the loop problem, and nothing for the speakers.
+  const looped: Patch = { placed, cables: [...fuzzFirst, { from: ["fuzz", "out"], to: ["fuzz", "in"] }] };
+  const compiled = compile(looped);
+  expect(compiled.problems.map((p) => [p.kind, p.items])).toContainEqual(["loop", ["fuzz"]]);
+  expect(audibleChains(looped, compiled)).toEqual([]);
 });
