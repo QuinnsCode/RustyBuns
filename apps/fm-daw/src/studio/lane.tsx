@@ -34,7 +34,7 @@ const Icon = ({ name }: { name: "sliders" | "x" }) => (
 // FM DAW's sheet has a .lane of its own (the piano roll's rows), so these are .jam-lane and .jl-*
 const LANE_CSS = `
 :host { all: initial; }
-.jl-btn { position: fixed; right: 16px; bottom: var(--jl-btn-bottom, 64px); z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+.jl-btn { position: fixed; right: 16px; bottom: 64px; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 12px;
   background: rgba(21,23,27,.82); color: #f4f1ea; border: 1px solid #3a3f47; border-radius: 10px; font: 600 15px var(--silk); }
 .jl-btn:hover { background: rgba(38,41,48,.92); }
 .jam-lane { position: fixed; top: 60px; right: 12px; bottom: 12px; width: min(720px, calc(100vw - 24px)); z-index: 31; display: flex; flex-direction: column;
@@ -53,7 +53,7 @@ const LANE_CSS = `
 .jl-strip .row { display: flex; gap: 8px; }
 .jl-strip .row button { flex: 1; padding: 8px; background: var(--raised); border: 1px solid var(--edge); border-radius: 6px; font: 600 15px var(--silk); }
 .jl-strip .row button.on { background: var(--track); color: #15171b; }
-@media (max-width: 520px) { .jam-lane { top: 52px; right: 0; left: 0; bottom: 0; width: auto; border-radius: 10px 10px 0 0; } .jl-btn { bottom: var(--jl-btn-bottom, 96px); right: 12px; } }
+@media (max-width: 520px) { .jam-lane { top: 52px; right: 0; left: 0; bottom: 0; width: auto; border-radius: 10px 10px 0 0; } .jl-btn { bottom: 96px; right: 12px; } }
 `;
 
 function View({ m }: { m: LaneModel }) {
