@@ -123,12 +123,6 @@ const card = (text: string, style: Parameters<typeof textTexture>[1], width: num
 
 type Mark = { text: string; style: Parameters<typeof textTexture>[1]; width: number; at: THREE.Vector3Tuple; tilt?: number; turn?: number };
 
-/** The crew's tape on a piece: its key in caps (top-l -> TOP L). Cases carry a stencil already and stands have no face. */
-export function tapeLabel(key: string, id: string): string | undefined {
-  if (id.startsWith("road-case") || id.startsWith("stand") || id === "distro-box") return undefined;
-  return key.split("-").join(" ").toUpperCase();
-}
-
 /** Tape across the back near the top and on the lid, where a crew writes it so it reads from behind and from above. */
 function tapes(text: string, size: number[]): Mark[] {
   const [w, h, d] = size, width = Math.min(0.32, w * 0.9);

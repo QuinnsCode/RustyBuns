@@ -850,3 +850,80 @@ html .ui-house .gr-foot { box-shadow: inset 0 -5px 0 #e2d4b0; }
   html .ui-house .gc-profiles + .gc-fold::before { content: ""; flex: 0 1 176px; height: 56px; margin-right: auto; pointer-events: none;
     background: url(/menu/strip.svg) left center / contain no-repeat; transform: rotate(-2deg); filter: drop-shadow(2px 3px 0 #14141422); }
 }
+
+/* Round 19 (#6314): the sheet's body is handled too, clear of the text. A grease thumbprint (thumb.svg 0.8 KB) is
+   pressed in each sheet's foot, left of the sign-off where no row runs, and every other sheet carries a mug's ring
+   (coffee.svg again) off its right edge, under the reset tiles. A key the soldier changed gets a pencilled tick by
+   its name (tick.svg 0.5 KB, shown while its reset is live), and every key cap is thumbed: pale scratches on the lip
+   and ink chipped off its edges (scuff.svg 0.6 KB, stretched to the cap). */
+html .ui-house .gc-sec {
+  background: url(/menu/thumb.svg) left 10px bottom 22px / 40px 51px no-repeat, linear-gradient(#0000 calc(100% - 16px), #efe6cf calc(100% - 13px)),
+    linear-gradient(#0000 calc(48% - 8px), #1414140c 48%, #fff 48% calc(48% + 1.5px), #14141408 calc(48% + 2px), #0000 calc(48% + 9px)),
+    radial-gradient(120% 90% at 50% 40%, #0000 70%, #c9a86014 90%, #a9813a26), url(/menu/slip.svg) 0 4px / 64px, #fffdf6d6;
+  background-clip: padding-box; }
+html .ui-house .gc-sec:nth-of-type(even) {
+  background: url(/menu/thumb.svg) left 10px bottom 22px / 40px 51px no-repeat, url(/menu/coffee.svg) right -70px top 34% / 170px no-repeat,
+    linear-gradient(#0000 calc(100% - 16px), #efe6cf calc(100% - 13px)),
+    linear-gradient(#0000 calc(48% - 8px), #1414140c 48%, #fff 48% calc(48% + 1.5px), #14141408 calc(48% + 2px), #0000 calc(48% + 9px)),
+    radial-gradient(120% 90% at 50% 40%, #0000 70%, #c9a86014 90%, #a9813a26), url(/menu/slip.svg) 0 4px / 64px, #fffdf6d6;
+  background-clip: padding-box; }
+html .ui-house .gc-sec.shut { background-size: 0 0, auto; }
+html .ui-house .gc-key:not(.on) {
+  background: url(/menu/scuff.svg) 0 0 / 100% 100% no-repeat, linear-gradient(#e8590c 0 0) 50% 0 / 16px 3px no-repeat, var(--br-ticks), var(--br-tile);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat; }
+html .ui-house .gc-binds > span:has(+ .gc-key + .gc-icon:not(:disabled))::after { content: ""; position: absolute; right: 0; top: 50%; width: 26px; height: 19px;
+  margin-top: -10px; pointer-events: none; background: url(/menu/tick.svg) center / contain no-repeat; transform: rotate(-6deg); }
+
+/* Round 20 (#6336): the key list is laid out by hand, not a stack of identical caps. The gun slots sit under their own
+   stencilled GUN SLOTS head as a grid of chip tiles four across, each tagged with its slot number (a counter, so a
+   moved key still says which slot it is; the row's name stays in the page for screen readers), on a twelve-column
+   grid the other rows span 5 / 6 / 1 of. Every reset is a rubber-stamped mark (undo.svg 0.6 KB: a broken ring and a
+   turning arrow) instead of a grey square tile: pale and barely inked while the key is its own, orange and stamped
+   at a tilt once it can put one back. */
+html .ui-house .gc-binds { grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 0; counter-reset: gun; }
+html .ui-house .gc-binds > span { grid-column: span 5; padding-right: 8px; }
+html .ui-house .gc-binds > .gc-key { grid-column: span 6; }
+html .ui-house .gc-binds > .gc-icon { grid-column: span 1; justify-self: end; }
+html .ui-house .gc-binds > .gc-sub { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; color: #141414;
+  font: 800 12px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.14em; opacity: 1; }
+html .ui-house .gc-binds > .gc-sub::before { content: ""; flex: none; width: 16px; height: 16px; background: url(/menu/sight.svg) center / contain no-repeat; }
+html .ui-house .gc-binds > .gc-sub::after { content: "1-14"; flex: 1; padding-left: 8px; border-bottom: 2px dashed #14141455; color: #e8590c;
+  font: 700 10px/1 var(--mono); letter-spacing: 0.08em; }
+html .ui-house .gc-binds > span:has(+ .gc-key[name^="bind-gun"]) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"] { grid-column: span 2; position: relative; margin-left: 6px; padding: 15px 4px 5px;
+  font-size: 15px; counter-increment: gun; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"]::before { content: counter(gun, decimal-leading-zero); position: absolute; top: 4px; left: 6px;
+  color: #6f6d66; font: 700 9px/1 var(--mono); letter-spacing: 0.06em; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"].on::before { color: #e8590c; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:not(:disabled))::after { content: ""; position: absolute; top: 1px; right: 4px;
+  width: 18px; height: 13px; pointer-events: none; background: url(/menu/tick.svg) center / contain no-repeat; transform: rotate(-6deg); }
+html .ui-house .gc-binds > .gc-icon, html .ui-house .gc-binds > .gc-icon:disabled, html .ui-house .gc-binds > .gc-icon:hover:not(:disabled) {
+  position: relative; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; box-shadow: none; transform: none; color: #14141440; }
+html .ui-house .gc-binds > .gc-icon svg { visibility: hidden; }
+html .ui-house .gc-binds > .gc-icon::before { content: ""; position: absolute; inset: 2px; background: currentColor; transform: rotate(14deg);
+  -webkit-mask: url(/menu/undo.svg) center / contain no-repeat; mask: url(/menu/undo.svg) center / contain no-repeat; }
+html .ui-house .gc-binds > .gc-icon:not(:disabled) { color: #e8590c; cursor: pointer; }
+html .ui-house .gc-binds > .gc-icon:not(:disabled)::before { transform: rotate(-10deg); filter: drop-shadow(0.6px 0.6px 0 #b8440699); }
+html .ui-house .gc-binds > .gc-icon:hover:not(:disabled) { color: #c94a07; }
+html .ui-house .gc-binds > .gc-icon:hover:not(:disabled)::before { transform: rotate(-10deg) scale(1.1); }
+html .ui-house .gc-binds > .gc-icon:focus-visible { outline: 2px solid #e8590c; outline-offset: 1px; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:not(.on) {
+  background: url(/menu/scuff.svg) 0 0 / 100% 100% no-repeat, linear-gradient(#e8590c 0 0) 50% 0 / 10px 3px no-repeat, var(--br-tile);
+  background-repeat: no-repeat, no-repeat, repeat, no-repeat; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:not(:disabled))::after { top: 2px; right: 3px; width: 14px; height: 11px; }
+html .ui-house .gc-binds > .gc-icon { width: min(32px, 100%); height: auto; aspect-ratio: 1; }
+@media (max-width: 520px) { html .ui-house .gc-binds > .gc-key[name^="bind-gun"] { margin-left: 4px; padding-inline: 2px; font-size: 11px; } }
+html .ui-house .gc-binds > .gc-sub:not(:has(+ span + .gc-key[name^="bind-gun"]))::after { content: ""; }
+
+/* Round 21 (#6353): a reset stamp only where there is something to put back. A key still on its own default shows no
+   stamp at all (its button is disabled, so nothing is lost); in the gun grid that chip takes the stamp's column too,
+   so the four across stay the same width and only a changed slot gives up room for its stamp. A changed key, in any
+   row, gets an orange edge and a bigger pencilled tick, so the moved keys stand out at a glance against the plain ones. */
+html .ui-house .gc-binds > .gc-icon:disabled::before { visibility: hidden; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:disabled) { grid-column: span 3; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:disabled { display: none; }
+html .ui-house .gc-binds > .gc-key:has(+ .gc-icon:not(:disabled)):not(.on) { border-color: #e8590c;
+  box-shadow: inset 0 0 0 1px #e8590c, 0 1px 0 #b8440666; }
+html .ui-house .gc-binds > span:has(+ .gc-key + .gc-icon:not(:disabled))::after { width: 34px; height: 25px; margin-top: -13px; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:not(:disabled))::after { top: 1px; right: 2px; width: 20px; height: 15px; }

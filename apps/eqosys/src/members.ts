@@ -3,10 +3,10 @@
 import { HOME, ourApp, type QApp } from "./apps.ts";
 import { appOf, appsOf } from "./listings.ts";
 import { sign, STUDIOS_MAX, type Handoff, type StudioRole } from "@rustybuns/util/token";
-import { hubErase, hubOut } from "./qollab/hub.ts";
+import { hubErase, hubOuts, OUT_BATCH } from "./qollab/hub.ts";
 import { partyOf } from "./qollab/party.ts";
 import { send } from "./qollab/qlave.ts";
-import { SPACES_EVER, SPACES_OF, spaceOf } from "./qollab/space.ts";
+import { SPACES_EVER, spaceOf, spacesOfAny } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
 import { SOLE_OWNED, studioErase } from "./studios.ts";
 import { oauthToken } from "./auth.ts";
@@ -75,24 +75,33 @@ const REFRESH_MS = 30 * 86_400_000;
  * Each use hands out the next. Signing out on the eqosys page ends a page's, not a native app's. */
 /** `jkt`: the thumbprint of the page key it is bound to (DPoP), so only a proof from that key spends it. */
 export async function mintRefresh(conf: Env, userId: string, app: string, now = Date.now(), web = false, jkt: string | null = null) {
-  const token = "eqr_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const token = newRefresh();
   await conf.DB.batch([
     conf.DB.prepare("DELETE FROM refresh WHERE expires_at < ?").bind(now),
     conf.DB.prepare("INSERT INTO refresh (hash, user_id, app, expires_at, web, jkt) VALUES (?, ?, ?, ?, ?, ?)").bind(await sha256(token), userId, app, now + REFRESH_MS, web ? 1 : 0, jkt),
   ]);
   return token;
 }
+const newRefresh = () => "eqr_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
 
 /**
- * Spend a refresh token: who it was for, now, and whether a page held it, or null for one that is spent, late, revoked or
- * another app's, or bound to a key (`jkt`) that `proved` isn't. A refused one is spent all the same.
+ * Spend a refresh token: who it was for, now, whether a page held it, and the `next` one (bound to `proved`, a page's if this was), or null
+ * for one that is spent, late, revoked or another app's, or bound to a key (`jkt`) that `proved` isn't. A refused one is spent all the same.
+ * The next row is written in the same transaction that deletes this one, from it, so a sign-out or a deletion either comes first (no
+ * row to copy) or after (its DELETE takes the new row): none lands between them (#6235).
  */
-export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now(), proved: string | null = null): Promise<{ who: Handoff; web: boolean } | null> {
-  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app, expires_at, web, jkt")
-    .bind(await sha256(token)).first<{ user_id: string; app: string; expires_at: number; web: number; jkt: string | null }>();
-  const ok = row && row.app === app && row.expires_at >= now && (row.jkt === null || row.jkt === proved);
-  const who = ok ? await handoff(conf, row.user_id, app) : null;
-  return who && { who, web: row!.web === 1 };
+export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now(), proved: string | null = null): Promise<{ who: Handoff; web: boolean; next: string } | null> {
+  const next = newRefresh(), [spent, nextHash] = [await sha256(token), await sha256(next)];
+  const [, put, gone] = await conf.DB.batch<{ user_id: string; web: number }>([
+    conf.DB.prepare("DELETE FROM refresh WHERE expires_at < ?").bind(now),
+    conf.DB.prepare(`INSERT INTO refresh (hash, user_id, app, expires_at, web, jkt) SELECT ?1, user_id, app, ?2, web, ?3 FROM refresh
+      WHERE hash = ?4 AND app = ?5 AND (jkt IS NULL OR jkt = ?3) RETURNING hash`).bind(nextHash, now + REFRESH_MS, proved, spent, app),
+    conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, web").bind(spent),
+  ]);
+  const row = put?.results.length ? gone?.results[0] : undefined;
+  const who = row ? await handoff(conf, row.user_id, app) : null;
+  if (row && !who) await conf.DB.prepare("DELETE FROM refresh WHERE hash = ?").bind(nextHash).run();
+  return who && { who, web: row!.web === 1, next };
 }
 
 /** Every token eqosys signed for `userId` and `app` ("*" for every app) up to now stops working here (`standing`). */
@@ -105,17 +114,40 @@ const cut = (conf: Env, userId: string, app: string, now: number) =>
  * Close the sockets `app`'s tokens ("*": every app's) opened for a person: their hub tabs, their party seats, their spaces. A cut stops a token
  * opening a socket (`standing`), and this ends the ones it already had open. Best effort: a world that doesn't answer keeps a socket until it drops.
  */
-export async function closeSockets(conf: Env, userId: string, app: string) {
-  const q = new URLSearchParams({ id: userId, app });
-  const [seats, spaces] = await Promise.all([
-    conf.PARTY ? conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>() : null,
-    conf.SPACE ? conf.DB.prepare(SPACES_OF).bind(userId).all<{ id: string }>() : null,
-  ]);
-  await Promise.allSettled([
-    ...conf.HUB ? [hubOut(conf.HUB, userId, app)] : [],
-    ...conf.PARTY ? (seats?.results ?? []).map((s) => partyOf(conf.PARTY!, s.code).fetch(new Request(`https://party/out?${q}`))) : [],
-    ...conf.SPACE ? (spaces?.results ?? []).map((s) => spaceOf(conf.SPACE!, s.id).fetch(new Request(`https://space/out?${q}`))) : [],
-  ]);
+export const closeSockets = (conf: Env, userId: string, app: string) => closeMany(conf, [userId], app);
+
+/**
+ * closeSockets for many people at once (a company's whole domain, everyone who played a pulled game), OUT_BATCH at a time. Each
+ * batch costs the Worker two reads, one fetch to the first person's hub (which passes the order on to the others' hubs, hub.ts
+ * `hubOuts`, from its own subrequest budget) and one fetch per party or space any of them sits in, so a large domain fits (#6239).
+ */
+export async function closeMany(conf: Env, ids: string[], app: string) {
+  const people = [...new Set(ids)];
+  for (let i = 0; i < people.length; i += OUT_BATCH) {
+    const some = people.slice(i, i + OUT_BATCH), marks = some.map((_, n) => `?${n + 1}`).join(", ");
+    const q = new URLSearchParams([...some.map((id) => ["id", id]), ["app", app]]);
+    const [seats, spaces] = await Promise.all([
+      conf.PARTY ? conf.DB.prepare(`SELECT DISTINCT code FROM party_seats WHERE user_id IN (${marks})`).bind(...some).all<{ code: string }>() : null,
+      conf.SPACE ? conf.DB.prepare(spacesOfAny(some.length)).bind(...some).all<{ id: string }>() : null,
+    ]);
+    await Promise.allSettled([
+      ...conf.HUB ? [hubOuts(conf.HUB, some, app)] : [],
+      ...conf.PARTY ? (seats?.results ?? []).map((s) => partyOf(conf.PARTY!, s.code).fetch(new Request(`https://party/out?${q}`))) : [],
+      ...conf.SPACE ? (spaces?.results ?? []).map((s) => spaceOf(conf.SPACE!, s.id).fetch(new Request(`https://space/out?${q}`))) : [],
+    ]);
+  }
+}
+
+/** A studio's game was pulled: the sockets its tokens opened close, for everyone who ever signed in to it. */
+export async function gamePulled(conf: Env, app: string) {
+  const { results } = await conf.DB.prepare("SELECT user_id FROM links WHERE app = ?").bind(app).all<{ user_id: string }>();
+  await closeMany(conf, results.map((r) => r.user_id), app);
+}
+
+/** Someone is out of a studio: the sockets they opened with its games that only its members may use (a draft, one in review) close. */
+export async function studioLeft(conf: Env, studio: string, userId: string) {
+  const { results } = await conf.DB.prepare("SELECT id FROM listings WHERE studio_id = ? AND state IN ('draft', 'in review')").bind(studio).all<{ id: string }>();
+  for (const l of results) await closeSockets(conf, userId, l.id);
 }
 
 /** Throw a refresh token away (signing out of a native app), and the tokens its app holds for that person with it, and their sockets. Quietly does nothing for one that isn't there. */

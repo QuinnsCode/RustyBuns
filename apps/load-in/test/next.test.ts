@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown } from "../src/sim.ts";
 import { newCables, plug, takeCable, walkWith } from "../src/cables/cables.ts";
-import { begun, idlePrompt, nextStep } from "../src/next.ts";
+import { begun, idlePrompt, nextStep, towardName } from "../src/next.ts";
 import { strike } from "../src/strike.ts";
 import { DIVE_BAR } from "../src/venues/dive-bar.ts";
 
@@ -53,11 +53,14 @@ test("at a venue with doors, L strike waits for the doors to open", () => {
 
 test("in the dive bar the first job is the speakers in front of you, then the cable case", () => {
   const w = newWorld(DIVE_BAR), c = newCables(w), on = new Set<string>(), next = () => nextStep(w, c, on);
-  expect(next()).toEqual({ text: "Put a speaker on a stand: F to lift it", key: "top-r", to: "stand-r" });
+  expect(next()).toEqual({ text: "Grab TOP R: F", key: "top-r", to: "stand-r" });
   walkWith(w, c, -0.4, 11.2);
   w.you.yaw = 0;
   expect(pickUp(w, "top-r")).toEqual({ ok: true });
-  expect(next()).toEqual({ text: "Set it on the stand: F", key: "stand-r", to: "stand-r" });
+  expect(next()).toEqual({ text: "Carry it to the stand: F sets it on", key: "stand-r", to: "stand-r" });
+  // The edge arrow names the stand as the speaker's, and how far it is, not the stand's catalogue line.
+  expect(towardName(w, c, "stand-r")).toMatch(/^stand for TOP R, \d+ m$/);
+  expect(towardName(w, c, "top-l")).toMatch(/^TOP L, \d+ m$/);
   // Both tops up on their stands (the dive bar's settle puts a top on the pole it is set over).
   for (const [top, stand] of [["top-r", "stand-r"], ["top-l", "stand-l"]] as const) {
     w.held = null;

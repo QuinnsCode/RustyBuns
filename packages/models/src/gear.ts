@@ -167,6 +167,22 @@ function rod(slot: GearSlot, a: THREE.Vector3Tuple, b: THREE.Vector3Tuple, r: nu
   return loft(slot, [R(-len / 2, r), R(len / 2, r)], { seg, m });
 }
 
+/** A quarter of a rod from a to b, the quarter between the outward directions `u` and `v` (each square to the rod):
+ * a box's rounded edge, which bulges out of its two faces and stays out of the box. */
+function quarterRod(slot: GearSlot, a: THREE.Vector3Tuple, b: THREE.Vector3Tuple, r: number, u: THREE.Vector3Tuple, v: THREE.Vector3Tuple, seg = 8): Piece {
+  const va = new THREE.Vector3(...a), vb = new THREE.Vector3(...b), d = vb.clone().sub(va);
+  let U = new THREE.Vector3(...u), V = new THREE.Vector3(...v);
+  if (U.clone().cross(V).dot(d) < 0) [U, V] = [V, U]; // wind it so its faces look outward
+  const pos: number[] = [], ring = (p: THREE.Vector3, i: number) => p.clone().addScaledVector(U, r * Math.cos((i / seg) * Math.PI / 2)).addScaledVector(V, r * Math.sin((i / seg) * Math.PI / 2)).toArray();
+  for (let i = 0; i < seg; i++) {
+    const [a0, a1, b0, b1] = [ring(va, i), ring(va, i + 1), ring(vb, i), ring(vb, i + 1)];
+    pos.push(...a0, ...a1, ...b0, ...b0, ...a1, ...b1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  return { geo: toCreasedNormals(geo, 0.6), slot };
+}
+
 /** A short cylinder along an axis: a wheel, a knob, a cone ring, a socket. */
 function disc(slot: GearSlot, r: number, len: number, axis: "x" | "y" | "z", at: THREE.Vector3Tuple, seg = 8): Piece {
   const m = axis === "y" ? new THREE.Matrix4().makeTranslation(...at) : along(axis, at);
@@ -1535,7 +1551,7 @@ function res2Pieces(): Record<string, Build> {
 
   // ---- cabinet: top and bottom trapezoids, the two slanting sides, the back
   // the box's outer edges are rounded `er` (its front uprights and the roof's front and sides), as the real box's are
-  const er = 0.012, ex = (z: number) => sideX(z) - er / Math.cos(Math.atan2((w - bw) / 2, d)); // a round's centre line
+  const er = 0.025, ex = (z: number) => sideX(z) - er / Math.cos(Math.atan2((w - bw) / 2, d)); // a round's centre line
   const plan = [[-sideX(f), f], [sideX(f), f], [sideX(-d / 2), -d / 2], [-sideX(-d / 2), -d / 2]];
   const roof = [[-sideX(f) + er, f - er], [sideX(f) - er, f - er], [sideX(-d / 2) - er, -d / 2], [-sideX(-d / 2) + er, -d / 2]];
   cab.pieces.push(slab("satin", plan, 0, t), slab("satin", roof, h - t, h));
@@ -1543,15 +1559,19 @@ function res2Pieces(): Record<string, Build> {
     const q = [[sideX(f - er), f - er], [sideX(f) - t, f - er], [sideX(-d / 2) - t, -d / 2], [sideX(-d / 2), -d / 2]];
     cab.pieces.push(slab("satin", q.map(([x, z]) => [s * x!, z!]), t, h - er));
     // the side's last `er` at the front, inside the round, so the face's frame stays full width
-    cab.pieces.push(slab("satin", [[sideX(f) - t, f - er], [ex(f), f - er], [ex(f), f], [sideX(f) - t, f]].map(([x, z]) => [s * x!, z!]), t, h - er));
-    cab.pieces.push(rod("satin", [s * ex(f), t, f - er], [s * ex(f), h - er, f - er], er, 8)); // the front upright
-    cab.pieces.push(rod("satin", [s * ex(f), h - er, f - er], [s * ex(-d / 2), h - er, -d / 2], er, 8)); // the roof's side
-    const ball = new THREE.SphereGeometry(er, 8, 6);
+    // (wider than the wall is thick, so it reaches a little past the wall's inside, behind the front)
+    const [x0, x1] = [Math.min(sideX(f) - t, ex(f)), Math.max(sideX(f) - t, ex(f))];
+    cab.pieces.push(slab("satin", [[x0, f - er], [x1, f - er], [x1, f], [x0, f]].map(([x, z]) => [s * x!, z!]), t, h - er));
+    // the rounds bulge only out of the box's faces, so they never narrow the mouths
+    const out = new THREE.Vector3(d, 0, s * (ex(-d / 2) - ex(f))).normalize().multiplyScalar(s).toArray(); // square to the roof's side, outward
+    cab.pieces.push(quarterRod("satin", [s * ex(f), t, f - er], [s * ex(f), h - er, f - er], er, [0, 0, 1], [s, 0, 0], 8)); // the front upright
+    cab.pieces.push(quarterRod("satin", [s * ex(f), h - er, f - er], [s * ex(-d / 2), h - er, -d / 2], er, [0, 1, 0], out, 8)); // the roof's side
+    const ball = new THREE.SphereGeometry(er, 8, 4, s > 0 ? Math.PI / 2 : 0, Math.PI / 2, 0, Math.PI / 2);
     ball.translate(s * ex(f), h - er, f - er);
     ball.deleteAttribute("normal"); ball.deleteAttribute("uv");
     cab.pieces.push({ geo: toCreasedNormals(ball.toNonIndexed(), 0.6), slot: "satin" });
   }
-  cab.pieces.push(rod("satin", [-ex(f), h - er, f - er], [ex(f), h - er, f - er], er, 8)); // the roof's front
+  cab.pieces.push(quarterRod("satin", [-ex(f), h - er, f - er], [ex(f), h - er, f - er], er, [0, 1, 0], [0, 0, 1], 8)); // the roof's front
   cab.pieces.push(slab("satin", [[-(bw / 2 - t), -d / 2 + t], [bw / 2 - t, -d / 2 + t], [bw / 2 - t, -d / 2], [-(bw / 2 - t), -d / 2]], t, h - t));
   // the hand slot in the top, near the back, and one in each side, sunk dark
   cab.pieces.push(box("knob", [0.2, 0.004, 0.034], [0, h + 0.0005, -d / 2 + 0.07], { bevel: 0.0015 }));
@@ -1582,7 +1602,7 @@ function res2Pieces(): Record<string, Build> {
   const key = new THREE.Vector3(-0.5, -0.2, 0.85), lit = (q: Piece) => facets(q, key, f - 0.02, zt);
   mid.pieces.push(ringWalls("horn", [lip, mouth]), lit(ringWalls("horn", [mouth, ...bands, throat])));
   // the throat's back, round the driver: a flat dark face closing the hexagon the walls end on
-  mid.pieces.push(frontPlate("grime", throat.map((v) => [v.x, v.y]), [Array.from({ length: 20 }, (_, i) => [Math.cos((i / 20) * Math.PI * 2) * drR, mcy + Math.sin((i / 20) * Math.PI * 2) * drR])], zt + 0.004, 0.006));
+  mid.pieces.push(frontPlate("cavity", throat.map((v) => [v.x, v.y]), [Array.from({ length: 20 }, (_, i) => [Math.cos((i / 20) * Math.PI * 2) * drR, mcy + Math.sin((i / 20) * Math.PI * 2) * drR])], zt + 0.004, 0.006));
 
   // ---- the plug: the axe head across the throat, blunt back on the driver, a ridge forward, pointed at both tips
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, mcy + y, zt + z), pt: THREE.Vector3[] = [];

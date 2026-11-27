@@ -52,7 +52,7 @@ export interface R2Like {
 
 /** A row as D1 hands it over: name the columns you selected with `first<Row>()` / `all<Row>()`. */
 export type Row = Record<string, unknown>;
-export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes?: number; last_row_id?: number; rows_read?: number; rows_written?: number; duration?: number } }
+export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes: number; last_row_id: number; rows_read?: number; rows_written?: number; duration?: number } }
 export interface D1Statement {
   bind(...params: unknown[]): D1Statement;
   first<T = Row>(): Promise<T | null>;
@@ -71,6 +71,7 @@ export interface D1 {
 /** The Worker Loader binding (codemode.ts), shared with the other apps that have a code mode. */
 import type { WorkerLoaderLike } from "@rustybuns/util/codemode";
 import type { ReviewMessage } from "./pipeline-hooks.ts";
+import type { SshGateNamespace } from "./ssh-gate.ts";
 export type { WorkerLoaderLike };
 
 export interface Env {
@@ -119,6 +120,12 @@ export interface Env {
   DRAIN_SECRET?: string;
   /** Bearer for GET /api/ssh/remote, the ssh gate's lookup (ssh-remote.ts, ssh/): its GATE_SECRET. Optional: the route is off without it. */
   SSH_GATE_SECRET?: string;
+  /** The ssh gate: one Durable Object and its sshd container that `connect()` hands every TCP connection to (ssh-gate.ts). Bound only with CODESPLITTER_SSH=1. */
+  SSH_GATE?: SshGateNamespace;
+  /** Where the gate's git-serve.sh asks for a repo's remote; unset, this site's own /api/ssh/remote. ssh/try.ts points it at its stand-in. */
+  SSH_LOOKUP_URL?: string;
+  /** Where the gate's KeyLookup asks GET /api/ssh/key; unset, this Worker answers it in-process. ssh/try.ts points it at its stand-in. */
+  SSH_KEYS_URL?: string;
   /** Logins for the agent CLIs in the sandbox (see sandbox.ts). */
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;

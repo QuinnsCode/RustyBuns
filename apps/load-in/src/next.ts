@@ -46,22 +46,40 @@ const nearest = (w: World, list: Item[]) => list.sort((a, b) => Math.hypot(a.x -
 const freeStand = (w: World) => nearest(w, stands(w).filter((s) => !w.items.some((i) => isTop(i) && over(s, i))));
 const bareTop = ({ w }: At) => freeStand(w) && nearest(w, w.items.filter((i) => isTop(i) && i.key !== w.held?.key && !stands(w).some((s) => over(s, i))));
 
-const STAND_JOB = "Put a speaker on a stand: F to lift it";
+/** The crew's tape on a piece: its key in caps (top-l -> TOP L). Cases carry a stencil already and stands have no face.
+ *  The Next line names a speaker by it too, so the words on screen are the words on the box. */
+export function tapeLabel(key: string, id: string): string | undefined {
+  if (id.startsWith("road-case") || id.startsWith("stand") || id === "distro-box") return undefined;
+  return key.split("-").join(" ").toUpperCase();
+}
+
+/** What the edge arrow calls the piece it points at, and how far it is: a speaker by its tape, the stand you carry a
+ *  speaker to as that speaker's ("stand for TOP R, 3 m"), anything else by its name. */
+export function towardName(w: World, c: Cables, key: string): string {
+  const i = w.items.find((x) => x.key === key), h = heldItem(w);
+  if (!i) return "";
+  const held = h && tapeLabel(h.key, h.gear), m = Math.max(1, Math.round(Math.hypot(i.x - w.you.x, i.z - w.you.z)));
+  const name = tapeLabel(i.key, i.gear) ?? (held && i.gear.startsWith("stand") ? `stand for ${held}` : callName(w, c, key));
+  return `${name}, ${m} m`;
+}
+
+// One thing at a time: first lift the speaker (named by the tape on it), then, in your hands, carry it to the stand.
+const grabTop = (s: At) => { const t = bareTop(s)!; return `Grab ${tapeLabel(t.key, t.gear) ?? "the speaker"}: F`; };
 
 /** Each step is done while its job doesn't apply: the first one that does is what to do next. */
 const FIRST_MINUTE: Step<At>[] = [
-  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : isTop(h) && freeStand(w) ? "Set it on the stand: F" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? freeStand(w)?.key : undefined; } },
+  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : isTop(h) && freeStand(w) ? "Carry it to the stand: F sets it on" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? freeStand(w)?.key : undefined; } },
   { job: "Plug it in: look at a jack and press F", done: ({ c }) => !inHand(c) },
   { job: (s) => `Bring the ${callName(s.w, s.c, outdoors(s)!.key)} in`, done: (s) => !outdoors(s), key: (s) => outdoors(s)?.key },
-  { job: STAND_JOB, done: (s) => !bareTop(s), key: (s) => bareTop(s)?.key },
+  { job: grabTop, done: (s) => !bareTop(s), key: (s) => bareTop(s)?.key },
   { job: "Take a cable from the cable case: F", done: ({ c }) => !c.caseKey || c.runs.some((r) => "plug" in r.a || "plug" in r.b), key: ({ c }) => c.caseKey ?? undefined },
   { job: (s) => `Switch on the ${callName(s.w, s.c, switchedOff(s)!.key)}: look at it, press P`, done: (s) => !switchedOff(s), key: (s) => switchedOff(s)?.key },
 ];
 
 export function nextStep(w: World, c: Cables, on: Switches): Next | null {
-  const n = nextOf(FIRST_MINUTE, { w, c, on });
+  const at = { w, c, on }, n = nextOf(FIRST_MINUTE, at);
   if (!n) return null;
-  const to = n.job === STAND_JOB || n.key === freeStand(w)?.key ? freeStand(w)?.key : undefined;
+  const top = bareTop(at), to = (top && n.job === grabTop(at)) || n.key === freeStand(w)?.key ? freeStand(w)?.key : undefined;
   return { text: n.job, ...(n.key ? { key: n.key } : {}), ...(to ? { to } : {}) };
 }
 /** The centre prompt when your hands are free and you look at nothing. While there's setting up left it says nothing (the

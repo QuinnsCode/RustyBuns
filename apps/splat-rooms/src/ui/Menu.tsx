@@ -41,7 +41,7 @@ export function Menu({ scenes, dir, error, records, onQuick, onRooms, onBrowse, 
         {error && <p className="warn">{error}</p>}
         {!scenes && !error && <Uplink text="Uplink · searching for scenes…" />}
         {scenes && <Uplink text={`${serial(dir)} · Uplink secure · ${playable} room${playable === 1 ? "" : "s"} on file${scenes.length > playable ? ` (+${scenes.length - playable} labels only)` : ""}`} />}
-        {scenes && <p className="dim small path">{dir}</p>}
+        {scenes && <p className="dim small path" title={dir}><span className="stencil">Archive drawer</span> · {serial(dir)}-ARC · {dir.split(/[\\/]/).filter(Boolean).pop()}</p>}
         {scenes && playable < 3 && <p className="dim small">More rooms: <code>{FETCH_HINT}</code></p>}
       </div>
     </div>

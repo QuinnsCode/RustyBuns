@@ -121,7 +121,9 @@ party ending (its age, the host shortening it, the host's account deleted) ends 
 
 A party lasts one game night; a **space** is where the same people stay between games: a group with text
 channels, like a chat server's rooms. It belongs to people, not to an app: a token from any Q app opens it, so
-friends who play different games still share one.
+friends who play different games still share one. A studio's game (a listing) is somebody else's code holding the
+player's token, so its token opens only the space of the studio that made it: not the player's other spaces, no invite
+into one, and no new one (#6234).
 
 - **Where it lives:** D1 holds who owns a space and who is in it (`spaces`, `space_members`, migration 0007), so
   "my spaces" is one query and the Worker checks membership before a socket reaches the space. A `Space` Durable Object

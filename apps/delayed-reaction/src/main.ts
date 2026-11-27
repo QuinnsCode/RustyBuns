@@ -6,7 +6,7 @@ import { Music } from "./audio.ts";
 import { accountChip, achieve, achievements, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { backplate, brushed, faderCap, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
+import { backplate, bandScale, brushed, readoutGlass, faderCap, faderPlate, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
@@ -244,7 +244,7 @@ window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
 // ---- controls ----
 /** The radio is the theme: a black fascia, cold white ink and hairlines, monospace like the display. The lanes keep the colour. */
 const NEON = { "--ui-bg": "#0b0c10", "--ui-ink": "#e9ecf2", "--ui-dim": "#9aa0b4", "--ui-line": "#e9ecf259", "--ui-border": "1px", "--ui-panel": backplate, "--ui-soft": "#14161c", "--ui-accent": "#e9ecf2", "--ui-on-accent": "#0b0c10", "--ui-accent-soft": "#20232b", "--ui-scrim": "#000c", "--ui-radius": "10px", "--ui-radius-sm": "6px", "--ui-font": "ui-monospace, SFMono-Regular, Menlo, monospace",
-  "--ui-track": faderSlot, "--ui-track-h": "8px", "--ui-thumb": `${faderCap} center / 100% 100%`, "--ui-thumb-w": "16px", "--ui-thumb-h": "28px",
+  "--ui-track": faderSlot, "--ui-track-h": "12px", "--ui-thumb": `${faderCap} center / 100% 100%`, "--ui-thumb-w": "21px", "--ui-thumb-h": "34px",
   "--ui-knob": switchKnob, "--ui-knob-on": switchLit, "--ui-knob-radius": "3px", "--ui-knob-on-glow": `0 0 6px ${LANE_COLOURS[3]}` };
 
 mountControls({
@@ -259,15 +259,30 @@ mountControls({
   onChange: (s) => { ctl = s; if (music) music.volume = volumeOf(s, "music"); },
   onToggle: (open) => {
     paused = open;
+    // The sheet's dial stands where the radio's does: the level you are on, or last pointed at.
+    if (open) sheet.style.setProperty("--needle", fascia.style.getPropertyValue("--needle") || "0.5");
     for (const l of [...down]) padUp(l);
     if (!music) return;
     music.hold(open);
   },
 });
 // The sheet wears the radio's tape: the title on a torn strip, each section's name on its own strip with a lane's colour code.
+const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
 {
-  const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
   sheet.style.setProperty("--fibre", fibre);
+  // The sheet's own station display under its title, the fascia's pieces over the speaker grille: the tuning dial, and a VU
+  // meter that swings on the beat as loud as the Volume fader says (resting when the music is off).
+  const monitor = Object.assign(document.createElement("div"), { className: "dr-monitor" });
+  monitor.innerHTML = `<div class="display tuner">${tuningScale()}</div><figure class="live">${vuMeter("MUSIC")}</figure>`;
+  monitor.style.setProperty("--grille", grille);
+  sheet.querySelector(".gc-head")?.after(monitor);
+  // On a touch screen there is no keyboard to learn, so the Keyboard section starts folded and the faders come first,
+  // until the player folds or opens sections themselves (the panel remembers that).
+  if (matchMedia("(pointer: coarse)").matches && localStorage.getItem("delayed-reaction.controls.fold") === null) {
+    const keys = sheet.querySelector<HTMLElement>('.gc-sec[data-sec="keys"]');
+    keys?.classList.add("shut");
+    keys?.querySelector(".gc-sec-h")?.setAttribute("aria-expanded", "false");
+  }
   // The rows' hardware: the faders' printed scale, the bat-handle toggle, and the brushed plate each section's rows sit on.
   sheet.style.setProperty("--scale-x", swayScale());
   sheet.style.setProperty("--scale-x-lg", swayScale(11));
@@ -275,6 +290,10 @@ mountControls({
   sheet.style.setProperty("--scale-pct-lg", volumeScale(11));
   const keys = sheet.querySelector<HTMLElement>(".gc-keys");
   if (keys) keyStrip(keys);
+  // Each read-out in a lit window, and the preset keys under a band window whose pointer stands over the key in use.
+  sheet.style.setProperty("--glass", readoutGlass);
+  sheet.style.setProperty("--fader-plate", faderPlate);
+  sheet.style.setProperty("--band", bandScale);
   sheet.style.setProperty("--toggle-off", toggleOff);
   sheet.style.setProperty("--toggle-on", toggleOn);
   sheet.style.setProperty("--plate", [screwAt("left 5px top 5px", 30), screwAt("right 5px top 5px", 110), screwAt("left 5px bottom 5px", 70), screwAt("right 5px bottom 5px", 150),
@@ -340,9 +359,10 @@ function frame(now: number) {
   }
   if (now > judgeUntil) hud.judge.textContent = "";
   // The menu's live meter, on the idle beat the tunnel rolls to: a kick on every beat, the one hardest, a little flutter.
-  if (!menu.hidden) {
-    const b = now / 500, kick = Math.exp(-(b % 1) * 5) * (b % 4 < 1 ? 1 : 0.72);
-    fascia.style.setProperty("--live", vuTurn(0.22 + kick * 0.5 + Math.sin(now / 37) * 0.02));
+  if (!menu.hidden || paused) {
+    const b = now / 500, kick = Math.exp(-(b % 1) * 5) * (b % 4 < 1 ? 1 : 0.72), level = 0.22 + kick * 0.5 + Math.sin(now / 37) * 0.02;
+    if (!menu.hidden) fascia.style.setProperty("--live", vuTurn(level));
+    if (paused) sheet.style.setProperty("--live", vuTurn(level * volumeOf(ctl, "music")));
   }
   // scene.speed (1 = normal) is how fast the tunnel rushes and how far the runner leans in.
   // Between runs the tunnel still rolls, at an idle 120 bpm, so the menu has something turning behind it.

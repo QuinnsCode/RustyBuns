@@ -195,3 +195,24 @@ test("out of the studio leaves no way back into its space: not the invite held, 
   expect(await conf.DB.prepare("SELECT 1 AS y FROM space_members WHERE space_id = ? AND user_id = ?").bind(made.id, fay.id).first("y")).toBeNull();
   d.c.close(); f.c.close();
 });
+
+test("a studio's game opens the space of the studio that made it, and none of the player's others", async () => {
+  const GAME = "https://rocket-golf.example";
+  const ida = await signUp("Ida"), a = member(ida.token);
+  const studio = (await run("eq_studio_make", { name: "Rocket", kind: "team" }, { cookie: ida.cookie })).body.result!.id!;
+  const theirs = (await a.c.makeForStudio(studio, "Rocket"))!, den = (await a.c.make("Ida's den"))!;
+  const draft = { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: [GAME] };
+  expect((await run("eq_listing_save", draft, { cookie: ida.cookie })).status).toBe(200);
+  const asked = await asks("rocket-golf", GAME);
+  const { to } = await call("/do/signin", { form: { ...asked.form, email: ida.email, password: PASSWORD } });
+  const game = (await (await call("/api/exchange", { origin: GAME, json: { app: "rocket-golf", code: codeIn(to), verifier: asked.verifier } })).res.json() as { token: string }).token;
+
+  expect((await member(game).c.mine())!.map((s) => s.name)).toEqual(["Rocket"]);
+  const exported = (id: string) => call(`/q/space/${id}/export`, { bearer: game, origin: GAME }).then((r) => r.res.status);
+  expect([await exported(theirs.id), await exported(den.id)]).toEqual([200, 404]);
+  const invite = (await a.c.mine())!.find((s) => s.id === den.id)!.invite!;
+  expect((await call("/q/space/join", { json: { invite }, bearer: game, origin: GAME })).res.status).toBe(404);
+  expect((await call("/q/space", { json: { name: "Elsewhere" }, bearer: game, origin: GAME })).res.status).toBe(403);
+  // The player's own apps still open every space they are in.
+  expect((await a.c.mine())!.map((s) => s.name)).toEqual(["Ida's den", "Rocket"]);
+});

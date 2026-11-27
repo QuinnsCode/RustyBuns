@@ -112,6 +112,26 @@ test("remove everywhere: out of every space the remover runs, by each one's rule
   d.c.close(); e.c.close(); f.c.close();
 });
 
+test("a deleted account leaves the audit log's lines but not its name or id, by or to them", async () => {
+  const ivy = await signUp("Ivy"), jon = await signUp("Jon"), kat = await signUp("Kat");
+  const i = member(ivy.token), j = member(jon.token);
+  const made = (await i.c.make("Desk"))!;
+  for (const t of [jon.token, kat.token]) await member(t).c.join(made.invite);
+  i.open(made.id); j.open(made.id);
+  await until(() => i.online().length === 2);
+  // Ivy makes Jon an admin, and Jon takes Kat out.
+  i.c.role(jon.id, "admin");
+  await until(() => j.info()?.role === "admin");
+  j.c.kick(kat.id);
+  i.c.audit();
+  await until(() => i.audit()?.length === 2);
+  expect(await (await call("/api/account/delete", { json: {}, bearer: jon.token, origin: PARK })).res.json()).toEqual({ ok: true });
+  i.c.audit();
+  await until(() => i.audit()?.[1]?.by.id === "");
+  expect(i.audit()!.map((e) => [e.act, e.by.id, e.by.name, e.who])).toEqual([["role", ivy.id, "Ivy", undefined], ["kick", "", "a deleted account", kat.id]]);
+  i.c.close(); j.c.close();
+});
+
 test("a business studio's space speaks office words; a team studio's doesn't", async () => {
   const gus = await signUp("Gus");
   const tool = async (name: string, args: unknown) => (await (await call(`/api/tools/${name}`, { json: args, bearer: gus.token })).res.json()) as { result?: { id?: string } };

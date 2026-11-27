@@ -42,3 +42,10 @@ export async function asks(app: string, origin: string) {
   return { verifier, form: { app, return: returnOf(app, origin), challenge: await challengeOf(verifier), state: "s1" } };
 }
 export const codeIn = (to: string) => new URL(to).searchParams.get("code")!;
+
+/** A stand-in for a Workers Rate Limiting binding: `cap` calls a key, counted from the start (set `cap` to change it). */
+export function limiter(cap = Infinity) {
+  const seen = new Map<string, number>();
+  const l = { cap, async limit({ key }: { key: string }) { const n = (seen.get(key) ?? 0) + 1; seen.set(key, n); return { success: n <= l.cap }; } };
+  return l;
+}
