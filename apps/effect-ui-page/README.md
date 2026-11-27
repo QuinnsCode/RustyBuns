@@ -76,10 +76,35 @@ From a script or the console, the same tools are on `window.__commands`:
 bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 ```
 
+### Agent Galaxy
+
+Every world is a plot on one shared map. **Agent Galaxy** (the Galaxy tile in the dock, or Cmd+K) puts the dock away and zooms
+out: your plot sits in the middle with its eight neighbours around it, seen from above at an angle, and you are a
+small character. Walk with WASD or the arrow keys (a touch stick on a phone). Walking off an edge takes you onto the
+plot next door from the opposite edge. **Back to my world** brings the dock back.
+
+- The plot you stand on runs live, in the same sealed frame as always: your own world, the common city in the middle
+  (`src/commonCity.ts`, ours, nobody's), or a neighbour's world as their room last saved it. A neighbour's world is
+  read-only to you: no tool and no undo reach it. Only one world runs at a time; every other plot shows its latest
+  picture (`GET /api/r/<room>/picture`), or desert until it has one.
+- Your page saves your world to the server a second after each change that lands (`PUT /api/r/<room>/world`, checked
+  with the same Schema and limits as a write), so a neighbour who walks in runs what you see.
+- Empty plots are desert with a sign, "Invite someone to build here". Every third cell of the spiral stays free for
+  invites (the invite link itself, and signing in so a plot is a person's rather than a room's, come next).
+- You see the other characters on your plot and the ones touching it. They have a colour and no name.
+- The map never sends a room's link: a plot is known by a one-way hash of it, since the link is the room's key.
+
+From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()` and `walk(dx, dz)`:
+
+```
+bun run probe effect-ui-page --url http://127.0.0.1:4799/r/<room> --js 'await agentGalaxy.enter()' --shot galaxy.png
+```
+
 ## Deploy it
 
 `bun run deploy` builds the page and ships it with the relay as one Worker (`wrangler.jsonc`). It has one small
-Durable Object per room, which keeps one picture (150 KB at most) in its storage, and no AI or other paid bindings.
+Durable Object per room, which keeps one picture (150 KB at most) and the room's saved world (a key per file) in its
+storage, and one `Galaxy` Durable Object for the whole map, and no AI or other paid bindings.
 The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 
 ## How it's put together
@@ -105,6 +130,11 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 - `src/camera.ts`: what takes pictures inside the frame. `src/pictures.ts`: the page's side (upload, Export GIF).
   `src/gif.ts`: our GIF encoder. `src/share.ts`: the picture routes and the link preview, for the Worker and the dev
   server alike. `bun scripts/og.ts` remakes `public/og.jpg`, the preview of a room with no picture.
+- `src/galaxy.ts`: Agent Galaxy with no platform in it: the spiral, `claim`, the plots around a point, the players'
+  moves (each to the same and touching plots only) and the wire guards both ends import. `src/edge/galaxy.ts` runs it
+  in a Durable Object; `scripts/dev.ts` runs it in memory. `src/saved.ts`: a room's saved world, the same way.
+  `src/galaxyView.ts`: the map in the page, on a plain 2D canvas.
+- `test/galaxy.test.ts`: two rooms walking the galaxy in headless Chrome against the dev server.
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
   `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview
 and Export GIF.

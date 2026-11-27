@@ -13,6 +13,7 @@ import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
 import { worldDoc } from "./world.ts";
 import { READY } from "./worlds.ts";
+import { galaxyAsks } from "./galaxyView.ts";
 
 export const PageMessage = UiSchema.TaggedEnum({
   ReceivedAgentCall: { call: Call },
@@ -29,6 +30,8 @@ export const PageMessage = UiSchema.TaggedEnum({
   ClickedExportGif: {},
   ChangedGif: { busy: Schema.Boolean, says: Schema.String },
   CompletedExportGif: {},
+  ClickedGalaxy: {},
+  ClickedBack: {},
 });
 
 /** Record the world as a GIF (pictures.ts); how it goes comes back as ChangedGif. */
@@ -68,6 +71,8 @@ const Model = Schema.Struct({
   full: Schema.Boolean,
   /** The landing: a fresh room shows it until the agent's first change, or until the person skips it. */
   landing: Schema.Boolean,
+  /** Agent Galaxy: the dock drops away and the map takes the window (galaxyView.ts draws it). */
+  galaxy: Schema.Boolean,
 });
 type Model = typeof Model.Type;
 
@@ -142,6 +147,8 @@ const ICONS = {
   city: ["M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z", "M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2", "M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2", "M10 6h4", "M10 10h4", "M10 14h4", "M10 18h4"],
   orbit: ["M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z", "M19 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z", "M5 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z", "M10.4 21.9a10 10 0 0 0 9.94-15.42", "M13.5 2.1a10 10 0 0 0-9.84 15.42"],
   fish: ["M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.47-3.44 6-7 6s-7.56-2.53-8.5-6Z", "M18 12v.5", "M16 17.93a9.77 9.77 0 0 1 0-11.86", "M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"],
+  globe: ["M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"],
+  back: ["m12 19-7-7 7-7", "M19 12H5"],
 } as const;
 type Icon = keyof typeof ICONS;
 
@@ -278,7 +285,7 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
 });
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing }),
+  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false }),
   update: ($, message) => {
     switch (message._tag) {
       case "ChangedRelay": return $.evolve({ online: message.online });
@@ -290,6 +297,8 @@ export const ProfilePageNoDeps = Def.make({
       case "ClickedExportGif": return $.run(ExportGif.make({ room: $.props.room }));
       case "ChangedGif": return $.evolve({ gif: { busy: message.busy, says: message.says } });
       case "CompletedExportGif": return $.model;
+      case "ClickedGalaxy": return $.evolve({ galaxy: true, landing: false });
+      case "ClickedBack": return $.evolve({ galaxy: false });
     }
     const a = asked(message);
     if (!a) return $.model;
@@ -308,9 +317,14 @@ export const ProfilePageNoDeps = Def.make({
     Subscription.make("gif", Stream.callback<GifState>((queue) => Effect.acquireRelease(
       Effect.sync(() => watchGif((s) => Queue.offerUnsafe(queue, s))), (off) => Effect.sync(off))).pipe(
       Stream.map((s) => PageMessage.ChangedGif(s)))),
+    // Cmd+K and window.agentGalaxy ask for the galaxy here, so every door goes through the same two messages.
+    Subscription.make("galaxy", Stream.fromQueue(galaxyAsks).pipe(Stream.map((on) => (on ? PageMessage.ClickedGalaxy() : PageMessage.ClickedBack())))),
   ],
-  view: (h, { page, past, log, online, copied, gif, full, landing }) => {
+  view: (h, { page, past, log, online, copied, gif, full, landing, galaxy }) => {
     const { room, origin } = h.props;
+    // The map is drawn by galaxyView.ts in its own layer over the page; here only the way back.
+    if (galaxy) return h.div.class("galaxy-mode").attr("data-galaxy", "on").children(
+      h.button.attr("type", "button").class("galaxy-back").on("click", PageMessage.ClickedBack()).children(icon(h, "back"), "Back to my world"));
     if (landing) return landingView(h, room, origin, online, copied);
     const on = READY.find((w) => Object.entries(w.files).every(([path, text]) => page.files[path] === text));
     const promptText = prompt(linksFor(origin, room));
@@ -345,10 +359,11 @@ export const ProfilePageNoDeps = Def.make({
         worldTiles(h, on?.name),
         on && h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
           .on("click", PageMessage.ClickedCopy({ what: "ask", text: on.ask })).children(icon(h, "chat"), h.span(on.ask), icon(h, copied === "ask" ? "check" : "copy")),
-        h.div.class("tiles").children(
+        h.div.class("tiles", "acts").children(
           h.button.attr("type", "button").class("tile").attr("aria-label", "Undo").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children(icon(h, "undo"), "Undo"),
           h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Start over", title: "Start over" }).on("click", PageMessage.ClickedReset()).children(icon(h, "reset"), "Reset"),
           exportButton(h, gif),
+          h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Agent Galaxy", title: "Walk the map of everyone's worlds" }).on("click", PageMessage.ClickedGalaxy()).children(icon(h, "globe"), "Galaxy"),
         ),
         !gif.busy && gif.says !== "" && h.p.class("muted").attr("role", "status").children(gif.says),
         log.length > 0 && h.ol.class("log").attr("aria-label", "Last calls").children(...log.map((l, i) => h.li.key(`${l.call}-${i}`).class(l.error !== null && "bad").children(

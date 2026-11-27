@@ -1,0 +1,224 @@
+// Agent Galaxy: every world is a plot on one shared map, and people walk through it as small characters. This is the
+// map's logic with no platform in it, as relay.ts is to the Room: the Worker's Galaxy Durable Object (edge/galaxy.ts)
+// and the local dev server (scripts/dev.ts) each hand it their storage and their sockets.
+// - Plots sit on a square grid that spirals out from the middle. Plot 0, at (0, 0), is the common city
+//   (commonCity.ts): ours, nobody's. Each claim takes the next cell of the spiral, but every third cell stays
+//   free, kept for invites, so there are empty plots to walk past.
+// - A plot is known to the page by a public id, never by its room: a room's link is its key (it can drive the room's
+//   agent tools), so the map hands out a one-way hash of it and the server looks the room up when a page asks for a
+//   plot's picture or world.
+// - Players are name-less characters with a colour, a plot and a spot on it. A move goes only to players on the same
+//   or a touching plot.
+import { sha256 } from "@rustybuns/util/bytes";
+import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { json, readJson } from "@rustybuns/util/http";
+import { TokenBucket } from "@rustybuns/util/limits";
+import { fromPage } from "./relay.ts";
+import { ROOM } from "./tools.ts";
+
+// ---------- the spiral ----------
+
+/** Cell `n` of the spiral as grid (x, y): x runs west to east, y north to south. Ring k (k >= 1) is the 8k cells
+ *  around the square of side 2k - 1; it starts just south of its north-east corner and goes round clockwise on screen. */
+export function spiral(n: number): { x: number; y: number } {
+  if (n === 0) return { x: 0, y: 0 };
+  const k = Math.ceil((Math.sqrt(n + 1) - 1) / 2);
+  const i = n - (2 * k - 1) ** 2, side = Math.floor(i / (2 * k)), t = i % (2 * k);
+  switch (side) {
+    case 0: return { x: k, y: -k + 1 + t };
+    case 1: return { x: k - 1 - t, y: k };
+    case 2: return { x: -k, y: k - 1 - t };
+    default: return { x: -k + 1 + t, y: -k };
+  }
+}
+
+/** The spiral cell at (x, y): `spiral`'s inverse. */
+export function cellOf(x: number, y: number): number {
+  const k = Math.max(Math.abs(x), Math.abs(y));
+  if (k === 0) return 0;
+  const base = (2 * k - 1) ** 2;
+  if (x === k && y > -k) return base + (y + k - 1);
+  if (y === k) return base + 2 * k + (k - 1 - x);
+  if (x === -k) return base + 4 * k + (k - 1 - y);
+  return base + 6 * k + (x + k - 1);
+}
+
+/** Every third cell is never claimed: it waits for an invite (PR 5), so the map always has empty plots. */
+export const keptFree = (n: number) => n > 0 && n % 3 === 0;
+
+// ---------- what goes over the wire ----------
+
+const Coord = int(-10_000, 10_000);
+/** A plot as the page sees it: where it is, its public id (null when empty), and whether it is the common city. */
+export const Plot = obj({ x: Coord, y: Coord, id: nul(str(32)), empty: bool(), city: bool() });
+export type Plot = Of<typeof Plot>;
+export const Plots = obj({ plots: arr(Plot, 64) });
+export type Plots = Of<typeof Plots>;
+/** A claim's answer: the plot this room holds. */
+export const Claimed = obj({ x: Coord, y: Coord, id: str(32) });
+export type Claimed = Of<typeof Claimed>;
+export const ClaimBody = obj({ room: str(32, { re: ROOM }) });
+
+/** A player: a colour, a plot, and a spot on it (0 to 1 across, x west to east, z north to south). */
+export const Walker = obj({ id: str(32), color: str(24), x: Coord, y: Coord, px: num(0, 1), pz: num(0, 1) });
+export type Walker = Of<typeof Walker>;
+/** The page to the galaxy: where its player is now. */
+export const ToGalaxy = obj({ t: oneOf(["at"]), x: Coord, y: Coord, px: num(0, 1), pz: num(0, 1) });
+export type ToGalaxy = Of<typeof ToGalaxy>;
+/** The galaxy to a page: everyone near you (after you join or change plot), one player who moved, or one who left. */
+export const FromGalaxy = obj({ t: oneOf(["players", "player", "gone"]), players: opt(arr(Walker, 200)), player: opt(Walker), id: opt(str(32)) });
+export type FromGalaxy = Of<typeof FromGalaxy>;
+
+/** The radius of plots a page may ask for around a point: 3 is a 7 by 7 square. */
+export const VIEW_MAX = 3;
+
+// ---------- storage ----------
+
+/** The part of a Durable Object's storage the galaxy and the saved worlds use; `memoryKv` is the same in memory. */
+export interface Kv {
+  get(keys: string[]): Promise<Map<string, unknown>>;
+  put<T>(entries: Record<string, T>): Promise<void>;
+  delete(keys: string[]): Promise<unknown>;
+}
+
+export const memoryKv = (): Kv => {
+  const m = new Map<string, unknown>();
+  return {
+    get: async (keys) => new Map(keys.filter((k) => m.has(k)).map((k) => [k, structuredClone(m.get(k))])),
+    put: async (entries) => { for (const [k, v] of Object.entries(entries)) m.set(k, structuredClone(v)); },
+    delete: async (keys) => { for (const k of keys) m.delete(k); },
+  };
+};
+
+const Cell = obj({ owner: str(64), room: str(32, { re: ROOM }), id: str(32) });
+
+/** The id the map knows a room's plot by: a one-way hash, so the map never hands out a room's link. */
+export const plotId = async (room: string) => (await sha256(`agent-page-plot:${room}`)).slice(0, 16);
+/** A player's colour, from their id: the same on every screen. */
+export const colorOf = (id: string) => `hsl(${parseInt(id.slice(0, 6), 16) % 360} 85% 62%)`;
+const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1;
+
+export class Galaxy {
+  // Claims one at a time, so two rooms that press at once never get the same cell.
+  private chain: Promise<unknown> = Promise.resolve();
+  // A burst of claims (a script making rooms) can't fill the map: a few a second.
+  private claims = new TokenBucket(3, 30, Date.now());
+  constructor(private kv: Kv) {}
+
+  /** The plot this owner holds, or null. */
+  async mine(owner: string): Promise<Claimed | null> {
+    const n = (await this.kv.get([`o:${owner}`])).get(`o:${owner}`);
+    if (typeof n !== "number") return null;
+    const c = check(Cell, (await this.kv.get([`c:${n}`])).get(`c:${n}`));
+    return c ? { ...spiral(n), id: c.id } : null;
+  }
+
+  /** The plot this owner already has, or the next free cell of the spiral. One plot per owner. */
+  claim(owner: string, room: string): Promise<Claimed> {
+    const run = this.chain.then(async () => {
+      const had = await this.mine(owner);
+      if (had) return had;
+      const got = await this.kv.get(["next"]);
+      const from = got.get("next");
+      let n = typeof from === "number" ? from : 1;
+      while (keptFree(n)) n++;
+      const id = await plotId(room);
+      await this.kv.put({ next: n + 1, [`o:${owner}`]: n, [`c:${n}`]: { owner, room, id }, [`i:${id}`]: room });
+      return { ...spiral(n), id };
+    });
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
+  /** The plots in the square of radius `r` around (x, y): owner never sent, only where, the public id and empty or not. */
+  async around(x: number, y: number, r: number): Promise<Plot[]> {
+    const cells: { x: number; y: number; n: number }[] = [];
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) cells.push({ x: x + dx, y: y + dy, n: cellOf(x + dx, y + dy) });
+    const got = await this.kv.get(cells.filter((c) => c.n > 0).map((c) => `c:${c.n}`));
+    return cells.map((c) => {
+      if (c.n === 0) return { x: c.x, y: c.y, id: "city", empty: false, city: true };
+      const cell = check(Cell, got.get(`c:${c.n}`));
+      return { x: c.x, y: c.y, id: cell?.id ?? null, empty: cell === null, city: false };
+    });
+  }
+
+  /** The room behind a plot's public id, or null. */
+  async roomOf(id: string): Promise<string | null> {
+    const room = (await this.kv.get([`i:${id}`])).get(`i:${id}`);
+    return typeof room === "string" && ROOM.test(room) ? room : null;
+  }
+
+  /** A player's socket, before it opens: only from a page this server served, for a room that holds a plot. The player
+   *  starts in the middle of their own plot. */
+  async seat(req: Request): Promise<Walker | Response> {
+    if (req.headers.get("Upgrade") !== "websocket") return json({ error: "this is the galaxy's socket" }, 426);
+    if (!fromPage(req)) return json({ error: "only this site's page may walk the galaxy" }, 403);
+    const room = new URL(req.url).searchParams.get("room") ?? "";
+    if (!ROOM.test(room)) return json({ error: "which room? ?room=<room>" }, 400);
+    const plot = await this.mine(`room:${room}`);
+    if (!plot) return json({ error: "claim a plot first: POST /api/galaxy/claim" }, 409);
+    return { id: plot.id, color: colorOf(plot.id), x: plot.x, y: plot.y, px: 0.5, pz: 0.5 };
+  }
+
+  /** The galaxy's doors, `rest` being the path after /api/galaxy. `forward` reaches a room's own doors (its picture
+   *  and its saved world). The socket is the platform's to upgrade (`seat`). */
+  async http(req: Request, rest: string, forward: (room: string, rest: string) => Promise<Response>): Promise<Response> {
+    const url = new URL(req.url);
+    if (rest === "/plots" && req.method === "GET") {
+      const at = (k: string) => Math.trunc(Number(url.searchParams.get(k) ?? 0)) || 0;
+      const x = Math.max(-10_000, Math.min(10_000, at("x"))), y = Math.max(-10_000, Math.min(10_000, at("y")));
+      const r = Math.max(0, Math.min(VIEW_MAX, at("r") || 1));
+      return json({ plots: await this.around(x, y, r) } satisfies Plots);
+    }
+    if (rest === "/claim" && req.method === "POST") {
+      if (!fromPage(req)) return json({ error: "only this site's page may claim a plot" }, 403);
+      const body = await readJson(req, ClaimBody);
+      if (!body) return json({ error: "send { room }: the room that claims its plot" }, 400);
+      const had = await this.mine(`room:${body.room}`);
+      if (had) return json(had satisfies Claimed);
+      if (!this.claims.take(Date.now())) return json({ error: "too many new plots at once: try again in a moment" }, 429);
+      // In this PR a plot's owner is its room; signing in (PR 5) swaps in the person.
+      return json((await this.claim(`room:${body.room}`, body.room)) satisfies Claimed);
+    }
+    const m = rest.match(/^\/(picture|world)\/([a-z0-9]{1,32})$/);
+    if (m && req.method === "GET") {
+      const room = await this.roomOf(m[2]!);
+      return room ? forward(room, `/${m[1]}`) : json({ error: "no world on that plot" }, 404);
+    }
+    return json({ error: `nothing at /api/galaxy${rest}: try GET /api/galaxy/plots?x=0&y=0` }, 404);
+  }
+}
+
+// ---------- players ----------
+
+/** One platform's sockets as the players' logic sees them: who is on each, keep a player's new spot, send one. */
+export interface Hub<S> {
+  list(): { s: S; p: Walker }[];
+  save(s: S, p: Walker): void;
+  send(s: S, m: FromGalaxy): void;
+}
+
+/** A player came in: they hear who is near, and those near see them. */
+export function joined<S>(hub: Hub<S>, s: S, p: Walker) {
+  const others = hub.list().filter((e) => e.s !== s && e.p.id !== p.id);
+  hub.send(s, { t: "players", players: others.filter((o) => near(o.p, p)).map((o) => o.p) });
+  for (const o of others) if (near(o.p, p)) hub.send(o.s, { t: "player", player: p });
+}
+
+/** A frame from a player: checked, kept, and sent on to the players on the same or a touching plot (the old plot's
+ *  too, so they see them go). One who changed plot hears who is near the new one. */
+export function walked<S>(hub: Hub<S>, s: S, raw: unknown) {
+  const m = check(ToGalaxy, raw);
+  const me = m && hub.list().find((e) => e.s === s);
+  if (!m || !me) return;
+  const p: Walker = { ...me.p, x: m.x, y: m.y, px: m.px, pz: m.pz };
+  hub.save(s, p);
+  const others = hub.list().filter((e) => e.s !== s && e.p.id !== p.id);
+  for (const o of others) if (near(o.p, p) || near(o.p, me.p)) hub.send(o.s, { t: "player", player: p });
+  if (p.x !== me.p.x || p.y !== me.p.y) hub.send(s, { t: "players", players: others.filter((o) => near(o.p, p)).map((o) => o.p) });
+}
+
+/** A player left: those near them see them go. */
+export function left<S>(hub: Hub<S>, s: S, p: Walker) {
+  for (const o of hub.list()) if (o.s !== s && o.p.id !== p.id && near(o.p, p)) hub.send(o.s, { t: "gone", id: p.id });
+}
