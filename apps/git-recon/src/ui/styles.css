@@ -915,3 +915,15 @@ html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:not(:disable
 html .ui-house .gc-binds > .gc-icon { width: min(32px, 100%); height: auto; aspect-ratio: 1; }
 @media (max-width: 520px) { html .ui-house .gc-binds > .gc-key[name^="bind-gun"] { margin-left: 4px; padding-inline: 2px; font-size: 11px; } }
 html .ui-house .gc-binds > .gc-sub:not(:has(+ span + .gc-key[name^="bind-gun"]))::after { content: ""; }
+
+/* Round 21 (#6353): a reset stamp only where there is something to put back. A key still on its own default shows no
+   stamp at all (its button is disabled, so nothing is lost); in the gun grid that chip takes the stamp's column too,
+   so the four across stay the same width and only a changed slot gives up room for its stamp. A changed key, in any
+   row, gets an orange edge and a bigger pencilled tick, so the moved keys stand out at a glance against the plain ones. */
+html .ui-house .gc-binds > .gc-icon:disabled::before { visibility: hidden; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:disabled) { grid-column: span 3; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:disabled { display: none; }
+html .ui-house .gc-binds > .gc-key:has(+ .gc-icon:not(:disabled)):not(.on) { border-color: #e8590c;
+  box-shadow: inset 0 0 0 1px #e8590c, 0 1px 0 #b8440666; }
+html .ui-house .gc-binds > span:has(+ .gc-key + .gc-icon:not(:disabled))::after { width: 34px; height: 25px; margin-top: -13px; }
+html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:not(:disabled))::after { top: 1px; right: 2px; width: 20px; height: 15px; }
