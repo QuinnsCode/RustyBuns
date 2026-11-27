@@ -9,6 +9,7 @@ import { SYSTEM_IDS, SYSTEMS, type SystemId } from "@rustybuns/gear";
 import { TOPS, type Tops } from "../project.ts";
 import type { Studio } from "./door.ts";
 import { shot } from "./picker.ts";
+import { renderGraphics, type GraphicsDeps } from "./graphics-panel.ts";
 
 /** The 20 fonts on the owner's font board, Saira Condensed (the default) first. Small text stays Inter whichever is picked. */
 export const FONTS = ["Saira Condensed", "Barlow Condensed", "Inter", "Space Grotesk", "Oswald", "Bebas Neue", "Anton", "Teko", "Rajdhani",
@@ -52,7 +53,7 @@ export const studioLine = (s: Pick<Studio, "id" | "about">) => STUDIO_LINES[s.id
 
 /** The gathering as it stands: the sesh's choices, with what the room shows when the owner hasn't picked yet. */
 export interface Setup { studio: string; rig: SystemId | null; tops: Tops; locked: boolean }
-export type Tab = "room" | "you";
+export type Tab = "room" | "you" | "graphics";
 export interface SettingsDeps {
   /** May this viewer change the gathering (the owner, or alone in an offline room)? */
   owner(): boolean;
@@ -65,6 +66,8 @@ export interface SettingsDeps {
   setPassword(code: string): void;
   /** Also yours: what each row does, and its line (Plug in says Unplug once plugged). */
   mine: { name: string; line(): string; act(): void }[];
+  /** Everyone's too: the 3D room's graphics (graphics.ts). */
+  graphics: GraphicsDeps;
   onClose(): void;
 }
 
@@ -97,12 +100,13 @@ export function mountSettings(d: SettingsDeps) {
   function render() {
     if (!isOpen()) return;
     const owner = d.owner();
-    if (!owner) tab = "you";
+    if (!owner && tab === "room") tab = "you";
     $("tab-room").hidden = !owner;
-    for (const [id, t] of [["tab-room", "room"], ["tab-you", "you"]] as const) $(id).setAttribute("aria-selected", String(tab === t));
+    for (const [id, t] of [["tab-room", "room"], ["tab-you", "you"], ["tab-gfx", "graphics"]] as const) $(id).setAttribute("aria-selected", String(tab === t));
     $("set-room").hidden = tab !== "room";
     $("set-you").hidden = tab !== "you";
-    if (tab === "room") room(); else you();
+    $("set-gfx").hidden = tab !== "graphics";
+    if (tab === "room") room(); else if (tab === "you") you(); else renderGraphics($("set-gfx-presets"), $("set-gfx-knobs"), d.graphics, row);
   }
   function room() {
     const s = d.setup(), list = d.studios(), here = list.find((x) => x.id === s.studio) ?? list[0];
@@ -129,10 +133,11 @@ export function mountSettings(d: SettingsDeps) {
     fill($("set-fonts"), FONTS.map((f) => row(f, "", f === font, () => { font = f; wearFont(f); render(); }, f)));
     fill($("set-mine"), d.mine.map((m) => row(m.name, m.line(), false, m.act)));
   }
-  function open(want: Tab = d.owner() ? "room" : "you") { tab = want; box.hidden = false; render(); ($(tab === "room" ? "tab-room" : "tab-you")).focus(); }
+  function open(want: Tab = d.owner() ? "room" : "you") { tab = want; box.hidden = false; render(); $(tab === "room" ? "tab-room" : tab === "you" ? "tab-you" : "tab-gfx").focus(); }
   function close() { if (!isOpen()) return; box.hidden = true; d.onClose(); }
   $("tab-room").addEventListener("click", () => { tab = "room"; render(); });
   $("tab-you").addEventListener("click", () => { tab = "you"; render(); });
+  $("tab-gfx").addEventListener("click", () => { tab = "graphics"; render(); });
   $("settings-done").addEventListener("click", close);
   // who can come in: anyone with the link, or with the room's password (the World's sesh code, world.ts locked)
   const code = $("set-code");
@@ -150,6 +155,6 @@ export function mountSettings(d: SettingsDeps) {
   return {
     open, close, isOpen, render,
     /** For the harness: which tabs show, the one open, and the picks as they stand. */
-    state: () => ({ open: isOpen(), tab, tabs: d.owner() ? ["room", "you"] : ["you"], font, setup: d.setup() }),
+    state: () => ({ open: isOpen(), tab, tabs: d.owner() ? ["room", "you", "graphics"] : ["you", "graphics"], font, setup: d.setup() }),
   };
 }

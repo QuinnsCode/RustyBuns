@@ -58,7 +58,8 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     if (!(frame instanceof HTMLIFrameElement) || e.source !== frame.contentWindow || field(e.data, SAID_KEY) !== true) return;
     const kind = field(e.data, "kind"), text = String(field(e.data, "text") ?? "");
     if (kind === "start") said = [];
-    else if (said.length < 20) said.push(`${kind === "blocked" ? "blocked" : "error"}: ${text}`);
+    // The camera's pictures and frames (pictures.ts) are nothing the agent hears about.
+    else if ((kind === "error" || kind === "blocked") && said.length < 20) said.push(`${kind === "blocked" ? "blocked" : "error"}: ${text}`);
   };
   addEventListener("message", heard);
   // A write's answer is the world's files (path and size), not their text: the agent asks for a file when it needs it.

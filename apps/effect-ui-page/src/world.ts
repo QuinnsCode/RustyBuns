@@ -3,6 +3,7 @@
 // reporter that tells the page what went wrong in there (errors, blocked loads), which page_read hands the agent.
 // The frame is `sandbox="allow-scripts"` with no same-origin: an opaque origin, so no cookies, storage or reach into
 // this page. Pure strings here (no DOM), so the Worker could serve the same document later.
+import { camera } from "./camera.ts";
 import { KIT } from "./kit.ts";
 import type { Page } from "./page.ts";
 
@@ -90,7 +91,7 @@ export function worldDoc(page: Page): string {
       const p = href === null || !/stylesheet/i.test(attr(m, "rel") ?? "") ? null : own(files, "", href);
       return p === null ? m : `<style>${safeIn(files[p]!, "style")}</style>`;
     });
-  const head = `<meta http-equiv="Content-Security-Policy" content="${WORLD_CSP}"><script>${REPORTER}</script><script type="importmap">${safeIn(JSON.stringify({ imports }), "script")}</script>`;
+  const head = `<meta http-equiv="Content-Security-Policy" content="${WORLD_CSP}"><script>${REPORTER}\n${camera(SAID_KEY)}</script><script type="importmap">${safeIn(JSON.stringify({ imports }), "script")}</script>`;
   // First in the document, so nothing of the world's runs before the policy and the reporter.
   const doctype = html.match(/^\s*<!doctype[^>]*>/i)?.[0] ?? "";
   html = html.slice(doctype.length);

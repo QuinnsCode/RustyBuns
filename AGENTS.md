@@ -17,6 +17,13 @@ The office's hire step runs `bun install --frozen-lockfile` in a new worktree be
 so `bun test` works right away. Only re-run it (`bun install --frozen-lockfile >/dev/null 2>&1`, on its own line)
 after pulling when the lockfile moved, or if `node_modules` is missing (`Cannot find package 'effect'`).
 
+## Worktrees: copy-on-write
+
+Make a worktree with `bun scripts/cow-worktree.ts add <path> <commit>`, not a bare `git worktree add`: its tracked
+files are clones that take no disk until changed. `dedupe` does the same for worktrees that exist; it is a dry run
+until `--go`, and `--go` rewrites files in other people's folders, so it needs the owner's yes.
+The rule for any repo, and how to copy it: [notes/COW_WORKTREES.md](notes/COW_WORKTREES.md).
+
 ## Tests: CI runs the suite
 
 CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each app a PR touched (`apps.yml`;

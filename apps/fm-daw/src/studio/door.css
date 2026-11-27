@@ -143,6 +143,7 @@
 #settings .set-row[aria-pressed="true"]:hover, #settings .set-row[aria-pressed="true"]:focus-visible { border-color: var(--hot); box-shadow: 0 0 0 2px rgba(var(--tint), 0.5); }
 #settings .set-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 #settings .set-chip { height: 44px; padding: 0 16px; border-radius: 12px; cursor: pointer; font: 500 15px var(--qs-body), sans-serif; color: var(--ink); background: rgba(var(--tint), 0.05); border: 1px solid rgba(var(--tint), 0.14); white-space: nowrap; }
+#settings .set-gfx-knobs { grid-template-rows: none; align-content: start; overflow-y: auto; }
 #settings .set-chip[aria-pressed="true"] { background: var(--hot); border-color: var(--hot); color: #1a1310; }
 #settings .set-sample { box-sizing: border-box; padding: 22px; border-radius: 16px; background: rgba(var(--tint), 0.05); border: 1px solid rgba(var(--tint), 0.12); display: flex; flex-direction: column; gap: 12px; }
 #settings .set-sample .h { font: 700 44px/1.05 var(--qs-head), sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

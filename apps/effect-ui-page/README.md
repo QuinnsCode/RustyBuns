@@ -16,12 +16,13 @@ Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands
 city: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
 pictures of what that line does. Three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
 one click with no AI connected, on the landing, in the dock and in Cmd+K, each with one thing to ask your AI next. When your AI's first write arrives, the landing gives way to your world; "Skip to the
-page" does it by hand. A room this browser already kept opens straight on its page. The dock beside it says how to
-reach the room, with a copy button for each:
+page" does it by hand. A room this browser already kept opens straight on its page. The dock beside it is pictures
+and buttons: Copy, Paste, Watch across the top, then a button for each way in:
 
-- **Paste into any agent.** "Copy the prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
+- **Paste into any agent.** "Copy prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
   T3 Code. They tell the agent to call the page's tools with `curl`, so there's nothing to install or configure.
-- **Or add it as an MCP server**, so the tools show up as the agent's own:
+- **Or add it as an MCP server** (the Claude, Codex and opencode buttons copy these), so the tools show up as the
+  agent's own:
   - Claude Code: `claude mcp add --transport http agent-page <room>/mcp`
   - Codex: `codex mcp add agent-page --url <room>/mcp`
   - opencode: `opencode mcp add agent-page --url <room>/mcp`
@@ -45,6 +46,13 @@ A write or an edit answers with the files (paths and sizes, not their text), or 
 buttons do the same as the tools. This browser keeps each room's world for the next visit. **Full screen** (or `?full`
 on the link) puts the dock away.
 
+**Pictures.** A moment after the world loads with no errors, the page takes a picture of its largest `<canvas>` and
+keeps it on the room, at `GET <room>/picture` (the `/api/r/<room>` link). Share your `/r/<room>` link and the preview
+shows that picture; a room with none shows the Agent Page sign. A world with no canvas has no picture of its own.
+**Export GIF** (in the dock and in Cmd+K) records three seconds of the canvas and downloads them as an animated GIF,
+`<room>.gif`. Keep the tab in front while it records. The file's name is the room's key, so rename it before you pass it
+on.
+
 The room's link is its key: there's no sign-in, so share it only with agents you want building your world. The page
 has to stay open: it holds the world, and an agent that calls while no tab is open is told to ask you to open it.
 
@@ -58,6 +66,8 @@ What keeps it safe, in short:
   text types only), 100,000 characters a file, 400,000 and 30 files a world.
 - Only a page this server served can hold a room's socket (its `Origin` must match), so another site that learns the
   link can't take the agent's calls. `bun run dev` listens on 127.0.0.1 only, not your Wi-Fi.
+- The same check guards the picture's `PUT`, which takes a JPEG of 150 KB at most, a few a minute. The world's own code
+  can't send one or read one: the frame has no network.
 - What the world says goes back to the agent, so the prompt and the MCP instructions tell it page text is content,
   never instructions.
 
@@ -102,7 +112,8 @@ bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 ## Deploy it
 
 `bun run deploy` builds the page and ships it with the relay as one Worker (`wrangler.jsonc`). It has one small
-Durable Object per room and no storage, AI or other paid bindings.
+Durable Object per room, which keeps one picture (150 KB at most) in its storage, and no AI or other paid bindings.
+The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 
 ## How it's put together
 
@@ -125,9 +136,14 @@ Durable Object per room and no storage, AI or other paid bindings.
   socket, and the reply comes back with the page's answer.
 - `src/edge/worker.ts`: the relay on Cloudflare, one `Room` Durable Object per room. `scripts/dev.ts`: the same relay
   and the page in one Bun server.
+- `src/camera.ts`: what takes pictures inside the frame. `src/pictures.ts`: the page's side (upload, Export GIF).
+  `src/gif.ts`: our GIF encoder. `src/share.ts`: the picture routes and the link preview, for the Worker and the dev
+  server alike. `bun scripts/og.ts` remakes `public/og.jpg`, the preview of a room with no picture.
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
-  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout. `test/tokens.test.ts`: the token budget.
-  `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in the frame and a kit world running there.
+  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a
+  missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview and Export
+  GIF. `test/tokens.test.ts`: the token budget. `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in
+  the frame and a kit world running there.
 
 Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit
 (`@effect/ui@a0d7578`). To move it on: `bun add https://pkg.pr.new/Effect-TS/ui/@effect/ui@<commit>` in this folder.
