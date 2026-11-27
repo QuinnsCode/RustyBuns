@@ -4,14 +4,18 @@
 // envelope moves its parts as on Q Amp, and its control net (GATE, LED, FOOT) scopes the control itself.
 // The knobs and swaps are Q Amp's (../amp/parts-store.ts): a part swapped here is on Q Amp's pedal too, and back. Remake writes your
 // parts into the board (circuit JSON and tscircuit source, ../circuit/builder.ts), plays the same riff through the
-// remake and through your board, and says whether they match. The build sheet and the kit zip stay on Q Amp.
+// remake and through your board, and says whether they match. Build it draws the board from its kit's Gerbers (../kit/gerber.ts), prints the sheet, and saves the files.
 // The riff runs in a worker (worker.ts). window.qbuilder drives it (scripts/probe.ts).
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./builder.css";
 import { check, obj, or, rec, str } from "@rustybuns/util/guard";
-import { BoardView } from "../amp/board.ts";
+import { BoardView, fit, svgOf } from "../amp/board.ts";
+import { mockup, type BoardSide, type Mockup } from "../kit/gerber.ts";
+import { gerbers, kitId, kitZip, sheetOf, type KitFiles } from "../kit/kit.ts";
+import { kitFiles } from "../kit/sheet.ts";
+import { zip } from "../kit/zip.ts";
 import { h, iconButton } from "../amp/dom.ts";
 import { icon } from "../amp/icons.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
@@ -82,8 +86,34 @@ const remake = h("section", "qb-card", h("div", "qb-card-top", icon("workflow", 
   h("p", "qb-hint", "Writes your parts into the board, then plays the same riff through the remake and your board and compares them."),
   retestBtn, retestOut, files);
 
-app.append(head, h("div", "qb-body", board.el, h("aside", "qb-side", scope, remake)));
-document.body.append(app);
+// Build it: the board as a fab makes it, drawn from the kit's own Gerbers and drill file (../kit/gerber.ts), a print
+// of the schematic, both sides of the board and the parts with your swaps, and the files to order it with.
+let side: BoardSide = "top", kit: KitFiles = {}, made: Mockup | null = null, kitAsk = 0, kitLoad = Promise.resolve();
+const mock = h("div", "qb-mock");
+const mockRead = h("p", "qb-hint");
+const sideBtns = (["top", "bottom"] as const).map((s) => {
+  const b = h("button", "qb-side-btn", s === "top" ? "Top" : "Bottom");
+  b.type = "button"; b.dataset.side = s;
+  b.addEventListener("click", () => setSide(s));
+  return b;
+});
+const actBtn = (name: string, label: string, title: string, go: () => void) => {
+  const b = h("button", "qb-btn qb-act", icon(name, 16), label);
+  b.type = "button"; b.title = title;
+  b.addEventListener("click", go);
+  return b;
+};
+const printBtn = actBtn("printer", "Print", "Print the schematic, both sides of the board and the parts list", () => void printSheet().then(() => print()));
+const gerberBtn = actBtn("download", "Gerbers", "The board's Gerber and drill files, as one zip: what a board house takes", () => saveGerbers());
+const kitBtn = actBtn("download", "Kit", "The whole kit: Gerbers, parts list and order list with your parts, pick-and-place, schematic and build sheet", () => void saveKit());
+const build = h("section", "qb-card", h("div", "qb-card-top", icon("circuit-board", 16), h("span", "qb-card-title", "Build it"), h("div", "qb-sides", ...sideBtns)),
+  mock, mockRead, h("div", "qb-acts", printBtn, gerberBtn, kitBtn));
+// What Print prints: filled when asked, laid out off screen so the schematic can be cropped to what is drawn.
+const sheetEl = h("section", "qb-print");
+sheetEl.setAttribute("aria-hidden", "true");
+
+app.append(head, h("div", "qb-body", board.el, h("aside", "qb-side", scope, remake, build)));
+document.body.append(app, sheetEl);
 
 // ---- the bench thread ----
 const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
@@ -122,6 +152,80 @@ function pick(id: BuilderPedal): void {
   wave = null; result = null; files.replaceChildren();
   showBoard();
   void run();
+  kitLoad = loadKit();
+}
+
+/** The open pedal's kit folder (`circuits/q-fuzz/`), and its board drawn from the Gerbers in it. */
+async function loadKit(): Promise<void> {
+  const ask = ++kitAsk, k = await kitFiles(kitId(def().name));
+  if (ask !== kitAsk) return;
+  kit = k;
+  drawMock();
+}
+
+function setSide(s: BoardSide): void { side = s; drawMock(); }
+
+function drawMock(): void {
+  made = mockup(kit, side);
+  mock.innerHTML = made?.svg ?? "";
+  mock.hidden = !made;
+  const name = def().name;
+  mockRead.textContent = made
+    ? `${made.size[0]} × ${made.size[1]} mm, two layers, ${made.holes} holes, ${made.pads} pads: drawn from the Gerbers you'd send a board house, ${side === "top" ? "parts side up" : "seen from below"}.`
+      + (made.unread.length ? ` Not drawn: ${made.unread.join(", ")}.` : "")
+    : `${name} has no board files yet, so there's nothing to order. Print still prints its schematic.`;
+  for (const b of sideBtns) { b.setAttribute("aria-pressed", String(b.dataset.side === side)); b.disabled = !made; }
+  gerberBtn.disabled = kitBtn.disabled = !made;
+}
+
+function saveFile(name: string, bytes: Uint8Array<ArrayBuffer>): void {
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+  const a = h("a"); a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** The Gerber and drill layers alone, as `<kit>-gerbers.zip`. */
+function gerberZip(): { name: string; bytes: Uint8Array<ArrayBuffer> } {
+  const files: Record<string, string> = {};
+  for (const g of gerbers(kit)) files[g] = kit[`gerbers/${g}`]!;
+  return { name: `${kitId(def().name)}-gerbers.zip`, bytes: zip(files) };
+}
+function saveGerbers(): void { const z = gerberZip(); saveFile(z.name, z.bytes); }
+
+/** The whole kit with your parts in its lists, as Q Amp's build sheet saves it. */
+async function saveKit(): Promise<void> {
+  const s = sheetOf(def(), kit, swaps());
+  saveFile(`${s.kit}-kit.zip`, kitZip(kit, s.text, await svgOf(def().board, "schematic"), s.parts));
+}
+
+/** Fills the print sheet: the pedal, your changes, the schematic, both sides of the board and the parts. Its headings. */
+async function printSheet(): Promise<string[]> {
+  const d = def(), s = sheetOf(d, kit, swaps()), what = changes(d.board, swaps());
+  const sch = h("div", "qp-art qp-sch");
+  sch.innerHTML = await svgOf(d.board, "schematic");
+  const sides = (["top", "bottom"] as const).map((x) => {
+    const m = mockup(kit, x), f = h("figure", "qp-side");
+    if (!m) return null;
+    const art = h("div", "qp-art");
+    art.innerHTML = m.svg;
+    f.append(art, h("figcaption", "", x === "top" ? "Top, parts side" : "Bottom, seen from below"));
+    return f;
+  }).filter((f) => f !== null);
+  // The Order column only when some part has a number to order it by.
+  const order = s.lines.some((l) => l.mpn), table = h("table", "qp-parts");
+  table.append(h("thead", "", h("tr", "", ...["Qty", "Part", "Value", "Where", ...(order ? ["Order"] : [])].map((t) => h("th", "", t)))),
+    h("tbody", "", ...s.lines.map((l) => h("tr", l.swapped ? "yours" : "", h("td", "", String(l.count)), h("td", "", l.part),
+      h("td", "", l.value + (l.swapped ? " (yours)" : "")), h("td", "", l.refs.join(" ")), ...(order ? [h("td", "", [l.maker, l.mpn].filter(Boolean).join(" "))] : [])))));
+  const m = mockup(kit, "top");
+  sheetEl.replaceChildren(
+    h("header", "qp-head", h("h1", "", d.name), h("p", "", what ? `Your version: ${what}.` : "Stock parts."), h("p", "qp-dim", d.blurb)),
+    h("section", "", h("h2", "", "Schematic"), sch),
+    ...(sides.length ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", `${m?.size.join(" × ")} mm, drawn from the files a board house takes: ${gerbers(kit).join(", ")}.`), h("div", "qp-sides", ...sides))] : []),
+    ...(s.lines.length ? [h("section", "", h("h2", "", "Parts"), table)] : []),
+    h("p", "qp-dim", `Q Builder · ${new Date().toLocaleDateString("en-CA")}`),
+  );
+  fit(sch.querySelector("svg"));
+  return [...sheetEl.querySelectorAll("h1, h2")].map((e) => e.textContent ?? "");
 }
 
 function setDrive(v: number): void {
@@ -284,7 +388,7 @@ onParts((p) => {
 });
 
 /** Resolves once nothing is running (the scope's riff and any retest). */
-const idle = async () => { while (busy || retesting) await new Promise((r) => setTimeout(r, 50)); };
+const idle = async () => { await kitLoad; while (busy || retesting) await new Promise((r) => setTimeout(r, 50)); };
 
 Object.assign(window, {
   qbuilder: {
@@ -294,7 +398,14 @@ Object.assign(window, {
       nets: nets.map((n) => ({ key: n.key, label: n.label, node: n.node })),
       probe: probe && { key: probe.key, label: probe.label, node: probe.node },
       swing: wave?.swing ?? null, retest: result, files: [...files.querySelectorAll("a")].map((a) => a.download),
+      board: { kit: kitId(def().name), side, made: !!made, size: made?.size ?? null, holes: made?.holes ?? 0, pads: made?.pads ?? 0, unread: made?.unread ?? [] },
     }),
+    /** The mockup from the top (parts side) or the bottom. */
+    side: (s: string) => { if (s === "top" || s === "bottom") setSide(s); return made ? side : null; },
+    /** Fills the print sheet without opening the print dialog: its headings. */
+    printSheet,
+    /** The Gerbers zip the button saves: its name and the files in it. */
+    gerbers: () => { const z = gerberZip(); return { name: z.name, files: gerbers(kit) }; },
     pick: (id: string) => { if (isBuilderPedal(id)) pick(id); return isBuilderPedal(id); },
     drive: setDrive,
     /** A socket's part: a clipper (silicon, germanium, led, mosfet, none) or a step ("0.47", "2.2"); null puts the stock part back. "" when it took. */
