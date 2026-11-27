@@ -146,3 +146,16 @@ test("amps on last and off first: anything switched upstream of an amp that is o
   const wrong = [{ id: "rack", on: true }, { id: "desk", on: true }, { id: "desk", on: false }, { id: "rack", on: false }];
   expect(thumps(gig(true), gigCables, wrong).map((p) => `${p.kind} ${p.items.join(",")}`)).toEqual(["thump desk,rack", "thump desk,rack"]);
 });
+
+test("the spider box: a 12U rack on one 20 A duplex trips that leg; on the L6-30 it holds, and the desk rides a duplex", () => {
+  const placed: Placed[] = [{ id: "gen", gear: "generator-100kva" }, { id: "spider", gear: "distro-box" }, { id: "rack", gear: "amp-rack-12u" }, { id: "desk", gear: "mixer-small" }];
+  const run = (rackOn: string) => compile(placed, [
+    c("power", "gen power-out-1", "spider power-in"),
+    c("power", `spider ${rackOn}`, "rack power-in"),
+    c("power", "spider power-out-2", "desk power-in"),
+  ]).problems.filter((p) => p.kind === "breaker");
+  const tripped = run("power-out-1");
+  expect(tripped.map((p) => [p.circuit, p.items])).toEqual([["spider power-out-1", ["spider", "rack"]]]);
+  expect(tripped[0]!.message).toContain("20 A 120 V leg");
+  expect(run("power-out-7")).toEqual([]);
+});

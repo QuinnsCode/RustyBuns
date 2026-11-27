@@ -173,7 +173,7 @@ function marks(id: string, size: number[], stencil?: string): Mark[] {
     case "amp-head":
       return [{ text: "Rusty", style: "script", width: 0.24, at: [0, h * 0.62, (d - 0.03) / 2 + 0.002] }];
     case "amp-rack-4u":
-      return [{ text: "RUSTY", style: "badge", width: 0.15, at: [w * 0.3, 0.3, d / 2 - 0.009] }];
+      return [{ text: "RUSTY", style: "badge", width: 0.15, at: [w * 0.3, 0.363, d / 2 - 0.009] }]; // on the case lip, over the amp
     case "mixer-small":
       return [{ text: "RUSTY", style: "badge", width: 0.1, at: [0, 0.024, d / 2 + 0.002] }];
     case "road-case-m": {
