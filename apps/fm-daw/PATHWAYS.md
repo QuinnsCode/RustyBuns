@@ -119,8 +119,8 @@ one `Listen` Durable Object per set (`src/listen.ts`), which keeps the stream's 
 cluster for whoever comes in late, and passes each chunk on to every listener. The listener's page (`listen.html`,
 `src/dj/listen-page.ts`) shows the set's name, the track list as each track comes in and a Play button, and plays it
 through MediaSource a few seconds behind; no sign-in. Stop, or closing the decks, ends it for everyone. Limits: a link is
-held by the key in the DJ's browser (one live set per DJ; a second tab going live takes over), 200 listeners a set
-(`LISTEN_EARS`), a cap on chunk size and rate, and per-address gates on going live and listening. It costs about
+held by the key in the DJ's browser (one live set per DJ; a second tab going live takes over), the free limits (16 listeners a set, 4 hours a set,
+16 set-hours a month: README, Free live sets), a cap on chunk size and rate, and per-address gates on going live and listening. It costs about
 $0.006 per set-hour whatever the crowd (the object is awake for the set; messages it sends aren't billed). The journey
 is `test/dj-live.test.ts`. The recording in step 4: REC in the decks' header (on `/decks.html` and at the DJ
 table) records the master, what the room's PA gets, to a file on your computer (`src/dj/record.ts`: Opus in WebM, or

@@ -12,8 +12,11 @@ cd apps/effect-ui-page
 bun run dev              # http://127.0.0.1:4799
 ```
 
-Open the page. It gives itself a room (`/r/<room>` in the address bar) and the Connect box beside it says how to reach
-it, with a copy button for each:
+Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
+city: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
+pictures of what that line does. When your AI's first change arrives, the landing gives way to your page; "Skip to the
+page" does it by hand. A room this browser already kept opens straight on its page. The dock beside it says how to
+reach the room, with a copy button for each:
 
 - **Paste into any agent.** "Copy the prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
   T3 Code. They tell the agent to call the page's tools with `curl`, so there's nothing to install or configure.
@@ -34,10 +37,11 @@ changes as the agent works, and the dock lists its calls.
 | `page_set_theme` | Accent, paper and ink colors (`#rrggbb`) and the font (sans, serif, mono, rounded) |
 | `page_add_block` | A text, links, stats, quote or tags block, at an index |
 | `page_edit_block`, `page_move_block`, `page_remove_block` | Change, move or remove a block by id |
+| `page_set_backdrop` | A codeSplitter handle whose profile page (their public `page` repo) fills the window behind the blocks, in a sandbox; `""` takes it away |
 | `page_undo`, `page_reset` | Take back the last change, or start over |
 
 Every write answers with the page after it, or why it couldn't be done (an unknown id names the ids there are). The
-Undo and Start over buttons do the same as the tools. This browser keeps each room's page for the next visit.
+Undo and Start over buttons do the same as the tools. This browser keeps each room's page for the next visit. **Full screen** (or `?full` on the link) puts the dock away.
 
 The room's link is its key: there's no sign-in, so share it only with agents you want building your page. The page has
 to stay open: it holds the page, and an agent that calls while no tab is open is told to ask you to open it.

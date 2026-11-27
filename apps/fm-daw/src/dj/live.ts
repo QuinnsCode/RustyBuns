@@ -7,7 +7,7 @@ import { check, obj, str } from "@rustybuns/util/guard";
 import { hex } from "@rustybuns/util/bytes";
 import { CueWatch, type OnAir } from "./record.ts";
 import type { Curve } from "./mixer.ts";
-import { DJ_KEY, LIVE_BITRATE, LIVE_TYPE, SET_ID, SetSays, listenPath, listenSocket, type DjSays } from "./live-wire.ts";
+import { DJ_KEY, LIVE_BITRATE, LIVE_TYPE, SET_ID, SetSays, limitSays, listenPath, listenSocket, type DjSays, type Limit } from "./live-wire.ts";
 
 const STORE = "qdjs-live";
 const Mine = obj({ id: str(10, { re: SET_ID }), key: str(32, { re: DJ_KEY }) });
@@ -27,7 +27,7 @@ export function myLink(store: Pick<Storage, "getItem" | "setItem"> = localStorag
 /** Whether this browser can stream a set (Opus in WebM: Chrome, Edge, Firefox; not Safari). */
 export const canGoLive = () => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(LIVE_TYPE);
 
-export type LiveState = { on: boolean; link: string; ears: number; seconds: number; sent: number };
+export type LiveState = { on: boolean; link: string; ears: number; seconds: number; sent: number; limit: Limit | null };
 
 /** One live set at a time from these decks. */
 export class LiveSet {
@@ -40,6 +40,8 @@ export class LiveSet {
   private mine: { id: string; key: string };
   /** Called when the set starts, stops (`why` says why when it wasn't the DJ) or its listener count changes. */
   onChange: (why?: string) => void = () => {};
+  /** The free limit that refused or ended the last set (its number with it), until the next go-live. */
+  limit: { why: Limit; n: number } | null = null;
 
   constructor(private origin = location.origin, store?: Pick<Storage, "getItem" | "setItem">) { this.mine = myLink(store); }
 
@@ -47,20 +49,22 @@ export class LiveSet {
   /** The link to send people. */
   get link(): string { return `${this.origin}${listenPath(this.mine.id)}`; }
   state(now = performance.now()): LiveState {
-    return { on: this.on, link: this.link, ears: this.ears, seconds: this.on ? (now - this.t0) / 1000 : 0, sent: this.sent };
+    return { on: this.on, link: this.link, ears: this.ears, seconds: this.on ? (now - this.t0) / 1000 : 0, sent: this.sent, limit: this.limit?.why ?? null };
   }
 
-  /** Go live with `stream` under `name`: resolves false when the link can't be reached (no server, or not this DJ's). */
+  /** Go live with `stream` under `name`: resolves false when the link can't be reached (no server, or not this DJ's)
+   * or a free limit turned it away (`limit` says which). */
   start(stream: MediaStream, name: string): Promise<boolean> {
     if (this.ws) return Promise.resolve(true);
     const ws = new WebSocket(listenSocket(this.origin, this.mine.id, this.mine.key));
     ws.binaryType = "arraybuffer";
     this.ws = ws;
+    this.limit = null;
     return new Promise((done) => {
-      let opened = false;
-      ws.onopen = () => {
-        opened = true;
-        this.send({ t: "name", name });
+      let started = false;
+      // the set takes this socket once it counts its listeners to it; a limit sends its end instead
+      const begin = () => {
+        started = true;
         const rec = new MediaRecorder(stream, { mimeType: LIVE_TYPE, audioBitsPerSecond: LIVE_BITRATE });
         // in order: each chunk's bytes are read after the one before it went
         let line = Promise.resolve();
@@ -76,18 +80,20 @@ export class LiveSet {
         this.onChange();
         done(true);
       };
+      ws.onopen = () => this.send({ t: "name", name });
       ws.onmessage = (e) => {
         if (typeof e.data !== "string") return;
         let v: unknown;
         try { v = JSON.parse(e.data); } catch { return; }
         const m = check(SetSays, v);
-        if (m?.t === "ears") { this.ears = m.ears ?? 0; this.onChange(); }
+        if (m?.t === "ears") { if (!started) begin(); this.ears = m.ears ?? 0; this.onChange(); }
+        else if (m?.t === "end" && m.why) this.limit = { why: m.why, n: m.n ?? 0 };
       };
       ws.onclose = (e) => {
         const was = this.ws === ws;
         if (was) this.halt();
-        if (!opened) done(false);
-        else if (was) this.onChange(e.code === 4002 ? "Live from another tab now" : "The listen link dropped");
+        if (!started) done(false);
+        else if (was) this.onChange(this.limit ? limitSays(this.limit.why, this.limit.n).title : e.code === 4002 ? "Live from another tab now" : "The listen link dropped");
       };
     });
   }

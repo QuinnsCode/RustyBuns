@@ -9,16 +9,20 @@ import { durableObject, serve } from "@rustybuns/shell-bun";
 import { chromePath, launchChrome, load, openTab, startVite, waitFor, type Tab } from "../../../scripts/chrome.ts";
 import worker from "../src/worker.ts";
 import Listen, { CLOSE_FULL, CLOSE_NOT_YOURS } from "../src/listen.ts";
+import Lobby, { monthOf } from "../src/lobby.ts";
 
 setDefaultTimeout(120_000);
 const app = join(import.meta.dir, "..");
 const nothing = { idFromName: (n: string) => n, get: () => ({ fetch: async () => new Response("", { status: 404 }) }) };
 let vite = "";
-/** The worker with a Listen namespace (`ears` a set at most), its pages from the dev server. */
-function site(ears = "200") {
+const TOKEN = "owner-only";
+/** The worker with a Listen namespace (`ears` a set at most), its pages from the dev server; with `limits`, a real Lobby and those free limits. */
+function site(ears = "200", limits?: { LISTEN_SET_HOURS: string; FREE_SET_HOURS: string }) {
   const shell = serve<Parameters<typeof worker.fetch>[1]>({ headers: {} });
   const ASSETS = { fetch: (r: Request) => { const u = new URL(r.url); return fetch(`${vite}${u.pathname}${u.search}`, { headers: { accept: r.headers.get("accept") ?? "*/*" } }); } };
-  shell.mount(worker, { ASSETS, WORLD: nothing, LOBBY: nothing, PROFILE: nothing, LISTEN: durableObject(Listen, { LISTEN_EARS: ears }) });
+  const LOBBY = limits ? durableObject(Lobby, { FREE_SET_HOURS: limits.FREE_SET_HOURS }) : nothing;
+  const LISTEN = durableObject(Listen, limits ? { LISTEN_EARS: ears, LISTEN_SET_HOURS: limits.LISTEN_SET_HOURS, LOBBY } : { LISTEN_EARS: ears });
+  shell.mount(worker, { ASSETS, WORLD: nothing, LOBBY, PROFILE: nothing, LISTEN, SIGNUPS_TOKEN: TOKEN });
   return shell;
 }
 
@@ -98,5 +102,38 @@ test.skipIf(!hasChrome)("go live on the decks: a second tab opens the link and h
   await decks("qdecks.live(false)");
   await until(earTab, "the set over", "qlisten.state().over");
   expect(await decks<boolean>("qdecks.liveState().on")).toBe(false);
+  await shell.stop();
+});
+
+test.skipIf(!hasChrome)("a free set hits its time: the decks say so, the DJ joins the paid waitlist, and /usage has the set", async () => {
+  // a set's length of 0.001 hours (3.6 s) stands in for the 4 hours; the month's allowance stays far off
+  const shell = site("16", { LISTEN_SET_HOURS: "0.001", FREE_SET_HOURS: "16" });
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
+  await load(chrome.cdp, tab, `${shell.url}/decks.html`, 0);
+  const decks = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
+  const until = (what: string, expr: string) => waitFor(tab, what, expr, 30_000, "window.qdecks?.liveState()");
+  await until("the decks", "!!window.qdecks");
+  await decks("qdecks.start()");
+  await until("the demo tracks on", "qdecks.state().decks.every((d) => d.name)");
+  await decks("(qdecks.cross(-1), qdecks.play(0))");
+  expect(await decks<boolean>(`qdecks.live(true, "Short one")`)).toBe(true);
+
+  await until("the set ended by its limit", `qdecks.liveState().limit === "hours" && !qdecks.liveState().on`);
+  const card = (await decks<string>(`document.querySelector('.waitlist[data-limit="hours"]')?.innerText ?? ""`))!;
+  expect(card).toContain("A free set runs up to");
+  expect(card).toContain("Paid is coming: join the waitlist");
+  await decks(`(() => { const f = document.querySelector(".waitlist form"); f.querySelector("input").value = "dj@example.com"; f.requestSubmit(); })()`);
+  await until("on the waitlist", `document.querySelector(".waitlist")?.innerText.includes("on the waitlist, number 1")`);
+
+  const owner = { headers: { Authorization: `Bearer ${TOKEN}` } };
+  expect(await (await fetch(`${shell.url}/signups?list=paid`, owner)).json()).toMatchObject([{ email: "dj@example.com", list: "paid", place: 1 }]);
+  expect(await (await fetch(`${shell.url}/signups`, owner)).json()).toEqual([]);
+  expect((await fetch(`${shell.url}/usage`)).status).toBe(404);
+  const use = await (await fetch(`${shell.url}/usage`, owner)).json();
+  expect(use.records).toHaveLength(1);
+  expect(use.records[0]).toMatchObject({ endedBy: "limit" });
+  expect(use.records[0].hours).toBeGreaterThan(0.0009);
+  expect(use.records[0].chunks).toBeGreaterThan(0);
+  expect(use.totals[monthOf(Date.now())]).toMatchObject({ sets: 1, byLimit: 1 });
   await shell.stop();
 });

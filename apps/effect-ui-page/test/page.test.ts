@@ -7,7 +7,7 @@ import { apply, starter } from "../src/page.ts";
 import { connectLines, CopyText, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
-const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false };
+const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false };
 const run = <A>(e: Effect.Effect<A, never, import("effect").Scope.Scope>) => Effect.runPromise(Effect.scoped(e));
 
 describe("an agent's tool call", () => {
@@ -18,7 +18,17 @@ describe("an agent's tool call", () => {
       ["page_set_theme", { font: "comic" }],
       ["page_add_block", { kind: "links", title: "Me", items: [{ label: "x", url: "javascript:alert(1)" }] }],
       ["page_add_block", { title: "no kind" }],
+      ["page_set_backdrop", { codesplitter: "../me/../admin" }],
     ] as const) expect(() => decode(tool(name), args)).toThrow();
+  });
+
+  test("puts a codeSplitter page behind the blocks, and takes it away", () => {
+    const asked = decode(tool("page_set_backdrop"), { codesplitter: "quinn" });
+    expect(asked).toEqual({ _tag: "SetBackdrop", codesplitter: "quinn" });
+    const set = apply(starter, { _tag: "SetBackdrop", codesplitter: "quinn" });
+    expect("page" in set && set.page.backdrop).toBe("quinn");
+    const off = "page" in set ? apply(set.page, { _tag: "SetBackdrop", codesplitter: "" }) : set;
+    expect("page" in off && "backdrop" in off.page).toBe(false);
   });
 
   test("tells the agent which arguments it takes", () => {
@@ -88,4 +98,20 @@ test("Full screen puts the dock away and Show dock brings it back", () =>
       .expect(HtmlLocator.role("button", { name: "Show dock" })).toExist();
     s.click(HtmlLocator.role("button", { name: "Show dock" }))
       .expect(HtmlLocator.role("button", { name: "Full screen" })).toExist();
+  })));
+
+test("a fresh room lands on the landing: Copy copies its Claude Code line, and the AI's first change brings up the page", () =>
+  run(Effect.gen(function* () {
+    const fresh = { ...props, landing: true };
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, fresh);
+    s.expect(Locator.text("How it works")).toExist();
+    s.expect(Locator.text("How it's built")).toExist();
+    s.click(HtmlLocator.role("button", { name: "Copy" }))
+      .expectExact(CopyText);
+    expect(s.pending[0]!.command.args).toMatchObject({ text: connectLines(props.origin, props.room)[0]!.text });
+    s.resolve(CopyText, PageMessage.CompletedCopy({ what: "Claude Code" })).expect(HtmlLocator.role("button", { name: "Copied" })).toExist();
+    const story = yield* Story.make(ProfilePageNoDeps, fresh);
+    story.send(PageMessage.ReceivedAgentCall({ call: { call: 1, tool: "page_set_profile", request: { _tag: "SetProfile", name: "Ada" } } }));
+    expect(story.model.landing).toBe(false);
+    story.resolve(ReportPage, PageMessage.CompletedReportPage());
   })));

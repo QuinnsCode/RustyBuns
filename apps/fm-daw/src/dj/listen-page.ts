@@ -7,6 +7,7 @@ import { check } from "@rustybuns/util/guard";
 import { LIVE_TYPE, SetSays, listenSocket, setFromPath } from "./live-wire.ts";
 import { stamp, type Cue } from "./record.ts";
 import { followTheme } from "../ui/theme.ts";
+import { waitlistCard } from "./waitlist.ts";
 
 followTheme();
 const id = setFromPath(location.pathname);
@@ -15,6 +16,9 @@ const nameEl = $("#name"), statusEl = $("#status"), list = $<HTMLOListElement>("
 const audio = new Audio();
 
 let name = "", live = false, over = false, ears = 0, bytes = 0, wanted = false;
+/** The set turned this page away (full: its listener cap), or a free limit ended it. */
+let full: number | null = null, endedByLimit = false, cardFor: number | null = null;
+const limitEl = $("#limit");
 const cues: Cue[] = [];
 let ws: WebSocket | null = null;
 let ms: MediaSource | null = null, sb: SourceBuffer | null = null;
@@ -24,10 +28,11 @@ let level: AnalyserNode | null = null, actx: AudioContext | null = null;
 function draw() {
   nameEl.textContent = name || "QDJs set";
   document.title = `${name || "QDJs set"}: listen live`;
-  statusEl.textContent = !id ? "This isn't a listen link." : over ? "The set is over." : !live ? "Not live right now: this page plays as soon as the DJ goes live." : `Live${ears ? `: ${ears} listening` : ""}`;
+  statusEl.textContent = !id ? "This isn't a listen link." : full !== null ? "This set is full." : over ? (endedByLimit ? "The set is over: it reached a free set's limit." : "The set is over.") : !live ? "Not live right now: this page plays as soon as the DJ goes live." : `Live${ears ? `: ${ears} listening` : ""}`;
   statusEl.classList.toggle("live", live && !over);
   playB.textContent = wanted ? "Stop" : "Play";
   playB.setAttribute("aria-pressed", String(wanted));
+  if (full !== cardFor) { cardFor = full; limitEl.replaceChildren(...(full !== null ? [waitlistCard("ears", full, id ?? "")] : [])); }
   list.replaceChildren(...cues.map((c) => {
     const li = document.createElement("li"), at = document.createElement("span");
     at.textContent = stamp(c.at);
@@ -88,14 +93,14 @@ function connect() {
       if (m.cues) cues.splice(0, cues.length, ...m.cues);
     } else if (m.t === "cue" && m.cue) cues.push(m.cue);
     else if (m.t === "ears") ears = m.ears ?? 0;
-    else if (m.t === "end") { over = true; live = false; }
+    else if (m.t === "end") { over = true; live = false; endedByLimit = !!m.why; if (m.why === "ears") full = m.n ?? 0; }
     draw();
   };
   s.onclose = () => {
     if (ws !== s) return;
     ws = null;
     // the set ended or the line dropped: keep listening for the DJ while the page wants to play
-    if (wanted) setTimeout(() => { if (wanted && !ws) { ms = null; connect(); } }, over ? 3000 : 1500);
+    if (wanted && full === null) setTimeout(() => { if (wanted && !ws) { ms = null; connect(); } }, over ? 3000 : 1500);
   };
 }
 
@@ -109,7 +114,7 @@ function play(on: boolean) {
       src.connect(level).connect(ctx.destination);
     }
     void actx?.resume();
-    over = false;
+    over = false; full = null;
     // reconnect so the set sends its start again for this player
     ws?.close(); ws = null; ms = null;
     connect();
@@ -130,7 +135,7 @@ declare global { interface Window { qlisten: typeof harness } }
 const harness = {
   play: (on = true) => play(on),
   /** The set as this page has it: its name, live or over, the track list, listeners, and the player's state. */
-  state: () => ({ id, name, live, over, ears, cues: [...cues], bytes, playing: !audio.paused, time: audio.currentTime, buffered: sb?.buffered.length ? sb.buffered.end(sb.buffered.length - 1) - sb.buffered.start(0) : 0, level: loud() }),
+  state: () => ({ id, name, live, over, full: full !== null, ears, cues: [...cues], bytes, playing: !audio.paused, time: audio.currentTime, buffered: sb?.buffered.length ? sb.buffered.end(sb.buffered.length - 1) - sb.buffered.start(0) : 0, level: loud() }),
 };
 window.qlisten = harness;
 connect();

@@ -48,6 +48,7 @@ describe("your page", () => {
     expect(csp).toStartWith("sandbox allow-scripts");
     expect(csp).toContain("connect-src 'self'");
     expect(csp).not.toContain("allow-same-origin");
+    expect(csp).toContain("frame-ancestors 'self' https://agent-page.notryanquinn.workers.dev");
     expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
     const html = await res.text();
     expect(html).toContain('<script src="world.js">');

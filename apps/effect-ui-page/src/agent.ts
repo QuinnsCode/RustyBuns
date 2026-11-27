@@ -37,6 +37,14 @@ const socketUrl = (room: string) => `${location.protocol === "https:" ? "wss" : 
 const replyOf = (id: number, r: unknown): FromPage =>
   field(r, "ok") === false ? { t: "reply", id, ok: false, result: r, error: String(field(r, "error") ?? "refused") } : { t: "reply", id, ok: true, result: r };
 
+/** The tools a person reaches in the Cmd+K palette too, with the one line it asks for first (when it takes one). */
+const PALETTE: Readonly<Record<string, { ask?: string }>> = {
+  page_set_profile: { ask: "The page's name" },
+  page_set_backdrop: { ask: "A codeSplitter handle (empty takes it away)" },
+  page_undo: {},
+  page_reset: {},
+};
+
 export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect.gen(function* () {
   const queue = yield* Queue.unbounded<Call>();
   const online = yield* Queue.unbounded<boolean>();
@@ -53,7 +61,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   const off = addCommands([
     { ...READ, group: "Page", palette: false, execute: () => page },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
-      annotations: t.hints, palette: false, execute: (args) => call(t, args) })),
+      annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
   ]);
   const link = connectSocket<ToPage, FromPage>(() => socketUrl(room), {
     decode: (v) => check(ToPage, v),

@@ -7,6 +7,12 @@ const Hex = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/));
 const Url = Schema.String.check(Schema.isPattern(/^https:\/\/\S+$/));
 const Line = Schema.String.check(Schema.isMaxLength(120));
 const Para = Schema.String.check(Schema.isMaxLength(800));
+/** A codeSplitter handle, or "" for none. */
+const Handle = Schema.String.check(Schema.isPattern(/^([A-Za-z0-9][A-Za-z0-9_-]{0,38})?$/));
+
+/** Where a backdrop comes from: codeSplitter serves each person's page (their public `page` repo) in a sandbox there. */
+export const CODESPLITTER = "https://codesplitter.notryanquinn.workers.dev";
+export const backdropUrl = (handle: string) => `${CODESPLITTER}/api/users/${encodeURIComponent(handle)}/page/`;
 
 export const Font = Schema.Literals(["sans", "serif", "mono", "rounded"]);
 export const Kind = Schema.Literals(["text", "links", "stats", "quote", "tags"]);
@@ -33,6 +39,8 @@ export const Page = Schema.Struct({
   theme: Theme,
   blocks: Schema.Array(Block),
   next: Schema.Number,
+  /** A codeSplitter handle whose profile page fills the window behind the blocks. */
+  backdrop: Schema.optionalKey(Handle),
 });
 export type Page = typeof Page.Type;
 
@@ -49,15 +57,16 @@ export const EditBlock = Schema.TaggedStruct("EditBlock", {
 });
 export const RemoveBlock = Schema.TaggedStruct("RemoveBlock", { id: Schema.String });
 export const MoveBlock = Schema.TaggedStruct("MoveBlock", { id: Schema.String, to: Schema.Int });
+export const SetBackdrop = Schema.TaggedStruct("SetBackdrop", { codesplitter: Handle });
 export const Reset = Schema.TaggedStruct("Reset", {});
 
-export const Action = Schema.Union([SetProfile, SetTheme, AddBlock, EditBlock, RemoveBlock, MoveBlock, Reset]);
+export const Action = Schema.Union([SetProfile, SetTheme, AddBlock, EditBlock, RemoveBlock, MoveBlock, SetBackdrop, Reset]);
 export type Action = typeof Action.Type;
 
 export const starter: Page = {
   name: "Your name",
   tagline: "Connect an agent and ask it to build this page.",
-  theme: { accent: "#f97316", paper: "#fffaf3", ink: "#1c1917", font: "sans" },
+  theme: { accent: "#ff3d8b", paper: "#0a0918", ink: "#e9ecf8", font: "mono" },
   blocks: [
     { id: "b1", kind: "text", title: "About", body: "This page is an Effect UI component. Every change comes in as a message, from your agent's WebMCP tools or from the buttons beside it.", items: [] },
   ],
@@ -101,6 +110,10 @@ export function apply(page: Page, a: Action): { page: Page } | { error: string }
       const [b] = blocks.splice(i, 1);
       blocks.splice(at(a.to, blocks.length), 0, b);
       return { page: { ...page, blocks } };
+    }
+    case "SetBackdrop": {
+      const { backdrop: _, ...rest } = page;
+      return { page: a.codesplitter ? { ...rest, backdrop: a.codesplitter } : rest };
     }
     case "Reset":
       return { page: starter };

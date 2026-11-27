@@ -4,6 +4,7 @@
 import { useState } from "react";
 import type { Full } from "../project.ts";
 import { savedCode, saveCode } from "./net.ts";
+import { signUp as postSignup } from "../signup-wire.ts";
 
 type CardProps = { why: Full; room: string | null; onRetry(): void; onSolo(): void };
 
@@ -17,13 +18,7 @@ function SignupCard(props: CardProps) {
   async function signUp(e: React.FormEvent) {
     e.preventDefault();
     setState({ busy: true });
-    try {
-      const r = await fetch("/signup", { method: "POST", body: JSON.stringify({ email, room: props.room ?? "" }) });
-      const v: unknown = await r.json().catch(() => null);
-      const o = typeof v === "object" && v !== null ? v : {};
-      if ("place" in o && typeof o.place === "number") setState({ place: o.place });
-      else setState({ error: "error" in o && typeof o.error === "string" ? o.error : r.status === 429 ? "Too many tries, wait a minute" : "That didn't go through" });
-    } catch { setState({ error: "That didn't go through" }); }
+    setState(await postSignup(email, props.room ?? ""));
   }
   return (
     <div className="gate" role="dialog" aria-modal="true" aria-labelledby="full-title">

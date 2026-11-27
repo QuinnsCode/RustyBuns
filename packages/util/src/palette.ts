@@ -152,7 +152,7 @@ body:has(.rb-report) .rb-pal-btn { bottom: calc(max(10px, env(safe-area-inset-bo
 .rb-pal kbd { margin-left: auto; font: 500 11px ui-monospace, Menlo, monospace; border: 1px solid var(--_line); border-radius: 5px; padding: 0 5px; color: var(--_muted); }
 .rb-pal-list { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow: auto; }
 .rb-pal-list li { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; cursor: pointer; }
-.rb-pal-list li.on { background: var(--_hover); box-shadow: inset 3px 0 0 var(--_accent); }
+.rb-pal-list li.on { background: var(--_hover); box-shadow: inset 0 0 0 1px var(--_accent); }
 .rb-pal-list .rb-pal-group { padding: 10px 10px 3px; font: 600 11px ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: .06em; color: var(--_muted); cursor: default; }
 .rb-pal-list .rb-pal-none { color: var(--_muted); cursor: default; }
 .rb-pal-list li > span:first-of-type { flex: 1; min-width: 0; }
