@@ -14,7 +14,7 @@ interface State { selected: number; grid: string; tracks: { name: string; mute: 
 test.skipIf(!hasChrome)("quantize, undo and mute through the desk's commands and its toolbar", async () => {
   const tab = await openTab(chrome.cdp, { w: 1440, h: 900 });
   try {
-    await load(chrome.cdp, tab, vite.url, 0);
+    await load(chrome.cdp, tab, `${vite.url}desk`, 0);
     const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
     const run = <T>(name: string, args: object = {}) => page<T>(`window.__commands.run(${JSON.stringify(name)}, ${JSON.stringify(args)})`);
     const state = () => run<State>("desk_state");

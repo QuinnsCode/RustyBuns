@@ -45,7 +45,7 @@ function SignupCard(props: CardProps) {
         {state.error && <p className="err">{state.error}</p>}
         <div className="signup">
           {props.why !== "blocked" && <button className="ghost" onClick={props.onRetry}>Try again</button>}
-          {props.why !== "rooms" && <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>}
+          {props.why !== "rooms" && <button className="ghost" onClick={() => { location.href = "/desk"; }}>New sesh</button>}
           <button className="ghost" onClick={props.onSolo}>Play alone (saved here)</button>
         </div>
       </div>
@@ -73,7 +73,7 @@ function CodeCard(props: CardProps) {
           <button className="play">Join</button>
         </form>
         <div className="signup">
-          <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>
+          <button className="ghost" onClick={() => { location.href = "/desk"; }}>New sesh</button>
           <button className="ghost" onClick={props.onSolo}>Play alone (saved here)</button>
         </div>
       </div>
