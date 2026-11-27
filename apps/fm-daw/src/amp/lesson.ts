@@ -2,14 +2,14 @@
 // the amp's Gain down so it plays clean, switch Q Drive on at a low Drive to push it, then switch Q Tape on in the amp's
 // effects loop, after the preamp, where its repeats stay clean. Every step reads the page's own state: the amp's knobs,
 // the pedals switched on, the board's order (pedalboard.ts) and what the cables let the speakers hear (circuit/patch.ts
-// heard), so a pedal on a board cabled out of the chain doesn't count. Pure: no DOM.
+// heard), so a pedal cabled out of the chain doesn't count. Pure: no DOM.
 import type { Step } from "@rustybuns/gear";
 import { AMP_SLOT } from "./pedalboard.ts";
 import type { PageLessonDef } from "../studio/page-lesson.ts";
 
 /** What a step reads: the amp's Gain (0 to 10), the pedals switched on and their Drive, the tape echo's switch, the
- *  board's tiles in chain order (the amp one of them), and whether the cables put the pedalboard in the sound. */
-export type AmpAt = { gain: number; lit: readonly string[]; drive: Readonly<Record<string, number>>; tape: boolean; order: readonly string[]; pedalsHeard: boolean };
+ *  board's tiles in chain order (the amp one of them), and whether the cables put Q Drive in the sound. */
+export type AmpAt = { gain: number; lit: readonly string[]; drive: Readonly<Record<string, number>>; tape: boolean; order: readonly string[]; driveHeard: boolean };
 
 /** Clean is the amp's Gain at this or under; a push is Q Drive's Drive at this or under. */
 export const CLEAN_GAIN = 3, PUSH_DRIVE = 4;
@@ -25,10 +25,10 @@ const STEPS: Step<AmpAt>[] = [
   },
   {
     job: `Switch Q Drive on, its Drive at ${PUSH_DRIVE} or under: a pedal in front of the amp`,
-    done: (s) => s.lit.includes("drive") && driveOf(s) <= PUSH_DRIVE + 1e-6 && s.pedalsHeard && !inLoop(s, "drive"),
+    done: (s) => s.lit.includes("drive") && driveOf(s) <= PUSH_DRIVE + 1e-6 && s.driveHeard && !inLoop(s, "drive"),
     why: (s) => {
       if (!s.lit.includes("drive")) return null;
-      if (!s.pedalsHeard) return "The pedalboard isn't cabled between the guitar and the amp, so its pedals are out of the sound: the guitar into the board's In, its Out into the amp's In";
+      if (!s.driveHeard) return "Q Drive isn't cabled between the guitar and the amp, so it is out of the sound: a cable from the guitar (or the pedal before it) into Q Drive's In, and one from its Out on toward the amp's In";
       if (inLoop(s, "drive")) return "Q Drive sits in the amp's loop, after the preamp: it clips the amp's own sound, harsh and fizzy. Drag it in front of the amp";
       if (driveOf(s) > PUSH_DRIVE) return `Q Drive at ${Math.round(driveOf(s) * 10) / 10} is a distortion of its own. At ${PUSH_DRIVE} or under it pushes the amp's mids and tightens the lows, and the amp does the rest`;
       return null;

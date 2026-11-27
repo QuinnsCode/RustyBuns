@@ -8,8 +8,11 @@ import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 setDefaultTimeout(120_000); // vite serves the page cold, then the riff runs through the fuzz a few times
 useBrowser();
 
-type Swing = { hi: number; lo: number; flat: number };
-type State = { pedal: string; busy: boolean; why: string; probe: { key: string; label: string } | null; swing: Swing | null; retest: { same: boolean; louder: number } | null; files: string[] };
+type Swing = { hi: number; lo: number; flat: number; top: number };
+type State = {
+  pedal: string; busy: boolean; why: string; probe: { key: string; label: string } | null; swing: Swing | null; retest: { same: boolean; louder: number } | null; files: string[];
+  changes: string; board: { fits: boolean };
+};
 
 test.skipIf(!hasChrome)("scope the fuzz's clipper net, swap its diodes, see the clipping change, remake and retest", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 860 });
@@ -44,6 +47,49 @@ test.skipIf(!hasChrome)("scope the fuzz's clipper net, swap its diodes, see the 
     expect(r!.same).toBe(true);
     expect((await state()).files).toEqual(["fuzz-yours.tsx", "fuzz-yours.circuit.json"]);
   } finally { await tab.close(); }
+});
+
+// #6423: change the circuit itself. A 100nF across the fuzz's clipping diodes (from their net to ground) rounds the
+// squared wave there: the scope on that net shows less top end. Remake and retest, and the remake plays as your board;
+// Build it no longer offers the stock board's Gerbers. Back to the stock circuit, and they're back.
+test.skipIf(!hasChrome)("add a capacitor across the fuzz's clipping diodes: less top end on that net, the remake matches, the board needs a new layout", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 860 });
+  try {
+    await load(chrome.cdp, tab, `${vite.url}/builder.html`, 0);
+    const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
+    const state = async () => { await page("qbuilder.idle()"); return page<State>("qbuilder.state()"); };
+    await waitFor(tab, "Q Builder", "!!window.qbuilder && !!qbuilder.state().probe", 60_000);
+    await page("(localStorage.clear(), qbuilder.pick('fuzz'), qbuilder.swap(null, null), qbuilder.unedit(null))");
+    expect(await page<boolean>("qbuilder.probe('R3 · D3 · D4 · R4')")).toBe(true);
+    const stock = await state();
+    expect(stock.board.fits).toBe(true);
+
+    // the card's own controls: a capacitor, 100n, from the scope's net (where From starts) to GND
+    expect(await page<string>(`(() => {
+      const card = [...document.querySelectorAll(".qb-card")].find((c) => c.textContent?.includes("Change the circuit"));
+      const [kind, from, to] = card.querySelectorAll(".qb-add select"), val = card.querySelector(".qb-add input");
+      kind.value = "cap"; val.value = "100n";
+      to.value = [...to.options].find((o) => o.textContent === "GND").value;
+      const start = from.selectedOptions[0].textContent;
+      card.querySelector(".qb-add .icon-btn").click();
+      return start + " → " + qbuilder.state().changes;
+    })()`)).toBe("R3 · D3 · D4 · R4 → added C5 100nF from R3 · D3 · D4 · R4 to GND");
+    const capped = await state();
+    expect(capped.why).toBe("");
+    expect(capped.probe!.label).toBe("R3 · D3 · D4 · R4 · C5"); // the scope stays on the net, now with C5 on it
+    expect(capped.swing!.top).toBeLessThan(stock.swing!.top * 0.5); // the edges rounded off
+    expect(capped.board.fits).toBe(false);
+    expect(await page<boolean>("[...document.querySelectorAll('.qb-act')].find((b) => b.textContent === 'Gerbers').disabled")).toBe(true);
+
+    const r = await page<State["retest"]>("qbuilder.retest()");
+    expect(r!.same).toBe(true);
+    expect((await state()).files).toEqual(["fuzz-yours.tsx", "fuzz-yours.circuit.json"]);
+
+    // a value that isn't one is turned away; back to the stock circuit, and the stock board fits again
+    expect(await page<string>("qbuilder.add('res', 'lots', 'OUT', 'GND')")).toContain("isn't a value");
+    expect(await page<string>("qbuilder.unedit(null)")).toBe("");
+    expect((await state()).board.fits).toBe(true);
+  } finally { await tab.eval("window.qbuilder?.unedit(null)"); await tab.close(); }
 });
 
 // #6118: an effect pedal on the bench. Q Phase's LFO is off its board, on GATE: the scope there sweeps the full
@@ -83,8 +129,9 @@ test.skipIf(!hasChrome)("Q Phase: the scope on GATE moves with the Rate knob, an
 });
 
 // Build it: the fuzz's board drawn from its kit's Gerbers, top and bottom; Print fills a sheet with the schematic, the
-// board and your parts; the Gerbers zip holds the layers. Q Phase has no board files yet: no board, still a schematic.
-test.skipIf(!hasChrome)("Build it: the fuzz's board from its Gerbers, the print sheet with your parts, and a pedal with no kit", async () => {
+// board and your parts; the Gerbers zip holds the layers. Q Phase, a pedal whose LFO the sim runs off its board, has a
+// board too, with the LFO on it.
+test.skipIf(!hasChrome)("Build it: the fuzz's board from its Gerbers, the print sheet with your parts, and the phaser's board", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 860 });
   try {
     await load(chrome.cdp, tab, `${vite.url}/builder.html`, 0);
@@ -107,7 +154,7 @@ test.skipIf(!hasChrome)("Build it: the fuzz's board from its Gerbers, the print 
     expect(z.files).toEqual(expect.arrayContaining(["F_Cu.gbr", "B_Cu.gbr", "Edge_Cuts.gbr", "drill-L1-L2.drl"]));
 
     await page("qbuilder.pick('phase')");
-    expect((await board()).made).toBe(false);
-    expect(await page<string[]>("qbuilder.printSheet()")).toEqual(["Q Phase", "Schematic"]);
+    expect(await board()).toMatchObject({ kit: "q-phase", made: true, size: [58, 68] });
+    expect(await page<string[]>("qbuilder.printSheet()")).toEqual(["Q Phase", "Schematic", "Circuit board", "Parts"]);
   } finally { await tab.close(); }
 });

@@ -12,7 +12,10 @@ const kitOf = (id: string) => {
   return kit;
 };
 
-test.each(["q-fuzz", "q-drive", "q-dist", "q-squeeze"])("%s: the board from its Gerbers, every hole on a pad", (id) => {
+// Every pedal on Q Amp has a kit, so Build it has a board for each.
+const KITS = ["q-fuzz", "q-drive", "q-dist", "q-squeeze", "q-germ", "q-octave", "q-phase", "q-vibe", "q-trem", "q-wah", "q-envelope"];
+
+test.each(KITS)("%s: the board from its Gerbers, every hole on a pad", (id) => {
   const kit = kitOf(id);
   const top = mockup(kit, "top")!, bottom = mockup(kit, "bottom")!;
   expect(top.size).toEqual([58, 68]);

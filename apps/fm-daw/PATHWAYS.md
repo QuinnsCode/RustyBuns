@@ -8,7 +8,8 @@ like the real one. Three words split it, and every task names the problem it sho
   storylines: the same gear, models and step checker (`packages/gear` `steps.ts`), told as lessons here and as a
   career from the garage to the arena there. A speaker, amp or rig model built in Qollab Studio is one the game uses.
 - **BUILD** is six sectors, each aimed at one real problem.
-- **PLAY** is The Event: what you built, played live for people who walk in.
+- **PLAY** is two cards on the door (#6440): **Playground**, your own sesh that friends drop in on from the link (the jam
+  lobby), and **The Event**, the live show: a planned party taken live with its guest list and a listen link for the crowd.
 
 Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts`). The Door column is where its card lands.
 
@@ -19,8 +20,9 @@ Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.
 | BUILD | [QDAW](#2-build-qdaw) | A music maker in the browser is a toy, or an install and an account first | bedroom producers | `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | BUILD | [Q Instruments](#4-build-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
 | BUILD | [Q Amps](#6-build-q-amps-and-q-builder) | Amp sims are black boxes: you can't see why a pedal sounds the way it does | guitarists, speaker DIYers | `/amp.html`, Q Amp; `/speakers.html` | Yes: an amp and pedals solved as circuits; speaker boxes from the makers' drawings |
-| BUILD | [Q Builder](#6-build-q-amps-and-q-builder) | A DIY kit is a parts list with no feedback: it hums and you can't tell which part did it | pedal and synth DIYers, EE students | `/amp.html`, B on a pedal (its board and build sheet) | Mostly: change parts, scope a net, remake and retest, see the board drawn from its Gerbers, print it, download the Gerbers or the kit; layout changes still happen in the repo |
-| PLAY | [The Event](#3-play-the-event) | A plan is a drawing until someone stands in it; a far-away crowd gets a flat stream | the band, the client, the crowd | `/jam.html`, the lobby (sign in, make a room) | Yes indoors: invite link, guest list, the room's PA from where you stand |
+| BUILD | [Q Builder](#6-build-q-amps-and-q-builder) | A DIY kit is a parts list with no feedback: it hums and you can't tell which part did it | pedal and synth DIYers, EE students | `/amp.html`, B on a pedal (its board and build sheet) | Mostly: change parts, add, remove or rewire parts, scope a net, remake and retest, see the board drawn from its Gerbers, print it, download the Gerbers or the kit; a new layout for a changed circuit is still routed in the repo |
+| PLAY | [Playground](#3-play-the-event) | Playing together means a video call, not a place | the band, friends in other cities | `/jam.html`, the lobby (sign in, make a room) | Yes indoors: invite link, guest list, the room's PA from where you stand |
+| PLAY | [The Event](#3-play-the-event) | A plan is a drawing until someone stands in it; a far-away crowd gets a flat stream | the client, the crowd | `/rooms.html#party`, the Event Planner's Party panel (Open as event) | Yes: the plan live on its stacks, its guest list and a listen link |
 
 All of them share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
 move from one sector to the next without starting over: the pedal built in Q Builder is a pedal on Q Amp's floor, the
@@ -205,7 +207,12 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
    module is a real circuit solved as you play ([CIRCUITS.md](CIRCUITS.md), [WALL.md](WALL.md)).
 2. Change it: open the board view, click a part and pick another: a clipper's diodes, a capacitor's or a resistor's
    value (a step up or down, the nearest part you can buy). The bench plays it with the knob down, centred and up
-   first, and turns a change away with the reason if it won't solve. Your parts stay with that pedal.
+   first, and turns a change away with the reason if it won't solve. Your parts stay with that pedal. On
+   `/builder.html`, **Change the circuit** goes past values ([#6423](https://github.com/QuinnsCode/RustyBuns/issues/6423)):
+   add a resistor, capacitor or diode between two nets (From starts on the scope's net), take a part off, or move one
+   of its ends to another net. The same bench check runs first; the scope, Play and the remake follow. A 100nF from
+   the fuzz's clipping diodes to ground takes that net's top end from about 50 to 16. These changes are Q Builder's
+   own (not on Q Amp's pedal yet), and the schematic stays the stock drawing, with the changes listed beside it.
 3. Bring your own board: drop a tscircuit board's circuit JSON on Q Amp's floor; the bench checks it solves, then it is the fourth pedal.
 4. Scope it (`/builder.html`): click a trace on the schematic, or a net in the list, and the scope shows the volts there while
    the riff plays through the circuit (and at its loudest note when nothing plays), with how far it swings and how
@@ -215,8 +222,10 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
    your board, and says whether they match, and how far yours is from the stock board (`src/circuit/builder.ts`).
 5. Build it: Q Builder's Build it card (or B on Q Amp) shows the board from its Gerbers and prints the sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
    number for every part), the front panel and a plain-words build sheet (`src/kit/`). `bom.csv` and `order.csv`
-   carry your parts. A change is always a value in the same holes, so the Gerbers stay the stock board's, and the
-   sheet says so.
+   carry your parts. A swap is a value in the same holes, so the Gerbers stay the stock board's, and the
+   sheet says so. A changed circuit (a part added, removed or rewired) doesn't fit the stock board: Build it says it
+   needs a new layout and holds back the Gerbers and the kit, and the remade `-yours.tsx` has its traces written again
+   from the new nets, to route in tscircuit.
 6. Order it: send the Gerbers to a fab, upload `order.csv` to a parts shop.
 7. Close the loop: record the built board, play the same riff through the sim, compare.
 
@@ -224,8 +233,9 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
 circuit on its own thread, not your guitar through Q Amp's audio thread, and only the clip pedals are on `/builder.html`.
 
 **Missing:**
-- Changing the layout or a footprint (a new part, a bigger cap) happens in the repo (`circuits/<board>.tsx`, then
-  `bun scripts/boards.ts <board>`), not in the app. tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
+- Routing a new layout for a changed circuit (or a new footprint) happens in the repo (`circuits/<board>.tsx` from
+  the remake, then `bun scripts/boards.ts <board>`), not in the app. The schematic doesn't redraw a changed circuit,
+  and Q Amp's pedal plays the stock circuit with your swaps, not Q Builder's added or rewired parts. tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
 - A board dropped on the bench plays and turns its knobs, but has no board view yet, so its parts can't be changed in the app.
 - No board has been built yet, so step 7 has never run. A prototype order is the owner's call, with its price.
 - Selling kits or built boards needs owner decisions first (compliance, the hardware licence, price per board: [ANALOG.md](ANALOG.md#8-from-the-screen-to-your-hands)).
@@ -238,11 +248,15 @@ grass. The Air and Humidity sliders and the Bank button change the map, and **He
 set by what the field took from each band at the back; they hide behind one small thermometer button in the field's corner,
 an easter egg. Start learning and Start building open `/studio.html` and `/rooms.html`.
 The field is the menu: LEARN, BUILD and PLAY are three lanes down the grass, each with its word painted on the floor and a button
-standing on it (hemyviz's floor names). Opening one (or a link to `#learn`, `#build`, `#play`) darkens the others, stands it in a
-beam of light, and flies the camera up over it so the map fills the screen behind the cards; the lanes become tabs along the top to switch between, and the lane's paths
+standing on it (hemyviz's floor names). The field stands behind the whole page, crowded up under the title; under it each lane's shelf follows the last. Scrolling off
+the field slides the lane buttons up into the tabs along the top (`morph` in `src/front-hero.ts`), and the lane whose shelf you are
+reading darkens the others, stands in a beam of light and flies the camera up over it, so the map fills the screen behind the
+cards. A lane button, its strip of grass or a tab scrolls to its shelf (a link to `#learn`, `#build`, `#play` lands there). The eqosys account chip (Sign in, or your
+name and Sign out) sits top right over the sky, and at the right end of the tabs once you scroll off the field; it is the jam
+room's own client, so one sign-in is both. Each lane's paths
 stand down the page like a console's memory card screen (`src/front-shelf.ts`): each a thing turning in the dark (the guitar,
 a speaker stack, the desk's own screen from `public/door/daw.jpg`, a turntable, an amp on its cab, the drive's real board from
-`circuits/drive.pcb.svg`, a mic), each swinging a quarter turn each way of its front, the one nearest the middle fastest, scrolling swinging them all, and each glass card sliding
+`circuits/drive.pcb.svg`, a mic for Playground, a stage wedge for The Event), each swinging a quarter turn each way of its front, the one nearest the middle fastest, scrolling swinging them all, and each glass card sliding
 in as it comes onto the screen. One WebGL renderer draws only the things on the screen, at 30 frames a second at most; with
 reduced motion each is drawn once. Beside each thing, a Lucide icon, a short name, a line on what you do there, and Open,
 on that sector's first step ([#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860)). Only The

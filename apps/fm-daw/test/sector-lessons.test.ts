@@ -52,7 +52,7 @@ test("Q Amps: gain down, Q Drive with its board uncabled and then too hot, Q Tap
   const s = { gain: 7, lit: [] as string[], drive: { drive: 3 } as Record<string, number>, tape: false, order: freshOrder(), cables: [...STAGE.cables] as Cable[] };
   const lesson = new PageLesson<AmpAt>(AMP_LESSON, () => {
     const p = { placed: STAGE.placed, cables: s.cables };
-    return { ...s, pedalsHeard: heard(p, compile(p)).pedals };
+    return { ...s, driveHeard: heard(p, compile(p)).heard.includes("drive") };
   });
   lesson.start();
   const now = () => lesson.state()!;
@@ -62,8 +62,8 @@ test("Q Amps: gain down, Q Drive with its board uncabled and then too hot, Q Tap
   s.gain = 3;
   expect(now()).toMatchObject({ next: 1 });
 
-  // the guitar straight into the amp, past the board: Q Drive's switch is on, but it isn't in the sound
-  s.cables = [{ from: ["guitar", "out"], to: ["head", "in"], kind: "instrument" }, STAGE.cables[2]];
+  // the guitar straight into the amp, past every pedal: Q Drive's switch is on, but it isn't in the sound
+  s.cables = [{ from: ["guitar", "out"], to: ["head", "in"], kind: "instrument" }, ...STAGE.cables.filter((c) => c.from[1] === "speaker")];
   s.lit = ["drive"];
   expect(now().steps[1].why).toContain("isn't cabled between the guitar and the amp");
   s.cables = [...STAGE.cables];

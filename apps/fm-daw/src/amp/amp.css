@@ -210,6 +210,11 @@ button { cursor: pointer; }
   width: 26px; height: 26px; border-radius: 50%; padding: 0; cursor: grab;
   border: 3px solid #5c6168; background: radial-gradient(circle, #050607 0 34%, #2a2d32 36%);
 }
+.jack { position: relative; }
+.jack[data-label]::after {
+  content: attr(data-label); position: absolute; top: calc(100% + 3px); left: 50%; transform: translateX(-50%);
+  font: 600 0.6rem/1 var(--silk); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim, #9aa1ab); white-space: nowrap; pointer-events: none;
+}
 .jack.instrument { border-color: #b37c00; }
 .jack.speaker { border-color: #3d86b0; }
 .jack.plugged { background: radial-gradient(circle, #d8dbe0 0 30%, #2a2d32 34%); }
@@ -250,3 +255,23 @@ button { cursor: pointer; }
 .stage.three .screens { position: fixed; left: -10000px; top: 0; width: 960px; pointer-events: none; }
 .stage.three .tubes, .stage.three .cab .speaker { display: none; }
 .stage.three .cab { margin-top: 10px; }
+
+/* the light look (the pick in the room pill, theme.ts): the stage with the house lights up. The bar, the panels and the
+   floor go light; the amp, the pedals, the cabinet and the LED screens are gear and keep their own colours. */
+:root[data-theme="light"] { --ink: #17191c; --dim: #555c66; --hot: #d42a1c; --warn: #a86f00; --ok: #158a4f; --edge: rgba(23, 25, 28, 0.2); --glass: rgba(255, 255, 255, 0.55); color-scheme: light; }
+:root[data-theme="light"] body { background: #d9dcdf; }
+:root[data-theme="light"] .stage {
+  background:
+    radial-gradient(ellipse 60% 55% at 50% 38%, rgba(255, 236, 200, 0.6), transparent 70%),
+    linear-gradient(to bottom, transparent 70%, #c4c8cd 70.2%, #b5b9bf 100%);
+}
+:root[data-theme="light"] .bar { border-bottom-color: rgba(0, 0, 0, 0.1); }
+:root[data-theme="light"] .icon-btn, :root[data-theme="light"] .pill, :root[data-theme="light"] .model { border-color: rgba(0, 0, 0, 0.14); background: rgba(255, 255, 255, 0.55); }
+:root[data-theme="light"] .icon-btn:hover, :root[data-theme="light"] .pill:hover { background: rgba(255, 255, 255, 0.85); }
+:root[data-theme="light"] .icon-btn[aria-pressed="true"], :root[data-theme="light"] .pill[aria-pressed="true"] { background: rgba(168, 111, 0, 0.12); }
+:root[data-theme="light"] .devices { border-color: rgba(0, 0, 0, 0.14); background: #f4f5f6; }
+:root[data-theme="light"] .panel { background: rgba(255, 255, 255, 0.55); border-color: rgba(0, 0, 0, 0.1); }
+:root[data-theme="light"] .start-card { background: rgba(228, 230, 233, 0.8); }
+:root[data-theme="light"] .start { background: #ffb000; }
+/* the LED screens and the 3D stage are screens: dark in both looks */
+:root[data-theme="light"] .screen, :root[data-theme="light"] .stage3d { --ink: #eceef1; --dim: #9aa1ab; --warn: #ffb000; color: var(--ink); }

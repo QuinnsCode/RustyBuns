@@ -79,3 +79,15 @@ a.button { display: inline-block; color: var(--ink); border: 1px solid var(--lin
 #party li > button:first-child, #party li > span:first-child { flex: 1; text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #party li > button[aria-pressed="true"] { background: var(--booth); border-color: var(--hot); box-shadow: 0 0 0 1px var(--hot) inset; }
 #party ul.versions { max-height: 220px; overflow-y: auto; }
+
+/* the light look (the pick in the room pill, theme.ts): the plan's paper goes light, its gear and drawings keep their colours */
+:root[data-theme="light"] { --bg: #e4e6e9; --ink: #17191c; --dim: #555c66; --hot: #d4432a; --line: #b4b9bf; --card: #f4f5f6; --booth: #dfe3e8; --floor: #e7e9ec; color-scheme: light; }
+:root[data-theme="light"] button.go, :root[data-theme="light"] .tool[aria-pressed="true"] { color: #fff; }
+:root[data-theme="light"] #orbit .tool { background: rgba(244, 245, 246, 0.9); }
+:root[data-theme="light"] #measure { background: rgba(244, 245, 246, 0.94); }
+:root[data-theme="light"] #plan .grid { stroke: rgba(0, 0, 0, 0.08); }
+:root[data-theme="light"] #plan .prop { fill: rgba(0, 0, 0, 0.05); stroke: #6b717a; }
+:root[data-theme="light"] #plan .gear { fill: rgba(200, 110, 20, 0.14); stroke: #b8650f; }
+:root[data-theme="light"] #plan .rack, :root[data-theme="light"] #plan .aim { stroke: #b8650f; }
+:root[data-theme="light"] #plan [data-gear] text { fill: #8a4a08; }
+:root[data-theme="light"] #plan .stack { fill: #2a2d33; stroke: #b8650f; }

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { TAKE_RATE, spanOf, type Clip } from "../take.ts";
 import { clipEnd, cutClip, deleteClip, moveClip, slipClip, trimClip } from "../project.ts";
 import { Playhead } from "./Playhead.tsx";
-import { useThemeTick } from "./theme.ts";
+import { onThemeChange } from "./theme.ts";
 
 const HEIGHT = 88;
 /** How near an edge (px) a press grabs it: a finger needs more room than a mouse. */
@@ -53,7 +53,9 @@ export function ClipLane(props: {
   };
   const snap = (b: number) => Math.round(b / props.grid) * props.grid;
 
-  const look = useThemeTick();
+  // ticks when the look flips (the pick, or the OS under System), so the clips redraw in the new colours
+  const [look, setLook] = useState(0);
+  useEffect(() => onThemeChange(() => setLook((n) => n + 1)), []);
   useEffect(() => draw(canvas.current, { ...props, width, sel }), [props, width, sel, look]);
 
   const commit = (next: readonly Clip[], keep: number, group?: string) => {

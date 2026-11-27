@@ -57,3 +57,15 @@ button, select, input { font: inherit; color: inherit; }
   .sp { grid-template-columns: 1fr; }
   .sp-view { position: relative; top: 0; height: 56vh; min-height: 300px; }
 }
+
+/* the light look (the pick in the room pill, theme.ts): the page and its tables go light; the 3D view stays a dark stage */
+:root[data-theme="light"] { --ink: #17191c; --dim: #555c66; --hot: #d4432a; --warn: #a86f00; --edge: rgba(23, 25, 28, 0.16); --glass: rgba(255, 255, 255, 0.6); color-scheme: light; }
+:root[data-theme="light"] body { background: #e4e6e9; }
+:root[data-theme="light"] .sp-tab.on, :root[data-theme="light"] .sp-btn.ghost.on { color: var(--ink); }
+:root[data-theme="light"] .sp-btn:not(.ghost) { color: #fff; }
+:root[data-theme="light"] .sp-view { --ink: #eceef1; --dim: #9aa1ab; --edge: rgba(255, 255, 255, 0.16); --glass: rgba(255, 255, 255, 0.05); color: var(--ink); }
+:root[data-theme="light"] .sp-chart .grid { stroke: rgba(0, 0, 0, 0.08); }
+:root[data-theme="light"] .sp-chart .grid.zero { stroke: rgba(0, 0, 0, 0.25); }
+:root[data-theme="light"] .sp-chart .mode { stroke: rgba(168, 111, 0, 0.5); }
+:root[data-theme="light"] .sp-chart .cone { stroke: rgba(0, 0, 0, 0.45); }
+:root[data-theme="light"] .sp-walls td, :root[data-theme="light"] .sp-cuts td { border-bottom-color: rgba(0, 0, 0, 0.07); }

@@ -216,6 +216,16 @@ Those are at 48 kHz; at 96 and 192 kHz the cost per sample stays within 10% (ove
 
 Closing the loop (record a built board, compare it with the sim) waits for boards in hand.
 
+### The effect pedals get boards too (#6424)
+
+**Every pedal on Q Amp now has a kit, so Q Builder's Build it draws a board for each:** Q Germ, Q Octave, Q Phase, Q Vibe, Q Trem, Q Wah and Q Envelope join the four above. Each is a `circuits/q-<name>.tsx` that wraps its sim board (`circuits/<id>.tsx`, unchanged) in the same box, and all seven place, route and pass DRC with 0 errors on 58 × 68 mm. `test/gerber.test.ts`'s table covers all eleven.
+
+- **What the sim runs off the board is on it.** Q Trem, Q Phase and Q Vibe get a two-op-amp triangle LFO (`lfo()` in `q-box.tsx`, RV1 the Rate or Speed pot). Q Trem's and Q Vibe's LFOs drive an LED through a 2N3904. Q Phase's goes to the JFET gates through R23, with RT1 (a trimmer) setting where the sweep sits. Q Envelope builds Q Squeeze's envelope follower, with its Sens pot as the gain.
+- **Dual and quad op-amps:** the sim's op-amps share TL072s and TL074s (`amp("U1", "B")`), and `qBox({ opamps })` powers each chip. The sim's resistor and cap names stay, so every swap in the app still lands on the part of the same name and stock value (`test/kit.test.ts`). The sim's oddly sized values stay too: Q Phase's 22.2k regen, the wah's 60 Ω for the inductor's winding and Q Germ's 20 µF.
+- **Q Germ turns its PNPs over:** the sim's ground is 9 V on the board and its V_NEG is ground, so it runs off a normal negative-ground adapter with no op-amp. RV1 is a Fuzz rheostat ahead of C2, and the sim's board is the one with it full up.
+- **Q Phase and Q Vibe are the densest boards (48 parts).** They only fit with their resistors standing up (0.1 in legs) and their film caps on a slim 5 mm outline (`AXIAL_SHORT`, `FILM_SHORT`).
+- **Not done yet:** `test/circuit.test.ts` doesn't read these boards back against their voicings the way it does the first four.
+
 ### How far a build may sound from the sim (#4939)
 
 **About 1 dB in tone and half a dB in level, for each of the three pedals.** The build sheet's tolerance tab (`src/kit/tolerance.ts`) plays the pedal's netlist, with your swaps and Drive, 24 times. Each time, every resistor is up to 5% off, every capacitor 10%, every pot 20%, and every diode's leakage up to twice or half (its ideality 3%), drawn from a seeded stream so the same pedal shows the same band. Each build gives a small-signal frequency response (0.1 mV, so the diodes stay out of it, 40 Hz to 10 kHz) and an output level at playing level (0.2 V at 220 Hz, where the diodes clip). The band is the lowest and highest at each frequency. It takes 2 to 4 seconds in the page, between frames.

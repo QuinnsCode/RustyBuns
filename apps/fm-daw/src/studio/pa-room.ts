@@ -11,7 +11,7 @@
 // out here and moved at body rate (jam.ts BODY_HZ), not every frame, with short glides so nothing clicks.
 // `hearSpeaker` and `paSpeakers` are pure, for the test; `PaRoom` is the Web Audio graph.
 import { clamp } from "@rustybuns/util";
-import { airAbsorption, levelAt, MILD_FIELD, screenPath, source, speedOfSound, stackSources, stackWidth, system, systemSound, type Field, type RigPlan, type Source, type System } from "@rustybuns/gear";
+import { airAbsorption, levelAt, MILD_FIELD, screenPath, source, speedOfSound, stackSources, stackWidth, system, systemSound, type Field, type RigPlan, type Source, type StackPlace, type System } from "@rustybuns/gear";
 import { BODY_HZ } from "./jam.ts";
 import { roomLand, thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
@@ -56,17 +56,22 @@ export function roomRig(def: StudioDef): System {
 /**
  * The stacks where they stand for the rig: the room lays each block of stacks (a wall, or one side of the floor) out in
  * a line at one spacing, and a rig whose boxes are wider or narrower spreads or closes each block about its own middle,
- * so its columns stay shoulder to shoulder and the gap between the sides stays where the room put it.
+ * so its columns stay shoulder to shoulder and the gap between the sides stays where the room put it. Each carries what its
+ * tops sit on (the room's `tops`) and, for tops on stands, the side of its subs the stand goes: away from its block's
+ * middle, so a block's stands don't meet (a lone stack: away from the rig's middle).
  */
-export function rigStacks(def: StudioDef): Outdoor["stacks"] {
-  const stacks = roomPa(def)?.stacks ?? [];
+export function rigStacks(def: StudioDef): (Outdoor["stacks"][number] & Pick<StackPlace, "tops" | "out">)[] {
+  const pa = roomPa(def), stacks = pa?.stacks ?? [];
   const w = stackWidth(roomRig(def)) + 0.02;
+  const middle = (b: readonly { at: [number, number] }[]): [number, number] => [b.reduce((t, s) => t + s.at[0], 0) / b.length, b.reduce((t, s) => t + s.at[1], 0) / b.length];
+  const all = stacks.length ? middle(stacks) : [0, 0] as [number, number];
+  const outOf = (s: { at: [number, number]; yaw: number }, m: [number, number]): -1 | 1 => (s.at[0] - m[0]) * Math.cos(s.yaw) - (s.at[1] - m[1]) * Math.sin(s.yaw) < 0 ? -1 : 1;
   return stackBlocks(stacks).flatMap((block) => {
-    if (block.length < 2) return block;
-    const mx = block.reduce((t, s) => t + s.at[0], 0) / block.length, mz = block.reduce((t, s) => t + s.at[1], 0) / block.length;
+    if (block.length < 2) return block.map((s) => ({ ...s, tops: pa?.tops, out: outOf(s, all) }));
+    const [mx, mz] = middle(block);
     const gap = Math.min(...block.slice(1).map((s, i) => Math.hypot(s.at[0] - block[i]!.at[0], s.at[1] - block[i]!.at[1])));
     const k = gap > 1e-6 ? w / gap : 1;
-    return block.map((s) => ({ ...s, at: [mx + (s.at[0] - mx) * k, mz + (s.at[1] - mz) * k] as [number, number] }));
+    return block.map((s) => ({ ...s, at: [mx + (s.at[0] - mx) * k, mz + (s.at[1] - mz) * k] as [number, number], tops: pa?.tops, out: outOf(s, [mx, mz]) }));
   });
 }
 /** Stacks further apart than this, metres, stand as separate blocks (the two sides of a floor), not one wall. */

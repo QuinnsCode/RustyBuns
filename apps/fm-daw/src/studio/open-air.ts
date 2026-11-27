@@ -18,7 +18,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { van } from "@rustybuns/models/van";
 import { firePit } from "@rustybuns/models/fire";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
-import { banks, type Bank, SYSTEMS, stackWidth, behindStacks, isTop, LINE_PINS, powerPlan, gear as sheet } from "@rustybuns/gear";
+import { banks, type Bank, SYSTEMS, stackWidth, behindStacks, isTop, LINE_PINS, powerPlan, topsMount, gear as sheet, type StackPlace } from "@rustybuns/gear";
 import { rigPlan, rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
@@ -61,15 +61,35 @@ export function ridgeAt(a: number, seed: number): number {
 }
 
 /** A dance stack (packages/models gear): a horn bin, a mid-bass horn and a mid-high horn on a sand dolly, standing at
- *  (x, z) with its front turned `yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets (pa-room.ts).
- *  `splay` turns the boxes above the bass (the ones that carry the mids and highs) that much further, on their own axis,
- *  as a crew fans a side's two tops out across the floor; a line array's boxes tip down by `pins` (@rustybuns/gear LINE_PINS). */
-export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack, splay = 0, pins: readonly number[] = LINE_PINS): THREE.Group {
+ *  `place.at` with its front turned `place.yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets
+ *  (pa-room.ts). `splay` turns the boxes above the bass (the ones that carry the mids and highs) that much further, on their
+ *  own axis, as a crew fans a side's two tops out across the floor; a line array's boxes tip down by `pins` (@rustybuns/gear
+ *  LINE_PINS). The tops sit where `tops` says (@rustybuns/gear topsMount, the same place the sound comes from): on the
+ *  subs, on a pole out of the top sub, or on their own tripod beside the subs. */
+export function paStack(place: StackPlace, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack): THREE.Group {
+  const { at, yaw, splay = 0, pins = LINE_PINS } = place, mount = topsMount({ stack: ids }, place);
   const st = new THREE.Group();
   st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
   let y = 0, lean = 0, k = 0;
   const size = new THREE.Vector3();
-  for (const id of ids) {
+  if (mount.from < ids.length && mount.base > mount.subs) {
+    if (mount.side) {
+      // the tops' own tripod beside the subs, its pole's top under the lowest top
+      const stand = gear("stand-tripod", { look, height: mount.base });
+      stand.position.x = mount.side;
+      stand.name = "tops-stand";
+      st.add(stand);
+    } else {
+      // a pole out of the top sub's socket, up into the lowest top's
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, mount.base - mount.subs + 0.1, 12), look.metal);
+      rod.position.y = (mount.subs + mount.base) / 2;
+      rod.name = "tops-pole";
+      st.add(rod);
+    }
+  }
+  for (const [i, id] of ids.entries()) {
+    if (i === mount.from) y = mount.base;
+    const x = i >= mount.from ? mount.side : 0;
     const g = gear(id as GearId, { look });
     new THREE.Box3().setFromObject(g).getSize(size);
     if (id.startsWith("line-array")) {
@@ -77,13 +97,13 @@ export function paStack(at: readonly [number, number], yaw: number, look: GearLo
       // lowest aimed down most (at the front of the floor, on a wedge so its nose clears the sub) and the top one near level
       const first = k === 0, aim = pins[Math.min(k++, pins.length - 1)] ?? 0, hinge = new THREE.Group();
       if (first) y += size.z * Math.sin(aim);
-      hinge.position.set(0, y, lean - size.z / 2); hinge.rotation.x = aim;
+      hinge.position.set(x, y, lean - size.z / 2); hinge.rotation.x = aim;
       g.position.z = size.z / 2;
       hinge.add(g); st.add(hinge);
       y += size.y * Math.cos(aim); lean += size.y * Math.sin(aim);
       continue;
     }
-    g.position.y = y;
+    g.position.set(x, y, 0);
     if (splay && isTop(id)) g.rotation.y = splay;
     st.add(g);
     y += size.y;
@@ -324,7 +344,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   group.add(rugs(out));
 
   const rig = roomRig(def);
-  for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack, s.splay, s.pins));
+  for (const s of rigStacks(def)) group.add(paStack(s, look, rig.stack));
   // the sub block in the middle, and the DJ's monitors either side of the decks
   if (out.subs) group.add(subBlock(out.subs.at, out.subs.yaw, out.subs.wide, out.subs.high, rig.sub, look));
   for (const m of out.monitors ?? []) group.add(boothMonitor(m.at, m.yaw, look));

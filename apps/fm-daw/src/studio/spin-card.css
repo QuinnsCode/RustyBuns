@@ -1,17 +1,17 @@
 /* The card by the decks (spin-card.ts): one row that never wraps; the clocks keep their width as they tick. */
-.spin-card { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; margin: 0 10px; padding: 4px 8px; border: 1px solid #3a3e45; border-radius: 10px; background: #17191d; white-space: nowrap; font-size: 13px; }
+.spin-card { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; margin: 0 10px; padding: 4px 8px; border: 1px solid var(--dj-line, #3a3e45); border-radius: 10px; background: var(--dj-pop, #17191d); white-space: nowrap; font-size: 13px; }
 .spin-card[hidden] { display: none; }
 .spin-card > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .spin-card b { font-weight: 600; min-width: 0; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; }
-.spin-card small { color: #9aa0aa; }
+.spin-card small { color: var(--dj-dim, #9aa0aa); }
 .spin-card time { font-variant-numeric: tabular-nums; display: inline-block; min-width: 7ch; text-align: right; color: #ffd23c; }
 .spin-card time:empty { display: none; }
 .spin-next.cue time { color: #4affa0; }
-.spin-mode { color: #9aa0aa; }
+.spin-mode { color: var(--dj-dim, #9aa0aa); }
 .spin-tools { margin-left: auto; gap: 4px; }
-.spin-card button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 8px; border: 1px solid #3a3e45; background: #22252a; color: inherit; cursor: pointer; }
+.spin-card button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 8px; border: 1px solid var(--dj-line, #3a3e45); background: var(--dj-btn, #22252a); color: inherit; cursor: pointer; }
 .spin-card button.on { border-color: #ffd23c; color: #ffd23c; }
-.spin-edit { position: absolute; right: 0; top: calc(100% + 6px); z-index: 3; width: min(360px, 92vw); background: #17191d; border: 1px solid #3a3e45; border-radius: 12px; padding: 10px; display: grid; gap: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); white-space: normal; }
+.spin-edit { position: absolute; right: 0; top: calc(100% + 6px); z-index: 3; width: min(360px, 92vw); background: var(--dj-pop, #17191d); border: 1px solid var(--dj-line, #3a3e45); border-radius: 12px; padding: 10px; display: grid; gap: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); white-space: normal; }
 .spin-edit[hidden] { display: none; }
 .spin-edit h3 { margin: 0; font: 600 16px var(--qs-head, "Barlow Condensed"), sans-serif; letter-spacing: 0.06em; }
 .spin-edit ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
@@ -24,3 +24,6 @@
   #dj header:has(.spin-card:not([hidden])) { flex-wrap: wrap; }
   .spin-card { order: 3; flex-basis: 100%; margin: 6px 0 0; gap: 6px; }
 }
+/* the light look (theme.ts): the clocks' yellow and green darkened to read on the light booth */
+:root[data-theme="light"] .spin-card time, :root[data-theme="light"] .spin-card button.on { color: #8a6400; border-color: #8a6400; }
+:root[data-theme="light"] .spin-next.cue time { color: #138a4f; }

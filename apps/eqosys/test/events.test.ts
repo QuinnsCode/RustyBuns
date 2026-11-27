@@ -3,7 +3,7 @@
 // read or change it, a wrong shape is refused, and deleting the account takes its events with it.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { EventList, EventMade } from "@rustybuns/util/events";
-import { check, obj, str } from "@rustybuns/util/guard";
+import { bool, check, obj, str } from "@rustybuns/util/guard";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD } from "./kit.ts";
@@ -60,6 +60,14 @@ test("make an event, change its date, list it on the account; nobody else reads 
     expect(check(obj({ error: str(500) }), await r.json())?.error).toContain("kind, name");
   }
   expect((await ask("PUT", `/q/events/${wedding.id}`, ada.token, { who: { access: "everyone" } })).status).toBe(400);
+
+  // An event's door (#6428), for its room: who it lets in and whether that's you, and nothing else about it.
+  const door = obj({ access: str(10), in: bool() }), doorOf = async (id: string, token?: string) => read(await ask("GET", `/q/events/${id}/door`, token), door);
+  expect(await doorOf(wedding.id, bo.token)).toEqual({ access: "invite", in: false });
+  expect(await doorOf(wedding.id)).toEqual({ access: "invite", in: false });
+  expect(await doorOf(wedding.id, ada.token)).toEqual({ access: "invite", in: true });
+  expect(await doorOf(club.id)).toEqual({ access: "anyone", in: true });
+  expect((await ask("GET", "/q/events/nope/door", bo.token)).status).toBe(404);
 
   // The owner deletes one; deleting the account takes the rest.
   expect((await ask("DELETE", `/q/events/${later.id}`, ada.token)).status).toBe(200);

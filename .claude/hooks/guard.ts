@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, relative, resolve } from "node:path";
 import { valveFile, valveOf } from "../../scripts/remote-ci.ts";
-import { blockers } from "../../scripts/after.ts";
+import { blockers } from "../../scripts/after-line.ts";
 import { firstTry, hireTask, thin } from "./thin-hire.ts";
 import { type Of, obj, opt, or, raw, rec, str } from "../../packages/util/src/guard.ts";
 

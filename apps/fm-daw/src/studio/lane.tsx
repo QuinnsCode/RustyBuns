@@ -18,6 +18,7 @@ import { Shape } from "../ui/Shape.tsx";
 import { Slider } from "../ui/Slider.tsx";
 import { PianoRoll } from "../ui/PianoRoll.tsx";
 import { DrumGrid } from "../ui/DrumGrid.tsx";
+import { onThemeChange } from "../ui/theme.ts";
 import { laneModel, TABS, type LaneHost, type LaneModel, type Tab } from "./lane-model.ts";
 
 const TAB_NAME: Record<Tab, string> = { patch: "Patch", eq: "EQ", mixer: "Mixer", notes: "Notes" };
@@ -123,10 +124,12 @@ export function mountLane(host: LaneHost): LaneModel {
   document.body.append(el);
   const root = el.attachShadow({ mode: "open" });
   const style = document.createElement("style");
-  // FM DAW's sheet, its page-wide rules turned onto this root alone
-  style.textContent = css.replaceAll(":root", ":host").replace(/html, body, #root \{[^}]*\}/, "").replace(/body \{[^}]*\}/, "") + LANE_CSS;
+  // FM DAW's sheet, its page-wide rules turned onto this root alone; the host carries the page's data-theme
+  style.textContent = css.replace(/:root\[([^\]]*)\]/g, ":host([$1])").replaceAll(":root", ":host").replace(/html, body, #root \{[^}]*\}/, "").replace(/body \{[^}]*\}/, "") + LANE_CSS;
   const mount = document.createElement("div");
   root.append(style, mount);
+  const look = () => { el.dataset.theme = document.documentElement.dataset.theme ?? "dark"; };
+  look(); onThemeChange(look);
   const m = laneModel(host);
   createRoot(mount).render(<View m={m} />);
   // sitting and standing happen in many places (a key, a click, a pad, an agent's tool): watch the seat a few times a second

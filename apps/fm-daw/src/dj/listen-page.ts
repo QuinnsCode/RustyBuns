@@ -6,7 +6,9 @@ import "@fontsource/ibm-plex-sans/400.css";
 import { check } from "@rustybuns/util/guard";
 import { LIVE_TYPE, SetSays, listenSocket, setFromPath } from "./live-wire.ts";
 import { stamp, type Cue } from "./record.ts";
+import { followTheme } from "../ui/theme.ts";
 
+followTheme();
 const id = setFromPath(location.pathname);
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const nameEl = $("#name"), statusEl = $("#status"), list = $<HTMLOListElement>("#cues"), playB = $<HTMLButtonElement>("#play");

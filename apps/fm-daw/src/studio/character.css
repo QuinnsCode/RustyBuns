@@ -1,6 +1,6 @@
 /* Your character as a dialog over the room (character.ts): the shared picker's ch- parts in the room's dark look. Every
    width from 390 px up; under 640 px it fills the screen. */
-.qs-ch { width: min(1040px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 16px; border: 1px solid #3a3e45; border-radius: 16px; background: var(--card, #1d1f23); color: var(--ink, #f4f1ea); overflow-y: auto; font: 15px/1.35 "IBM Plex Sans", system-ui, sans-serif; }
+.qs-ch { width: min(1040px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 16px; border: 1px solid var(--line, #3a3e45); border-radius: 16px; background: var(--card, #1d1f23); color: var(--ink, #f4f1ea); overflow-y: auto; font: 15px/1.35 "IBM Plex Sans", system-ui, sans-serif; }
 .qs-ch::backdrop { background: rgba(8, 9, 11, 0.55); }
 .qs-ch .character { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); min-height: 200px; }
 @media (min-width: 820px) { .qs-ch .character { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
@@ -11,17 +11,17 @@
 .qs-ch .ch-stage canvas { display: block; width: 100%; height: 100%; }
 .qs-ch .ch-hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: rgba(21, 23, 27, 0.7); pointer-events: none; }
 .qs-ch .ch-hint[hidden] { display: none; }
-.qs-ch .ch-zoom { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; background: rgba(21, 23, 27, 0.75); color: inherit; border: 1px solid #3a3e45; }
+.qs-ch .ch-zoom { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; background: var(--card, rgba(21, 23, 27, 0.75)); color: inherit; border: 1px solid var(--line, #3a3e45); }
 .qs-ch .ch-zoom[aria-pressed="true"] { border-color: var(--hot, #ff6b4a); }
-.qs-ch .ch-stage canvas.ch-face { position: absolute; left: 8px; top: 8px; width: clamp(72px, 24%, 120px); height: auto; aspect-ratio: 1; border-radius: 12px; pointer-events: none; border: 1px solid #3a3e45; background: rgba(35, 38, 44, 0.85); }
+.qs-ch .ch-stage canvas.ch-face { position: absolute; left: 8px; top: 8px; width: clamp(72px, 24%, 120px); height: auto; aspect-ratio: 1; border-radius: 12px; pointer-events: none; border: 1px solid var(--line, #3a3e45); background: rgba(35, 38, 44, 0.85); }
 .qs-ch .ch-face[hidden] { display: none; }
 .qs-ch .ch-poses { display: flex; gap: 6px; overflow-x: auto; justify-content: safe center; padding: 2px; scrollbar-width: thin; }
 .qs-ch .ch-side { display: grid; gap: 12px; min-width: 0; }
-.qs-ch .ch-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 3px; border-radius: 999px; background: #2a2d33; }
+.qs-ch .ch-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 3px; border-radius: 999px; background: var(--well, #2a2d33); }
 .qs-ch .ch-tab { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; font: inherit; font-weight: 600; min-height: 40px; padding: 4px 12px; border: 0; border-radius: 999px; background: transparent; color: inherit; cursor: pointer; }
 .qs-ch .ch-tab[aria-selected="true"] { background: #0f766e; }
 .qs-ch .ch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.qs-ch .ui-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 44px; padding: 6px 14px; border-radius: 10px; border: 1px solid #3a3e45; background: #23262c; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.qs-ch .ui-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 44px; padding: 6px 14px; border-radius: 10px; border: 1px solid var(--line, #3a3e45); background: var(--well, #23262c); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
 .qs-ch .ui-btn.primary { background: var(--hot, #ff6b4a); color: #15171b; border-color: transparent; }
 .qs-ch .ui-btn:disabled { opacity: 0.5; cursor: default; }
 .qs-ch .ch-note { white-space: nowrap; opacity: 0.75; font-size: 13px; }
@@ -33,11 +33,11 @@
 .qs-ch .ch-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; }
 .qs-ch .ch-label { white-space: nowrap; font-weight: 600; font-size: 14px; }
 .qs-ch .ch-choices { display: flex; gap: 6px; overflow-x: auto; padding: 3px 2px; scrollbar-width: thin; overscroll-behavior-x: contain; }
-.qs-ch .ch-chip { flex: none; white-space: nowrap; font: inherit; font-size: 14px; min-height: 40px; padding: 4px 13px; border-radius: 999px; cursor: pointer; border: 1px solid #3a3e45; background: #23262c; color: inherit; }
+.qs-ch .ch-chip { flex: none; white-space: nowrap; font: inherit; font-size: 14px; min-height: 40px; padding: 4px 13px; border-radius: 999px; cursor: pointer; border: 1px solid var(--line, #3a3e45); background: var(--well, #23262c); color: inherit; }
 .qs-ch .ch-chip[aria-pressed="true"] { background: var(--hot, #ff6b4a); color: #15171b; border-color: transparent; }
 .qs-ch .ch-chip[data-soon]::after { content: "soon"; margin-left: 6px; font-size: 11px; font-weight: 600; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.04em; }
-.qs-ch .ch-swatch { flex: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; border: 2px solid #3a3e45; box-shadow: inset 0 0 0 2px #1d1f23; }
-.qs-ch .ch-swatch[aria-pressed="true"] { border-color: var(--hot, #ff6b4a); box-shadow: inset 0 0 0 3px #1d1f23, 0 0 0 2px var(--hot, #ff6b4a); }
+.qs-ch .ch-swatch { flex: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; border: 2px solid var(--line, #3a3e45); box-shadow: inset 0 0 0 2px var(--well, #1d1f23); }
+.qs-ch .ch-swatch[aria-pressed="true"] { border-color: var(--hot, #ff6b4a); box-shadow: inset 0 0 0 3px var(--well, #1d1f23), 0 0 0 2px var(--hot, #ff6b4a); }
 .qs-ch .ch-slider { display: flex; align-items: center; min-height: 40px; }
 .qs-ch .ch-slider input { width: 100%; accent-color: var(--hot, #ff6b4a); }
 @media (max-width: 480px) { .qs-ch .ch-row { grid-template-columns: minmax(0, 1fr); } .qs-ch .ch-stage { max-height: 46dvh; } .qs-ch .ch-tab { padding: 4px 8px; gap: 4px; } }

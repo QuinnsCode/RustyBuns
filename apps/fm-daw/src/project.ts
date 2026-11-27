@@ -10,7 +10,7 @@ import { ClipGuard, MAX_CLIPS, MAX_TAKES, MIN_CLIP_FRAMES, TAKE_RATE, TakeBytesG
 import { ROOM_M } from "./studio.ts";
 import { Instrument, MAX_MADE } from "./studio/made.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
-import { SYSTEM_IDS, type SystemId } from "@rustybuns/gear";
+import { SYSTEM_IDS, TOPS_ON, type SystemId, type TopsOn } from "@rustybuns/gear";
 import { Studio } from "./studio/builder.ts";
 import type { StudioDef } from "./studio/room.ts";
 import { RUNG, type Rung } from "./rewind.ts";
@@ -107,9 +107,9 @@ export type Op =
   | { t: "song"; chain: number[] | null }
   | { t: "replace"; project: Project };
 
-/** What a rig's tops sit on: the subs, a pole over the subs, or their own stands. */
-export const TOPS = ["subs", "pole", "stands"] as const;
-export type Tops = (typeof TOPS)[number];
+/** What a rig's tops sit on: the subs, a pole over the subs, or their own stands (@rustybuns/gear topsMount draws and sounds them). */
+export const TOPS = TOPS_ON;
+export type Tops = TopsOn;
 
 /** The room's level at its lowest, dB: silence. */
 export const MASTER_MIN = -60;
@@ -457,9 +457,11 @@ const FLOOR = oneOf(["free", "held", "closed"]);
 
 /**
  * Why a world turned a socket away: every seat in this room is taken, every room is open, the maker
- * closed it, the sesh is private and the code was missing or wrong, or this address got it wrong too often lately.
+ * closed it, the sesh is private and the code was missing or wrong, this address got it wrong too often lately, or the
+ * room is an event's and the event lets in only those who RSVPed or were invited (`unchecked`: its list couldn't be read, #6428).
  */
-export type Full = "room" | "rooms" | "closed" | "code" | "tries" | "blocked";
+export const FULL = ["room", "rooms", "closed", "code", "tries", "blocked", "rsvp", "invite", "unchecked"] as const;
+export type Full = (typeof FULL)[number];
 /** A private sesh's code: what the maker types and every joiner types after. */
 export const CODE = str(32, { min: 4 });
 
@@ -487,7 +489,7 @@ const CLIENT: Guard<ClientMsg>[] = [TakeBytesGuard, obj({ t: tag("init"), projec
 const SERVER: Guard<ServerMsg>[] = [
   TakeBytesGuard,
   obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
-  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "closed", "code", "tries", "blocked"]) }),
+  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(FULL) }),
   obj({ t: tag("floor"), state: FLOOR, host: bool() }), obj({ t: tag("lock"), on: bool(), code: opt(str(32, { min: 0 })) }),
   obj({ t: tag("rewound"), ago: RUNG, at: int(0, Infinity), project: nul(PROJ) }),
 ];
