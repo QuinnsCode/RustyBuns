@@ -17,7 +17,8 @@ const TOWER: Cam = { x: 0, y: 16, z: FIELD.z1 + 26, pitch: 0.22 };
 const OVER = (x: number): Cam => ({ x, y: 26, z: (FIELD.z0 + FIELD.z1) / 2 + 26 / Math.tan(1.25), pitch: 1.25 });
 
 /** A lane down the field: one of the door's words, its strip of grass, and the colour its plate and beam take. */
-export interface HeroLane { id: string; word: string; tone: string }
+/** A lane down the field: one of the door's words, its strip of grass, the colour its plate and beam take, and the face its word is painted in on the grass (a canvas font, e.g. `400 100px "Caveat Brush"`, drawn at 100px). */
+export interface HeroLane { id: string; word: string; tone: string; face?: string }
 
 export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], onLane: (id: string | null) => void = () => {}) {
   const canvas = root.querySelector<HTMLCanvasElement>("canvas")!, g = canvas.getContext("2d")!;
@@ -75,9 +76,9 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
   canvas.addEventListener("click", (e) => { const h = laneAt(e); pick(h === open ? null : h); });
   /** A word painted flat on the grass between x0 and x1, its foot at z (near the back) and its head toward the stage,
    *  read left to right from the back (from x1 on the left of the screen to x0). */
-  function floorWord(text: string, x0: number, x1: number, z: number, deep: number, fill: string, dpr: number) {
+  function floorWord(text: string, face: string, x0: number, x1: number, z: number, deep: number, fill: string, dpr: number) {
     const o = project({ x: x1, y: 0, z }), u = project({ x: x0, y: 0, z }), v = project({ x: x1, y: 0, z: z - deep });
-    g.save(); g.font = '600 100px "Barlow Condensed", sans-serif';
+    g.save(); g.font = face;
     const tw = g.measureText(text).width, a = (u[0] - o[0]) / tw, b = (u[1] - o[1]) / tw, c = -(v[0] - o[0]) / 100, d = -(v[1] - o[1]) / 100;
     g.setTransform(dpr * a, dpr * b, dpr * c, dpr * d, dpr * o[0], dpr * o[1]);
     g.fillStyle = fill; g.textBaseline = "bottom"; g.fillText(text, 0, 0); g.restore();
@@ -136,7 +137,7 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
       if (open && !lit) { path(); g.fillStyle = "rgba(9,10,14,.55)"; g.fill(); }
       if (lit || hot) { path(); g.fillStyle = s.tone + (lit ? "33" : "1a"); g.fill(); }
       path(); g.strokeStyle = s.tone + (lit ? "ff" : hot ? "cc" : "66"); g.lineWidth = lit ? 2.5 : 1.5; g.stroke();
-      floorWord(s.word.toUpperCase(), s.x0 + laneW * 0.16, s.x1 - laneW * 0.16, FIELD.z1 - 6, laneW * 0.42, lit ? "rgba(244,241,234,.92)" : s.tone + (hot ? "dd" : "88"), dpr);
+      floorWord(s.word.toUpperCase(), s.face ?? '600 100px "Barlow Condensed", sans-serif', s.x0 + laneW * 0.16, s.x1 - laneW * 0.16, FIELD.z1 - 6, laneW * 0.42, lit ? "rgba(244,241,234,.92)" : s.tone + (hot ? "dd" : "88"), dpr);
       if (lit) { // the beam: from the top of the sky down onto the lane's head, by the stage
         const [nl, nr] = [s.quad[0]!, s.quad[1]!], top = (nl[0] + nr[0]) / 2, spread = (nr[0] - nl[0]) * 0.35;
         const beam = g.createLinearGradient(0, 0, 0, nl[1]);
@@ -247,6 +248,8 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
   bankBtn.addEventListener("click", () => set({ bank: !air.bank }));
   playBtn.addEventListener("click", () => { timer ? stop() : start(); render(); });
   new ResizeObserver(() => draw()).observe(canvas);
+  // a canvas asks for no font, so load each lane's face and paint the words again once they land
+  for (const s of strips) if (s.face) void document.fonts.load(s.face).then(() => draw());
   render();
 
   return {

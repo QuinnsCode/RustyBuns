@@ -7,11 +7,14 @@
 // (test/front-door.test.ts).
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
+import "./door-fonts.css";
 import { mountHero } from "./front-hero.ts";
 import { mountShelf, type ShelfItem } from "./front-shelf.ts";
 import { CHAIN, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type SectorId } from "./paths.ts";
 
 const TONES: Record<SectorId, string> = { learn: "#2dd4bf", build: "#fb923c", play: "#818cf8" };
+/** Each lane's thematic face (door-fonts.css), as the field paints its word on the grass. */
+const FACES: Record<SectorId, string> = { learn: '400 100px "Caveat Brush", cursive', build: '800 100px "Doto", monospace', play: '400 100px "Special Elite", monospace' };
 /** The thing each path stands as on its lane's shelf. */
 const ITEMS: Record<PathId, ShelfItem> = { learn: "guitar", planner: "stack", daw: "screen", instruments: "turntable", amps: "amp", builder: "board", event: "mic" };
 const isSector = (v: string): v is SectorId => SECTORS.some((s) => s.id === v);
@@ -63,7 +66,7 @@ const showLane = (id: string | null) => {
   history.replaceState(null, "", id ? `#${id}` : location.pathname + location.search);
   scrollTo({ top: 0 });
 };
-const hero = mountHero(document.getElementById("hero")!, SECTORS.map((s) => ({ id: s.id, word: s.word, tone: TONES[s.id] })), showLane);
+const hero = mountHero(document.getElementById("hero")!, SECTORS.map((s) => ({ id: s.id, word: s.word, tone: TONES[s.id], face: FACES[s.id] })), showLane);
 for (const b of document.querySelectorAll<HTMLButtonElement>(".lane")) {
   const n = PATHS.filter((p) => p.sector === b.dataset.lane).length;
   b.querySelector("span")!.textContent = n === 1 ? "1 way in" : `${n} ways in`;
