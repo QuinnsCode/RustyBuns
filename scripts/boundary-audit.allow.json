@@ -1,7 +1,6 @@
 {
   "apps/codesplitter/src/env.ts": 1,
   "apps/qcrm/src/env.ts": 1,
-  "packages/cli/src/pages-adapter.ts": 1,
   "packages/cms/src/index.ts": 1,
   "packages/cms/src/locale.ts": 3,
   "packages/ports/src/index.ts": 1,
