@@ -4,7 +4,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
-
+import { PARTS_KEY } from "../src/amp/parts-store.ts";
 setDefaultTimeout(120_000); // vite serves the page cold, then the riff runs through the fuzz a few times
 useBrowser();
 
@@ -115,11 +115,21 @@ test.skipIf(!hasChrome)("Q Phase: the scope on GATE moves with the Rate knob, an
 
     await load(chrome.cdp, amp, `${vite.url}/amp.html`, 0);
     await waitFor(amp, "Q Amp", "!!window.qamp", 60_000);
-    // Q Amp saving its own store (a footswitch) as the swap is made doesn't undo the swap on either page (#6459)
-    const [why] = await Promise.all([page<string>("qbuilder.swap('R1', '2.2')"), amp.eval("qamp.pedal('phase')")]);
-    expect(why).toBe("");
+    await amp.eval("qamp.pedal('phase')");
+    expect(await page<string>("qbuilder.swap('R1', '2.2')")).toBe("");
     await waitFor(amp, "the swap on Q Amp", "qamp.state().swaps.R1 === '2.2'", 10_000);
     expect(await page<string | undefined>("qbuilder.state().swaps.R1")).toBe("2.2");
+
+    // another tab's swap kept, but not yet heard of here, when Q Amp saves its own store (a footswitch): Q Amp's
+    // older copy doesn't undo it (#6459)
+    const kept = await amp.eval<string>(`(() => {
+      const k = ${JSON.stringify(PARTS_KEY)}, p = JSON.parse(localStorage.getItem(k));
+      localStorage.setItem(k, JSON.stringify({ ...p, swaps: { ...p.swaps, phase: { R1: "4.7" } } }));
+      qamp.pedal("phase");
+      return JSON.parse(localStorage.getItem(k)).swaps.phase.R1;
+    })()`);
+    expect(kept).toBe("4.7");
+    await waitFor(builder, "the other tab's swap on Q Builder", "qbuilder.state().swaps.R1 === '4.7'", 10_000);
     expect(await amp.eval<number>("qamp.state().drive")).toBe(0);
 
     expect(await amp.eval<string[]>("qamp.swap('R1', null)")).toEqual([]);
