@@ -120,7 +120,8 @@ const asked = (m: typeof PageMessage.Type): [number, string, Asked] | null => {
       const w = READY.find((r) => r.name === m.name);
       return w ? [0, `${w.name} (you)`, { _tag: "Load", files: w.files }] : null;
     }
-    case "ReceivedAgentCall": return [m.call.call, m.call.tool, m.call.request];
+    // A status shows its words in the terminal.
+    case "ReceivedAgentCall": return [m.call.call, m.call.request._tag === "Status" ? `${m.call.tool} "${m.call.request.text}"` : m.call.tool, m.call.request];
     case "ClickedUndo": return [0, "undo (you)", { _tag: "Undo" }];
     case "ClickedReset": return [0, "start over (you)", { _tag: "Reset" }];
     default: return null;
@@ -137,32 +138,21 @@ export const connectLines = (origin: string, room: string) => {
   ];
 };
 
-/** The picture at the top of the dock: agent, relay, this page, in a row. Each agent call sends a dot down the wires
- *  (keyed by the call, so a new call starts it again), green when the page took it and red when it said no. */
-const how = Def.fragment((h, online: boolean, last: typeof Logged.Type | undefined) => {
-  const dot = (n: number) => last && h.i.class("pulse", `w${n}`, last.error !== null && "bad").key(`p${last.call}-${n}`).attr("aria-hidden", "true");
-  const node = (lit: unknown, name: string, does: string) => h.div.class("node", Boolean(lit) && "lit").children(h.b(name), h.span(does));
-  return h.section.class("how").attr("aria-label", "How it works").children(
-    h.div.class("flow", online && "on").children(
-      node(last, "Agent", "asks"),
-      h.div.class("wire").children(dot(1)),
-      node(online, "Relay", "carries"),
-      h.div.class("wire").children(dot(2)),
-      node(true, "Page", "checks"),
-    ),
-    h.ol.class("steps").children(
-      h.li("You ask agent."),
-      h.li("Agent sends change."),
-      h.li("Page checks. Page shows."),
-    ),
-    h.p.class("safe").children(
-      h.b("Safe? "),
-      "Agent can only change this page. ",
-      h.b("Link is key. "),
-      "Keep it secret.",
-    ),
-  );
-});
+/** The console's terminal: what happened, as a command line shows it, oldest first. `$` a command, `..` waiting,
+ *  `ok` done, `>` a call (the agent's or yours), `!!` something went wrong. */
+type Line = readonly ["cmd" | "dim" | "ok" | "call" | "bad", string];
+export const termLines = (room: string, online: boolean, steps: Model["steps"], log: Model["log"]): Line[] => [
+  ["cmd", `agent-page open ${room}`],
+  online ? ["ok", "connected to the relay: your AI can reach this page"] : ["dim", "connecting to the relay…"],
+  ...(steps.here ? [["ok", "your AI is here"] as const] : online ? [["dim", "waiting for your AI…"] as const] : []),
+  ...[...log].reverse().flatMap((l): Line[] => l.error === null ? [["call", `${l.tool}  ok`]] : [["call", l.tool], ["bad", l.error]]),
+  ...(steps.up ? [["ok", "your world is up"] as const] : steps.wrote && !steps.clean ? [["bad", "the frame reported an error: page_read says what"] as const] : []),
+];
+const MARK = { cmd: "$", dim: "..", ok: "ok", call: ">", bad: "!!" } as const;
+const termView = Def.fragment((h, lines: Line[]) => h.div.class("term-out").attrs({ role: "log", "aria-label": "What happened" }).children(
+  ...lines.map(([k, text], i) => h.p.key(`${i}-${text}`).class(`t-${k}`).children(h.span.class("t-mark").attr("aria-hidden", "true").children(MARK[k]), text)),
+  h.p.class("t-cursor").attr("aria-hidden", "true").children(h.span.class("t-mark").children("$"), h.i()),
+));
 
 /** One button per ready-made world; the one on screen is pressed. */
 const tryView = Def.fragment((h, on: string | undefined) => h.div.class("tries").attrs({ role: "group", "aria-label": "Try a world" }).children(
@@ -399,18 +389,20 @@ export const ProfilePageNoDeps = Def.make({
         full && h.button.attr("type", "button").class("full-toggle").attr("title", "Show the console (Connect, steps, last calls)").on("click", PageMessage.ClickedFull()).children("Show"),
       ),
       // The console: one panel in the middle of the screen, over the world, until Hide puts it away.
+      // A terminal window: its title bar, the step strip, then what happened (left) beside how to connect (right).
       !full && h.aside.class("dock").attr("aria-label", "Console").children(
         h.div.class("dock-head").children(
-          h.h2("Console"),
+          h.h2.children(h.span.class("t-dot", online && "on").attr("aria-hidden", "true"), "agent-page", h.span.class("t-path").children(` ~/r/${room}`)),
           h.button.attr("type", "button").class("hide").attr("title", "Put the console away to see your world").on("click", PageMessage.ClickedFull()).children("Hide"),
         ),
         stripView(h, steps, status),
+        h.div.class("term-body").children(
+        termView(h, termLines(room, online, steps, log)),
+        h.div.class("term-side").children(
         h.h3("Try one"),
         tryView(h, on?.name),
         on && h.div.class("line", "ask").children(h.span("Then ask your AI"), h.code(on.ask), copy("ask", on.ask, copied === "ask" ? "Copied" : "Copy the ask")),
-        how(h, online, log.find((l) => l.call > 0)),
         h.h3("Connect your agent"),
-        h.p.class("status", online && "on").attr("role", "status").children(online ? "Ready: any agent can reach this page now." : "Connecting to the relay…"),
         h.div.class("door").children(
           h.b("Paste into any agent"),
           h.p.class("muted").children("Claude Code, Codex, opencode, T3 Code: anything that can run curl. Nothing to install."),
@@ -433,10 +425,7 @@ export const ProfilePageNoDeps = Def.make({
           exportButton(h, gif),
         ),
         !gif.busy && gif.says !== "" && h.p.class("muted").attr("role", "status").children(gif.says),
-        h.h3("Last calls"),
-        log.length === 0
-          ? h.p.class("muted").children("Nothing yet.")
-          : h.ol.class("log").children(...log.map((l, i) => h.li.key(`${l.call}-${i}`).class(l.error !== null && "bad").children(h.code(l.tool), l.error ?? "ok"))),
+        )),
       ),
     );
   },
