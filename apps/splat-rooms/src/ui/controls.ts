@@ -9,6 +9,8 @@ import { SKIN } from "./eqosys.ts";
  * Each kit tab keeps its small gamepad, keyboard, mouse or phone icon beside its letter. The fold knobs are stencilled FOLD and
  * OPEN under them, and a switch the game lacks keeps its brass housing, dimmed (no dashed edge).
  * Each section head is stamped: a red-and-cream tab on its top edge and a dim cream serial (SR-CTL · 01, 02...) by a CSS counter.
+ * Red is kept for what is live: only the active kit's SR-KIT serial is red, and a folded section's tab is a thin cream line.
+ * Faders run over an engraved scale (ten ticks, a longer one at the middle), and the Keyboard list's keys are dark-glass caps.
  */
 const LAB_CSS = `.ui-house .gc-card{box-shadow:var(--glow),0 30px 80px -30px #000;border-top:0;backdrop-filter:blur(8px);position:relative;padding-top:26px;
 background:var(--rivets),var(--wear),var(--panel);outline:1px solid rgb(239 228 201 / .06);outline-offset:-5px}
@@ -39,7 +41,14 @@ font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0
 .ui-house .gc-prof[data-slot="0"]::before{content:"Kit A"}.ui-house .gc-prof[data-slot="1"]::before{content:"Kit B"}
 .ui-house .gc-prof[data-slot="2"]::before{content:"Kit C"}.ui-house .gc-prof[data-slot="3"]::before{content:"Kit D"}
 .ui-house .gc-profiles{counter-reset:gckit}.ui-house .gc-prof{counter-increment:gckit}
-.ui-house .gc-prof::after{content:"SR-KIT · " counter(gckit,decimal-leading-zero);grid-row:2;grid-column:1/-1;justify-self:center;white-space:nowrap;margin-top:4px;font:800 .5rem/1 var(--mono);letter-spacing:.14em;color:var(--red);opacity:.85}
+.ui-house .gc-prof::after{content:"SR-KIT · " counter(gckit,decimal-leading-zero);grid-row:2;grid-column:1/-1;justify-self:center;white-space:nowrap;margin-top:4px;font:800 .5rem/1 var(--mono);letter-spacing:.14em;color:var(--cream);opacity:.38}
+.ui-house .gc-prof[aria-pressed=true]::after{color:var(--red);opacity:.9}
+.ui-house .gc-sec.shut::before{height:2px;width:26px;background:rgb(239 228 201 / .3);box-shadow:none}
+.ui-house.gc-faders .gc-card label input[type=range]{background:linear-gradient(90deg,rgb(239 228 201 / .3) 0 1px,transparent 1px) 7px 100%/calc((100% - 14px) / 10) 4px repeat-x,
+linear-gradient(90deg,transparent 50%,rgb(239 228 201 / .45) 50% calc(50% + 1px),transparent 0) 7px 100%/calc(100% - 14px) 7px no-repeat}
+.ui-house .gc-keys{row-gap:7px;align-items:center}
+.ui-house .gc-keys dt{justify-self:start;padding:3px 8px;line-height:1.25;border:1px solid rgb(239 228 201 / .14);border-radius:4px;
+background:linear-gradient(180deg,rgb(255 255 255 / .07),rgb(0 0 0 / .35)),rgb(8 14 18 / .85);box-shadow:inset 0 1px 0 rgb(255 255 255 / .06),0 1px 0 #000,0 0 8px -4px rgb(92 214 239 / .5)}
 .ui-house .gc-prof[aria-pressed=true]::before{color:var(--accent);text-shadow:0 0 8px rgb(92 214 239 / .5)}
 .ui-house .gc-fold{gap:14px;padding-bottom:12px}.ui-house .gc-fold .gc-icon{position:relative;overflow:visible;width:30px;height:30px;border-radius:50%;border-color:var(--oxide);color:#1a1208;
 background:radial-gradient(circle,#f1dcae 0 30%,#8a6a3c 31% 36%,transparent 37%),repeating-conic-gradient(#d8b77a 0 6deg,#4a3820 6deg 12deg);

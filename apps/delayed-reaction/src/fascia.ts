@@ -1,7 +1,7 @@
 // The menu's artwork: the front of a dub radio, drawn in code as small SVGs (no image files). Cold near-white on black
 // like the tunnel; the only colour is the lanes' own (the preset LEDs and tape codes, the VU meter's hot end). Weights,
 // as strings: a screw ~0.4 KB, the dial face ~4 KB, a worn knob ~3 KB, a VU meter ~2.5 KB, the grille and tape-fibre
-// tiles ~0.5 KB each; the Controls rows' hardware (a fader's printed scale ~1.6 KB, the bat-handle toggle ~1.3 KB a side,
+// tiles ~0.5 KB each; the Controls rows' hardware (a fader's dished cap ~1.4 KB, its slot ~0.7 KB and worn plate ~0.7 KB, its printed scale ~1.6 KB, the bat-handle toggle ~1.3 KB a side,
 // the brushed plate ~0.5 KB, a read-out's glass ~1 KB, the presets' band window ~0.8 KB). Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
 import { mulberry32 } from "@rustybuns/util";
 
@@ -114,17 +114,30 @@ export const backplate = [
   "linear-gradient(#14161b, #08090c 35%, #0b0c10)",
 ].join(", ");
 
-/** The Controls sliders as a mixing desk's faders (the panel's `faders` tokens): a ribbed cap with a white index line, in a
- * sunken slot. Both are small inline SVG, under a kilobyte together. */
-export const faderCap = dataUri(`<defs><linearGradient id="fc" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5a5f6b"/><stop offset=".5" stop-color="#2a2d35"/><stop offset="1" stop-color="#16181d"/></linearGradient></defs>
-  <rect x=".5" y=".5" width="15" height="27" rx="2.5" fill="url(#fc)" stroke="#000" stroke-opacity=".7"/>
-  ${[5, 8, 20, 23].map((y) => `<line x1="3" x2="13" y1="${y}" y2="${y}" stroke="#000" stroke-opacity=".55"/><line x1="3" x2="13" y1="${y + 1}" y2="${y + 1}" stroke="#fff" stroke-opacity=".12"/>`).join("")}
-  <rect x="2" y="13" width="12" height="2" fill="${INK}"/>`, 16, 28);
-export const faderSlot = [
-  // The ticks are printed on the plate under the slot (faderScale); the slot keeps only its dark groove and a lit lip.
-  `linear-gradient(transparent 85%, #ffffff1a 85%)`,
-  "linear-gradient(#000, #1a1c22)",
-].join(", ");
+/** The Controls sliders as a channel strip's faders (the panel's `faders` tokens). The cap is a chunky dished cap: chrome
+ * cheeks, the top hollowed so each half catches the light the other way, grip ribs, a white index line across the middle,
+ * and the wear of a lot of thumbs (a scuffed cheek, a chipped corner). ~1.4 KB. */
+export const faderCap = dataUri(`<defs><linearGradient id="ch" x1="0" x2="1"><stop offset="0" stop-color="#9aa0ac"/><stop offset=".18" stop-color="#3a3e48"/><stop offset=".82" stop-color="#2a2d35"/><stop offset="1" stop-color="#6a707c"/></linearGradient>
+  <linearGradient id="up" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5a5f6b"/><stop offset="1" stop-color="#121419"/></linearGradient>
+  <linearGradient id="dn" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#121419"/><stop offset="1" stop-color="#4a4f5a"/></linearGradient></defs>
+  <rect x="1" y="2" width="20" height="32" rx="3" fill="#000" fill-opacity=".55"/>
+  <rect x=".5" y=".5" width="20" height="32" rx="3" fill="url(#ch)" stroke="#000"/>
+  <rect x="3" y="2.5" width="15" height="13" rx="1.5" fill="url(#up)"/><rect x="3" y="17.5" width="15" height="13" rx="1.5" fill="url(#dn)"/>
+  ${[5.5, 8.5, 11.5, 21.5, 24.5, 27.5].map((y) => `<line x1="4.5" x2="16.5" y1="${y}" y2="${y}" stroke="#000" stroke-opacity=".6"/><line x1="4.5" x2="16.5" y1="${y + 1}" y2="${y + 1}" stroke="#fff" stroke-opacity=".1"/>`).join("")}
+  <rect x="2" y="15.5" width="17" height="2" fill="#f4f6fa"/><rect x="2" y="17.5" width="17" height=".8" fill="#000" fill-opacity=".5"/>
+  <path d="M1.2 6 Q1.8 9 1.4 13" stroke="#fff" stroke-opacity=".35" stroke-width=".8" fill="none"/><path d="M17.5 .8 L20.2 .8 L20.2 3.2 Z" fill="#15171d"/>
+  <circle cx="12" cy="4" r=".6" fill="#fff" fill-opacity=".25"/><circle cx="7" cy="28.5" r=".5" fill="#fff" fill-opacity=".2"/>`, 21, 34);
+/** The slot the cap rides in: a dark groove cut through the plate, its top lip in shadow and the bottom lip catching the
+ * light, the lip rubbed brighter in a long soft patch where the cap has run over it. One 180 px tile, repeated along the slot. ~0.7 KB. */
+export const faderSlot = `${dataUri(`<defs><linearGradient id="rb" x1="0" x2="1"><stop offset="0" stop-color="#dfe3ea" stop-opacity="0"/><stop offset=".5" stop-color="#dfe3ea" stop-opacity=".22"/><stop offset="1" stop-color="#dfe3ea" stop-opacity="0"/></linearGradient></defs>
+  <rect width="180" height="12" fill="#0a0b0f"/><rect width="180" height="2" fill="#000"/><rect y="10.5" width="180" height="1.5" fill="#9aa0ac" fill-opacity=".3"/>
+  <rect y="4.5" width="180" height="3" fill="#000"/><rect y="7.5" width="180" height=".6" fill="#fff" fill-opacity=".06"/>
+  <rect x="20" y="10.5" width="90" height="1.5" fill="url(#rb)"/><rect x="130" y="2" width="30" height=".6" fill="#fff" fill-opacity=".06"/>`, 180, 12)} 0 0 / 180px 100% repeat-x`;
+/** The painted plate a fader and its scale sit on: dark enamel worn through to the metal in specks and a few scratches.
+ * One tile, repeated, so the wear never stretches. ~0.7 KB. */
+export const faderPlate = dataUri(`<filter id="w"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 .85  0 0 0 0 .88  0 0 0 0 .92  0 0 0 9 -7.6"/></filter>
+  <rect width="160" height="60" filter="url(#w)" opacity=".55"/>
+  <path d="M12 9 l26 3 M96 44 l31 -2 M70 18 l9 1" stroke="#c9ced8" stroke-opacity=".1" stroke-width=".7"/>`, 160, 60);
 /** The switches' knob: a square chrome cap, and lit, the same cap with the go lane's green LED in it. */
 const cap = (led: string) => dataUri(`<rect x=".5" y=".5" width="15" height="15" rx="2" fill="#2a2d35" stroke="#000" stroke-opacity=".7"/>
   <rect x="2" y="2" width="12" height="5" rx="1" fill="#fff" fill-opacity=".08"/><circle cx="8" cy="9.5" r="2.6" fill="${led}"/>`, 16, 16);
