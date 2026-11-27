@@ -19,7 +19,7 @@ export const ACTIONS: Action[] = [
   { id: "leanRight", label: "Lean right", keys: ["KeyE"] },
   { id: "role", label: "Next role", keys: ["KeyN"] },
   { id: "board", label: "Scoreboard", keys: ["Tab"] },
-  ...KEYS.map((code, i) => ({ id: `gun${i + 1}`, label: `Gun slot ${i + 1}`, keys: [code] })),
+  ...KEYS.map((code, i) => ({ id: `gun${i + 1}`, label: `Gun slot ${i + 1}`, keys: [code], group: "Gun slots" })),
 ];
 export const bind = loadBindings(KEY, ACTIONS);
 
