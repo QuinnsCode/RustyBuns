@@ -26,7 +26,7 @@ describe("an agent over HTTP", () => {
     const list = await (await relay.http(new Request(`${links.api}/tools`), "/tools", links)).json();
     expect(list.tools.map((t: { name: string }) => t.name)).toContain("page_write_file");
     const r = await post("/tools/page_write_file", { path: "world.js", text: "//" });
-    expect([r.status, await r.json()]).toEqual([200, { ok: true, page: { path: "world.js", text: "//" } }]);
+    expect([r.status, await r.json()]).toEqual([200, { ok: true, files: [{ path: "world.js", bytes: 2 }] }]);
   });
 
   test.each([
@@ -54,7 +54,7 @@ describe("an agent over MCP", () => {
     expect((await rpc("tools/list")).result.tools).toHaveLength(6);
     const ok = await rpc("tools/call", { name: "page_write_file", arguments: { path: "world.js", text: "//" } });
     expect(ok.result.isError).toBe(false);
-    expect(JSON.parse(ok.result.content[0].text)).toEqual({ ok: true, page: { path: "world.js", text: "//" } });
+    expect(JSON.parse(ok.result.content[0].text)).toEqual({ ok: true, files: [{ path: "world.js", bytes: 2 }] });
     const bad = await rpc("tools/call", { name: "page_reset", arguments: {} });
     expect(bad.result.isError).toBe(true);
     expect((await rpc("resources/list")).error.code).toBe(-32601);
