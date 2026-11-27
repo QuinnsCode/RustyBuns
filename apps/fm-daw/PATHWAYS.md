@@ -242,7 +242,7 @@ standing on it (hemyviz's floor names). Opening one (or a link to `#learn`, `#bu
 beam of light, and flies the camera up over it so the map fills the screen behind the cards; the lanes become tabs along the top to switch between, and the lane's paths
 stand down the page like a console's memory card screen (`src/front-shelf.ts`): each a thing turning in the dark (the guitar,
 a speaker stack, the desk's own screen from `public/door/daw.jpg`, a turntable, an amp on its cab, the drive's real board from
-`circuits/drive.pcb.svg`, a mic), each swinging a quarter turn each way of its front, the one nearest the middle fastest, scrolling swinging them all, and each glass card row sliding
+`circuits/drive.pcb.svg`, a mic), each swinging a quarter turn each way of its front, the one nearest the middle fastest, scrolling swinging them all, and each glass card sliding
 in as it comes onto the screen. One WebGL renderer draws only the things on the screen, at 30 frames a second at most; with
 reduced motion each is drawn once. Beside each thing, a Lucide icon, a short name, a line on what you do there, and Open,
 on that sector's first step ([#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860)). Only The
