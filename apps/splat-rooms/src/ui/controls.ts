@@ -8,7 +8,7 @@ import { SKIN } from "./eqosys.ts";
  * A switch's row gives its words the width a slider's track would take, so "Toggle instead of hold" stays on one line.
  * Each kit tab keeps its small gamepad, keyboard, mouse or phone icon beside its letter. The fold knobs are stencilled FOLD and
  * OPEN under them, and a switch the game lacks keeps its brass housing, dimmed (no dashed edge).
- * Each section head is stamped: a red-and-cream tab on its top edge and a red serial (SR-CTL · 01, 02...) by a CSS counter.
+ * Each section head is stamped: a red-and-cream tab on its top edge and a dim cream serial (SR-CTL · 01, 02...) by a CSS counter.
  */
 const LAB_CSS = `.ui-house .gc-card{box-shadow:var(--glow),0 30px 80px -30px #000;border-top:0;backdrop-filter:blur(8px);position:relative;padding-top:26px;
 background:var(--rivets),var(--wear),var(--panel);outline:1px solid rgb(239 228 201 / .06);outline-offset:-5px}
@@ -25,11 +25,11 @@ font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0
 .ui-house .gc-card{counter-reset:gcsec}.ui-house .gc-sec{position:relative;counter-increment:gcsec}
 .ui-house .gc-sec::before{content:"";position:absolute;left:12px;top:0;width:34px;height:3px;background:var(--red);box-shadow:38px 0 0 -1px var(--cream)}
 .ui-house .gc-sec-h{font:600 1.02rem/1 var(--silk);letter-spacing:.07em;text-transform:uppercase}
-.ui-house .gc-sec-h::after{content:"SR-CTL \\00b7  " counter(gcsec,decimal-leading-zero);order:2;margin-left:auto;font:800 .62rem var(--mono);letter-spacing:.14em;color:var(--red);opacity:.85}
+.ui-house .gc-sec-h::after{content:"SR-CTL \\00b7  " counter(gcsec,decimal-leading-zero);order:2;margin-left:auto;font:600 .6rem var(--mono);letter-spacing:.16em;color:var(--cream);opacity:.42}
 .ui-house .gc-chev{order:3;margin-left:10px}
 .ui-house .gc-card label:has(>input[type=range]){grid-template-columns:auto 1fr 3.5em}.ui-house .gc-card label:has(>input[type=range]) .gc-lab{white-space:nowrap}
 .ui-house .gc-card input[type=checkbox]{border-radius:4px;border-color:var(--oxide);background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));box-shadow:inset 0 1px 3px rgb(0 0 0 / .7),inset 0 0 0 1px rgb(239 228 201 / .05)}
-.ui-house .gc-card input[type=checkbox]:checked{background:linear-gradient(180deg,rgb(4 18 24 / .7),var(--accent-soft));border-color:var(--accent);box-shadow:var(--glow),inset 0 1px 3px rgb(0 0 0 / .6)}
+.ui-house .gc-card input[type=checkbox]:checked{background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));border-color:rgb(92 214 239 / .7);box-shadow:0 0 10px -3px rgb(92 214 239 / .7),inset 0 1px 3px rgb(0 0 0 / .7)}
 .ui-house .gc-card input[type=checkbox]::before{content:"OFF";position:absolute;right:4px;top:50%;transform:translateY(-50%);font:800 7px/1 var(--mono);letter-spacing:.04em;color:rgb(147 161 173 / .55)}
 .ui-house .gc-card input[type=checkbox]:checked::before{content:"ON";right:auto;left:5px;color:var(--cream);text-shadow:0 0 4px rgb(239 228 201 / .6)}
 .ui-house .gc-card label:has(>input:checked){box-shadow:inset 0 -1px 0 rgb(92 214 239 / .45)}
@@ -56,7 +56,8 @@ const THEME = {
   ...SKIN.theme,
   "--ui-track": "linear-gradient(180deg,rgb(0 0 0 / .85) 0 45%,rgb(239 228 201 / .28))", "--ui-track-h": "6px",
   "--ui-thumb": `linear-gradient(90deg,transparent 44%,rgb(30 20 10 / .85) 44% 56%,transparent 56%),${BRASS}`, "--ui-thumb-w": "14px", "--ui-thumb-h": "24px",
-  "--ui-knob": BRASS, "--ui-knob-radius": "2px", "--ui-knob-on": "linear-gradient(180deg,#bff3fb,var(--accent))", "--ui-knob-on-glow": "0 0 8px var(--accent)",
+  "--ui-knob": BRASS, "--ui-knob-radius": "2px", // On, the rocker keeps its brass block and lights a cyan lamp in it, so both states are one material.
+  "--ui-knob-on": `radial-gradient(circle,#e6fbff 0 1.5px,var(--accent) 2.5px 3.5px,transparent 4.5px),${BRASS}`, "--ui-knob-on-glow": "0 0 6px rgb(92 214 239 / .8)",
 };
 
 /** The saved look settings; GameView reads this on every drag. */
