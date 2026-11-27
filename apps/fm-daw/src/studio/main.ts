@@ -19,7 +19,8 @@ import { mountWay } from "../way.ts";
 import { characterDialog } from "./character.ts";
 import { FOLLOW_MS, invitedWords, LiveParty, partyFollow, partyFrom } from "./party.ts";
 import { getJson } from "@rustybuns/util/http";
-import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, loadSetup, remember, roomId, saveRecent, saveSetup, studios } from "./door.ts";
+import { invitedBy } from "@rustybuns/util/lobby";
+import { doorWords, follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, loadSetup, remember, roomId, saveRecent, saveSetup, studios } from "./door.ts";
 import { sideways, studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
@@ -124,6 +125,9 @@ const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.sear
 const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
 const jam = newJam(def);
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
+// Back from eqosys? Read before anything else waits: in the small sign-in window this hands the code to the room that
+// opened it and closes, before the room would start loading in there too. The door picks up the answer (below).
+const signInBack = eq.finishSignIn();
 // The kept sign-in comes back from IndexedDB (and renews) before the page reads who you are.
 await eq.ready;
 const signedIn = () => !!eq.login();
@@ -1325,15 +1329,19 @@ async function followParty() {
 if (partyOwner) { void followParty(); setInterval(() => { if (document.visibilityState === "visible") void followParty(); }, FOLLOW_MS); }
 
 // ---- the front door ----
+/** This room's link to hand a friend, signed with your name when you're signed in ("Ada invited you" on their door). */
+const shareLink = () => here ? inviteLink(location.origin, here.room, here.studio, here.name, signedIn() ? name : "") : location.href;
 function door() {
   const out = !signedIn() && eq.canSignIn();
   $("door-out").hidden = !out;
   $("door-lobby").hidden = out || !!here;
   $("door-room").hidden = out || !here;
+  const words = doorWords(here, invitedBy(location.search));
   const invited = $("invited");
   invited.hidden = !here;
-  invited.textContent = here ? partyLive ? invitedWords(partyLive, Date.now()) : `You're invited to ${here.name || here.room}.` : "";
-  $("sign-in").textContent = here ? "Sign in and walk in" : "Sign in with eqosys";
+  invited.textContent = here && partyLive ? invitedWords(partyLive, Date.now()) : words.invited;
+  $("door-lead").textContent = words.lead;
+  $("sign-in").textContent = words.button;
   if (here) $("room-title").textContent = here.name || here.room;
   $("room-studio-name").textContent = def.name;
   $("room-about").textContent = def.about ?? "";
@@ -1378,18 +1386,27 @@ $("make").addEventListener("submit", (e) => {
   // the first in with a key is the sesh's maker (its leader), and that's you: you walk in before anyone has the link
   location.assign(inviteLink(location.origin, room, studio, label));
 });
-$("sign-in").addEventListener("click", () => void eq.signIn(location.search));
+// eqosys opens in a small window beside the room (sign in, or make an account there), and the page stays on this
+// invite. The login back, the same address opens fresh, so the room's socket carries the token. A blocked window
+// makes the whole-page trip instead, which comes back to this address too (`finishSignIn` below).
+$("sign-in").addEventListener("click", () => {
+  $("door-error").hidden = true;
+  void eq.signInHere(location.search).then((r) => {
+    if (r.login) { location.reload(); return; }
+    if (r.error) { const e = $("door-error"); e.hidden = false; e.textContent = r.error; }
+  });
+});
 $("sign-out").addEventListener("click", () => { eq.signOut(); location.reload(); });
 $("invite").addEventListener("click", () => {
   if (!here) return;
   const b = $("invite");
-  void navigator.clipboard?.writeText(inviteLink(location.origin, here.room, here.studio, here.name)).then(
+  void navigator.clipboard?.writeText(shareLink()).then(
     () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Invite"; }, 1600); },
     () => { flash = { text: "Copy didn't work: the link is in the address bar", until: performance.now() + 2500 }; });
 });
 if (here) saveRecent(remember(loadRecent(), { room: here.room, name: here.name, studio: here.studio, mine: false, at: Date.now() }));
 // back from eqosys: the invite's room came along as `then`, so open it signed in (a fresh page, so the socket carries the token)
-void eq.finishSignIn().then((back) => {
+void signInBack.then((back) => {
   if (back?.login) { if (back.then.startsWith("?")) location.replace(`${location.pathname}${back.then}`); else location.reload(); return; }
   if (back?.error) { const e = $("door-error"); e.hidden = false; e.textContent = back.error; }
 });
@@ -1447,7 +1464,7 @@ async function inviteFriend(id: string) {
 }
 $("share").addEventListener("click", () => {
   if (!here) return;
-  void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: inviteLink(location.origin, here.room, here.studio, here.name) }).catch(() => {});
+  void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: shareLink() }).catch(() => {});
 });
 
 function menu() { decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play"; door(); people(); invites(); if (phase === "menu") void refreshHub(); }
