@@ -127,8 +127,9 @@ test.skipIf(!hasChrome)("Q Phase: the scope on GATE moves with the Rate knob, an
 });
 
 // Build it: the fuzz's board drawn from its kit's Gerbers, top and bottom; Print fills a sheet with the schematic, the
-// board and your parts; the Gerbers zip holds the layers. Q Phase has no board files yet: no board, still a schematic.
-test.skipIf(!hasChrome)("Build it: the fuzz's board from its Gerbers, the print sheet with your parts, and a pedal with no kit", async () => {
+// board and your parts; the Gerbers zip holds the layers. Q Phase, a pedal whose LFO the sim runs off its board, has a
+// board too, with the LFO on it.
+test.skipIf(!hasChrome)("Build it: the fuzz's board from its Gerbers, the print sheet with your parts, and the phaser's board", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 860 });
   try {
     await load(chrome.cdp, tab, `${vite.url}/builder.html`, 0);
@@ -151,7 +152,7 @@ test.skipIf(!hasChrome)("Build it: the fuzz's board from its Gerbers, the print 
     expect(z.files).toEqual(expect.arrayContaining(["F_Cu.gbr", "B_Cu.gbr", "Edge_Cuts.gbr", "drill-L1-L2.drl"]));
 
     await page("qbuilder.pick('phase')");
-    expect((await board()).made).toBe(false);
-    expect(await page<string[]>("qbuilder.printSheet()")).toEqual(["Q Phase", "Schematic"]);
+    expect(await board()).toMatchObject({ kit: "q-phase", made: true, size: [58, 68] });
+    expect(await page<string[]>("qbuilder.printSheet()")).toEqual(["Q Phase", "Schematic", "Circuit board", "Parts"]);
   } finally { await tab.close(); }
 });
