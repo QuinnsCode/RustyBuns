@@ -28,11 +28,13 @@ test.skipIf(!hasChrome)("seated at the bass, every note key plays its note, H an
     // Q holds the view and frees the mouse; a press at the top of the pitch wheel bends all the way up, and the room
     // doesn't drop to the menu while the mouse is out
     await page(`qjam.key("KeyQ")`);
+    // the wheels show on the first frame drawn seated, which can be seconds behind on a runner's software GL
+    await pageUntil(tab, `!!document.querySelector(".qo-wheel.pitch i").style.top`, "the wheels", 60_000);
     const at = await page<{ x: number; y: number }>(`(() => { const r = document.querySelector(".qo-wheel.pitch").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 1 }; })()`);
     await tab.call("Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", buttons: 1, clickCount: 1 });
     // the knob's top: 0 is all the way up, 41 the middle it springs back to
+    await pageUntil(tab, `parseFloat(document.querySelector(".qo-wheel.pitch i").style.top) < 4`, "the bend", 20_000).catch(() => {});
     const wheel = await page<{ held: boolean; top: number; phase: string }>(`(async () => {
-      await new Promise((k) => setTimeout(k, 400));
       return { held: qjam.state().viewHeld, top: parseFloat(document.querySelector(".qo-wheel.pitch i").style.top), phase: qjam.state().phase };
     })()`);
     await tab.call("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", buttons: 0, clickCount: 1 });
