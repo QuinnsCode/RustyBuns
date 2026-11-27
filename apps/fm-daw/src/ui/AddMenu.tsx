@@ -1,4 +1,4 @@
-// One way onto the selected track: record audio, record MIDI, import audio, import MIDI. While recording it says
+// One way onto the selected track: record audio, record MIDI, import audio, import MIDI (quantize input sits with Quantize). While recording it says
 // what is going down and onto which track, and stop is one press. Icons after lucide (ISC), the word as the tooltip.
 import { useRef, useState } from "react";
 import { AUDIO_ACCEPT, MIDI_ACCEPT } from "./import.ts";
@@ -7,11 +7,11 @@ import { MAX_BARS, type Project } from "../project.ts";
 
 export interface Recording { kind: "audio" | "midi"; track: string }
 
-function Icon(props: { children: React.ReactNode }) {
+export function Icon(props: { children: React.ReactNode }) {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{props.children}</svg>;
 }
 const FILE = <><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></>;
-const ICONS = {
+export const ICONS = {
   // mic
   audio: <><rect x="9" y="2" width="6" height="13" rx="3" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><path d="M12 19v3" /></>,
   // keyboard-music
@@ -24,12 +24,13 @@ const ICONS = {
   snap: <><path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15" /><path d="m5 8 4 4" /><path d="m12 15 4 4" /></>,
   stop: <rect x="6" y="6" width="12" height="12" rx="1" />,
   x: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
+  // undo-2, redo-2
+  undo: <><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></>,
+  redo: <><path d="m15 14 5-5-5-5" /><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" /></>,
 };
 
 export function AddMenu(props: {
   track: string; rec: Recording | null; counting: number; ready: boolean; input: string | null;
-  /** Quantize input: recorded MIDI snaps to the Grid (`grid`, its label) as it goes down. */
-  snap: boolean; grid: string; onSnap(on: boolean): void;
   onRecordAudio(): void; onRecordMidi(): void; onStop(): void; onFile(kind: "audio" | "midi", f: File): void; onInputOff(): void;
 }) {
   const audioFile = useRef<HTMLInputElement>(null), midiFile = useRef<HTMLInputElement>(null);
@@ -51,8 +52,6 @@ export function AddMenu(props: {
       </> : <>
         <button className="icon-btn" onClick={props.onRecordAudio} disabled={!props.ready} title={`Record audio onto ${props.track}: a mic or a guitar, one pass of the loop${needSound}`} aria-label="Record audio"><Icon>{ICONS.audio}</Icon></button>
         <button className="icon-btn" onClick={props.onRecordMidi} disabled={!props.ready} title={`Record MIDI onto ${props.track}: the notes you play (R)${needSound}`} aria-label="Record MIDI"><Icon>{ICONS.midi}</Icon></button>
-        <button className={props.snap ? "icon-btn on" : "icon-btn"} aria-pressed={props.snap} onClick={() => props.onSnap(!props.snap)}
-          title={props.snap ? `Quantize input is on: recorded MIDI snaps to the Grid (${props.grid})` : "Quantize input is off: recorded MIDI lands where you played it"} aria-label="Quantize input"><Icon>{ICONS.snap}</Icon></button>
         <button className="icon-btn" onClick={() => audioFile.current?.click()} title={`Import audio onto ${props.track}: wav, mp3, m4a, ogg or flac (or drop one on a track)`} aria-label="Import audio"><Icon>{ICONS.importAudio}</Icon></button>
         <button className="icon-btn" onClick={() => midiFile.current?.click()} title={`Import MIDI onto ${props.track}: a .mid file (or drop one on a track)`} aria-label="Import MIDI"><Icon>{ICONS.importMidi}</Icon></button>
       </>}
