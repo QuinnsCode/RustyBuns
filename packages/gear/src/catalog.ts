@@ -162,8 +162,8 @@ const list: Gear[] = [
   // The amp both racks hold (#6472): the QSC PLD4.5 (PLD spec sheet 09/19/16, user manual TD-000368-00-A). 4 channels in
   // 2U, 89 x 482 x 406 mm, 10.0 kg; 1150 / 1250 / 625 W continuous into 8 / 4 / 2 ohms, the four channels sharing its
   // 5000 W; locking IEC mains. Its sheets give heat, not current, so the draw is what it puts out plus what it turns to
-  // heat: idle 286 BTU/hr (84 W); at show level, the sheet's 1/8 power into 4 ohms (its "typical music" figure), 625 W out
-  // and 1144 BTU/hr (335 W) of heat, 960 W. Run hard (1/3 power, 1708 BTU/hr) it would be 2167 W. Back: 4 XLR in, 4 XLR thru, an NL4 per channel.
+  // heat: idle 286 BTU/hr (84 W); at show level, the sheet's 1/3 power into 4 ohms, the figure a circuit is sized by (a
+  // rig run hard): 1667 W out and 1708 BTU/hr (500 W) of heat, 2167 W. At 1/8 power ("typical music") it is 960 W. Back: 4 XLR in, 4 XLR thru, an NL4 per channel.
   amp({
     id: "qsc-pld4-5",
     what: "QSC PLD4.5 power amp, 4 x 1250 W",
@@ -172,7 +172,7 @@ const list: Gear[] = [
     units: 2,
     jacks: { "power-in": 1, "xlr-in": 4, "xlr-out": 4, "speaker-out": 4 },
     amp: { channels: 4, watts: { 8: 1150, 4: 1250, 2: 625 } },
-    draw: { idle: 84, loud: 960 },
+    draw: { idle: 84, loud: 2167 },
   }),
   // A small band's rack: a 4U shock rack on casters (its 25 kg is typical of the class, a guess) holding one PLD4.5 at the
   // top, a blank under it for air and a 1U panel, wired inside, so what the crew cables is the panel: 4 XLR in, an NL4

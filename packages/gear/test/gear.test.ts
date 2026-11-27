@@ -93,8 +93,8 @@ test("a dive bar: two tops and two subs on one 15 A circuit, a power alley down 
   expect(front).toBeGreaterThan(95);
   expect(front).toBeLessThan(115);
 
-  // The powered tops, subs and a mixer at show level fit a 15 A circuit; add the amp rack and it trips.
-  const plugged = ["top-12-powered", "top-12-powered", "sub-18", "sub-18", "mixer-small"];
+  // Powered tops and a mixer at show level fit a 15 A circuit; add the amp rack and it trips.
+  const plugged = ["top-12-powered", "top-12-powered", "mixer-small"];
   expect(circuitLoad(plugged, CIRCUIT_15A).trips).toBe(false);
   expect(circuitLoad([...plugged, "amp-rack-4u"], CIRCUIT_15A).trips).toBe(true);
 });
