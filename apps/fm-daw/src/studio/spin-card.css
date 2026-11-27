@@ -13,7 +13,7 @@
 .spin-card button.on { border-color: #ffd23c; color: #ffd23c; }
 .spin-edit { position: absolute; right: 0; top: calc(100% + 6px); z-index: 3; width: min(360px, 92vw); background: #17191d; border: 1px solid #3a3e45; border-radius: 12px; padding: 10px; display: grid; gap: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); white-space: normal; }
 .spin-edit[hidden] { display: none; }
-.spin-edit h3 { margin: 0; font: 600 16px "Barlow Condensed", sans-serif; letter-spacing: 0.06em; }
+.spin-edit h3 { margin: 0; font: 600 16px var(--qs-head, "Barlow Condensed"), sans-serif; letter-spacing: 0.06em; }
 .spin-edit ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
 .spin-edit li { display: flex; gap: 4px; align-items: center; }
 .spin-edit select { flex: 1 1 auto; min-width: 0; }

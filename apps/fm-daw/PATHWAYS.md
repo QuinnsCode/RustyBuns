@@ -148,8 +148,7 @@ what power, before the truck is loaded.
 
 **Works today:**
 - Step 1: the studio builder (`/rooms.html`, `src/studio/builder.ts`): size, materials, panels, booths, seats.
-- Step 2: a room, indoors or out, picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the rig cards, `rig-cards.ts`, draw each to
-  scale). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
+- Step 2: a room, indoors or out, picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the owner picks one in the jam room's Settings, #6420). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
   tops and sets a line array's pins (#5863). Indoors the stacks are the room's own `pa` (with none, a club stack
   stands either side of the decks), drawn in the builder and on Walk in, with the same power check and gear list (#5883).
 - Step 3: the Coverage button draws the PA's mids and highs over the floor, on the blueprint or the 3D view's floor (`src/studio/coverage.ts`),

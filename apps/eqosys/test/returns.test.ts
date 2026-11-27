@@ -10,6 +10,10 @@ test.each([
   [`${live}/jam`, true],
   [`${live}/jam.html`, true],
   [`${live}/`, true],
+  // the phone remote signs in beside itself (remote.html)
+  [`${live}/remote`, true],
+  [`${live}/remote.html`, true],
+  [`${live}/studio.html`, false],
   ["https://elsewhere.example/jam", false],
 ])("fm-daw sign-in returns to %s: %p", (url, ok) => {
   expect(returnTo(fmDaw, url) !== null).toBe(ok);

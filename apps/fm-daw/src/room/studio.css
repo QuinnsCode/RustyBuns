@@ -12,28 +12,28 @@ main { position: fixed; inset: 0; }
 #speakers { position: absolute; top: 14px; left: 16px; pointer-events: auto; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
 #controls-host { position: absolute; top: 12px; right: 16px; pointer-events: auto; }
 #menu { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100% - 32px)); background: var(--card); border: 1px solid #3a3e45; border-radius: 14px; padding: 22px 24px; }
-#menu h1 { margin: 0 0 8px; font: 600 34px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.02em; }
+#menu h1 { margin: 0 0 8px; font: 600 34px/1 var(--qs-head, "Barlow Condensed"), sans-serif; letter-spacing: 0.02em; }
 #menu .keys { color: var(--dim); font-size: 13px; }
-#play { background: var(--hot); color: #1d1f23; border: 0; border-radius: 10px; padding: 10px 22px; font: 600 18px "Barlow Condensed", sans-serif; cursor: pointer; }
-#look { background: transparent; color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; padding: 9px 16px; font: 600 18px "Barlow Condensed", sans-serif; cursor: pointer; margin-left: 8px; }
+#play { background: var(--hot); color: #1d1f23; border: 0; border-radius: 10px; padding: 10px 22px; font: 600 18px var(--qs-head, "Barlow Condensed"), sans-serif; cursor: pointer; }
+#look { background: transparent; color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; padding: 9px 16px; font: 600 18px var(--qs-head, "Barlow Condensed"), sans-serif; cursor: pointer; margin-left: 8px; }
 /* the desk view (Tab): strips side by side, scrolling sideways inside the panel when they don't fit */
 #modules { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; background: var(--card); border: 1px solid #3a3e45; border-radius: 14px; padding: 14px 16px; }
 #modules header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-#modules h2 { margin: 0; font: 600 24px/1 "Barlow Condensed", sans-serif; }
+#modules h2 { margin: 0; font: 600 24px/1 var(--qs-head, "Barlow Condensed"), sans-serif; }
 #modules .keys { color: var(--dim); font-size: 13px; }
 #modules-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 #modules-list button { text-align: left; padding: 10px 12px; border-radius: 10px; }
-#modules-list b { display: block; font: 600 18px/1.1 "Barlow Condensed", sans-serif; }
+#modules-list b { display: block; font: 600 18px/1.1 var(--qs-head, "Barlow Condensed"), sans-serif; }
 #modules-list span { color: var(--dim); font-size: 12px; }
 #desk { position: absolute; left: 16px; right: 16px; bottom: 16px; max-height: calc(100% - 32px); overflow: auto; background: var(--card); border: 1px solid #3a3e45; border-radius: 14px; padding: 14px 16px; }
 #desk[hidden] { display: none; }
 #desk header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-#desk h2 { margin: 0; font: 600 26px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.02em; }
-#desk-close { background: var(--hot); color: #1d1f23; border: 0; border-radius: 10px; padding: 8px 16px; font: 600 16px "Barlow Condensed", sans-serif; cursor: pointer; white-space: nowrap; }
+#desk h2 { margin: 0; font: 600 26px/1 var(--qs-head, "Barlow Condensed"), sans-serif; letter-spacing: 0.02em; }
+#desk-close { background: var(--hot); color: #1d1f23; border: 0; border-radius: 10px; padding: 8px 16px; font: 600 16px var(--qs-head, "Barlow Condensed"), sans-serif; cursor: pointer; white-space: nowrap; }
 #desk-strips { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
 .desk-strip { flex: 0 0 150px; display: flex; flex-direction: column; gap: 6px; background: #1d1f23; border: 1px solid #30343a; border-radius: 10px; padding: 10px; }
 .desk-strip.desk-return { border-color: #5a3a32; }
-.desk-strip h3 { margin: 0; font: 600 17px/1.1 "Barlow Condensed", sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.desk-strip h3 { margin: 0; font: 600 17px/1.1 var(--qs-head, "Barlow Condensed"), sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .desk-what { margin: 0; color: var(--dim); font-size: 12px; min-height: 2.6em; }
 .desk-knob, .desk-fader { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 6px; font-size: 12px; color: var(--dim); }
 .desk-knob input, .desk-fader input { grid-column: 1 / -1; width: 100%; accent-color: var(--hot); margin: 0; }
@@ -41,7 +41,7 @@ main { position: fixed; inset: 0; }
 .desk-val { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
 .desk-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .desk-row { display: flex; gap: 6px; }
-.desk-toggle { flex: 1; background: #2b2e33; color: var(--ink); border: 1px solid #3a3e45; border-radius: 8px; padding: 5px 0; font: 600 15px "Barlow Condensed", sans-serif; cursor: pointer; }
+.desk-toggle { flex: 1; background: #2b2e33; color: var(--ink); border: 1px solid #3a3e45; border-radius: 8px; padding: 5px 0; font: 600 15px var(--qs-head, "Barlow Condensed"), sans-serif; cursor: pointer; }
 .desk-toggle.on { background: var(--hot); color: #1d1f23; border-color: var(--hot); }
 /* a strip's Shape button (src/room/desk.ts): its curve as the face, the full editor on a click */
 .desk-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -55,9 +55,9 @@ main { position: fixed; inset: 0; }
 .desk-knob input:disabled { opacity: .4; }
 .desk-strip.desk-master { border-color: var(--ink); }
 /* the jam room's mixer (src/studio/desk-panel.ts): the same desk over the room, and the button that opens it */
-#desk-open { position: fixed; left: 16px; bottom: 64px; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; font: 600 15px "Barlow Condensed", sans-serif; cursor: pointer; }
+#desk-open { position: fixed; left: 16px; bottom: 64px; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; font: 600 15px var(--qs-head, "Barlow Condensed"), sans-serif; cursor: pointer; }
 #desk-open[hidden] { display: none; }
-#decks-open { position: fixed; left: 16px; bottom: 112px; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; font: 600 15px "Barlow Condensed", sans-serif; cursor: pointer; }
+#decks-open { position: fixed; left: 16px; bottom: 112px; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; font: 600 15px var(--qs-head, "Barlow Condensed"), sans-serif; cursor: pointer; }
 #decks-open[hidden] { display: none; }
 body > #desk { position: fixed; z-index: 32; max-height: calc(100% - 72px); }
 #desk.ro #desk-strips { pointer-events: none; opacity: 0.7; }

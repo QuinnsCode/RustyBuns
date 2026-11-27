@@ -18,6 +18,9 @@ import { levelOp, masterOp, muteOp, myTrack, rights, spaceOp, strips, tone, tone
 
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio" });
+// Back from eqosys? Read first: in the small sign-in window this hands the code to the remote that opened it and closes;
+// after a whole-page trip (a blocked window) the address is this room's again, and the remote opens fresh, signed in.
+void eq.finishSignIn().then((back) => { if (back?.login) location.reload(); });
 // The kept sign-in comes back from IndexedDB (and renews) before the page reads who you are.
 await eq.ready;
 const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
@@ -169,8 +172,16 @@ const net = connect({
   hello: () => ({ key: myKey(), name }),
   token,
 });
-$("sign").hidden = !!eq.login();
-$("sign").setAttribute("href", `/jam.html${location.search}`);
+// eqosys opens in a small window beside the remote (sign in, or make an account there); the remote stays on this room,
+// and opens fresh once the login is back, so its socket carries the token. Where eqosys can't send anyone back to
+// this page (run locally, or the desktop app), there's no button: the remote works as a guest.
+$("sign").hidden = !!eq.login() || !eq.canSignIn();
+$("sign").addEventListener("click", () => {
+  void eq.signInHere(location.search).then((r) => {
+    if (r.login) { location.reload(); return; }
+    if (r.error) { const b = $("sign"); b.textContent = "Try again"; b.title = r.error; }
+  });
+});
 draw();
 
 // what a probe reads (bun run probe fm-daw /remote.html?room=<sesh> --js "qremote.state()")
