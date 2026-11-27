@@ -47,7 +47,7 @@ interface Env extends WorldEnv {
   PROFILE: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One per live set: relays the DJ's stream to its listen link (src/listen.ts). */
   LISTEN: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
-  /** Bearer token for GET /signups. Unset, the list can't be read from outside. */
+  /** Bearer token for GET /signups and GET /usage. Unset, neither can be read from outside. */
   SIGNUPS_TOKEN?: string;
   /** Cloudflare Realtime's TURN key: its id and API token. Unset, a call gets STUN alone. */
   TURN_KEY_ID?: string;
@@ -176,10 +176,12 @@ export default {
       if (ip && !signupGate.allow(ip, String(Date.now()), Date.now())) return new Response("try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
       return lobby().fetch("https://lobby/signup", { method: "POST", body: (await req.text()).slice(0, 4096) });
     }
-    if (url.pathname === "/signups" && req.method === "GET") {
+    if ((url.pathname === "/signups" || url.pathname === "/usage") && req.method === "GET") {
+      // the sign-up lists (?list=paid for the paid waitlist) and the live sets' usage, for the owner's token only
       const given = req.headers.get("Authorization")?.replace(/^Bearer /, "") ?? "";
       if (!env.SIGNUPS_TOKEN || !(await sameToken(given, env.SIGNUPS_TOKEN))) return new Response("not found", { status: 404 });
-      return lobby().fetch("https://lobby/signups");
+      const list = url.searchParams.get("list");
+      return lobby().fetch(`https://lobby${url.pathname}${url.pathname === "/signups" && list ? `?list=${encodeURIComponent(list.slice(0, 16))}` : ""}`);
     }
     return env.ASSETS.fetch(req);
   },

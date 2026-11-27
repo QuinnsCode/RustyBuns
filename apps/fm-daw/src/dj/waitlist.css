@@ -1,0 +1,11 @@
+/* The free-limit card (waitlist.ts), on the decks' listen box and on a listener's page. */
+.waitlist { display: grid; gap: 8px; padding: 14px; border-radius: 10px; background: rgba(255, 107, 74, 0.1); border: 1px solid rgba(255, 107, 74, 0.45); }
+.waitlist h3 { margin: 0; font-size: 1.05rem; }
+.waitlist p { margin: 0; }
+.waitlist .waitlist-paid { font-weight: 600; }
+.waitlist form { display: flex; flex-wrap: wrap; gap: 8px; }
+.waitlist input { flex: 1; min-width: 160px; padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(128, 128, 128, 0.5); background: transparent; color: inherit; font: inherit; }
+.waitlist button { padding: 6px 16px; border-radius: 6px; border: 0; background: #ff6b4a; color: #15171b; font: inherit; font-weight: 600; cursor: pointer; }
+.waitlist button:disabled { opacity: 0.6; }
+.waitlist .waitlist-err:empty { display: none; }
+.waitlist .waitlist-err { color: #ff6b4a; }

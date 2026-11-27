@@ -22,7 +22,14 @@ const Cue = obj({ at: num(0, 86_400 * 7), side: oneOf([0, 1] as const), name: st
 export const DjSays = obj({ t: oneOf(["name", "cue"] as const), name: opt(str(NAME_MAX, { min: 0 })), cue: opt(Cue) });
 export type DjSays = Of<typeof DjSays>;
 
-/** The set to a listener (and the listener count to the DJ): what it is now, a new track, how many listen, its end. */
+/** The free limits a set can meet: its length, the month's hours, one set at a time per DJ, the listeners it takes. */
+export const LIMITS = ["hours", "month", "one", "ears"] as const;
+export type Limit = (typeof LIMITS)[number];
+/** The close code of a DJ's socket a limit refused or ended (a full set's listener gets 4001, as before). */
+export const CLOSE_LIMIT = 4005;
+
+/** The set to a listener (and the listener count to the DJ): what it is now, a new track, how many listen, its end
+ * (`why` names the limit that ended it or turned this socket away, `n` that limit's number). */
 export const SetSays = obj({
   t: oneOf(["set", "cue", "ears", "end"] as const),
   name: opt(str(NAME_MAX, { min: 0 })),
@@ -30,8 +37,19 @@ export const SetSays = obj({
   cues: opt(arr(Cue, CUES_MAX)),
   cue: opt(Cue),
   ears: opt(int(0, 100_000)),
+  why: opt(oneOf(LIMITS)),
+  n: opt(num(0, 100_000)),
 });
 export type SetSays = Of<typeof SetSays>;
+
+const hours = (n: number) => `${Number(n.toFixed(2))} hour${n === 1 ? "" : "s"}`;
+/** A limit in plain words: a title and a line, for the card the decks or a listener's page show. */
+export function limitSays(why: Limit, n: number): { title: string; says: string } {
+  if (why === "hours") return { title: "Your free set hit its time", says: `A free set runs up to ${hours(n)}, so this one ended. Go live again to start a new one.` };
+  if (why === "month") return { title: "This month's free hours are used", says: `Free sets get ${hours(n)} a month for each DJ and each connection. They come back on the 1st (UTC).` };
+  if (why === "one") return { title: "You're live on another link", says: "A free DJ plays one set at a time. Stop the other one, or wait for it to end, then go live here." };
+  return { title: "This set is full", says: `A free set takes ${n} listeners at once, and they're all here. Try again in a bit.` };
+}
 
 /** Where a set's listeners go: `/listen/<id>` on the site the decks run on. */
 export const listenPath = (id: string) => `/listen/${id}`;
