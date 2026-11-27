@@ -17,14 +17,17 @@ city. Two cards at the top: **What is Agent World?** opens a short explainer in 
 signs you in with eqosys and opens your world (the room this browser keeps, or this one); signed in already, it goes
 straight there, and where eqosys can't be reached (local dev) it says so in one line. Below them: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
 pictures of what that line does. Three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
-one click with no AI connected, on the landing, in the dock and in Cmd+K, each with one thing to ask your AI next. When your AI first reads the page or changes it, the landing gives way to your world;
-"Skip to the page" does it by hand. A room this browser already kept opens straight on its page. The console, one
-panel in the middle of the screen (**Hide** puts it away, **Show** brings it back), says how to reach the room, with a
-copy button for each:
+one click with no AI connected, on the landing, in the console and in Cmd+K, each with one thing to ask your AI next.
+When your AI first reads the page or changes it, the landing gives way to your world; "Skip to the page" does it by
+hand. A room this browser already kept opens straight on its page. The console is a terminal window in the middle of
+the screen (**Hide** puts it away, **Show** brings it back): on the left what happened, the way a command line shows it
+(connecting to the relay, connected, waiting for your AI, each call and how it went); on the right pictures and
+buttons: Copy, Paste, Watch across the top, then a button for each way in:
 
-- **Paste into any agent.** "Copy the prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
+- **Paste into any agent.** "Copy prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
   T3 Code. They tell the agent to call the page's tools with `curl`, so there's nothing to install or configure.
-- **Or add it as an MCP server**, so the tools show up as the agent's own:
+- **Or add it as an MCP server** (the Claude, Codex and opencode buttons copy these), so the tools show up as the
+  agent's own:
   - Claude Code: `claude mcp add --transport http agent-page <room>/mcp`
   - Codex: `codex mcp add agent-page --url <room>/mcp`
   - opencode: `opencode mcp add agent-page --url <room>/mcp`
