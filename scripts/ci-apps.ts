@@ -203,7 +203,28 @@ export function reachedApps(app: string, root = join(import.meta.dir, "..")): st
 // its code reaches (reachedApps).
 export const sparseDirs = (app: string, root?: string) =>
   [...new Set([app, ...(APPS[app]!.with ?? []), ...reachedApps(app, root)])].map((n) => `/${appDir(n, root)}/`).join("\n");
+// A doc in an app that the app's code names in a quoted path ("../docs/RULES.md", join(APP, "REFERENCE.md")) may be
+// read by a test, so changing it runs the app's suite. Any other .md there is prose: a PR that only edits those runs
+// none of it (#5952). A doc read by a name the code builds at run time slips by here; the hourly ring still runs it.
+const codeText = new Map<string, string>();
+export function docRead(file: string, root = join(import.meta.dir, "..")): boolean {
+  const app = appOf(file);
+  if (!app || !/\.md$/i.test(file)) return true;
+  const key = `${root}\0${app}`, dir = appDir(app, root);
+  if (!codeText.has(key)) {
+    const parts: string[] = [];
+    for (const f of new Bun.Glob("**/*.{ts,tsx,js,jsx,mjs,cjs}").scanSync({ cwd: join(root, dir) }))
+      if (!f.includes("node_modules/")) parts.push(readFileSync(join(root, dir, f), "utf8"));
+    codeText.set(key, parts.join("\n"));
+  }
+  const name = file.split("/").pop()!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`["'\`/]${name}["'\`]`).test(codeText.get(key)!);
+}
 export const sharedCode = (f: string) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f) && !/\.md$/i.test(f);
+// The apps whose tests a changed file can break: the app whose folder it is in, and playground for a package's
+// package.json. playground's shelf.json is built from each package.json (its description and shelf field) and its apps
+// test checks the two match, so a stale shelf used to merge green and turn the hourly main run red (#5899).
+export const appsFor = (f: string) => [appOf(f), /^packages\/[^/]+\/package\.json$/.test(f) ? "playground" : undefined].filter((a): a is string => !!a);
 // A PR that changes the drop pipeline (drop.ts, scripts/mac/, the workflow, this file's machinery) dry-runs one app per
 // build path, not every app: every app was up to about 70 jobs a push, 26 of them macOS drop jobs, and in the week to
 // 2026-11-21 that was two thirds of the runner time of apps.yml and typecheck.yml put together (notes/CI_STALL_2026-11-21.md, #4136).
@@ -276,7 +297,7 @@ if (cmd === "drop") {
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
   const shared = rows === "all" || changed.includes(".github/workflows/apps.yml");
   const deps = changed.some(sharedCode) || (changed.includes("package.json") && await rootDepsChanged(arg));
-  const touched = new Set([...changed.map(appOf).filter(Boolean), ...(rows === "all" ? [] : rows)]);
+  const touched = new Set([...changed.filter((f) => docRead(f)).flatMap(appsFor), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const files = new Map(await Promise.all(names.map(async (n) => [n, APPS[n]!.test ? await weighed(n, APPS[n]!.test!) : []] as const)));
   const small = names.filter((n) => isSmall(APPS[n]!, files.get(n)!));
