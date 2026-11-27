@@ -94,8 +94,8 @@ test.skipIf(!hasChrome)("Build it: the fuzz's board from its Gerbers, the print 
 
     const top = await board();
     expect(top).toMatchObject({ kit: "q-fuzz", side: "top", made: true, size: [58, 68] });
-    expect(await page("document.querySelectorAll('.qb-mock .pcb-holes circle').length")).toBe(top.holes);
-    expect(await page("qbuilder.side('bottom')")).toBe("bottom");
+    expect(await page<number>("document.querySelectorAll('.qb-mock .pcb-holes circle').length")).toBe(top.holes);
+    expect(await page<string | null>("qbuilder.side('bottom')")).toBe("bottom");
 
     expect(await page<string>("qbuilder.swap('D3', 'germanium')")).toBe("");
     expect(await page<string[]>("qbuilder.printSheet()")).toEqual(["Q Fuzz", "Schematic", "Circuit board", "Parts"]);
