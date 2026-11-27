@@ -16,6 +16,7 @@ export const PageMessage = UiSchema.TaggedEnum({
   ClickedUndo: {},
   ClickedReset: {},
   ClickedFull: {},
+  ClickedLeaveLanding: {},
   CompletedReportPage: {},
   ChangedRelay: { online: Schema.Boolean },
   ClickedCopy: { what: Schema.String, text: Schema.String },
@@ -52,10 +53,12 @@ const Model = Schema.Struct({
   copied: Schema.NullOr(Schema.String),
   /** The page alone, filling the window: the dock is put away (agents still reach it). */
   full: Schema.Boolean,
+  /** The landing: a fresh room shows it until the agent's first change, or until the person skips it. */
+  landing: Schema.Boolean,
 });
 type Model = typeof Model.Type;
 
-const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean });
+const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean });
 
 const Def = Html.component({ name: "ProfilePage", props: Props, model: Model, message: PageMessage });
 
@@ -134,10 +137,75 @@ const how = Def.fragment((h, online: boolean, last: typeof Logged.Type | undefin
   );
 });
 
+// The landing: one screen over the night city (city.ts). The sign, the four parts it's made of, one line to copy,
+// and four pictures of what that line does, in words a middle schooler reads at a glance.
+const ICONS = {
+  layers: ["m12 2 9 5-9 5-9-5 9-5Z", "m3 12 9 5 9-5", "m3 17 9 5 9-5"],
+  plug: ["M12 22v-5", "M9 8V2", "M15 8V2", "M18 8v5a6 6 0 0 1-12 0V8Z"],
+  box: ["M21 8 12 3 3 8v8l9 5 9-5Z", "m3 8 9 5 9-5", "M12 13v8"],
+  zap: ["M13 2 3 14h9l-1 8 10-12h-9l1-8Z"],
+  chat: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"],
+  bot: ["M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z", "M12 8V4", "M9 13v2", "M15 13v2"],
+  wrench: ["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9Z"],
+  screen: ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z", "M8 21h8", "M12 17v4"],
+} as const;
+type Icon = keyof typeof ICONS;
+
+const SIGNS: readonly (readonly [string, Icon, string])[] = [
+  ["Effect UI", "layers", "cyan"], ["WebMCP", "plug", "pink"], ["Cloudflare Artifacts", "box", "amber"], ["Effect", "zap", "violet"],
+];
+const STEPS: readonly (readonly [Icon, string, string, string, string])[] = [
+  ["chat", "amber", "1. You ask", "\"make it about my skateboarding\"", ""],
+  ["bot", "violet", "2. Your AI thinks", "Claude, Codex, any AI", ""],
+  ["wrench", "pink", "3. It presses buttons", "set title · add a card · pick colors", "WebMCP"],
+  ["screen", "cyan", "4. Your page changes", "right in front of you", "Effect UI · Effect"],
+];
+
+/** An icon as a CSS mask over its color (the view has no SVG elements): the paths drawn as a stroked SVG data URL. */
+const maskOf = (name: Icon) => `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name].map((d) => `<path d="${d}"/>`).join("")}</svg>`)}")`;
+const icon = Def.fragment((h, name: Icon) => h.i.class("l-i").attrs({ "aria-hidden": "true", style: `--icon:${maskOf(name)}` }));
+
+const landingView = Def.fragment((h, room: string, origin: string, online: boolean, copied: string | null) => {
+  const claude = connectLines(origin, room)[0]!;
+  return h.section.class("landing").attr("aria-label", "Agent Page").children(
+    h.div.class("l-sign").attr("aria-hidden", "true").children("エージェント"),
+    h.div.class("l-stage").children(
+      h.h1.class("l-word").children("Agent Page"),
+      h.p.class("l-line").children("Your AI builds your page. You watch it light up."),
+      h.div.class("l-signs").children(...SIGNS.map(([name, i, c]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), name))),
+      h.div.class("l-bar").children(
+        h.code(claude.text),
+        h.button.attr("type", "button").class("l-go").on("click", PageMessage.ClickedCopy({ what: claude.what, text: claude.text }))
+          .children(copied === claude.what ? "Copied" : "Copy"),
+      ),
+      h.p.class("l-alt").children(
+        "Codex, opencode, T3 Code? ",
+        h.button.attr("type", "button").on("click", PageMessage.ClickedCopy({ what: "prompt", text: prompt(linksFor(origin, room)) }))
+          .children(copied === "prompt" ? "Copied the prompt" : "Copy the prompt"),
+        " and paste it in.",
+      ),
+      h.p.class("l-wait", online && "on").attr("role", "status").children(
+        h.i.class("l-blink").attr("aria-hidden", "true"),
+        online ? "Your room is open. Waiting for your AI." : "Opening your room…",
+        h.button.attr("type", "button").class("l-skip").on("click", PageMessage.ClickedLeaveLanding()).children("Skip to the page"),
+      ),
+      copied?.startsWith("failed") && h.p.class("l-alt").attr("role", "alert").children("The clipboard said no: select the line and copy it by hand."),
+    ),
+    h.section.class("l-how").attr("aria-label", "How it works").children(
+      h.h2(h.b("How it works"), " · you give your AI the remote for this page"),
+      h.div.class("l-steps").children(
+        h.div.class("l-wire").attr("aria-hidden", "true").children(h.i.class("l-spark")),
+        ...STEPS.map(([i, c, title, says, tag]) => h.div.class("l-step", `c-${c}`).key(title).children(
+          h.div.class("l-dot").children(icon(h, i)), h.b(title), h.span(says), tag && h.span.class("l-tag").children(tag)))),
+      h.p.class("l-say").children("Your AI can only press ", h.em("this page's"), " buttons. It can't touch anything else on your computer."),
+    ),
+  );
+});
+
 const initials =(name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, full: $.props.full }),
+  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, full: $.props.full, landing: $.props.landing }),
   update: ($, message) => {
     switch (message._tag) {
       case "ChangedRelay": return $.evolve({ online: message.online });
@@ -145,12 +213,15 @@ export const ProfilePageNoDeps = Def.make({
       case "CompletedCopy": return $.evolve({ copied: message.what });
       case "FailedCopy": return $.evolve({ copied: `failed: ${message.what}` });
       case "ClickedFull": return $.evolve({ full: !$.model.full });
+      case "ClickedLeaveLanding": return $.evolve({ landing: false });
     }
     const a = asked(message);
     if (!a) return $.model;
     const [call, tool, r] = a;
     const { model, error } = step($.model, r);
-    return $.set({ ...model, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
+    // The agent's first change that lands takes the landing down: the page it is building comes up.
+    const landing = model.landing && !(call > 0 && error === null);
+    return $.set({ ...model, landing, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
       .run(ReportPage.make({ call, error, page: model.page }));
   },
   subscriptions: () => [
@@ -159,9 +230,10 @@ export const ProfilePageNoDeps = Def.make({
     Subscription.make("relay", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).online; })).pipe(
       Stream.changes, Stream.map((online) => PageMessage.ChangedRelay({ online })))),
   ],
-  view: (h, { page, past, log, online, copied, full }) => {
+  view: (h, { page, past, log, online, copied, full, landing }) => {
     const t = page.theme;
     const { room, origin } = h.props;
+    if (landing) return landingView(h, room, origin, online, copied);
     // A button with its own label says it; the short "Copy" ones beside each line name their agent for a screen reader.
     const copy = (what: string, text: string, label?: string) => h.button.attr("type", "button").class("copy")
       .attr("aria-label", label ? undefined : `${copied === what ? "Copied" : "Copy"} the ${what} line`)

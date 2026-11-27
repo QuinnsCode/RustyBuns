@@ -66,7 +66,7 @@ export type Action = typeof Action.Type;
 export const starter: Page = {
   name: "Your name",
   tagline: "Connect an agent and ask it to build this page.",
-  theme: { accent: "#f97316", paper: "#fffaf3", ink: "#1c1917", font: "sans" },
+  theme: { accent: "#ff3d8b", paper: "#0a0918", ink: "#e9ecf8", font: "mono" },
   blocks: [
     { id: "b1", kind: "text", title: "About", body: "This page is an Effect UI component. Every change comes in as a message, from your agent's WebMCP tools or from the buttons beside it.", items: [] },
   ],
