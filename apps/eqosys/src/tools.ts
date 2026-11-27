@@ -298,6 +298,9 @@ const execTool: Tool = {
     const a = check(obj({ code: str(32_000), input: opt(raw) }), rawArgs);
     if (!a) throw new Refused("send { code: the body of an async function, input? }");
     if (!c.conf.LOADER) throw new Refused("code mode is not running here: use eq_batch", 503);
+    // Each run loads a Dynamic Worker, so an account gets a few a minute (EXEC_LIMIT).
+    if (c.conf.EXEC_LIMIT && !(await c.conf.EXEC_LIMIT.limit({ key: `exec:${c.who.id}` })).success)
+      throw new Refused("too many programs: wait a minute, or put more into one", 429);
     const r = await execute(c.conf.LOADER, a.code, programTools.map((x) => x.name), (name, json) => answer(c, name, json), a.input, edge.stub?.(propsOf(c)));
     return { ok: !r.isError, calls: r.calls, ...JSON.parse(r.text.length < MAX_BACK ? r.text : JSON.stringify({ error: r.text })) };
   },

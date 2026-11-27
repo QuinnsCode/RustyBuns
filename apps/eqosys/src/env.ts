@@ -52,6 +52,10 @@ export interface Env {
   GITHUB_REPORT_TOKEN?: string;
   /** Workers Rate Limiting for reports: a few a minute per IP, ahead of the per-account count. Absent locally. */
   REPORT_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
+  /** Workers Rate Limiting for eq_execute: 10 programs a minute per account. Absent locally. */
+  EXEC_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
+  /** Workers Rate Limiting for the visit beacon: 30 a minute per IP. Absent locally. */
+  VISIT_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   /** One Durable Object a person: friends, presence and notifications (hub.ts). */
   HUB?: Hubs;
   /** Dynamic Workers that run an agent's program over the eq_ tools (codemode.ts). Without it eq_execute answers 503. */

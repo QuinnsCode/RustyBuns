@@ -38,6 +38,22 @@
         "limit": 5,
         "period": 60
       }
+    },
+    {
+      "name": "EXEC_LIMIT",
+      "namespace_id": "8207",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    {
+      "name": "VISIT_LIMIT",
+      "namespace_id": "8208",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
     }
   ],
   "worker_loaders": [
