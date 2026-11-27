@@ -6,7 +6,7 @@ import { Music } from "./audio.ts";
 import { accountChip, achieve, achievements, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { backplate, brushed, faderCap, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
+import { backplate, bandScale, brushed, readoutGlass, faderCap, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
@@ -290,6 +290,9 @@ const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
   sheet.style.setProperty("--scale-pct-lg", volumeScale(11));
   const keys = sheet.querySelector<HTMLElement>(".gc-keys");
   if (keys) keyStrip(keys);
+  // Each read-out in a lit window, and the preset keys under a band window whose pointer stands over the key in use.
+  sheet.style.setProperty("--glass", readoutGlass);
+  sheet.style.setProperty("--band", bandScale);
   sheet.style.setProperty("--toggle-off", toggleOff);
   sheet.style.setProperty("--toggle-on", toggleOn);
   sheet.style.setProperty("--plate", [screwAt("left 5px top 5px", 30), screwAt("right 5px top 5px", 110), screwAt("left 5px bottom 5px", 70), screwAt("right 5px bottom 5px", 150),
