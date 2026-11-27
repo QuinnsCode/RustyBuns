@@ -1,11 +1,11 @@
 /* The decks (panel.ts): a dark booth over the room, deck A fire on the left, deck B blue on the right, the mixer
    (mixer.css) between. On a wide screen it all fits one screen with no scrolling, the close-up and the two platters as
    big as the height allows; under 900px the three pieces are a carousel (swipe, or the A / mixer / B tabs). Labels never wrap. */
-#dj { --gap: 8px; position: fixed; inset: 8px; z-index: 40; overflow: hidden; background: rgba(15, 16, 19, 0.98); color: #f1efe9; border: 1px solid #2c2f35; border-radius: 12px; padding: 8px 10px; font: 13px/1.3 "IBM Plex Sans", system-ui, sans-serif; display: flex; flex-direction: column; gap: var(--gap); }
+#dj { --gap: 8px; position: fixed; inset: 8px; z-index: 40; overflow: hidden; background: var(--dj-bg); color: var(--dj-ink); border: 1px solid var(--dj-line); border-radius: 12px; padding: 8px 10px; font: 13px/1.3 "IBM Plex Sans", system-ui, sans-serif; display: flex; flex-direction: column; gap: var(--gap); }
 #dj[hidden] { display: none; }
 #dj header { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; }
 #dj h2 { margin: 0; font: 600 22px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.03em; flex: none; }
-#dj button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; min-width: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid #3a3e45; background: #1e2025; color: inherit; font: 600 14px "Barlow Condensed", sans-serif; letter-spacing: 0.04em; cursor: pointer; white-space: nowrap; touch-action: manipulation; user-select: none; }
+#dj button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; min-width: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--dj-line); background: var(--dj-btn); color: inherit; font: 600 14px "Barlow Condensed", sans-serif; letter-spacing: 0.04em; cursor: pointer; white-space: nowrap; touch-action: manipulation; user-select: none; }
 #dj button:hover { border-color: #6b707a; }
 #dj button.on { background: #ff6b4a; border-color: #ff6b4a; color: #15171b; }
 #dj .dj-rec svg { color: #ff4a4a; }
@@ -16,35 +16,35 @@
 #dj .dj-live-open.on svg { color: #ff4a4a; animation: dj-rec-blink 1s steps(2) infinite; }
 #dj .dj-live-n { min-width: 2ch; font-variant-numeric: tabular-nums; text-align: right; }
 #dj .dj-live-n:empty { display: none; }
-#dj .dj-live input { flex: 1; min-width: 0; background: #0d0e11; color: inherit; border: 1px solid #3a3e45; border-radius: 6px; padding: 5px 8px; font: inherit; }
+#dj .dj-live input { flex: 1; min-width: 0; background: var(--dj-field); color: inherit; border: 1px solid var(--dj-line); border-radius: 6px; padding: 5px 8px; font: inherit; }
 #dj .dj-live-go.on { background: #ff4a4a; border-color: #ff4a4a; color: #141416; }
 .dj-head-tools { display: flex; gap: 6px; margin-left: auto; flex: none; }
 /* the sources: a file from this computer, or a YouTube link */
 .dj-src { display: flex; gap: 6px; align-items: center; flex: 1; min-width: 0; }
-.dj-tube { flex: 1; min-width: 90px; max-width: 360px; height: 32px; box-sizing: border-box; border-radius: 8px; border: 1px solid #3a3e45; background: #0d0e11; color: #f1efe9; padding: 0 10px; font: 13px "IBM Plex Sans", system-ui, sans-serif; }
+.dj-tube { flex: 1; min-width: 90px; max-width: 360px; height: 32px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--dj-line); background: var(--dj-field); color: var(--dj-ink); padding: 0 10px; font: 13px "IBM Plex Sans", system-ui, sans-serif; }
 .dj-tube:focus { outline: none; border-color: #ff6b4a; }
 .dj-count { font: 500 12px "IBM Plex Mono", ui-monospace, monospace; }
 /* the DJ list: who may play the decks, the leader's one press to add the DJ for the night */
-.dj-people { position: absolute; right: 0; top: 40px; z-index: 3; width: min(320px, 90vw); background: #17191d; border: 1px solid #3a3e45; border-radius: 12px; padding: 10px; display: grid; gap: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); }
+.dj-people { position: absolute; right: 0; top: 40px; z-index: 3; width: min(320px, 90vw); background: var(--dj-pop); border: 1px solid var(--dj-line); border-radius: 12px; padding: 10px; display: grid; gap: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); }
 .dj-people[hidden] { display: none; }
 .dj-people h3 { margin: 0; font: 600 16px "Barlow Condensed", sans-serif; letter-spacing: 0.06em; }
 .dj-people ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
 .dj-people li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .dj-people li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dj-people li small, .dj-people p { color: #9aa0aa; margin: 0; white-space: nowrap; }
+.dj-people li small, .dj-people p { color: var(--dj-dim); margin: 0; white-space: nowrap; }
 .dj-people p { white-space: normal; }
 /* the library: a pop-over under the header */
-.dj-lib { position: absolute; z-index: 3; top: 50px; right: 10px; width: min(440px, calc(100% - 20px)); max-height: 60%; overflow: auto; background: #17191d; border: 1px solid #3a3e45; border-radius: 12px; padding: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); box-sizing: border-box; }
+.dj-lib { position: absolute; z-index: 3; top: 50px; right: 10px; width: min(440px, calc(100% - 20px)); max-height: 60%; overflow: auto; background: var(--dj-pop); border: 1px solid var(--dj-line); border-radius: 12px; padding: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); box-sizing: border-box; }
 .dj-lib[hidden] { display: none; }
 .dj-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .dj-list li { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .dj-list li > svg { flex: none; color: #ff6b4a; }
 .dj-list li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dj-list li small { color: #9aa0aa; white-space: nowrap; }
-.dj-list li.none { color: #9aa0aa; }
+.dj-list li small { color: var(--dj-dim); white-space: nowrap; }
+.dj-list li.none { color: var(--dj-dim); }
 .dj-list li.none span { white-space: normal; }
 /* a word from the decks, over the bottom edge for a few seconds */
-.dj-note { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 4; margin: 0; max-width: calc(100% - 32px); padding: 6px 12px; border-radius: 8px; background: #23262c; color: #ffd23c; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); pointer-events: none; }
+.dj-note { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 4; margin: 0; max-width: calc(100% - 32px); padding: 6px 12px; border-radius: 8px; background: var(--dj-well); color: #ffd23c; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); pointer-events: none; }
 .dj-note:empty { display: none; }
 /* the close-up, both decks on one time scale, and its zoom */
 .dj-zoombox { position: relative; flex: none; }
@@ -66,7 +66,7 @@
 /* deck A, the mixer, deck B: the rest of the height */
 .dj-row { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 500px) minmax(0, 1fr); gap: var(--gap); }
 .dj-row > * { min-height: 0; }
-.dj-deck { background: #17191d; border: 1px solid #2a2d33; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow: hidden; }
+.dj-deck { background: var(--dj-pop); border: 1px solid var(--dj-line); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow: hidden; }
 .dj-deck.over { border-color: #ff6b4a; }
 /* someone else's deck: its play, cue, sync, hot cues and jumps reach them; the pitch, loops and jog are theirs alone */
 .dj-deck.far { border-style: dashed; }
@@ -79,7 +79,7 @@
 .dj-b .dj-name { color: #7cc0ff; }
 /* the info line keeps one width (the name takes what's left and gives way first), and each reading its own zone in it, right-aligned, digits
    all one width: nothing moves as the numbers change */
-.dj-info { font: 500 12px "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: #c9ccd2; white-space: nowrap; overflow: hidden; flex: none; display: flex; gap: 0.8ch; }
+.dj-info { font: 500 12px "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--dj-read); white-space: nowrap; overflow: hidden; flex: none; display: flex; gap: 0.8ch; }
 .dj-i { flex: none; text-align: right; overflow: hidden; text-overflow: ellipsis; }
 .dj-i-bpm { width: 9ch; }
 .dj-i-key { width: 7ch; text-align: left; }
@@ -103,7 +103,7 @@
 .dj-wheel { width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); touch-action: none; cursor: grab; display: block; }
 .dj-wheel:active { cursor: grabbing; }
 #dj .dj-mode { position: absolute; top: 0; right: 0; min-height: 26px; font-size: 12px; }
-#dj .dj-mode.on { background: #2a2d33; border-color: #c9ccd2; color: #f1efe9; }
+#dj .dj-mode.on { background: var(--dj-on); border-color: var(--dj-read); color: var(--dj-ink); }
 .dj-transport { display: flex; gap: 8px; align-items: center; flex: none; }
 .dj-transport-side { margin-left: auto; justify-content: flex-end; }
 #dj .dj-play, #dj .dj-cue { width: 58px; height: 58px; flex: none; border-radius: 50%; font-size: 17px; border-width: 2px; }
@@ -118,9 +118,9 @@
 .dj-loops button.on { background: #3ddc84 !important; border-color: #3ddc84 !important; color: #111 !important; }
 .dj-pitchcol { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 0; }
 /* the tempo fader's percent under it: one width and one height, empty or not */
-.dj-pitchread { display: block; width: 100%; height: 14px; font: 500 11px/14px "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; text-align: center; color: #c9ccd2; white-space: nowrap; overflow: hidden; flex: none; }
+.dj-pitchread { display: block; width: 100%; height: 14px; font: 500 11px/14px "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; text-align: center; color: var(--dj-read); white-space: nowrap; overflow: hidden; flex: none; }
 #dj .dj-range { min-width: 38px; padding: 0 4px; }
-.dj-pitch { writing-mode: vertical-lr; direction: ltr; flex: 1; min-height: 100px; width: 26px; margin: 0; accent-color: #c9ccd2; }
+.dj-pitch { writing-mode: vertical-lr; direction: ltr; flex: 1; min-height: 100px; width: 26px; margin: 0; accent-color: var(--dj-read); }
 @media (max-width: 1100px) {
   .dj-row { grid-template-columns: minmax(0, 1fr) minmax(340px, 380px) minmax(0, 1fr); }
 }
@@ -147,7 +147,7 @@
 }
 /* the QDJ additions: LOOP IN / OUT / RELOOP, master tempo, a button per tempo range, the START and BRAKE knobs; the edge being moved by the jog blinks */
 #dj { --acc: #ee6a1f; --acc-glow: rgba(238, 106, 31, 0.55); --ink: #c9cbcf; --dim: #7c7f86; }
-#dj h2 small { font-size: 15px; color: #7c7f86; letter-spacing: 0.06em; }
+#dj h2 small { font-size: 15px; color: var(--dim); letter-spacing: 0.06em; }
 .dj-loopio { display: flex; gap: 6px; }
 #dj .dj-loopio button.on, #dj .dj-mt.on, #dj .dj-ranges button.on { background: var(--acc); border-color: var(--acc); color: #141416; box-shadow: 0 0 8px var(--acc-glow); }
 #dj .dj-loopio button.adj { animation: dj-adj 0.5s steps(2, jump-none) infinite; }
@@ -167,10 +167,10 @@
 .dj-zoom { cursor: grab; touch-action: none; }
 .dj-zoom:active { cursor: grabbing; }
 .dj-prefs { width: min(420px, calc(100vw - 32px)); max-height: min(70vh, 640px); overflow: auto; box-sizing: border-box; }
-.dj-prefs h4 { margin: 4px 0 0; font: 600 14px "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: #9aa0aa; }
+.dj-prefs h4 { margin: 4px 0 0; font: 600 14px "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: var(--dj-dim); }
 .dj-prefs-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .dj-prefs-row > span:first-child { flex: 1; min-width: 120px; }
-.dj-prefs-ms { width: 72px; background: #0d0e11; color: inherit; border: 1px solid #3a3e45; border-radius: 6px; padding: 4px 6px; font: inherit; }
+.dj-prefs-ms { width: 72px; background: var(--dj-field); color: inherit; border: 1px solid var(--dj-line); border-radius: 6px; padding: 4px 6px; font: inherit; }
 .dj-prefs-locks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .dj-prefs-keys { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 3px 8px; align-items: center; }
 .dj-prefs-keys span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
@@ -179,5 +179,13 @@
    one more in the header once the decks are open (main.ts moves it there) */
 body > #lesson.lesson-float { z-index: 41; top: auto; bottom: 96px; font-family: "IBM Plex Sans", system-ui, sans-serif; }
 body > .lesson-ask.lesson-float { z-index: 41; }
-#dj .lesson-ask { position: static; width: auto; height: auto; border-radius: 8px; box-shadow: none; background: #1e2025; }
+#dj .lesson-ask { position: static; width: auto; height: auto; border-radius: 8px; box-shadow: none; background: var(--dj-btn); }
 #dj .lesson-ask[hidden] { display: none; }
+
+/* the booth's tokens, dark, and the light look (the pick in the room pill, theme.ts): the frame, the buttons and the
+   pop-overs go light; the close-up and the waveforms are screens and the mixer (mixer.css) is gear, so they keep theirs */
+#dj { --dj-bg: rgba(15, 16, 19, 0.98); --dj-ink: #f1efe9; --dj-line: #3a3e45; --dj-btn: #1e2025; --dj-on: #2a2d33; --dj-pop: #17191d; --dj-well: #23262c; --dj-dim: #9aa0aa; --dj-read: #c9ccd2; --dj-field: #0d0e11; }
+:root[data-theme="light"] #dj { --dj-bg: rgba(230, 232, 235, 0.98); --dj-ink: #17191c; --dj-line: #b4b9bf; --dj-btn: #f4f5f6; --dj-on: #d4d8dd; --dj-pop: #eceef0; --dj-well: #f4f5f6; --dj-dim: #555c66; --dj-read: #3d434b; --dj-field: #fff; --ink: #2a2e34; --dim: #5c626b; color-scheme: light; }
+:root[data-theme="light"] #dj button:hover { border-color: #7d838c; }
+:root[data-theme="light"] #dj .dj-cue { color: #8a6400; border-color: #b8960f; }
+:root[data-theme="light"] #dj .dj-play { color: #158a4f; }

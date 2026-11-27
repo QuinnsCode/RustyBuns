@@ -133,6 +133,32 @@
   #pitches p { margin: 0; color: #b9b4aa; }
   .foot { margin: 28px 0 0; color: #8b877f; font-size: 13px; }
   @media (min-width: 1000px) { h1 { font-size: 56px; } }
+  /* the light look (the pick in the room pill, src/ui/theme.ts): the field is a night scene and keeps its dusk, words
+     and lanes; the page under it, and an open lane's tabs and shelf over the washed-out field, go light */
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="light"] body { background: #e4e6e9; color: #17191c; }
+  :root[data-theme="light"] #hero { color: #f4f1ea; }
+  :root[data-theme="light"] h1 span { color: #e2553a; }
+  :root[data-theme="light"] body.lane-open #hero::after { background: linear-gradient(180deg, #e4e6e9f2 0, #e4e6e9c4 30%, #e4e6e9c4 70%, #e4e6e9f2 100%); }
+  :root[data-theme="light"] body.lane-open #tabs { background: #f4f5f6d9; border-bottom-color: #0000001a; }
+  :root[data-theme="light"] #field-back { color: #17191c; }
+  :root[data-theme="light"] #field-back span { color: #d4432a; }
+  :root[data-theme="light"] #field-back svg, :root[data-theme="light"] .tablist button { color: #555c66; }
+  :root[data-theme="light"] #field-back:hover, :root[data-theme="light"] #field-back:focus-visible { border-color: #b4b9bf; }
+  :root[data-theme="light"] .tablist button:hover, :root[data-theme="light"] .tablist button:focus-visible { color: #17191c; background: #0000000d; }
+  :root[data-theme="light"] .tablist button, :root[data-theme="light"] .sector, :root[data-theme="light"] .path { --tone-ink: color-mix(in srgb, var(--tone) 62%, #000); }
+  :root[data-theme="light"] .tablist button[aria-selected="true"], :root[data-theme="light"] .sector > h2, :root[data-theme="light"] .path.focus .text b, :root[data-theme="light"] .open { color: var(--tone-ink); text-shadow: none; }
+  :root[data-theme="light"] .sector > .line { background: #f4f5f6c4; color: #2a2e34; }
+  :root[data-theme="light"] .path:hover, :root[data-theme="light"] .path:focus-visible { background: #f4f5f6d8; }
+  :root[data-theme="light"] .path:not(.focus) .item { filter: saturate(.8); }
+  :root[data-theme="light"] .does, :root[data-theme="light"] section.block > h2 { color: #3d434b; }
+  :root[data-theme="light"] .tag { background: #d4d8dd; color: #2a2e34; }
+  :root[data-theme="light"] #chain a, :root[data-theme="light"] #pitches a { background: #f4f5f6; border-color: #c9cdd2; }
+  :root[data-theme="light"] #chain .head, :root[data-theme="light"] #pitches .icon { color: #c2361c; }
+  :root[data-theme="light"] #pitches .icon { background: #e4e6e9; }
+  :root[data-theme="light"] #chain b, :root[data-theme="light"] #live b { color: #17191c; }
+  :root[data-theme="light"] #chain span, :root[data-theme="light"] #live li, :root[data-theme="light"] #pitches p, :root[data-theme="light"] .foot { color: #555c66; }
+  :root[data-theme="light"] #live li svg { color: #158a4f; }
 </style>
 </head><body>
 <header id="hero">

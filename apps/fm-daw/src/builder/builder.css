@@ -110,3 +110,12 @@ button { font: inherit; color: inherit; }
   .qb-add { grid-template-columns: auto minmax(0, 1fr) auto; }
   .qb-add .qb-dim { display: none; }
 }
+/* the light look (the pick in the room pill, theme.ts): the page and its cards go light; the scope and the board's mock stay dark screens */
+:root[data-theme="light"] { --ink: #17191c; --dim: #555c66; --warn: #a86f00; --ok: #158a4f; --probe: #0a7bb3; color-scheme: light; }
+:root[data-theme="light"] body { background: radial-gradient(120% 80% at 50% 0%, #f1f2f4, #d6d9dd 70%); }
+:root[data-theme="light"] .icon-btn, :root[data-theme="light"] .qb-net { border-color: rgba(0, 0, 0, 0.14); background: rgba(255, 255, 255, 0.5); }
+:root[data-theme="light"] .icon-btn:hover:not(:disabled), :root[data-theme="light"] .qb-file:hover { background: rgba(0, 0, 0, 0.08); }
+:root[data-theme="light"] .qb-pedals, :root[data-theme="light"] .qb-sides, :root[data-theme="light"] .qb-file { background: rgba(0, 0, 0, 0.06); }
+:root[data-theme="light"] .qb-card { background: #f4f5f6; border-color: rgba(0, 0, 0, 0.1); }
+:root[data-theme="light"] .qb-scope-title { color: var(--probe); }
+:root[data-theme="light"] .qb-sel, :root[data-theme="light"] .qb-val { border-color: rgba(0, 0, 0, 0.14); background: #fff; }

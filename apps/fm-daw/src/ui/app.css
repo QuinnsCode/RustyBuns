@@ -10,20 +10,12 @@
   --track-text: 100%;
   color-scheme: dark;
 }
-/* the light look: picked on the desk (ThemePick, data-theme on <html>), or the OS's under System (no data-theme) */
+/* the light look: picked in the room pill (way.ts), or the OS's under System; theme.ts sets data-theme on <html> */
 :root[data-theme="light"] {
   --bg: #c9ccd0; --panel: #dcdfe2; --raised: #eceef0; --edge: #b4b9bf; --ink: #17191c; --dim: #555c66;
   --hot: #d42a1c; --ok: #158a4f; --warn: #a86f00; --cell: #c8ccd1; --cell-beat: #babfc6;
   --track-text: 55%;
   color-scheme: light;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) {
-    --bg: #c9ccd0; --panel: #dcdfe2; --raised: #eceef0; --edge: #b4b9bf; --ink: #17191c; --dim: #555c66;
-    --hot: #d42a1c; --ok: #158a4f; --warn: #a86f00; --cell: #c8ccd1; --cell-beat: #babfc6;
-    --track-text: 55%;
-    color-scheme: light;
-  }
 }
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; background: var(--bg); }

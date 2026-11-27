@@ -15,6 +15,7 @@ import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "./account.ts";
 import { SKIN } from "./guest-list.ts";
 import { CHAIN, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type SectorId } from "./paths.ts";
+import { followTheme } from "./ui/theme.ts";
 
 const TONES: Record<SectorId, string> = { learn: "#2dd4bf", build: "#fb923c", play: "#818cf8" };
 /** Each lane's thematic face (door-fonts.css), as the field paints its word on the grass. */
@@ -23,6 +24,7 @@ const FACES: Record<SectorId, string> = { learn: '400 100px "Caveat Brush", curs
 const ITEMS: Record<PathId, ShelfItem> = { learn: "guitar", planner: "stack", daw: "screen", instruments: "turntable", amps: "amp", builder: "board", playground: "mic", event: "wedge" };
 const isSector = (v: string): v is SectorId => SECTORS.some((s) => s.id === v);
 
+followTheme();
 const shelf = mountShelf();
 const list = document.getElementById("paths")!;
 for (const s of SECTORS) {

@@ -10,15 +10,15 @@
 #menu .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 0; }
 #menu button, #menu a.ghost, #menu input, #menu select { font: 600 18px var(--qs-head, "Barlow Condensed"), sans-serif; border-radius: 10px; padding: 9px 16px; white-space: nowrap; min-height: 44px; }
 #menu .go { background: var(--hot); color: #1d1f23; border: 0; cursor: pointer; }
-#menu .ghost { background: transparent; color: var(--ink); border: 1px solid #3a3e45; cursor: pointer; text-decoration: none; margin: 0; display: inline-flex; align-items: center; }
-#menu input, #menu select { background: #23262c; color: var(--ink); border: 1px solid #3a3e45; font-weight: 400; font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 15px; }
+#menu .ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); cursor: pointer; text-decoration: none; margin: 0; display: inline-flex; align-items: center; }
+#menu input, #menu select { background: var(--well); color: var(--ink); border: 1px solid var(--line); font-weight: 400; font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 15px; }
 #menu input { flex: 1 1 180px; min-width: 0; }
 #menu select { flex: 0 1 auto; min-width: 0; text-overflow: ellipsis; }
 #menu .me { display: flex; gap: 14px; align-items: center; }
-#menu .me canvas { width: 72px; height: 99px; flex: none; background: #23262c; border-radius: 10px; }
+#menu .me canvas { width: 72px; height: 99px; flex: none; background: var(--well); border-radius: 10px; }
 #menu .me b { font: 600 24px/1.1 var(--qs-head, "Barlow Condensed"), sans-serif; }
 #menu .me p { margin: 2px 0 0; }
-#rooms a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid #3a3e45; border-radius: 10px; color: var(--ink); text-decoration: none; }
+#rooms a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; }
 #rooms a:hover { border-color: var(--hot); }
 #rooms span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 #rooms small { color: var(--dim); white-space: nowrap; }
@@ -26,7 +26,7 @@
 @media (max-width: 480px) { #menu { padding: 16px; } #menu h1 { font-size: 28px; } }
 /* what you hear: music against the crowd, two big sliders (levels.ts), and a small one beside each person */
 #menu .levels { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 8px; }
-#menu .level { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #23262c; border: 1px solid #3a3e45; border-radius: 10px; min-width: 0; }
+#menu .level { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--well); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
 #menu .level svg { flex: none; }
 #menu input[type="range"] { flex: 1 1 auto; min-width: 0; min-height: 0; padding: 0; border: 0; background: transparent; accent-color: var(--hot); height: 28px; }
 #menu input.person-level { flex: 0 0 72px; height: 20px; }
@@ -43,9 +43,9 @@
 #friends button { flex: none; }
 /* every other list in the menu is a sideways row of cards too (picker.ts sideways): rooms, invites, people, friends */
 #menu .cards { list-style: none; margin: 0; padding: 2px 0; }
-#menu .cards > li { flex: 0 0 180px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; background: #23262c; border: 1px solid #3a3e45; border-radius: 10px; }
+#menu .cards > li { flex: 0 0 180px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; background: var(--well); border: 1px solid var(--line); border-radius: 10px; }
 #menu .cards > li:has(> a:only-child) { padding: 0; background: none; border: 0; }
-#menu .cards > li > a { flex: 1; flex-direction: column; align-items: flex-start; background: #23262c; }
+#menu .cards > li > a { flex: 1; flex-direction: column; align-items: flex-start; background: var(--well); }
 #menu .cards > li.none { flex-basis: 100%; background: none; border: 0; padding: 0; }
 #menu #invites > li > a { border-color: var(--hot); }
 #menu .cards button { width: 100%; justify-content: center; }
@@ -57,12 +57,12 @@
 
 /* a room's entry panel (#6420): its name, whose it is and who's here, Settings, Leave, a big Enter, one row of share
    buttons. Wide on a landscape screen, along the bottom with the room above it; stacked on a phone. */
-#menu:has(> #door-room:not([hidden])) { top: auto; bottom: calc(40px + env(safe-area-inset-bottom, 0px)); width: calc(100% - 144px); max-width: 1600px; padding: 32px 40px; border-radius: 24px; background: rgba(18, 20, 27, 0.88); border-color: rgba(255, 255, 255, 0.12); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45); }
+#menu:has(> #door-room:not([hidden])) { top: auto; bottom: calc(40px + env(safe-area-inset-bottom, 0px)); width: calc(100% - 144px); max-width: 1600px; padding: 32px 40px; border-radius: 24px; background: var(--glass); border-color: rgba(var(--tint), 0.12); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45); }
 #menu:has(> #door-room:not([hidden])) > h1 { display: none; }
 #menu .entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 40px; row-gap: 22px; }
 #menu .entry-who { min-width: 0; display: grid; gap: 12px; }
 #menu .entry h2 { margin: 0; font: 700 clamp(40px, 5vw, 72px)/0.95 var(--qs-head), sans-serif; letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#menu .entry-here { margin: 0; display: flex; align-items: center; gap: 12px; color: #cfcbc4; font-size: 17px; min-width: 0; }
+#menu .entry-here { margin: 0; display: flex; align-items: center; gap: 12px; color: var(--soft); font-size: 17px; min-width: 0; }
 #menu .entry-here > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #menu .faces { display: flex; flex: none; }
 #menu .faces span { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #12141b; display: flex; align-items: center; justify-content: center; font: 600 13px var(--qs-body), sans-serif; color: #1a1310; background: #ee7b5a; }
@@ -71,13 +71,13 @@
 #menu .faces span[data-i="2"] { background: #9ccf8a; color: #13210e; }
 #menu .faces span[data-i="3"] { background: #e3c46a; color: #231c08; }
 #menu .entry-go { display: flex; align-items: center; gap: 14px; }
-#menu .entry-go .ghost { height: 64px; border-radius: 16px; padding: 0 24px; gap: 10px; background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.16); font: 600 26px var(--qs-head), sans-serif; }
+#menu .entry-go .ghost { height: 64px; border-radius: 16px; padding: 0 24px; gap: 10px; background: rgba(var(--tint), 0.06); border-color: rgba(var(--tint), 0.16); font: 600 26px var(--qs-head), sans-serif; }
 #menu .entry-go .square { width: 64px; padding: 0; justify-content: center; }
 #menu .entry-go .square .lbl { display: none; }
 #menu #play.enter { height: 80px; padding: 0 52px; border-radius: 18px; display: inline-flex; align-items: center; gap: 14px; font: 700 38px var(--qs-head), sans-serif; box-shadow: 0 10px 30px rgba(255, 107, 74, 0.35); }
-#menu .entry-share { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1); flex-wrap: wrap; }
-#menu .entry-share .bring { color: #a9a6a0; font-size: 14px; margin-right: 6px; }
-#menu .entry-share .ghost { height: 44px; min-height: 44px; padding: 0 16px; gap: 8px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.14); font: 500 15px var(--qs-body), sans-serif; }
+#menu .entry-share { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding-top: 20px; border-top: 1px solid rgba(var(--tint), 0.1); flex-wrap: wrap; }
+#menu .entry-share .bring { color: var(--dim); font-size: 14px; margin-right: 6px; }
+#menu .entry-share .ghost { height: 44px; min-height: 44px; padding: 0 16px; gap: 8px; border-radius: 12px; background: rgba(var(--tint), 0.06); border-color: rgba(var(--tint), 0.14); font: 500 15px var(--qs-body), sans-serif; }
 #menu .entry-friends { grid-column: 1 / -1; }
 #menu .entry svg { flex: none; }
 /* a phone held upright: Enter on top, Settings and Leave side by side, the share buttons as icons below */
@@ -106,27 +106,27 @@
 
 /* Settings over the room (settings.ts): the gathering (the owner's) and You. The picked one on a third of the width,
    the lists on the other two thirds, each in its own scroll box; on a tall or thin screen the picked one on top. */
-#settings { position: absolute; inset: calc(64px + env(safe-area-inset-top, 0px)) 48px calc(24px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 22px; box-sizing: border-box; padding: 28px 34px; border-radius: 24px; background: rgba(18, 20, 27, 0.95); border: 1px solid rgba(255, 255, 255, 0.12); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5); color: var(--ink); z-index: 20; }
+#settings { position: absolute; inset: calc(64px + env(safe-area-inset-top, 0px)) 48px calc(24px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 22px; box-sizing: border-box; padding: 28px 34px; border-radius: 24px; background: var(--sheet); border: 1px solid rgba(var(--tint), 0.12); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5); color: var(--ink); z-index: 20; }
 #settings[hidden] { display: none; }
 #settings header { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 20px; }
 #settings header h2 { margin: 0; font: 700 44px/1 var(--qs-head), sans-serif; }
-#settings .tabs { display: flex; gap: 6px; padding: 5px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); margin-right: auto; }
-#settings .tabs button { height: 42px; padding: 0 18px; border-radius: 10px; border: 0; cursor: pointer; font: 600 15px var(--qs-body), sans-serif; background: transparent; color: #cfcbc4; white-space: nowrap; }
-#settings .tabs button[aria-selected="true"] { background: var(--ink); color: #12141b; }
+#settings .tabs { display: flex; gap: 6px; padding: 5px; border-radius: 14px; background: rgba(var(--tint), 0.06); margin-right: auto; }
+#settings .tabs button { height: 42px; padding: 0 18px; border-radius: 10px; border: 0; cursor: pointer; font: 600 15px var(--qs-body), sans-serif; background: transparent; color: var(--soft); white-space: nowrap; }
+#settings .tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); }
 #settings .tabs button[hidden] { display: none; }
 #settings-done { height: 48px; padding: 0 26px; border-radius: 14px; border: 0; background: var(--hot); color: #1a1310; font: 700 24px var(--qs-head), sans-serif; cursor: pointer; }
 #settings .set-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 32px; }
 #settings .set-body[hidden] { display: none; }
 #settings .set-pick { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; overflow-y: auto; }
-#settings .set-shot svg { display: block; width: 100%; height: 220px; background: #15171b; border-radius: 16px; }
+#settings .set-shot svg { display: block; width: 100%; height: 220px; background: var(--bg); border-radius: 16px; }
 #settings h3 { margin: 0; font: 700 44px/1 var(--qs-head), sans-serif; }
 #settings h4 { margin: 0; font: 600 22px var(--qs-head), sans-serif; }
-#settings h5 { margin: 4px 0 0; font: 400 13px var(--qs-body), sans-serif; color: #a9a6a0; }
+#settings h5 { margin: 4px 0 0; font: 400 13px var(--qs-body), sans-serif; color: var(--dim); }
 #settings p { margin: 0; }
-#settings .keys { color: #a9a6a0; font-size: 14px; line-height: 1.45; }
-#settings #set-studio-about { color: #cfcbc4; font-size: 15px; }
+#settings .keys { color: var(--dim); font-size: 14px; line-height: 1.45; }
+#settings #set-studio-about { color: var(--soft); font-size: 15px; }
 #settings .set-chips { display: flex; flex-wrap: wrap; gap: 8px; font-size: 14px; }
-#settings .set-chips span { padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
+#settings .set-chips span { padding: 6px 12px; border-radius: 999px; background: rgba(var(--tint), 0.08); }
 #settings .set-chips span[hidden] { display: none; }
 #settings .set-lock { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 #settings .set-lists { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 20px 24px; }
@@ -135,30 +135,30 @@
 #settings .set-wide { grid-column: 1 / -1; }
 #settings .set-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; padding-right: 4px; overscroll-behavior: contain; }
 /* a picked row is filled and fully outlined, never a stripe down one side */
-#settings .set-row { box-sizing: border-box; width: 100%; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-radius: 12px; text-align: left; cursor: pointer; color: var(--ink); background: rgba(255, 255, 255, 0.04); border: 2px solid transparent; font: inherit; }
+#settings .set-row { box-sizing: border-box; width: 100%; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-radius: 12px; text-align: left; cursor: pointer; color: var(--ink); background: rgba(var(--tint), 0.04); border: 2px solid transparent; font: inherit; }
 #settings .set-row b { font: 600 20px var(--qs-head), sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#settings .set-row small { font-size: 13px; color: #a9a6a0; }
+#settings .set-row small { font-size: 13px; color: var(--dim); }
 #settings .set-row[aria-pressed="true"] { background: rgba(255, 107, 74, 0.16); border-color: var(--hot); }
-#settings .set-row:hover, #settings .set-row:focus-visible { border-color: rgba(255, 255, 255, 0.3); outline: none; }
-#settings .set-row[aria-pressed="true"]:hover, #settings .set-row[aria-pressed="true"]:focus-visible { border-color: var(--hot); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5); }
+#settings .set-row:hover, #settings .set-row:focus-visible { border-color: rgba(var(--tint), 0.3); outline: none; }
+#settings .set-row[aria-pressed="true"]:hover, #settings .set-row[aria-pressed="true"]:focus-visible { border-color: var(--hot); box-shadow: 0 0 0 2px rgba(var(--tint), 0.5); }
 #settings .set-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
-#settings .set-chip { height: 44px; padding: 0 16px; border-radius: 12px; cursor: pointer; font: 500 15px var(--qs-body), sans-serif; color: var(--ink); background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.14); white-space: nowrap; }
+#settings .set-chip { height: 44px; padding: 0 16px; border-radius: 12px; cursor: pointer; font: 500 15px var(--qs-body), sans-serif; color: var(--ink); background: rgba(var(--tint), 0.05); border: 1px solid rgba(var(--tint), 0.14); white-space: nowrap; }
 #settings .set-chip[aria-pressed="true"] { background: var(--hot); border-color: var(--hot); color: #1a1310; }
-#settings .set-sample { box-sizing: border-box; padding: 22px; border-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); display: flex; flex-direction: column; gap: 12px; }
+#settings .set-sample { box-sizing: border-box; padding: 22px; border-radius: 16px; background: rgba(var(--tint), 0.05); border: 1px solid rgba(var(--tint), 0.12); display: flex; flex-direction: column; gap: 12px; }
 #settings .set-sample .h { font: 700 44px/1.05 var(--qs-head), sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#settings .set-sample span { font-size: 16px; color: #cfcbc4; }
+#settings .set-sample span { font-size: 16px; color: var(--soft); }
 #settings .set-sample .accent { font: 600 22px var(--qs-head), sans-serif; color: var(--hot); }
 #settings .set-sound { display: flex; flex-direction: column; gap: 8px; }
 #settings .set-sound[hidden] { display: none; }
 #settings .set-sound .levels { display: grid; grid-template-columns: 1fr; gap: 8px; }
-#settings .set-sound .level { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #23262c; border: 1px solid #3a3e45; border-radius: 10px; }
+#settings .set-sound .level { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--well); border: 1px solid var(--line); border-radius: 10px; }
 #settings .set-sound input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--hot); }
 #settings .set-sound .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; }
-#settings .set-sound button, #settings .set-sound select { font: 600 16px var(--qs-head), sans-serif; border-radius: 10px; padding: 8px 14px; min-height: 44px; background: transparent; color: var(--ink); border: 1px solid #3a3e45; cursor: pointer; white-space: nowrap; }
-#settings .set-sound select { background: #23262c; font: 400 15px var(--qs-body), sans-serif; }
+#settings .set-sound button, #settings .set-sound select { font: 600 16px var(--qs-head), sans-serif; border-radius: 10px; padding: 8px 14px; min-height: 44px; background: transparent; color: var(--ink); border: 1px solid var(--line); cursor: pointer; white-space: nowrap; }
+#settings .set-sound select { background: var(--well); font: 400 15px var(--qs-body), sans-serif; }
 #settings .set-sound [hidden] { display: none !important; }
 #settings #people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-#settings #people li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: #23262c; border: 1px solid #3a3e45; border-radius: 10px; }
+#settings #people li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: var(--well); border: 1px solid var(--line); border-radius: 10px; }
 #settings #people span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #settings input.person-level { flex: 0 0 72px; }
 @media (max-width: 900px), (max-aspect-ratio: 1/1) {
@@ -180,8 +180,10 @@
 /* the room's password, asked on the entry panel only when the room has one (main.ts gated), and set in Settings */
 #menu .entry-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 4px 0 0; }
 #menu .entry-code[hidden] { display: none; }
-#menu .entry-code label { color: #cfcbc4; font-size: 15px; }
+#menu .entry-code label { color: var(--soft); font-size: 15px; }
 #menu .entry-code input { flex: 1 1 220px; max-width: 360px; height: 48px; font: 400 17px var(--qs-body), sans-serif; border-radius: 12px; padding: 0 14px; }
 #settings .set-code { display: flex; flex-wrap: wrap; gap: 8px; }
 #settings .set-code[hidden] { display: none; }
-#settings .set-code input { flex: 1 1 220px; max-width: 360px; height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 12px; background: #23262c; color: var(--ink); border: 1px solid #3a3e45; font: 400 15px var(--qs-body), sans-serif; }
+#settings .set-code input { flex: 1 1 220px; max-width: 360px; height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 12px; background: var(--well); color: var(--ink); border: 1px solid var(--line); font: 400 15px var(--qs-body), sans-serif; }
+/* the light look (tokens in room/studio.css): a light card over the dark room needs more of itself to read */
+:root[data-theme="light"] #menu { background: rgba(246, 247, 248, 0.97); }
