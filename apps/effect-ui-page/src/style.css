@@ -87,6 +87,7 @@ summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 /* The landing: one screen over the night city (#city, drawn by city.ts). Every class starts l- so the dock's own
    .how, .line and .steps never meet these. Audiowide on the sign, Martian Mono for the rest. */
 #city { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; image-rendering: pixelated; background: #070618; }
+.l-wrap { --night: #05060f; --l-ink: #e9ecf8; --l-dim: #9aa0c4; --pink: #ff3d8b; --cyan: #21e6ff; --amber: #ffb547; --violet: #a67bff; --green: #3dffa8; --l-body: "Martian Mono", ui-monospace, Menlo, monospace; --l-display: "Audiowide", "Arial Black", system-ui, sans-serif; }
 .landing {
   --night: #05060f; --l-ink: #e9ecf8; --l-dim: #9aa0c4; --pink: #ff3d8b; --cyan: #21e6ff; --amber: #ffb547; --violet: #a67bff;
   --glass: rgba(8, 8, 24, .66); --l-body: "Martian Mono", ui-monospace, Menlo, monospace; --l-display: "Audiowide", "Arial Black", system-ui, sans-serif;
@@ -94,19 +95,16 @@ summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
   color: var(--l-ink); font: 200 14px/1.55 var(--l-body); color-scheme: dark;
 }
 .landing::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(90deg, rgba(5,6,15,.86) 0%, rgba(5,6,15,.55) 42%, rgba(5,6,15,0) 70%), linear-gradient(0deg, rgba(5,6,15,.8), rgba(5,6,15,0) 34%); }
-.c-pink { --c: var(--pink); } .c-cyan { --c: var(--cyan); } .c-amber { --c: var(--amber); } .c-violet { --c: var(--violet); }
+.c-green { --c: var(--green); } .c-pink { --c: var(--pink); } .c-cyan { --c: var(--cyan); } .c-amber { --c: var(--amber); } .c-violet { --c: var(--violet); }
 .l-sign { position: absolute; right: 5%; top: 7%; writing-mode: vertical-rl; font: 700 clamp(18px, 2.2vw, 28px)/1 "Noto Sans JP", sans-serif; letter-spacing: .18em; color: var(--pink); text-shadow: 0 0 6px var(--pink), 0 0 22px var(--pink); padding: 12px 8px; border: 2px solid color-mix(in srgb, var(--pink) 60%, transparent); border-radius: 6px; background: rgba(5,6,15,.4); animation: l-buzz 6s infinite; }
 @keyframes l-buzz { 0%, 92%, 100% { opacity: 1; } 93% { opacity: .35; } 95% { opacity: 1; } 96% { opacity: .5; } }
 .l-stage { display: grid; align-content: center; justify-items: start; gap: 20px; padding: clamp(28px, 5vw, 56px) max(20px, 6vw) 20px; }
 .l-word { margin: 0; font: 400 clamp(40px, 8vw, 104px)/.95 var(--l-display); letter-spacing: .03em; text-transform: uppercase; color: #fff; text-shadow: 0 0 4px #fff, 0 0 14px var(--cyan), 0 0 38px var(--cyan), 0 0 80px color-mix(in srgb, var(--cyan) 50%, transparent); max-width: 12ch; text-wrap: balance; }
-.l-what { margin: -8px 0 0; max-width: 54ch; font-size: 13px; color: var(--l-dim); text-shadow: 0 1px 8px #000; }
-.l-chip > span { display: grid; line-height: 1.25; }
-.l-chip small { font-size: 10px; letter-spacing: .02em; text-transform: none; color: var(--l-ink); opacity: .8; }
 .l-keys { margin-left: 12px; white-space: nowrap; }
 .l-keys kbd { font: 400 11px var(--l-body); padding: 1px 6px; margin-right: 3px; border-radius: 5px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.06); color: var(--l-ink); }
 .l-line { margin: 0; font-size: clamp(14px, 1.4vw, 18px); font-weight: 400; text-shadow: 0 1px 8px #000; max-width: 40ch; }
 .l-signs { display: flex; flex-wrap: wrap; gap: 10px; }
-.l-chip { display: inline-flex; align-items: center; gap: 10px; padding: 7px 16px 7px 12px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(8px); border: 1px solid color-mix(in srgb, var(--c) 70%, transparent); color: var(--c); font: 400 12px var(--l-body); letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 0 14px color-mix(in srgb, var(--c) 35%, transparent), inset 0 0 10px color-mix(in srgb, var(--c) 18%, transparent); }
+.l-chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px 7px 10px; border-radius: 999px; background: var(--glass); backdrop-filter: blur(8px); border: 1px solid color-mix(in srgb, var(--c) 70%, transparent); color: var(--c); font: 400 12px var(--l-body); letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 0 14px color-mix(in srgb, var(--c) 35%, transparent), inset 0 0 10px color-mix(in srgb, var(--c) 18%, transparent); }
 .l-i { display: inline-block; width: 16px; height: 16px; flex: none; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; filter: drop-shadow(0 0 4px currentColor); }
 .l-bar { width: min(760px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, .14); }
 .l-bar code { min-width: 0; overflow-x: auto; white-space: nowrap; font: 400 12.5px var(--l-body); color: var(--amber); scrollbar-width: none; }
@@ -139,3 +137,39 @@ summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 
 /* The Cmd+K palette (@rustybuns/util/palette) in the night city's colors. */
 :root { --rb-pal-bg: #0b0a1e; --rb-pal-fg: #e9ecf8; --rb-pal-muted: #9aa0c4; --rb-pal-line: rgba(255,255,255,.12); --rb-pal-hover: rgba(33,230,255,.12); --rb-pal-accent: #ff3d8b; --rb-pal-scrim: rgba(5,6,15,.6); --rb-pal-font: "Martian Mono", ui-monospace, Menlo, monospace; }
+
+/* How it's built: under the landing, for whoever scrolls. One card per piece: words on one side, a picture of the idea on the other. */
+.l-more { color: var(--cyan); text-decoration: underline dotted; }
+.l-deep { position: relative; background: var(--night); color: var(--l-ink); font: 200 14px/1.6 var(--l-body); padding: 72px max(16px, 6vw) 48px; display: grid; gap: 18px; justify-items: center; }
+.l-deep > * { width: min(1080px, 100%); }
+.l-deep-head { display: grid; gap: 8px; margin-bottom: 18px; }
+.l-eyebrow { margin: 0; font: 400 11px var(--l-body); letter-spacing: .18em; text-transform: uppercase; color: var(--pink); }
+.l-deep h2 { margin: 0; font: 400 clamp(30px, 5vw, 52px)/1 var(--l-display); text-transform: uppercase; color: #fff; text-shadow: 0 0 12px var(--cyan), 0 0 30px color-mix(in srgb, var(--cyan) 50%, transparent); }
+.l-deep-head p { margin: 0; max-width: 60ch; color: var(--l-dim); }
+.l-deep q { color: var(--amber); }
+.l-piece { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(16px, 4vw, 48px); align-items: center; padding: 24px clamp(16px, 3vw, 32px); border-radius: 18px; background: linear-gradient(160deg, #0d0c22, #070712); border: 1px solid color-mix(in srgb, var(--c) 28%, transparent); }
+.l-piece.soon { border-style: dashed; }
+.l-tell { display: grid; gap: 8px; min-width: 0; }
+.l-ptag { justify-self: start; font: 400 10.5px var(--l-body); letter-spacing: .1em; text-transform: uppercase; color: var(--c); padding: 3px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); }
+.l-tell h3 { margin: 0; font: 400 24px var(--l-display); color: var(--c); text-shadow: 0 0 12px color-mix(in srgb, var(--c) 60%, transparent); }
+.l-tell p { margin: 0; max-width: 52ch; }
+.l-show { min-width: 0; }
+.l-keycaps, .l-shelf { display: flex; flex-wrap: wrap; gap: 8px; }
+.l-keycaps span { padding: 9px 12px; border-radius: 10px; font-size: 12px; background: #14122e; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-bottom-width: 3px; box-shadow: 0 0 10px color-mix(in srgb, var(--c) 18%, transparent); }
+.l-door { display: grid; gap: 8px; }
+.l-door div { display: grid; gap: 2px; padding: 10px 14px; border-radius: 12px; background: #0b0a1e; border: 1px solid; }
+.l-door code { font: 400 13px var(--l-body); }
+.l-door b { font-size: 11.5px; font-weight: 400; }
+.l-door .in { border-color: color-mix(in srgb, var(--green) 55%, transparent); } .l-door .in b { color: var(--green); }
+.l-door .out { border-color: color-mix(in srgb, var(--pink) 55%, transparent); } .l-door .out b { color: var(--pink); }
+.l-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.l-flow span { display: grid; padding: 10px 12px; border-radius: 12px; font-size: 12px; background: #0b0a1e; border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 22%, transparent); }
+.l-flow small { font-size: 10px; color: var(--l-dim); }
+.l-flow i { position: relative; width: 18px; height: 2px; background: var(--c); box-shadow: 0 0 6px var(--c); }
+.l-flow i::after { content: ""; position: absolute; right: -1px; top: -3px; border: 4px solid transparent; border-left-color: var(--c); border-right: 0; }
+.l-flow i.back { width: 100%; height: 0; background: none; box-shadow: none; border-top: 2px dashed color-mix(in srgb, var(--c) 60%, transparent); }
+.l-flow i.back::after { display: none; }
+.l-data { margin: 0; padding: 16px; border-radius: 12px; background: #0b0a1e; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); overflow-x: auto; }
+.l-data code { font: 400 12px/1.8 var(--l-body); white-space: pre; }
+.l-shelf span { padding: 18px 16px; border-radius: 12px; font-size: 12px; border: 1px dashed color-mix(in srgb, var(--c) 60%, transparent); color: var(--c); }
+@media (max-width: 760px) { .l-piece { grid-template-columns: 1fr; } }

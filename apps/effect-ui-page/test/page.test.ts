@@ -105,6 +105,7 @@ test("a fresh room lands on the landing: Copy copies its Claude Code line, and t
     const fresh = { ...props, landing: true };
     const s = yield* HtmlScene.make(ProfilePageNoDeps, fresh);
     s.expect(Locator.text("How it works")).toExist();
+    s.expect(Locator.text("How it's built")).toExist();
     s.click(HtmlLocator.role("button", { name: "Copy" }))
       .expectExact(CopyText);
     expect(s.pending[0]!.command.args).toMatchObject({ text: connectLines(props.origin, props.room)[0]!.text });
