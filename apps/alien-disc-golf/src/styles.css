@@ -351,8 +351,8 @@ html .ui-house .gc-reset:hover { background: rgba(255, 179, 71, 0.12); border-st
   html .gc-dialog.ui-house { padding: 8px; font-size: 14px; }
   html .ui-house .gc-card { border-radius: 12px; border-bottom: 1px solid var(--edge); max-height: 100%; padding: 16px 14px; }
 }
-/* The report form's kind picker: the scanner's mono caps on glass with a teal chevron, not the browser's stock select. */
-html body .rb-report .eq-form select { appearance: none; -webkit-appearance: none; padding-right: 34px; font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--teal); cursor: pointer;
+/* The report form's kind picker: the panel sans like the fields around it, on glass with a teal chevron, not the browser's stock select. */
+html body .rb-report .eq-form select { appearance: none; -webkit-appearance: none; padding-right: 34px; font: 600 13px/1.4 var(--font); color: var(--teal); cursor: pointer;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%235ee6c8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center / 12px 8px, var(--glass-hi); }
 html body .rb-report .eq-form option { background: var(--glass); color: var(--ink); text-transform: none; }
 @media (max-width: 600px) {

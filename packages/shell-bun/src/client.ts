@@ -3,13 +3,15 @@ import { nul, obj, opt, str } from "./guard.ts";
 
 /** The part of /__rb/info a guest reads. */
 const Info = obj({ guests: opt(obj({ version: opt(nul(str(200))) })) });
-export async function callAction<T = unknown>(module: string, fn: string, args: unknown[]): Promise<T> {
+/** Runs a server action through /__rb/action. The reply is `unknown` until the caller's guard reads it. */
+export async function callAction(module: string, fn: string, args: unknown[]): Promise<unknown> {
   const r = await fetch(`/__rb/action`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ module, fn, args }),
   });
   if (!r.ok) throw new Error(`action ${module}#${fn}: ${r.status} ${await r.text()}`);
-  return r.json() as Promise<T>;
+  const reply: unknown = await r.json();
+  return reply;
 }
 /**
  * The world socket. A path joins this host's world; an absolute http(s)/ws(s)

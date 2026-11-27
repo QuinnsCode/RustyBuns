@@ -6,7 +6,7 @@
 // #rb_prof=<secret>: the page keeps it in sessionStorage (this tab only) and takes it off the
 // URL. The agent never sees it, and a box without the secret answers those two with why.
 
-import { formatMemStats } from "./memwatch.ts";
+import { formatMemStats, type MemStats } from "./memwatch.ts";
 
 export const WEBMCP_PATH = "/__rb/webmcp.js";
 export const WEBMCP_TAG = `<script src="${WEBMCP_PATH}" defer></script>`;
@@ -55,6 +55,9 @@ const TOOLS = [
   },
 ];
 
+/** The fields of /__rb/mem the page formats. */
+const MEM_NUMBERS: (keyof MemStats)[] = ["rssMb", "heapMb", "peakRssMb", "uptimeS", "samples"];
+
 const NEED_SECRET =
   "This needs the box's RB_PROF_SECRET, and this tab doesn't have it. Ask the person to open this page once with #rb_prof=<the secret> " +
   "added to the URL: the page keeps it for this tab and takes it off the URL. Don't ask them to tell you the secret.";
@@ -96,7 +99,9 @@ export function webMcpScript(): string {
     async mem_stats() {
       const res = await fetch("/__rb/mem");
       if (!res.ok) fail("The box answered " + res.status + " on /__rb/mem");
-      const m = await res.json();
+      // The numbers formatMemStats reads (MemReply in memwatch.ts, which this page can't import).
+      const m = await res.json().catch(() => null);
+      if (!m || ${JSON.stringify(MEM_NUMBERS)}.some((k) => typeof m[k] !== "number")) fail("/__rb/mem answered something that isn't a box's memory stats");
       return formatMemStats(m) + (m.boots ? ", start " + m.boots + " on this data" : "");
     },
     take_cpu_profile: (a) => gated("POST", "/__rb/prof?text=1&s=" + int(a.seconds, 10) + "&top=" + int(a.top, 10)),
