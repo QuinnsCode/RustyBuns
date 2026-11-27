@@ -1,7 +1,7 @@
 // The front door's shelf (#6019): once a lane is open, each of its paths stands as a thing turning slowly in the dark,
 // the way a console's memory card screen turns its saves' icons: the guitar for Learn the setup, a speaker stack for the
 // Event Planner, the desk's own screen for QDAW, a turntable, an amp on its cab, a real pedal's board (circuits/
-// drive.pcb.svg) for Q Builder, and a mic for The Event. One WebGL renderer draws them all, only the ones on the screen,
+// drive.pcb.svg) for Q Builder, a mic for Playground and a stage wedge for The Event. One WebGL renderer draws them all, only the ones on the screen,
 // at 30 frames a second at most, into a 2D canvas each. Each swings like a pendulum, a quarter turn each way of its
 // front, rather than spinning round to its back. The one nearest the middle of the screen swings fastest, and
 // scrolling swings them all a little faster. With reduced motion each is drawn once, facing you.
@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { GEAR_SIZES, gear, gearLook, type GearId } from "@rustybuns/models/gear";
 import pcbUrl from "../circuits/drive.pcb.svg?url";
 
-export type ShelfItem = "guitar" | "stack" | "screen" | "turntable" | "amp" | "board" | "mic";
+export type ShelfItem = "guitar" | "stack" | "screen" | "turntable" | "amp" | "board" | "mic" | "wedge";
 
 /** The desk's own screen, as it opens with the demo beat (public/door/daw.jpg). */
 const DAW_SHOT = "/door/daw.jpg";
@@ -17,7 +17,7 @@ const DAW_SHOT = "/door/daw.jpg";
 const PX = 512;
 /** How far each thing swings from its front, each way: a quarter turn, so it sweeps half a turn and back; the flat
  *  screen and board swing less, so they never turn edge-on. Everything is built facing you (+z). */
-const SWING: Record<ShelfItem, number> = { guitar: Math.PI / 2, stack: Math.PI / 2, turntable: Math.PI / 2, amp: Math.PI / 2, mic: Math.PI / 2, screen: 0.85, board: 0.85 };
+const SWING: Record<ShelfItem, number> = { guitar: Math.PI / 2, stack: Math.PI / 2, turntable: Math.PI / 2, amp: Math.PI / 2, mic: Math.PI / 2, wedge: Math.PI / 2, screen: 0.85, board: 0.85 };
 
 /** Pieces of gear stood one on another, bottom first, each centred over the one under it. */
 function stacked(ids: readonly GearId[]) {
@@ -92,6 +92,7 @@ function model(kind: ShelfItem): THREE.Object3D {
     case "turntable": return stacked(["turntable"]);
     case "amp": return stacked(["cab-4x12", "amp-head"]);
     case "mic": return stacked(["mic-stand"]);
+    case "wedge": return stacked(["wedge-12"]);
     case "screen": return screen();
     case "board": return board();
   }
