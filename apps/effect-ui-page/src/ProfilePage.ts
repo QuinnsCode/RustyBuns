@@ -15,6 +15,7 @@ export const PageMessage = UiSchema.TaggedEnum({
   ReceivedAgentCall: { call: Call },
   ClickedUndo: {},
   ClickedReset: {},
+  ClickedFull: {},
   CompletedReportPage: {},
   ChangedRelay: { online: Schema.Boolean },
   ClickedCopy: { what: Schema.String, text: Schema.String },
@@ -49,10 +50,12 @@ const Model = Schema.Struct({
   online: Schema.Boolean,
   /** What the last copy button put on the clipboard ("failed: ..." when it couldn't). */
   copied: Schema.NullOr(Schema.String),
+  /** The page alone, filling the window: the dock is put away (agents still reach it). */
+  full: Schema.Boolean,
 });
 type Model = typeof Model.Type;
 
-const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page });
+const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean });
 
 const Def = Html.component({ name: "ProfilePage", props: Props, model: Model, message: PageMessage });
 
@@ -134,13 +137,14 @@ const how = Def.fragment((h, online: boolean, last: typeof Logged.Type | undefin
 const initials =(name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null }),
+  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, full: $.props.full }),
   update: ($, message) => {
     switch (message._tag) {
       case "ChangedRelay": return $.evolve({ online: message.online });
       case "ClickedCopy": return $.run(CopyText.make({ what: message.what, text: message.text }));
       case "CompletedCopy": return $.evolve({ copied: message.what });
       case "FailedCopy": return $.evolve({ copied: `failed: ${message.what}` });
+      case "ClickedFull": return $.evolve({ full: !$.model.full });
     }
     const a = asked(message);
     if (!a) return $.model;
@@ -155,15 +159,17 @@ export const ProfilePageNoDeps = Def.make({
     Subscription.make("relay", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).online; })).pipe(
       Stream.changes, Stream.map((online) => PageMessage.ChangedRelay({ online })))),
   ],
-  view: (h, { page, past, log, online, copied }) => {
+  view: (h, { page, past, log, online, copied, full }) => {
     const t = page.theme;
     const { room, origin } = h.props;
     // A button with its own label says it; the short "Copy" ones beside each line name their agent for a screen reader.
     const copy = (what: string, text: string, label?: string) => h.button.attr("type", "button").class("copy")
       .attr("aria-label", label ? undefined : `${copied === what ? "Copied" : "Copy"} the ${what} line`)
       .on("click", PageMessage.ClickedCopy({ what, text })).children(copied === what ? "Copied" : label ?? "Copy");
-    return h.div.class("shell").children(
+    return h.div.class("shell", full && "full").children(
       h.main.class("page").attr("style", `--accent:${t.accent};--paper:${t.paper};--ink:${t.ink};--font:${FONTS[t.font]}`).children(
+        h.button.attr("type", "button").class("full-toggle").attr("title", full ? "Show the dock (Connect, tools, last calls)" : "Full screen: the page alone")
+          .attr("aria-pressed", full ? "true" : "false").on("click", PageMessage.ClickedFull()).children(full ? "Show dock" : "Full screen"),
         h.header(h.div.class("avatar").children(initials(page.name)), h.div(h.h1(page.name), h.p.class("tagline").children(page.tagline))),
         ...page.blocks.map((b) => blockView(h, b)),
       ),

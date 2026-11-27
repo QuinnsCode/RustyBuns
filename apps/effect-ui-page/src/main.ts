@@ -16,7 +16,7 @@ if (room !== here) history.replaceState(null, "", `/r/${room}${location.search}`
 const kept = (() => { try { return localStorage.getItem(savedKey(room)); } catch { return null; } })();
 const initial = kept ? Option.getOrElse(Schema.decodeUnknownOption(Schema.fromJsonString(Page))(kept), () => starter) : starter;
 
-const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, initial }, document.getElementById("app")!)
+const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, initial, full: new URLSearchParams(location.search).has("full") }, document.getElementById("app")!)
   .pipe(Layer.provide(agent(room, initial)));
 
 Layer.launch(Main).pipe(Effect.runFork);
