@@ -8,7 +8,7 @@
 //   wallFor     that stack, built: bins in rows, mid-bass on them, the horns on top (the "just do it" default)
 //   coverage    the floor's level from every stack on the plan, highs and bass, and how even it is (gear's stackSources and floorStats)
 import {
-  GEAR, SYSTEMS, SYSTEM_IDS, boxChannels, coverage as gridOf, floorStats, gear, isTop, source, stackSources, sumPower,
+  GEAR, SYSTEMS, SYSTEM_IDS, boxChannels, premade, coverage as gridOf, floorStats, gear, isTop, source, stackSources, sumPower,
   type FloorStats, type Source, type SpeakerSpec,
 } from "@rustybuns/gear";
 import { arr, check, int, num, obj, str } from "@rustybuns/util/guard";
@@ -167,6 +167,26 @@ export function wallFor(r: Rig, backM = 25): Stack {
   if (r.array) for (let i = 0; i < Math.max(3, tops); i++) boxes.push(...row(r.top, 1, y++));
   else for (let i = 0; i < Math.ceil(tops / cols); i++) boxes.push(...row(r.top, cols, y++));
   return { name: r.name, boxes: settle(boxes) };
+}
+
+/** Premade `id` (gear's `PREMADES`) as a stack: each row of boxes centred on the one under it, settled. */
+export function premadeStack(id: string): Stack {
+  const p = premade(id);
+  return { name: p.name, boxes: settle(p.rows.flatMap((r, i) => row(r.box, r.across, i))) };
+}
+
+/** The deepest floor (m, 5 to 120) whose back row a stack gets to both targets: what it is for. */
+export function reach(s: Stack): number {
+  const st = stats(s, 1);
+  const far = (l: number | null, t: number) => (l === null ? 0 : 10 ** ((l - t) / 20));
+  return Math.max(5, Math.min(120, Math.floor(Math.min(far(st.high1m, TARGET.high), far(st.low1m, TARGET.low)))));
+}
+
+/** A premade dropped in whole: the design's only stack, one each side of the stage, on the floor it fills (its
+ *  `reach`, the floor's width kept). Every door (the Stack pick, `window.stacker.premade`) calls this. */
+export function usePremade(id: string, floorW = 24): Design {
+  const stack = premadeStack(id), floor = { w: floorW, d: reach(stack) };
+  return { stacks: [stack], plan: planFor([0, 0], { w: 10, d: 6 }, floor) };
 }
 
 /** A stage, a floor and two stacks at the lip, toed in so they cross in the middle of the floor. */

@@ -8,7 +8,11 @@ import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { GENERATOR_IDS, GROUNDS, MAX_PIN, SYSTEM_IDS, type GeneratorId, type Ground, type SystemId } from "@rustybuns/gear";
+import { GENERATOR_IDS, GROUNDS, MAX_PIN, PREMADES, SYSTEM_IDS, type GeneratorId, type Ground, type Premade, type SystemId } from "@rustybuns/gear";
+
+/** The premade stacks this builder can drop in (gear's PREMADES with an open-air rig). A stack here is its rig's own
+ *  column of boxes, so a pick sets the rig; boxes side by side and the bar pair (no rig) don't carry over. */
+export const STUDIO_PREMADES = PREMADES.filter((p): p is Premade & { rig: SystemId } => p.rig !== null);
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
@@ -192,6 +196,7 @@ export type Edit =
   | { t: "moveDoor"; at: [number, number] }
   | { t: "instruments"; keys?: (typeof POLY_KINDS)[number]; bass?: "mono" | "box"; rig?: SystemId }
   | { t: "stack"; at: [number, number]; yaw?: number }
+  | { t: "premade"; id: string }
   | { t: "moveStack"; index: number; at: [number, number] }
   | { t: "aimStack"; index: number; yaw?: number; splay?: number; pins?: number[] }
   | { t: "unstack"; index: number }
@@ -229,6 +234,7 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("moveDoor"), at: XZ }),
   obj({ t: tag("instruments"), keys: opt(oneOf(POLY_KINDS)), bass: opt(oneOf(["mono", "box"] as const)), rig: opt(oneOf(SYSTEM_IDS)) }),
   obj({ t: tag("stack"), at: XZ, yaw: opt(num(-7, 7)) }),
+  obj({ t: tag("premade"), id: oneOf(STUDIO_PREMADES.map((p) => p.id)) }),
   obj({ t: tag("moveStack"), index: int(0, MAX_STACKS - 1), at: XZ }),
   obj({ t: tag("aimStack"), index: int(0, MAX_STACKS - 1), yaw: opt(num(-7, 7)), splay: opt(num(-1, 1)), pins: opt(PINS) }),
   obj({ t: tag("unstack"), index: int(0, MAX_STACKS - 1) }),
@@ -463,6 +469,18 @@ export function edit(def: StudioDef, e: Edit): Built {
       if (e.keys) next.keys = e.keys;
       if (e.bass) next.bass = e.bass;
       if (e.rig) (next.outdoor ?? (next.pa ??= { stacks: [] })).rig = e.rig;
+      break;
+    }
+    // a premade dropped in whole: its rig, and with no stacks yet a pair at the front corners of the floor, toed in
+    case "premade": {
+      const p = STUDIO_PREMADES.find((x) => x.id === e.id);
+      if (!p) return no("there is no such premade stack");
+      const out = next.outdoor ?? (next.pa ??= { stacks: [] });
+      out.rig = p.rig;
+      if (!out.stacks.length) {
+        const x = Math.min(6, next.size.w / 4), z = -Math.min(6, next.size.d / 4);
+        for (const at of [[-x, z], [x, z]] as [number, number][]) out.stacks.push({ at, yaw: Math.atan2(-at[0], -at[1]) });
+      }
       break;
     }
     case "stack": case "moveStack": case "aimStack": case "unstack": {

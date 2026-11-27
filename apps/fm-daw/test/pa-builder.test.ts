@@ -60,6 +60,28 @@ test.skipIf(!hasChrome)("place two stacks, aim one away and see the floor go qui
   } finally { await tab.close(); }
 });
 
+test.skipIf(!hasChrome)("pick a premade stack in the PA panel: a cleared ground gets a pair of its rig, a second pick swaps the rig and keeps where they stand", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 720 });
+  try {
+    await load(chrome.cdp, tab, `${vite.url}rooms.html`, 0);
+    await until(tab, "!!window.qrooms");
+    const pick = (id: string) => `(() => { const s = document.querySelector("#premade"); s.value = "${id}"; s.dispatchEvent(new Event("change"));
+      const pa = qrooms.pa(); return { rig: qrooms.state().def.outdoor.rig, at: pa.stacks.map((s) => s.at), mean: pa.coverage?.mean ?? 0, list: qrooms.download("list")?.text ?? "" }; })()`;
+    type Picked = { rig: string; at: [number, number][]; mean: number; list: string };
+    await tab.eval(`(() => { qrooms.load("desert-gathering"); while (qrooms.pa().stacks.length) qrooms.edit({ t: "unstack", index: 0 }); })()`);
+    const horn = await tab.eval<Picked>(pick("horn-side"));
+    expect(horn.rig).toBe("dance-stack");
+    expect(horn.at).toHaveLength(2);
+    expect(horn.at[0]![0]).toBe(-horn.at[1]![0]); // a pair, either side
+    expect(horn.mean).toBeGreaterThan(90);
+    expect(horn.list).toContain("x horn-sub-21");
+    const line = await tab.eval<Picked>(pick("line-array"));
+    expect(line.rig).toBe("line-array");
+    expect(line.at).toEqual(horn.at);
+    expect(line.list).toContain("x line-array-10");
+  } finally { await tab.close(); }
+});
+
 test.skipIf(!hasChrome)("indoors: stand two stacks in the scoring hall, read the far one landing late at the back, see the coverage on the 3D floor", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 720 });
   try {

@@ -3,9 +3,9 @@
 // drag one off the view to take it away. Stage view: the site from above, each stack a footprint you drag, aimed by
 // its orange dot, the floor shaded by its level. "Just do it" builds the chosen rig sized for the floor, one stack a
 // side. `window.stacker` drives it without a mouse (`bun run probe load-in /stack.html --js "stacker.state()"`).
-import { gear } from "@rustybuns/gear";
+import { PREMADES, gear, premade } from "@rustybuns/gear";
 import {
-  EVEN, PALETTE, RIGS, TARGET, aimAt, cover, justDoIt, planFor, readDesign, rig, role, settle, sizeFor, stats, wallFor,
+  EVEN, PALETTE, RIGS, TARGET, aimAt, cover, justDoIt, planFor, readDesign, rig, role, settle, sizeFor, stats, usePremade, wallFor,
   type Box, type Cover, type Design, type Role,
 } from "./plan.ts";
 
@@ -468,6 +468,9 @@ function stageCard() {
 // ---- header ----------------------------------------------------------------------------------------------------
 const rigSel = $<HTMLSelectElement>("rig"), depthIn = $<HTMLInputElement>("depth");
 for (const r of RIGS) { const o = el("option", r.name); o.value = r.id; o.title = r.about; rigSel.append(o); }
+const premadeSel = $<HTMLSelectElement>("premade");
+for (const p of PREMADES) { const o = el("option", p.name); o.value = p.id; o.title = p.about; premadeSel.append(o); }
+premadeSel.onchange = () => { if (premadeSel.value) dropPremade(premadeSel.value); };
 depthIn.value = `${depth()}`;
 rigSel.onchange = () => draw();
 depthIn.onchange = () => { const n = Number(depthIn.value); if (n >= 5 && n <= 120) change(() => (design.plan.floor.d = n)); };
@@ -486,6 +489,12 @@ $("v-stage").onclick = () => setView("stage");
 function doIt(id = rigSel.value) {
   rigSel.value = rig(id).id;
   change(() => { design = justDoIt(rigSel.value, { w: design.plan.floor.w, d: depth() }); current = 0; picked = null; });
+}
+/** Drop premade `id` in whole, a stack each side on the floor it fills: the Stack pick and `stacker.premade` both. */
+function dropPremade(id: string) {
+  const p = premade(id);
+  premadeSel.value = p.id; rigSel.value = rig(p.rig ?? p.id).id;
+  change(() => { design = usePremade(p.id, design.plan.floor.w); current = 0; picked = null; });
 }
 function setView(v: typeof view) {
   view = v;
@@ -512,12 +521,15 @@ setView("stack");
 // ---- window.stacker ------------------------------------------------------------------------------------------
 const api = {
   state: () => ({
-    view, band, current, rig: rigSel.value,
+    view, band, current, rig: rigSel.value, premade: premadeSel.value || null,
     stacks: design.stacks.map((s) => ({ name: s.name, boxes: s.boxes, stats: stats(s, depth()) })),
     plan: design.plan,
     floor: { mean: heat.tops.mean, even: heat.tops.even, bassMean: heat.lows.mean, bassEven: heat.lows.even, back: heat.back, bass: heat.bass },
   }),
   justDoIt: (id?: string) => { doIt(id); return api.state(); },
+  /** The premade stacks to start from (gear's PREMADES), and one dropped in whole. */
+  premades: () => PREMADES.map((p) => ({ id: p.id, name: p.name, about: p.about })),
+  premade: (id: string) => { dropPremade(id); return api.state(); },
   build: (id: string) => { rigSel.value = rig(id).id; change(() => (design.stacks[current] = wallFor(rig(id), depth()))); return api.state(); },
   add: (id: string, x = 0, y = 99) => { gear(id); change(() => stack().boxes.push({ gear: id, x, y })); return api.state(); },
   remove: (i: number) => { change(() => stack().boxes.splice(i, 1)); return api.state(); },
