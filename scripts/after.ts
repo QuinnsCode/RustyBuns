@@ -1,10 +1,15 @@
+// Mergiraf's wrapper reaches codeSplitter's worker, which imports "cloudflare:workers": its declaration comes along to
+// every project that typechecks this file (the root's, agent-office's). A .d.ts of `declare module` has no import form.
+// oxlint-disable-next-line typescript/triple-slash-reference
+/// <reference path="../apps/codesplitter/src/cloudflare.d.ts" />
 // Lands PRs that must wait for others (#5344). Preflight (scripts/preflight.ts) prints a `Merge after #12, #34` line for
 // the PR body when other open PRs change the same files. Each pass reads every open PR with that line; once every PR it
 // names has merged (or closed), it merges `main` into the branch and pushes, so the branch is current with what it
 // waited on and CI runs on the result. The line then reads `Merged main in after #12, #34`, so the next pass skips it.
 // When git's merge of main conflicts, each conflicted file goes through Mervin's line merge (`lineMerge` in
-// apps/codesplitter/scripts/shadow.ts, loaded at run time since it needs the packages installed). When he settles every
-// file it commits, pushes and names them in a comment. Otherwise (a card: a person must choose) it pushes nothing,
+// apps/codesplitter/scripts/shadow.ts, loaded at run time since it needs the packages installed). A file he leaves cards
+// in gets one run of Mergiraf, his second opinion (`mergiraf` in apps/codesplitter/src/mergiraf.ts, the binary on PATH:
+// after.yml installs it, best effort). When the two settle every file it commits, pushes and names them in a comment. Otherwise (a card: a person must choose) it pushes nothing,
 // comments on the PR with each file and Mervin's cards and tags its author, and the line reads `Main conflicts after #12, #34`.
 //
 //   bun scripts/after.ts [--dry]
@@ -86,10 +91,11 @@ const MERGED_LINE = /^merged main in after #\d+/im;
 const flagMark = (sha: string) => `<!-- after:unchecked ${sha} -->`;
 
 /**
- * `lineMerge`: Mervin's, which settles git's conflicts; without it every conflict goes to a person. `unused`: run on
- * the files Mervin settled, before the push; each line it gives back (`` `path`: why ``) stops the push for a person.
+ * `lineMerge`: Mervin's, which settles git's conflicts; without it every conflict goes to a person. `mergiraf`: asked
+ * on a file Mervin left cards in; without it (no binary) those go to a person as before. `unused`: run on
+ * the files settled, before the push; each line it gives back (`` `path`: why ``) stops the push for a person.
  */
-export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; lineMerge?: LineMerge | null; unused?: ((files: string[]) => string[]) | null }
+export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; lineMerge?: LineMerge | null; mergiraf?: Mergiraf | null; unused?: ((files: string[]) => string[]) | null }
 
 /**
  * A clean line merge can still leave a function with no callers (both sides moved its one call; #6015, #6017), which
@@ -160,14 +166,17 @@ export const NO_CHECKS = 'main is merged in, but this push starts no checks (#57
 export type LineMerge = (path: string, base: string, main: string, branch: string, attributes?: string) =>
   { clean: boolean; text: string | null; conflicts: { lint?: string }[] };
 
-/** What one conflicted file came to: Mervin's clean text, or why a person must choose in it. */
-type Settled = { f: string; text: string } | { f: string; text: null; why: string };
+/** Mergiraf's merge of one file's three versions (whole files, as git has them): its text, or null when it left conflicts. */
+export type Mergiraf = (path: string, base: string, main: string, branch: string) => Promise<string | null>;
+
+/** What one conflicted file came to: the clean text and who settled it, or why a person must choose in it. */
+type Settled = { f: string; text: string; by: string } | { f: string; text: null; why: string };
 /** The file a card line (`` `path`: why ``) is about. */
 const fileOf = (line: string) => line.slice(1, line.indexOf("`", 1));
 
 /** One pass over the open PRs; answers one line per PR it looked at. `token`: pushes run CI (AFTER_TOKEN is set). */
-export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
-  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, lineMerge: null, unused: null, ...opts }, { dry, token } = o;
+export async function pass(gh: Gh, git: Git, opts: PassOpts = {}): Promise<string[]> {
+  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, lineMerge: null, mergiraf: null, unused: null, ...opts }, { dry, token } = o;
   const out: string[] = [];
   const must = (...a: string[]) => {
     const r = git(...a);
@@ -191,12 +200,12 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
     if (dry) { out.push(`#${pr.number} would merge main in`); continue; }
     const named = after.map((n) => `#${n}`).join(", ");
     try {
-      const { conflicts: files, settled } = mergeMain(pr, named);
+      const { conflicts: files, settled } = await mergeMain(pr, named);
       if (!files.length) {
         gh.setBody(pr.number, marked(pr.body, "Merged main in after"));
         pushed(pr, settled, settled ? " (settled its conflicts)" : "");
       } else {
-        gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch, not even through Mervin's line merge. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`);
+        gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch, not even through Mervin's line merge and Mergiraf. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`);
         gh.setBody(pr.number, marked(pr.body, "Main conflicts after"));
         out.push(`#${pr.number} conflicts with main in ${files.map(fileOf).join(", ")}: commented`);
       }
@@ -217,10 +226,10 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
       try {
         if (gh.head(n).comments.some((c) => c.body.includes(unblockMark(issue.number)))) continue;
         if (dry) { out.push(`#${n} would merge main in: blocker #${issue.number} is fixed`); continue; }
-        const { conflicts: files, settled } = mergeMain(pr, `the fix for #${issue.number}`);
+        const { conflicts: files, settled } = await mergeMain(pr, `the fix for #${issue.number}`);
         if (!files.length) pushed(pr, `${unblockMark(issue.number)}\nThe test that held this PR red (${b!.test}) is fixed on main (#${issue.number} closed), so main is merged in and its checks rerun on the fix.${settled ? `\n\n${settled}` : ""}`, ` after blocker #${issue.number}`);
         else {
-          gh.comment(pr.number, `${unblockMark(issue.number)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue.number}), but main no longer merges clean into this branch, not even through Mervin's line merge. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push.`);
+          gh.comment(pr.number, `${unblockMark(issue.number)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue.number}), but main no longer merges clean into this branch, not even through Mervin's line merge and Mergiraf. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push.`);
           out.push(`#${n} conflicts with main in ${files.map(fileOf).join(", ")} after blocker #${issue.number}: commented`);
         }
       } catch (e) { out.push(`#${n} failed: ${e instanceof Error ? e.message : String(e)}`); }
@@ -232,7 +241,7 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
    * Merges main into the PR's branch and pushes. `conflicts`: the files a person must choose in (nothing pushed).
    * Otherwise pushed, and `settled` names each conflicted file `settle` resolved and how (one line each, for the comment).
    */
-  function mergeMain(pr: AfterPr, why: string): { conflicts: string[]; settled: string } {
+  async function mergeMain(pr: AfterPr, why: string): Promise<{ conflicts: string[]; settled: string }> {
     must("fetch", "-q", "origin", "main", pr.headRefName);
     must("checkout", "-q", "-B", `after-${pr.number}`, `origin/${pr.headRefName}`);
     if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${why} landed)`, "origin/main").code === 0) {
@@ -240,7 +249,8 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
       return { conflicts: [], settled: "" };
     }
     const files = must("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
-    const done = files.map((f) => mervin(f));
+    const done: Settled[] = [];
+    for (const f of files) done.push(await mervin(f));
     if (done.some((d) => d.text === null)) {
       git("merge", "--abort");
       return { conflicts: done.map((d) => d.text === null ? `\`${d.f}\`: ${d.why}` : `\`${d.f}\`: Mervin settled it`), settled: "" };
@@ -257,10 +267,10 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
     }
     must("commit", "-q", "--no-edit");
     must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
-    return { conflicts: [], settled: `git's merge of main conflicted, and Mervin's line merge (apps/codesplitter/scripts/shadow.ts) settled every file:\n\n${files.map((f) => `- \`${f}\``).join("\n")}` };
+    return { conflicts: [], settled: `git's merge of main conflicted, and Mervin settled every file:\n\n${done.map((d) => `- \`${d.f}\`: ${d.text === null ? "" : d.by}`).join("\n")}` };
   }
-  /** One conflicted file through Mervin's line merge, from the index's three stages (1 base, 2 the branch, 3 main). */
-  function mervin(f: string): Settled {
+  /** One conflicted file through Mervin's line merge, then Mergiraf, from the index's three stages (1 base, 2 the branch, 3 main). */
+  async function mervin(f: string): Promise<Settled> {
     if (!o.lineMerge) return { f, text: null, why: "Mervin's line merge didn't load (are the packages installed?)" };
     const stage = (n: number) => { const r = git("show", `:${n}:${f}`); return r.code === 0 ? r.out : null; };
     const [base, branch, main] = [stage(1), stage(2), stage(3)];
@@ -268,9 +278,13 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
     if ([base, branch, main].some((s) => s.includes("\0"))) return { f, text: null, why: "a binary file" };
     const attrs = git("show", "origin/main:.gitattributes");
     const r = o.lineMerge(f, base, main, branch, attrs.code === 0 ? attrs.out : "");
-    if (r.clean && r.text !== null) return { f, text: r.text };
+    if (r.clean && r.text !== null) return { f, text: r.text, by: "Mervin's line merge (apps/codesplitter/scripts/shadow.ts)" };
     const lint = r.conflicts.flatMap((c) => c.lint ? [c.lint] : []);
-    return { f, text: null, why: `Mervin left ${r.conflicts.length} card${r.conflicts.length === 1 ? "" : "s"}${lint.length ? ` (${[...new Set(lint)].join("; ")})` : ""}` };
+    const cards = `Mervin left ${r.conflicts.length} card${r.conflicts.length === 1 ? "" : "s"}${lint.length ? ` (${[...new Set(lint)].join("; ")})` : ""}`;
+    if (!o.mergiraf) return { f, text: null, why: cards };
+    const text = await o.mergiraf(f, base, main, branch).catch(() => null);
+    if (text !== null) return { f, text, by: "Mergiraf, after Mervin's line merge left cards (apps/codesplitter/src/mergiraf.ts)" };
+    return { f, text: null, why: `${cards}, and Mergiraf couldn't settle it either` };
   }
   /** Says a push happened: with the token its checks run; without, one comment with the fix (and `note`, if any). */
   function pushed(pr: AfterPr, note: string, tail = "") {
@@ -322,15 +336,28 @@ if (import.meta.main) {
     console.log(`::error::Mervin's line merge didn't load, so conflicts go to a person (run bun install --frozen-lockfile): ${e instanceof Error ? e.message : String(e)}`);
     process.exitCode = 1;
   }
+  // Mergiraf, Mervin's second opinion, when its binary is on PATH (after.yml installs it, best effort): run through
+  // codeSplitter's own wrapper, which takes and gives the file without its last newline.
+  let mergiraf: Mergiraf | null = null;
+  if (lineMerge && Bun.which("mergiraf")) {
+    try {
+      const [{ mergiraf: run }, { localSandbox }] = await Promise.all([import("../apps/codesplitter/src/mergiraf.ts"), import("../apps/codesplitter/src/agent-run.ts")]);
+      const box = localSandbox(), cut = (s: string) => s.replace(/\n$/, "");
+      mergiraf = async (f, base, main, branch) => {
+        const text = await run(box, f, cut(base), cut(main), cut(branch));
+        return text === null ? null : main.endsWith("\n") ? `${text}\n` : text;
+      };
+    } catch (e) { console.log(`::warning::Mergiraf didn't load, so Mervin's cards go to a person: ${e instanceof Error ? e.message : String(e)}`); }
+  }
   const unused = (files: string[]) => newUnused(lint(files), allowance(), files);
-  const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true", lineMerge, unused };
-  const lines = pass(ghCli, git, opts);
+  const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true", lineMerge, mergiraf, unused };
+  const lines = await pass(ghCli, git, opts);
   console.log(lines.length ? lines.join("\n") : "no open PR says merge after, and no fixed blocker holds one");
   // A pass that pushed looks again a few minutes on, so a head that got no CI is started or flagged now, not next hour.
   // Without the token the push already commented, and there is nothing more a pass could do.
   if (!opts.dry && opts.token && lines.some((l) => / merged main in and pushed/.test(l))) {
     await Bun.sleep(FOLLOW_UP * 1000);
-    const again = pass(ghCli, git, { ...opts, checkAfter: FOLLOW_UP }).filter((l) => / head [0-9a-f]{7} /.test(l));
+    const again = (await pass(ghCli, git, { ...opts, checkAfter: FOLLOW_UP })).filter((l) => / head [0-9a-f]{7} /.test(l));
     if (again.length) console.log(`follow-up check:\n${again.join("\n")}`);
   }
 }
