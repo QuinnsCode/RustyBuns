@@ -106,7 +106,9 @@ test("LAN party: host and guests share one ticking world", async () => {
     expect(ticks.every((t, i) => i === 0 || t >= ticks[i - 1]! || g1.of("snap")[i]!.round !== g1.of("snap")[i - 1]!.round)).toBe(true);
     // guest one slid right: input crossed the LAN. Wait for the snap that shows it: on a
     // loaded runner 30 snaps can arrive before the input is applied (#5070)
-    await g1.until(() => (g1.of("snap").at(-1)?.hp[1]?.[0] ?? 0) > 0);
+    // g1 and g2 connect at once, so guest one's seat is whichever was left (1 or 3), not always 1
+    const mine = g1.of("hello")[0]!.you;
+    await g1.until(() => (g1.of("snap").at(-1)?.hp[mine]?.[0] ?? 0) > 0);
     expect(g1.of("snap").at(-1)!.dr.length).toBeGreaterThan(0);   // and the drops are dripping
     // the couch partner drives their own seat over the shared socket
     g2.send({ t: "in", m: -100, g: 0, h: 0, s: pair[1] });
