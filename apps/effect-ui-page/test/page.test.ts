@@ -3,72 +3,85 @@ import { Locator, Story } from "@effect/ui/testing";
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import { decode, inputSchema, TOOLS } from "../src/tools.ts";
-import { apply, starter } from "../src/page.ts";
+import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
+import { worldDoc, WORLD_CSP } from "../src/world.ts";
 import { connectLines, CopyText, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
 const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false };
 const run = <A>(e: Effect.Effect<A, never, import("effect").Scope.Scope>) => Effect.runPromise(Effect.scoped(e));
+const write = (path: string, text: string) => ({ call: { call: 1, tool: "page_write_file", request: { _tag: "WriteFile" as const, path, text } } });
 
-describe("an agent's tool call", () => {
-  test("is checked against the Schema before it reaches the page", () => {
-    expect(decode(tool("page_set_theme"), { accent: "#112233", font: "serif" })).toEqual({ _tag: "SetTheme", accent: "#112233", font: "serif" });
-    for (const [name, args] of [
-      ["page_set_theme", { accent: "red" }],
-      ["page_set_theme", { font: "comic" }],
-      ["page_add_block", { kind: "links", title: "Me", items: [{ label: "x", url: "javascript:alert(1)" }] }],
-      ["page_add_block", { title: "no kind" }],
-      ["page_set_backdrop", { codesplitter: "../me/../admin" }],
-    ] as const) expect(() => decode(tool(name), args)).toThrow();
+describe("an agent's write", () => {
+  test("is checked at the door: a file name like world.js, text only, a file's worth", () => {
+    expect(decode(tool("page_write_file"), { path: "lib/noise.js", text: "export {}" })).toEqual({ _tag: "WriteFile", path: "lib/noise.js", text: "export {}" });
+    for (const args of [
+      { path: "../secrets.js", text: "" },
+      { path: "a/b/c.js", text: "" },
+      { path: "virus.exe", text: "" },
+      { path: "world.js", text: "x".repeat(FILE_MAX + 1) },
+      { path: "world.js" },
+    ]) expect(() => decode(tool("page_write_file"), args)).toThrow();
+    expect(() => decode(tool("page_set_backdrop"), { codesplitter: "../me/../admin" })).toThrow();
+    expect(inputSchema(tool("page_write_file").schema).required).toEqual(["path", "text"]);
   });
 
-  test("puts a codeSplitter page behind the blocks, and takes it away", () => {
-    const asked = decode(tool("page_set_backdrop"), { codesplitter: "quinn" });
-    expect(asked).toEqual({ _tag: "SetBackdrop", codesplitter: "quinn" });
-    const set = apply(starter, { _tag: "SetBackdrop", codesplitter: "quinn" });
-    expect("page" in set && set.page.backdrop).toBe("quinn");
-    const off = "page" in set ? apply(set.page, { _tag: "SetBackdrop", codesplitter: "" }) : set;
-    expect("page" in off && "backdrop" in off.page).toBe(false);
+  test("adds, replaces and takes away files, and says when the world is full", () => {
+    const ok = (p: Page, path: string, text: string) => { const r = apply(p, { _tag: "WriteFile", path, text }); if ("error" in r) throw new Error(r.error); return r.page; };
+    let p = ok(starter, "style.css", "body{}");
+    p = ok(p, "world.js", "// mine");
+    expect(listing(p).map((f) => f.path)).toEqual(["index.html", "style.css", "world.js"]);
+    expect(p.files["world.js"]).toBe("// mine");
+    p = ok(p, "style.css", "");
+    expect("style.css" in p.files).toBe(false);
+    const big = "x".repeat(FILE_MAX);
+    let full = p;
+    for (let i = 0; i * FILE_MAX < WORLD_MAX - FILE_MAX; i++) full = ok(full, `big${i}.txt`, big);
+    expect(apply(full, { _tag: "WriteFile", path: "one-more.txt", text: big })).toMatchObject({ error: expect.stringContaining("characters at most") });
   });
 
-  test("tells the agent which arguments it takes", () => {
-    const s = inputSchema(tool("page_add_block").schema);
-    expect(s.properties.at).toMatchObject({ type: "integer" });
-    expect(Object.keys(s.properties).sort()).toEqual(["at", "body", "items", "kind", "title"]);
-    expect(s.required).toEqual(["kind", "title"]);
-    expect(JSON.stringify(s.properties.kind)).toContain('"quote"');
-  });
-
-  test("adds, moves, edits and removes blocks, and names the ids when one is wrong", () => {
-    let page = starter;
-    const ok = (a: Parameters<typeof apply>[1]) => {
-      const r = apply(page, a);
-      if ("error" in r) throw new Error(r.error);
-      page = r.page;
-    };
-    ok({ _tag: "AddBlock", kind: "stats", title: "Numbers", items: [{ label: "repos", value: "12" }] });
-    ok({ _tag: "MoveBlock", id: "b2", to: 0 });
-    ok({ _tag: "EditBlock", id: "b1", title: "Hello" });
-    expect(page.blocks.map((b) => [b.id, b.title])).toEqual([["b2", "Numbers"], ["b1", "Hello"]]);
-    ok({ _tag: "RemoveBlock", id: "b2" });
-    expect(apply(page, { _tag: "RemoveBlock", id: "b9" })).toEqual({ error: 'no block "b9": the blocks are b1' });
-  });
-
-  test("changes the page and answers with it; undo takes it back", () =>
+  test("lands in the world and answers; undo takes it back", () =>
     run(Effect.gen(function* () {
       const s = yield* Story.make(ProfilePageNoDeps, props);
-      s.send(PageMessage.ReceivedAgentCall({ call: { call: 1, tool: "page_set_profile", request: { _tag: "SetProfile", name: "Ada" } } }));
-      expect(s.model.page.name).toBe("Ada");
+      s.send(PageMessage.ReceivedAgentCall(write("world.js", "// a three.js scene")));
+      expect(s.model.page.files["world.js"]).toBe("// a three.js scene");
       s.expectExact(ReportPage);
-      expect(s.pending[0]!.command.args).toMatchObject({ call: 1, error: null, page: { name: "Ada" } });
+      expect(s.pending[0]!.command.args).toMatchObject({ call: 1, error: null });
       s.resolve(ReportPage, PageMessage.CompletedReportPage());
       s.send(PageMessage.ReceivedAgentCall({ call: { call: 2, tool: "page_undo", request: { _tag: "Undo" } } }));
-      expect(s.model.page.name).toBe(starter.name);
+      expect(s.model.page.files["world.js"]).toBe(starter.files["world.js"]!);
       s.resolve(ReportPage, PageMessage.CompletedReportPage());
       s.send(PageMessage.ReceivedAgentCall({ call: { call: 3, tool: "page_undo", request: { _tag: "Undo" } } }));
       expect(s.pending[0]!.command.args).toMatchObject({ call: 3, error: "nothing to undo" });
       s.resolve(ReportPage, PageMessage.CompletedReportPage());
     })));
+});
+
+describe("the sealed frame's document", () => {
+  const world = (files: Record<string, string>) => worldDoc({ files });
+
+  test("puts the world's own files inline, after the policy and the reporter", () => {
+    const doc = world({
+      "index.html": `<!doctype html><html><head><link rel="stylesheet" href="style.css"><script type="importmap">{"imports":{"three":"https://esm.sh/three@0.170.0"}}</script></head><body><script type="module" src="./main.js"></script><script src="https://unpkg.com/x.js"></script></body></html>`,
+      "style.css": "body{color:red}",
+      "main.js": `import * as THREE from "three"; import { noise } from "./lib/noise.js"; console.log("</script>", THREE, noise);`,
+      "lib/noise.js": `import { k } from "../k.js"; export const noise = k;`,
+      "k.js": "export const k = 1;",
+    });
+    expect(doc.startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${WORLD_CSP}"><script>`)).toBe(true);
+    expect(doc).toContain("<style>body{color:red}</style>");
+    expect(doc).toContain(`from "@world/lib/noise.js"`);
+    expect(doc).toContain("<\\/script>");
+    expect(doc).toContain(`<script src="https://unpkg.com/x.js"></script>`);
+    const map = JSON.parse(doc.match(/<script type="importmap">(.*?)<\/script>/)![1]!).imports;
+    expect(map.three).toBe("https://esm.sh/three@0.170.0");
+    expect(decodeURIComponent(map["@world/lib/noise.js"])).toContain(`from "@world/k.js"`);
+    expect(doc.match(/type="importmap"/g)).toHaveLength(1);
+  });
+
+  test("says what to do when there is no index.html", () => {
+    expect(world({ "world.js": "" })).toContain("No index.html yet");
+  });
 });
 
 test("a person's Start over shows in the agent's log", () =>
@@ -100,7 +113,7 @@ test("Full screen puts the dock away and Show dock brings it back", () =>
       .expect(HtmlLocator.role("button", { name: "Full screen" })).toExist();
   })));
 
-test("a fresh room lands on the landing: Copy copies its Claude Code line, and the AI's first change brings up the page", () =>
+test("a fresh room lands on the landing: Copy copies its Claude Code line, and the AI's first write brings up the world", () =>
   run(Effect.gen(function* () {
     const fresh = { ...props, landing: true };
     const s = yield* HtmlScene.make(ProfilePageNoDeps, fresh);
@@ -111,7 +124,7 @@ test("a fresh room lands on the landing: Copy copies its Claude Code line, and t
     expect(s.pending[0]!.command.args).toMatchObject({ text: connectLines(props.origin, props.room)[0]!.text });
     s.resolve(CopyText, PageMessage.CompletedCopy({ what: "Claude Code" })).expect(HtmlLocator.role("button", { name: "Copied" })).toExist();
     const story = yield* Story.make(ProfilePageNoDeps, fresh);
-    story.send(PageMessage.ReceivedAgentCall({ call: { call: 1, tool: "page_set_profile", request: { _tag: "SetProfile", name: "Ada" } } }));
+    story.send(PageMessage.ReceivedAgentCall(write("world.js", "// mine")));
     expect(story.model.landing).toBe(false);
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
   })));

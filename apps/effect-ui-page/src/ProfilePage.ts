@@ -1,5 +1,6 @@
-// The page as one Effect UI component: a Model (the page, what it was before each change, the agent's last calls),
-// messages for what happened (an agent called a tool, a person clicked undo or start over), and a view of both.
+// The page as one Effect UI component: a Model (the world's files, what they were before each change, the agent's
+// last calls), messages for what happened (an agent called a tool, a person clicked undo or start over), and a view:
+// the world in its sealed frame (world.ts) with the dock beside it.
 // Every change, the agent's or a person's, goes through `update` and ends by reporting the page (ReportPage), which
 // answers the agent's waiting tool call and keeps page_read current. The dock beside the page says how to connect
 // an agent: a prompt to paste into any agent that can run curl, or one `mcp add` line for each terminal agent.
@@ -7,9 +8,10 @@ import { Command, Component, Subscription, UiSchema } from "@effect/ui";
 import { Html } from "@effect/ui/html";
 import { Effect, Schema, Stream } from "effect";
 import { Agent, Call, type Request } from "./agent.ts";
-import { apply, backdropUrl, type Block, Page } from "./page.ts";
+import { apply, backdropUrl, Page } from "./page.ts";
 import { linksFor, prompt } from "./relay.ts";
-import { READ, TOOLS } from "./tools.ts";
+import { READ, READ_FILE, TOOLS } from "./tools.ts";
+import { worldDoc } from "./world.ts";
 
 export const PageMessage = UiSchema.TaggedEnum({
   ReceivedAgentCall: { call: Call },
@@ -62,7 +64,8 @@ const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initia
 
 const Def = Html.component({ name: "ProfilePage", props: Props, model: Model, message: PageMessage });
 
-const HISTORY = 50, LOG = 8;
+// A world is up to 400 KB of text, so its history keeps the last 20, not more.
+const HISTORY = 20, LOG = 8;
 
 /** One request on the Model: the next Model and the error to report, if it couldn't be done. */
 function step(m: Model, r: Request): { model: Model; error: string | null } {
@@ -94,21 +97,6 @@ export const connectLines = (origin: string, room: string) => {
     { what: "opencode", text: `opencode mcp add agent-page --url ${l.mcp}` },
   ];
 };
-
-const FONTS = { sans: "system-ui, sans-serif", serif: "Georgia, 'Times New Roman', serif", mono: "ui-monospace, Menlo, monospace", rounded: "ui-rounded, 'SF Pro Rounded', system-ui, sans-serif" };
-
-const blockView = Def.fragment((h, b: Block) => {
-  const card = h.section.class("block", `k-${b.kind}`).key(b.id);
-  const title = h.h2.attr("title", b.id).children(b.title);
-  switch (b.kind) {
-    case "text": return card.children(title, b.body && h.p(b.body));
-    case "quote": return card.children(h.blockquote(b.body || b.title), b.body && h.p.class("who").children(`- ${b.title}`));
-    case "links": return card.children(title, h.ul(...b.items.map((i) =>
-      h.li(i.url ? h.a.attrs({ href: i.url, rel: "noopener noreferrer", target: "_blank" }).children(i.label) : i.label))));
-    case "stats": return card.children(title, h.div.class("stats").children(...b.items.map((i) => h.div.class("stat").children(h.b(i.value ?? ""), h.span(i.label)))));
-    case "tags": return card.children(title, h.div.class("tags").children(...b.items.map((i) => h.span.class("tag").children(i.label))));
-  }
-});
 
 /** The picture at the top of the dock: agent, relay, this page, in a row. Each agent call sends a dot down the wires
  *  (keyed by the call, so a new call starts it again), green when the page took it and red when it said no. */
@@ -163,24 +151,24 @@ type Show =
   | { kind: "data"; rows: readonly (readonly [string, string])[] }
   | { kind: "shelf"; items: readonly string[] };
 const PIECES: readonly { c: string; tag: string; title: string; says: string; show: Show; soon?: boolean }[] = [
-  { c: "pink", tag: "WebMCP · MCP", title: "The buttons",
-    says: "A TV remote for your page. Your AI presses the buttons.",
-    show: { kind: "keys", items: ["Set the name", "Pick colors", "Add a card", "Edit a card", "Move a card", "Remove a card", "Set the backdrop", "Undo", "Start over", "Read the page"] } },
+  { c: "pink", tag: "WebMCP · MCP", title: "The tools",
+    says: "Your AI writes files, reads them back, and looks for errors.",
+    show: { kind: "keys", items: ["Write a file", "Read a file", "Look at the world", "Undo", "Start over", "Set the backdrop"] } },
+  { c: "green", tag: "Sandbox", title: "The sealed frame",
+    says: "Your AI's code runs in a box: no network, no cookies, nothing else.",
+    show: { kind: "flow", items: [["index.html", "your AI wrote it"], ["Sealed frame", "scripts only"], ["Your world", "this tab"]] } },
   { c: "violet", tag: "Effect · Schema", title: "The bouncer",
-    says: "Bad presses bounce, and your AI is told why.",
-    show: { kind: "door", rows: [[true, 'accent: "#ff3d8b"', "let in"], [false, 'accent: "red"', "bounced: a color looks like #rrggbb"], [false, 'url: "javascript:…"', "bounced: a link starts with https://"]] } },
+    says: "Every write is checked at the door, and your AI is told why.",
+    show: { kind: "door", rows: [[true, 'path: "world.js"', "let in"], [false, 'path: "../secrets"', "bounced: a file name like world.js"], [false, "text: 3 MB", "bounced: a file is 100,000 characters at most"]] } },
   { c: "cyan", tag: "Effect UI", title: "The screen",
-    says: "One loop for you and your AI, so you stay in sync.",
-    show: { kind: "flow", loop: true, items: [["Your page", ""], ["A press arrives", ""], ["Work out what's next", ""], ["Redraw", ""]] } },
-  { c: "amber", tag: "Your page is a list", title: "No code, just a list",
-    says: "Your AI only changes this list. It can't break anything.",
-    show: { kind: "data", rows: [["name", '"Night Rider"'], ["tagline", '"Skating the city after dark."'], ["colors", "accent #ff3d8b · paper #0a0918 · ink #e9ecf8"], ["font", "mono"], ["cards", "About · My boards · Spots I skate"]] } },
-  { c: "green", tag: "Cloudflare", title: "Your room",
+    says: "One loop around your world: every write, undo and start over.",
+    show: { kind: "flow", loop: true, items: [["Your files", ""], ["A write arrives", ""], ["Work out what's next", ""], ["Reload the frame", ""]] } },
+  { c: "amber", tag: "Cloudflare", title: "Your room",
     says: "The secret link is the key. Share it only with AIs you trust.",
-    show: { kind: "flow", items: [["Your AI", ""], ["Your room", "Cloudflare Worker"], ["Your page", "this tab"]] } },
-  { c: "amber", tag: "Cloudflare Artifacts · coming", title: "Your stuff, kept", soon: true,
-    says: "Soon: your page opens anywhere, with a 3D you.",
-    show: { kind: "shelf", items: ["your page", "your 3D character", "your pictures"] } },
+    show: { kind: "flow", items: [["Your AI", ""], ["Your room", "Cloudflare Worker"], ["Your world", "this tab"]] } },
+  { c: "amber", tag: "Cloudflare Artifacts · coming", title: "The world of worlds", soon: true,
+    says: "Soon: your world is kept in Artifacts and joins everyone else's.",
+    show: { kind: "shelf", items: ["your world", "your 3D character", "everyone's worlds"] } },
 ];
 
 const showView = Def.fragment((h, s: Show) => {
@@ -199,7 +187,7 @@ const deepView = Def.fragment((h) => h.section.class("l-deep").attrs({ id: "how"
   h.header.class("l-deep-head").children(
     h.p.class("l-eyebrow").children("For the curious"),
     h.h2("How it's built"),
-    h.p("You say ", h.q("make it about my skateboarding"), ". Then:"),
+    h.p("You say ", h.q("make me a rainy city"), ". Then:"),
   ),
   ...PIECES.map((p) => h.article.class("l-piece", `c-${p.c}`, p.soon === true && "soon").key(p.title).children(
     h.div.class("l-tell").children(h.span.class("l-ptag").children(p.tag), h.h3(p.title), h.p(p.says)),
@@ -207,10 +195,10 @@ const deepView = Def.fragment((h) => h.section.class("l-deep").attrs({ id: "how"
   )),
 ));
 const STEPS: readonly (readonly [Icon, string, string, string, string])[] = [
-  ["chat", "amber", "1. You ask", "\"make it about my skateboarding\"", ""],
+  ["chat", "amber", "1. You ask", "\"make me a rainy city\"", ""],
   ["bot", "violet", "2. Your AI thinks", "Claude, Codex, any AI", ""],
-  ["wrench", "pink", "3. It presses buttons", "set title · add a card · pick colors", "WebMCP"],
-  ["screen", "cyan", "4. Your page changes", "right in front of you", "Effect UI · Effect"],
+  ["wrench", "pink", "3. It writes code", "index.html · world.js · three.js", "WebMCP"],
+  ["screen", "cyan", "4. Your world runs", "sealed, right in front of you", "Effect UI · Effect"],
 ];
 
 /** An icon as a CSS mask over its color (the view has no SVG elements): the paths drawn as a stroked SVG data URL. */
@@ -223,7 +211,7 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
     h.div.class("l-sign").attr("aria-hidden", "true").children("エージェント"),
     h.div.class("l-stage").children(
       h.h1.class("l-word").children("Agent Page"),
-      h.p.class("l-line").children("Your AI builds your page. You watch it light up."),
+      h.p.class("l-line").children("Your AI writes your world. You watch it light up."),
       h.div.class("l-signs").children(...SIGNS.map(([name, i, c]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), name))),
       h.div.class("l-bar").children(
         h.code(claude.text),
@@ -245,18 +233,16 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
       copied?.startsWith("failed") && h.p.class("l-alt").attr("role", "alert").children("The clipboard said no: select the line and copy it by hand."),
     ),
     h.section.class("l-how").attr("aria-label", "How it works").children(
-      h.h2(h.b("How it works"), " · you give your AI the remote for this page"),
+      h.h2(h.b("How it works"), " · your AI writes the code, a sealed frame runs it"),
       h.div.class("l-steps").children(
         h.div.class("l-wire").attr("aria-hidden", "true").children(h.i.class("l-spark")),
         ...STEPS.map(([i, c, title, says, tag]) => h.div.class("l-step", `c-${c}`).key(title).children(
           h.div.class("l-dot").children(icon(h, i)), h.b(title), h.span(says), tag && h.span.class("l-tag").children(tag)))),
-      h.p.class("l-say").children("Your AI can only press ", h.em("this page's"), " buttons. It can't touch anything else on your computer. ",
+      h.p.class("l-say").children("Your AI's code runs ", h.em("sealed"), ": no network, no cookies, nothing else on your computer. ",
         h.a.class("l-more").attr("href", "#how").children("How does that work?")),
     ),
   ), deepView(h));
 });
-
-const initials =(name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 
 export const ProfilePageNoDeps = Def.make({
   init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, full: $.props.full, landing: $.props.landing }),
@@ -285,7 +271,6 @@ export const ProfilePageNoDeps = Def.make({
       Stream.changes, Stream.map((online) => PageMessage.ChangedRelay({ online })))),
   ],
   view: (h, { page, past, log, online, copied, full, landing }) => {
-    const t = page.theme;
     const { room, origin } = h.props;
     if (landing) return landingView(h, room, origin, online, copied);
     // A button with its own label says it; the short "Copy" ones beside each line name their agent for a screen reader.
@@ -295,13 +280,13 @@ export const ProfilePageNoDeps = Def.make({
     return h.div.class("shell", full && "full").children(
       // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
       page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
-        src: backdropUrl(page.backdrop), sandbox: "allow-scripts", referrerpolicy: "no-referrer", title: `@${page.backdrop}'s codeSplitter page`, style: `background:${t.paper}`, "aria-hidden": "true", tabindex: "-1",
+        src: backdropUrl(page.backdrop), sandbox: "allow-scripts", referrerpolicy: "no-referrer", title: `@${page.backdrop}'s codeSplitter page`, "aria-hidden": "true", tabindex: "-1",
       }),
-      h.main.class("page", page.backdrop && "over").attr("style", `--accent:${t.accent};--paper:${t.paper};--ink:${t.ink};--font:${FONTS[t.font]}`).children(
+      h.main.class("page", page.backdrop && "over").children(
+        // The world the agent wrote, sealed: scripts run in an opaque origin, with no reach into this page.
+        h.iframe.class("world").attrs({ srcdoc: worldDoc(page), sandbox: "allow-scripts allow-pointer-lock", referrerpolicy: "no-referrer", title: "Your world", allow: "fullscreen" }),
         h.button.attr("type", "button").class("full-toggle").attr("title", full ? "Show the dock (Connect, tools, last calls)" : "Full screen: the page alone")
           .attr("aria-pressed", full ? "true" : "false").on("click", PageMessage.ClickedFull()).children(full ? "Show dock" : "Full screen"),
-        h.header(h.div.class("avatar").children(initials(page.name)), h.div(h.h1(page.name), h.p.class("tagline").children(page.tagline))),
-        ...page.blocks.map((b) => blockView(h, b)),
       ),
       h.aside.class("dock").children(
         how(h, online, log.find((l) => l.call > 0)),
@@ -321,7 +306,7 @@ export const ProfilePageNoDeps = Def.make({
         h.details.children(
           h.summary("In this browser, and the tools"),
           h.p.class("muted").children("A browser agent with WebMCP (document.modelContext) sees these tools on this page. Without it, window.__commands.run(name, args) does the same."),
-          h.ul.class("tools").children(h.li.attr("title", READ.description).children(h.code(READ.name)), ...TOOLS.map((t) => h.li.attr("title", t.description).children(h.code(t.name)))),
+          h.ul.class("tools").children(...[READ, READ_FILE].map((t) => h.li.attr("title", t.description).children(h.code(t.name))), ...TOOLS.map((t) => h.li.attr("title", t.description).children(h.code(t.name)))),
         ),
         h.div.class("row").children(
           h.button.attr("type", "button").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children("Undo"),

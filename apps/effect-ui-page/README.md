@@ -1,9 +1,9 @@
 # Agent Page
 
-> **What it proves:** an [Effect UI](https://ui.effect.website/) page that any coding agent builds while you watch:
-> Claude Code, Codex, opencode, T3 Code, or a browser agent with WebMCP. It's codeSplitter's profile page idea
-> (connect your agent, it makes your page) with every change checked by a Schema before it reaches the page. One of
-> the [Rusty Buns](../../README.md) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+> **What it proves:** a world any coding agent writes while you watch (Claude Code, Codex, opencode, T3 Code, or a
+> browser agent with WebMCP), the way codeSplitter's profile page works: the agent writes real code (a canvas city, a
+> three.js scene) and a sealed frame runs it. Effect UI runs the page around it, and an Effect Schema checks every
+> write. One of the [Rusty Buns](../../README.md) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
 ## Use it
 
@@ -14,7 +14,7 @@ bun run dev              # http://127.0.0.1:4799
 
 Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
 city: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
-pictures of what that line does. When your AI's first change arrives, the landing gives way to your page; "Skip to the
+pictures of what that line does. When your AI's first write arrives, the landing gives way to your world; "Skip to the
 page" does it by hand. A room this browser already kept opens straight on its page. The dock beside it says how to
 reach the room, with a copy button for each:
 
@@ -27,38 +27,42 @@ reach the room, with a copy button for each:
   - T3 Code runs Claude Code or Codex underneath, so add the server to whichever one it runs.
 - **In the browser:** an agent with WebMCP (`document.modelContext`) sees the same tools on the page itself.
 
-Then ask for a page: "make it a dark purple page about my rock climbing, with my stats and three links". The page
-changes as the agent works, and the dock lists its calls.
+Then ask for a world: "make me a rainy neon city in three.js, slowly orbiting". The world reloads with each file the
+agent writes, and the dock lists its calls. A new room starts with a small isometric rain city (`src/starter.ts`) to
+change or throw away.
 
 | Tool | Does |
 |---|---|
-| `page_read` | The page as it stands: name, tagline, theme, blocks and their ids |
-| `page_set_profile` | The name and the tagline |
-| `page_set_theme` | Accent, paper and ink colors (`#rrggbb`) and the font (sans, serif, mono, rounded) |
-| `page_add_block` | A text, links, stats, quote or tags block, at an index |
-| `page_edit_block`, `page_move_block`, `page_remove_block` | Change, move or remove a block by id |
-| `page_set_backdrop` | A codeSplitter handle whose profile page (their public `page` repo) fills the window behind the blocks, in a sandbox; `""` takes it away |
-| `page_undo`, `page_reset` | Take back the last change, or start over |
+| `page_read` | Each file's path and size, the backdrop, and what the frame said since it last loaded: errors with their file, loads it blocked |
+| `page_read_file` | One file's whole text |
+| `page_write_file` | Set one file (`index.html`, `world.js`, `lib/noise.js`, ...) to this text; `""` takes it away. Its description tells the agent how files load and what the frame allows |
+| `page_set_backdrop` | A codeSplitter handle whose profile page (their public `page` repo) fills the window behind the world; `""` takes it away |
+| `page_undo`, `page_reset` | Take back the last change, or go back to the starter city |
 
-Every write answers with the page after it, or why it couldn't be done (an unknown id names the ids there are). The
-Undo and Start over buttons do the same as the tools. This browser keeps each room's page for the next visit. **Full screen** (or `?full` on the link) puts the dock away.
+A write answers with the files (paths and sizes, not their text), or why it couldn't be done. The Undo and Start over
+buttons do the same as the tools. This browser keeps each room's world for the next visit. **Full screen** (or `?full`
+on the link) puts the dock away.
 
-The room's link is its key: there's no sign-in, so share it only with agents you want building your page. The page has
-to stay open: it holds the page, and an agent that calls while no tab is open is told to ask you to open it.
+The room's link is its key: there's no sign-in, so share it only with agents you want building your world. The page
+has to stay open: it holds the world, and an agent that calls while no tab is open is told to ask you to open it.
 
-What keeps it safe, in short (the page says the same in its "How it works" card):
+What keeps it safe, in short:
 
-- An agent can only call the page's tools, and each call is checked by its Schema: text of a set length, `#rrggbb`
-  colors, a font from a list, `https://` links. Nothing reaches your machine, and the page never runs what it's sent.
+- **The sealed frame** (`src/world.ts`): the world runs in an `<iframe sandbox="allow-scripts">` with no same-origin,
+  so it has no cookies, no storage and no reach into this page. A Content-Security-Policy goes first in its document:
+  scripts and libraries only from esm.sh, jsDelivr, unpkg and cdnjs, no `fetch` or sockets out, no forms. A reporter
+  in the frame sends its errors and blocked loads to the page, and `page_read` hands them to the agent.
+- **The bouncer**: each write is checked by its Schema first: a file name like `world.js` (one folder deep at most,
+  text types only), 100,000 characters a file, 400,000 and 30 files a world.
 - Only a page this server served can hold a room's socket (its `Origin` must match), so another site that learns the
   link can't take the agent's calls. `bun run dev` listens on 127.0.0.1 only, not your Wi-Fi.
-- What the page says goes back to the agent, so the prompt and the MCP instructions tell it page text is content,
+- What the world says goes back to the agent, so the prompt and the MCP instructions tell it page text is content,
   never instructions.
 
 From a script or the console, the same tools are on `window.__commands`:
 
 ```
-bun run probe effect-ui-page --js 'await __commands.run("page_set_profile", { name: "Ada" })'
+bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 ```
 
 ## Deploy it
@@ -68,14 +72,17 @@ Durable Object per room and no storage, AI or other paid bindings.
 
 ## How it's put together
 
-- `src/page.ts`: the page and each tool's arguments as Effect Schemas, and `apply`, the one pure function that
-  changes the page. A tool's JSON Schema for the agent comes from the same Schema that checks its call, so a color
-  that isn't `#rrggbb` or a link that isn't `https://` never reaches the page.
+- `src/page.ts`: the world (its files) and each tool's arguments as Effect Schemas, and `apply`, the one pure
+  function that changes it. A tool's JSON Schema for the agent comes from the same Schema that checks its call.
+- `src/world.ts`: the sealed frame's document: `index.html` with the world's own scripts and styles put inline, its
+  modules' imports of each other through an import map, the policy and the reporter first. `src/starter.ts`: the
+  starter city's two files.
 - `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP) and the frames between the relay and the page.
 - `src/agent.ts`: the `Agent` service in the page. Its Layer puts the WebMCP tools up (`@rustybuns/util/commands`)
   and keeps a socket to the room's relay while the page is mounted. A call from either becomes a message on a queue
   and waits for the page's report.
-- `src/ProfilePage.ts`: the page as one Effect UI component (Model, messages, `update`, `view`), and the Connect box.
+- `src/ProfilePage.ts`: the page as one Effect UI component (Model, messages, `update`, `view`): the world's frame,
+  the landing and the Connect box.
   The agent's calls come in through a Subscription on that queue. Each change, the agent's or a person's click, ends
   with a `ReportPage` Command that answers the waiting call.
 - `src/relay.ts`: a room's relay, with no platform code in it. It serves `GET /api/r/<room>/tools`,
@@ -83,8 +90,8 @@ Durable Object per room and no storage, AI or other paid bindings.
   socket, and the reply comes back with the page's answer.
 - `src/edge/worker.ts`: the relay on Cloudflare, one `Room` Durable Object per room. `scripts/dev.ts`: the same relay
   and the page in one Bun server.
-- `test/page.test.ts`: the Schema checks, `apply`, a `Story` of an agent's calls through `update`, and `Scene`s of a
-  person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout.
+- `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
+  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout.
 
 Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit
 (`@effect/ui@a0d7578`). To move it on: `bun add https://pkg.pr.new/Effect-TS/ui/@effect/ui@<commit>` in this folder.
