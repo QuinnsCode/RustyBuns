@@ -4,6 +4,7 @@ import { BrowserHost } from "@effect/ui/html";
 import { Effect, Layer, Option, Schema } from "effect";
 import { layer as agent, savedKey } from "./agent.ts";
 import { Page, starter } from "./page.ts";
+import { exportGif, startPictures } from "./pictures.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { startCity } from "./city.ts";
@@ -22,6 +23,9 @@ if (room !== here) history.replaceState(null, "", `/r/${room}${location.search}`
 const kept = (() => { try { return localStorage.getItem(savedKey(room)); } catch { return null; } })();
 const initial = kept ? Option.getOrElse(Schema.decodeUnknownOption(Schema.fromJsonString(Page))(kept), () => starter) : starter;
 
+// Before the page mounts, so the first world's load is seen.
+startPictures(room);
+
 const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, initial, full: new URLSearchParams(location.search).has("full"), landing: kept === null }, document.getElementById("app")!)
   .pipe(Layer.provide(agent(room, initial)));
 
@@ -38,6 +42,8 @@ addCommands([
     description: "Puts this room's claude mcp add line on the clipboard.", execute: () => copy(claudeLine) },
   { name: "page_copy_prompt", title: "Copy the prompt for any AI", group: "Connect", agent: false, answers: true,
     description: "Puts the paste-into-any-agent prompt for this room on the clipboard.", execute: () => copy(prompt(linksFor(location.origin, room))) },
+  { name: "page_export_gif", title: "Export GIF", group: "Share", agent: false, answers: true,
+    description: "Records three seconds of the world and downloads an animated GIF.", execute: () => exportGif(room) },
 ]);
 mountPalette({ button: true, placeholder: "What should the page do?" });
 
