@@ -54,7 +54,7 @@ export const PATHS: readonly Path[] = [
   },
   {
     id: "daw", sector: "build", name: "QDAW", does: "Press Space and the beat plays: play notes, record, mix, bounce it to a file.",
-    href: "/", first: "The desk with the demo beat loaded", signIn: false,
+    href: "/desk", first: "The desk with the demo beat loaded", signIn: false,
     icon: '<path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>',
   },
   {

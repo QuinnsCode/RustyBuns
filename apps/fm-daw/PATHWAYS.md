@@ -232,7 +232,7 @@ circuit on its own thread, not your guitar through Q Amp's audio thread, and onl
 
 ## The front door
 
-`/door.html` is the landing page ([#6019](https://github.com/QuinnsCode/RustyBuns/issues/6019)). Its hero fills the first screen: a live field at dusk
+`/door.html` (also `/` and `/paths`) is the landing page ([#6019](https://github.com/QuinnsCode/RustyBuns/issues/6019)). Its hero fills the first screen: a live field at dusk
 (`src/hero.ts`, drawn by `src/front-hero.ts`), two stacks and the map of their highs (4 kHz, `@rustybuns/gear`'s outdoor model) on the
 grass. The Air and Humidity sliders and the Bank button change the map, and **Hear it from the back** loops a beat through an EQ
 set by what the field took from each band at the back; they hide behind one small thermometer button in the field's corner,
@@ -250,4 +250,4 @@ Event asks you to sign in; the rest work signed out. Every page has a way back: 
 along the top (`src/way.ts`), or the round house button in the corner of the decks and the studio builder
 (`mountBack`). Then the pedal-to-show chain, what works today and a word for crews and classes (`CHAIN`, `LIVE`, `PITCHES` in `src/paths.ts`).
 `qdoor.state()`, `qdoor.lane("build")` (null closes it), `qdoor.shelf()` (each thing: on the screen, picked, drawn) and `qdoor.hero.state()` / `qdoor.hero.set({ tempC, humidity, bank })` for probes; `test/front-door.test.ts` opens each lane and checks its cards, and that the field darkens at the back with dry air and behind a bank, and `test/front-door-paths.test.ts` walks every card to its first step and back at
-phone and desktop sizes. `/` is still the desk, so a link someone was sent lands where it always did.
+phone and desktop sizes. A bare visit to `/` (and to `/paths`) lands here; the desk is `/desk`, and an old `/?room=` link still opens its sesh.
