@@ -2,8 +2,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 
 setDefaultTimeout(60000); // seventy levels take a while on CI
-import { LEVELS } from "../src/levels/index.ts";
-import { GROWTH, type ParkLevel } from "../src/levels/park.ts";
+import { GROWTH } from "../src/levels/park.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { allParks } from "./parks.ts";
 import { hillBank, hillHalf, hillPlane, hillQuarter, hillShelf, hillSnake, sculpt, WORKS, type Earthwork } from "../src/levels/earthworks.ts";

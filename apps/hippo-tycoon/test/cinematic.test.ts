@@ -73,7 +73,6 @@ describe("the wrestling finale", () => {
 });
 
 describe("the finale, polished", () => {
-  const CAMERA = new THREE.Vector3(0, 14.2 * 1.18, 26.5 * 1.18);          // the gameplay shot at 16:9
 
   test("the landing popup names the player (or the whole bot name), not the first word of the character", () => {
     const { c, log } = setup();

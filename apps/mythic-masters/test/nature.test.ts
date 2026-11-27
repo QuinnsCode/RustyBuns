@@ -5,7 +5,7 @@ import { newJourney, mend, wound } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { FLORA, GROWN, KINDS, LATER, TURF } from "../src/world/flora.ts";
 import { existsSync } from "node:fs";
-import { bare, FORAGE, FORAGE_MEND, forageNear, pick, REGROW, weather, wind } from "../src/world/nature.ts";
+import { bare, FORAGE, FORAGE_MEND, forageNear, pick, REGROW, weather } from "../src/world/nature.ts";
 import { arenaOf, buildWorld, CELL, depthAt, detailAt, dry, groundFrom, heightAt, openRegions, ownerAt, refine, regionAt, riverAt, spawn, waterAt } from "../src/world/world.ts";
 import { POIS } from "../src/world/poi.ts";
 import { TRAILS, WORLD } from "../src/world/trail.ts";

@@ -2,7 +2,7 @@
 // and an online room left empty long enough is deleted (the desktop's never is).
 import { expect, test, setSystemTime, afterEach } from "bun:test";
 import { heard, setup, useWorld, type Sock } from "./world-kit.ts";
-import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
+import { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby from "../src/lobby.ts";
 import { P, TRACKS } from "../src/engine/params.ts";
 import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
