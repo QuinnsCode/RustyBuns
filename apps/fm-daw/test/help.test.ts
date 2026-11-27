@@ -20,7 +20,7 @@ test("the card and the key strip follow you from the door to a seat to the desk"
   // Up to the keys and sit: Tab is the first key on the strip, and the card opens on the seated group with Tab in it.
   walkTo(j, 2.6, 1.4);
   expect(sit(j, "keys")).toEqual({ ok: true });
-  expect(keysOf(strip(kind()))).toEqual(["Tab", "Z / X", "/", "?", "Space", "Esc"]);
+  expect(keysOf(strip(kind()))).toEqual(["Tab", "Z / X", "/", "Q", "?", "Space", "Esc"]);
   const seated = card(kind());
   expect(seated[0]).toMatchObject({ where: "seat", here: true });
   expect(seated[0].actions.find((a) => a.key === "Tab")?.does).toContain("panel");
