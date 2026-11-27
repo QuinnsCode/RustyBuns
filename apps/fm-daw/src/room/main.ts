@@ -23,6 +23,7 @@ import workletUrl from "../amp/worklet.ts?worker&url";
 import deskWorkletUrl from "./desk-worklet.ts?worker&url";
 import type { ToDesk } from "./desk-worklet.ts";
 import { WallLine, moduleButtons } from "./wall-page.ts";
+import { menuCard, speakersButton, tapTips } from "./menu-card.ts";
 import { PANELS, type Panel } from "../../circuits/wall-panels.ts";
 import { Desk, deskFor, deskOps, deskPlays, playerId, seshDesk, seshShape, shapeAt, shapeName, shapeOps, withChannel, withReturn, withSend, withShape, type Player, type ShapeAt, type Source } from "../mixer.ts";
 import { closeShape, openShape, refreshShape } from "../ui/shape-overlay.tsx";
@@ -270,7 +271,7 @@ const KEYS_C = 48;
 
 async function speakers(up: boolean) {
   speakersUp = up;
-  $("speakers").textContent = up ? "Speakers up. M brings them down." : "Speakers are down. Click, or press M, to bring them up.";
+  speakersButton($("speakers"), up);
   if (!up) { await ctx?.suspend(); return; }
   if (!ctx) {
     ctx = new AudioContext({ latencyHint: "interactive" });
@@ -605,6 +606,9 @@ mountControls({
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
+$("menu").innerHTML = menuCard();
+tapTips(document);
+speakersButton($("speakers"), false);
 $("play").addEventListener("click", play);
 $("desk-close").addEventListener("click", () => openDesk(false));
 $("modules-close").addEventListener("click", () => openModules(false));
