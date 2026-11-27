@@ -1,6 +1,6 @@
 // Qollab Studio's front door (#5860), the way a newcomer meets it, in headless Chrome over CDP (scripts/chrome.ts): at
-// phone and desktop sizes the door names every card under LEARN, BUILD and PLAY on one line each with nothing off the side,
-// and its live field (#6019) darkens at the back when the air dries out and again behind a bank. Walking each path is
+// phone and desktop sizes the field is the menu: each of LEARN, BUILD and PLAY is a lane on it, and opening one shows its
+// cards and no others, each name on one line with nothing off the side; and the live field (#6019) darkens at the back when the air dries out and again behind a bank. Walking each path is
 // front-door-paths.test.ts, so CI's lanes can run the two side by side (#5922).
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
@@ -12,10 +12,10 @@ useBrowser();
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
 const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 60_000);
-interface Door { paths: { id: string; sector: string; name: string; href: string; oneLine: boolean }[]; overflowX: boolean }
+interface Door { paths: { id: string; sector: string; name: string; href: string; shown: boolean; oneLine: boolean }[]; lane: string | null; overflowX: boolean }
 interface Hero { air: { tempC: number; humidity: number; bank: boolean }; map: { near: number; far: number }; back: { dull: number; ms: number }; playing: boolean; draws: number }
 
-test.skipIf(!hasChrome)("the door names every card under its word, each on one line, and its field answers the air and the bank, at phone and desktop sizes", async () => {
+test.skipIf(!hasChrome)("each lane on the field opens on its own cards, each on one line, and the field answers the air and the bank, at phone and desktop sizes", async () => {
   for (const [w, h, mobile] of [[375, 740, true], [1440, 900, false]] as const) {
     const tab = await openTab(chrome.cdp, { w, h }, mobile);
     try {
@@ -23,8 +23,19 @@ test.skipIf(!hasChrome)("the door names every card under its word, each on one l
       await until(tab, "!!window.qdoor");
       const door = await tab.eval<Door>("qdoor.state()");
       expect(door.paths.map((p) => [p.sector, p.id, p.href])).toEqual(SECTORS.flatMap((s) => PATHS.filter((p) => p.sector === s.id).map((p) => [s.id, p.id, p.href])));
-      expect(door.paths.filter((p) => !p.oneLine).map((p) => p.name)).toEqual([]);
-      expect(door.overflowX).toBe(false);
+      expect(door.lane).toBe(null);
+      expect(door.paths.filter((p) => p.shown)).toEqual([]);
+      // the field is the menu: a click on a lane's button opens it, and its panel shows that lane's cards and no others
+      for (const s of SECTORS) {
+        await tab.eval(`document.querySelector('.lane[data-lane="${s.id}"]').click()`);
+        const opened = await tab.eval<Door>("qdoor.state()");
+        expect(opened.lane).toBe(s.id);
+        expect(opened.paths.filter((p) => p.shown).map((p) => p.id)).toEqual(PATHS.filter((p) => p.sector === s.id).map((p) => p.id));
+        expect(opened.paths.filter((p) => p.shown && !p.oneLine).map((p) => p.name)).toEqual([]);
+        expect(opened.overflowX).toBe(false);
+      }
+      await tab.eval(`document.querySelector('#lane-panel .close').click()`);
+      expect((await tab.eval<Door>("qdoor.state()")).lane).toBe(null);
       // the field, as someone moves the humidity slider down and presses the mountain button: the far half of the map darkens each time
       const hero = () => tab.eval<Hero>("qdoor.hero.state()");
       const mild = await hero();

@@ -14,7 +14,13 @@ type V3 = { x: number; y: number; z: number };
 const CAM = { x: 0, y: 16, z: FIELD.z1 + 26, pitch: 0.22 };
 const F = { y: -Math.sin(CAM.pitch), z: -Math.cos(CAM.pitch) }, U = { y: Math.cos(CAM.pitch), z: -Math.sin(CAM.pitch) };
 
-export function mountHero(root: HTMLElement) {
+/** A lane down the field: one of the door's words, its strip of grass, and the colour its plate and beam take. */
+export interface HeroLane { id: string; word: string; tone: string }
+
+/** The width the open lane's panel takes from the right of the field on a desk (door.html's `.lane-panel`). */
+const PANEL_W = 412;
+
+export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], onLane: (id: string | null) => void = () => {}) {
   const canvas = root.querySelector<HTMLCanvasElement>("canvas")!, g = canvas.getContext("2d")!;
   const temp = root.querySelector<HTMLInputElement>('input[name="temp"]')!, hum = root.querySelector<HTMLInputElement>('input[name="humidity"]')!;
   const bankBtn = root.querySelector<HTMLButtonElement>('button[name="bank"]')!, playBtn = root.querySelector<HTMLButtonElement>('button[name="play"]')!;
@@ -25,8 +31,56 @@ export function mountHero(root: HTMLElement) {
   hum.closest("label")!.insertAdjacentHTML("afterbegin", iconSvg(ICON.droplets, 18));
 
   let air: HeroAir = { ...HERO_START }, map = heroMap(air), back = backSeat(air), draws = 0;
-  let W = 0, H = 0, f = 0, cx = 0, cy = 0;
+  let W = 0, H = 0, f = 0, cx = 0, cy = 0, cxNow = NaN;
   const land = (a: HeroAir) => (a.bank ? banks([BANK]) : () => 0);
+
+  // the lanes: the field cut into strips from the back to the stage, a word painted on the grass of each and a button
+  // standing on it (hemyviz's floor names and picked block in its beam of light)
+  const laneW = (FIELD.x1 - FIELD.x0) / Math.max(1, lanes.length);
+  // the camera looks up the field from the back, so +x is to the left on screen: the first lane takes the far +x strip
+  const strips = lanes.map((l, i) => ({ ...l, x0: FIELD.x1 - (i + 1) * laneW, x1: FIELD.x1 - i * laneW, quad: [] as [number, number][] }));
+  let open: string | null = null, hover: string | null = null;
+  const tags = root.querySelector<HTMLElement>(".lanes");
+  const tagOf = new Map<string, HTMLButtonElement>();
+  for (const s of strips) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "lane"; b.dataset.lane = s.id; b.style.setProperty("--tone", s.tone);
+    b.innerHTML = `<b></b><span></span>`; b.querySelector("b")!.textContent = s.word;
+    b.addEventListener("click", () => pick(open === s.id ? null : s.id));
+    b.addEventListener("pointerenter", () => { hover = s.id; draw(); });
+    b.addEventListener("pointerleave", () => { hover = null; draw(); });
+    tags?.append(b); tagOf.set(s.id, b);
+  }
+  const inQuad = (q: [number, number][], x: number, y: number) => {
+    let inside = false;
+    for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+      const [xi, yi] = q[i]!, [xj, yj] = q[j]!;
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const laneAt = (e: PointerEvent | MouseEvent) => {
+    const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    return strips.find((s) => s.quad.length && inQuad(s.quad, x, y))?.id ?? null;
+  };
+  function pick(id: string | null) {
+    if (id === open) return;
+    open = id;
+    for (const [k, b] of tagOf) b.setAttribute("aria-expanded", String(k === open));
+    onLane(open); draw();
+  }
+  canvas.addEventListener("pointermove", (e) => { const h = laneAt(e); if (h !== hover) { hover = h; canvas.style.cursor = h ? "pointer" : ""; draw(); } });
+  canvas.addEventListener("pointerleave", () => { if (hover) { hover = null; draw(); } });
+  canvas.addEventListener("click", (e) => { const h = laneAt(e); pick(h === open ? null : h); });
+  /** A word painted flat on the grass between x0 and x1, its foot at z (near the back) and its head toward the stage,
+   *  read left to right from the back (from x1 on the left of the screen to x0). */
+  function floorWord(text: string, x0: number, x1: number, z: number, deep: number, fill: string, dpr: number) {
+    const o = project({ x: x1, y: 0, z }), u = project({ x: x0, y: 0, z }), v = project({ x: x1, y: 0, z: z - deep });
+    g.save(); g.font = '600 100px "Barlow Condensed", sans-serif';
+    const tw = g.measureText(text).width, a = (u[0] - o[0]) / tw, b = (u[1] - o[1]) / tw, c = -(v[0] - o[0]) / 100, d = -(v[1] - o[1]) / 100;
+    g.setTransform(dpr * a, dpr * b, dpr * c, dpr * d, dpr * o[0], dpr * o[1]);
+    g.fillStyle = fill; g.textBaseline = "bottom"; g.fillText(text, 0, 0); g.restore();
+  }
   const project = (p: V3): [number, number] => {
     const dx = p.x - CAM.x, dy = p.y - CAM.y, dz = p.z - CAM.z, depth = Math.max(0.5, dy * F.y + dz * F.z);
     return [cx - (f * dx) / depth, cy - (f * (dy * U.y + dz * U.z)) / depth];
@@ -38,7 +92,12 @@ export function mountHero(root: HTMLElement) {
   function draw() {
     const dpr = Math.min(2, devicePixelRatio || 1), r = canvas.getBoundingClientRect();
     if (Math.round(r.width * dpr) !== canvas.width || Math.round(r.height * dpr) !== canvas.height) { canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr); }
-    W = r.width; H = r.height; f = Math.min(W * 1.05, H); cx = W >= 900 ? Math.max(W / 2 - 260, (W - 460) / 2) : W / 2; cy = H * 0.58; // on a desk the field sits left of the panel (door.html)
+    W = r.width; H = r.height; f = Math.min(W * 1.3, H); cy = H * 0.5; // on a tall phone the field comes closer, so its lanes fill the width
+    // the field fills the screen; on a desk it slides left to make room for an open lane's panel
+    const cxGoal = open && W >= 900 ? (W - PANEL_W) / 2 : W / 2;
+    cxNow = Number.isNaN(cxNow) || matchMedia("(prefers-reduced-motion: reduce)").matches ? cxGoal : cxNow + (cxGoal - cxNow) * 0.2;
+    if (Math.abs(cxGoal - cxNow) < 0.5) cxNow = cxGoal; else requestAnimationFrame(() => draw());
+    cx = cxNow;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     const horizon = cy - f * Math.tan(CAM.pitch);
     // the sky at dusk, the sun gone down behind the stage
@@ -63,6 +122,27 @@ export function mountHero(root: HTMLElement) {
       const [rr, gg, bb] = heatRgb(ref - db[iz * nx + ix]!);
       g.fillStyle = g.strokeStyle = `rgba(${rr},${gg},${bb},.62)`; g.lineWidth = 0.8;
       g.beginPath(); g.moveTo(c[0]![0], c[0]![1]); for (const p of c.slice(1)) g.lineTo(p[0], p[1]); g.closePath(); g.fill(); g.stroke();
+    }
+    // the lanes over the map: the others go dark when one is open, the open one glows and stands in a beam from the sky
+    for (const s of strips) {
+      s.quad = [[s.x0, FIELD.z0], [s.x1, FIELD.z0], [s.x1, FIELD.z1], [s.x0, FIELD.z1]].map(([x, z]) => project({ x: x!, y: 0, z: z! }));
+      const lit = s.id === open, hot = s.id === hover, path = () => { g.beginPath(); s.quad.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
+      if (open && !lit) { path(); g.fillStyle = "rgba(9,10,14,.55)"; g.fill(); }
+      if (lit || hot) { path(); g.fillStyle = s.tone + (lit ? "33" : "1a"); g.fill(); }
+      path(); g.strokeStyle = s.tone + (lit ? "ff" : hot ? "cc" : "66"); g.lineWidth = lit ? 2.5 : 1.5; g.stroke();
+      floorWord(s.word.toUpperCase(), s.x0 + laneW * 0.16, s.x1 - laneW * 0.16, FIELD.z1 - 6, laneW * 0.42, lit ? "rgba(244,241,234,.92)" : s.tone + (hot ? "dd" : "88"), dpr);
+      if (lit) { // the beam: from the top of the sky down onto the lane's head, by the stage
+        const [nl, nr] = [s.quad[0]!, s.quad[1]!], top = (nl[0] + nr[0]) / 2, spread = (nr[0] - nl[0]) * 0.35;
+        const beam = g.createLinearGradient(0, 0, 0, nl[1]);
+        beam.addColorStop(0, "rgba(255,240,220,0)"); beam.addColorStop(1, "rgba(255,240,220,.22)");
+        g.fillStyle = beam; g.beginPath(); g.moveTo(top - spread, 0); g.lineTo(top + spread, 0); g.lineTo(nr[0], nr[1]); g.lineTo(nl[0], nl[1]); g.closePath(); g.fill();
+      }
+      const tag = tagOf.get(s.id); // the lane's button stands mid-field, where the word points
+      if (tag) { // kept on the screen where an outer lane runs off the side of a phone
+        const [px, ty] = project({ x: (s.x0 + s.x1) / 2, y: 0, z: FIELD.z0 + (FIELD.z1 - FIELD.z0) * 0.55 }), half = tag.offsetWidth / 2 + 8;
+        const tx = clamp(px, half, Math.max(half, W - half));
+        tag.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) translate(-50%, -50%)`;
+      }
     }
     if (air.bank) { // the crest, lit from the west
       g.strokeStyle = "rgba(255,220,170,.55)"; g.lineWidth = 1.5; g.beginPath();
@@ -165,7 +245,9 @@ export function mountHero(root: HTMLElement) {
 
   return {
     /** The hero as drawn: the air, the map in two numbers (dB under the middle, near half and far half), the back seat, whether it plays, and how many times it was drawn. */
-    state: () => ({ air: { ...air }, map: mapSummary(map), back: { ...back }, playing: !!timer, draws, size: [Math.round(W), Math.round(H)] }),
+    state: () => ({ air: { ...air }, map: mapSummary(map), back: { ...back }, playing: !!timer, draws, size: [Math.round(W), Math.round(H)], lane: open }),
+    /** Opens a lane (or closes it with null), as a click on its strip of grass or its button. */
+    lane: pick,
     /** Changes the air or the bank, as the sliders and the mountain button do. */
     set,
   };

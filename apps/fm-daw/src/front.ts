@@ -1,11 +1,12 @@
-// Qollab Studio's front door (/door.html), a landing page (#6019): the live field at dusk (src/front-hero.ts) with Start
-// learning and Start building, then LEARN, BUILD and PLAY, each a row of cards opening on its sector's first step, the
+// Qollab Studio's front door (/door.html), a landing page (#6019): the live field at dusk (src/front-hero.ts) fills the
+// screen, with Start learning and Start building over the sky and LEARN, BUILD and PLAY as lanes down the grass: open one
+// and its cards, each opening on its sector's first step, stand in the panel beside it. Under the field, the
 // pedal-to-show chain, what works today, and a word for crews and for classes. `qdoor` is the harness for probes and the
 // journey tests (test/front-door.test.ts).
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import { mountHero } from "./front-hero.ts";
-import { CHAIN, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId } from "./paths.ts";
+import { CHAIN, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type SectorId } from "./paths.ts";
 
 const list = document.getElementById("paths")!;
 for (const s of SECTORS) {
@@ -31,7 +32,23 @@ for (const s of SECTORS) {
   list.append(section);
 }
 
-const hero = mountHero(document.getElementById("hero")!);
+// the field is the menu: each word is a lane down the grass, and opening one shows its cards in the panel beside it
+const TONES: Record<SectorId, string> = { learn: "#2dd4bf", build: "#fb923c", play: "#818cf8" };
+const panel = document.getElementById("lane-panel")!;
+const showLane = (id: string | null) => {
+  panel.hidden = !id;
+  document.body.classList.toggle("lane-open", !!id);
+  for (const s of list.querySelectorAll<HTMLElement>(".sector")) s.hidden = s.dataset.sector !== id;
+  if (id) panel.querySelector<HTMLAnchorElement>(`.sector[data-sector="${id}"] a.path`)?.focus({ preventScroll: true });
+};
+const hero = mountHero(document.getElementById("hero")!, SECTORS.map((s) => ({ id: s.id, word: s.word, tone: TONES[s.id] })), showLane);
+for (const b of document.querySelectorAll<HTMLButtonElement>(".lane")) {
+  const n = PATHS.filter((p) => p.sector === b.dataset.lane).length;
+  b.querySelector("span")!.textContent = n === 1 ? "1 way in" : `${n} ways in`;
+}
+panel.querySelector(".close")!.addEventListener("click", () => hero.lane(null));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !panel.hidden) hero.lane(null); });
+showLane(null);
 
 const chain = document.getElementById("chain")!;
 CHAIN.forEach((c, i) => {
@@ -66,10 +83,15 @@ const harness = {
     paths: [...list.querySelectorAll<HTMLAnchorElement>("a.path")].map((a) => {
       const b = a.querySelector("b")!, line = parseFloat(getComputedStyle(b).lineHeight);
       const sector = a.closest<HTMLElement>(".sector")?.dataset.sector;
-      return { id: a.dataset.path, sector, name: b.textContent, href: a.getAttribute("href"), oneLine: b.getBoundingClientRect().height <= line * 1.2 && b.scrollWidth <= b.clientWidth };
+      const shown = a.getClientRects().length > 0;
+      return { id: a.dataset.path, sector, name: b.textContent, href: a.getAttribute("href"), shown, oneLine: shown && b.getBoundingClientRect().height <= line * 1.2 && b.scrollWidth <= b.clientWidth };
     }),
+    /** The lane that is open on the field, or null. */
+    lane: hero.state().lane,
     overflowX: document.documentElement.scrollWidth > innerWidth,
   }),
+  /** Opens a lane on the field (learn, build or play), or closes it with null, as a click on its strip of grass. */
+  lane: (id: SectorId | null) => hero.lane(id),
   /** Walks through a path's door, as a click on its card. */
   open: (id: PathId) => list.querySelector<HTMLAnchorElement>(`a[data-path="${id}"]`)?.click(),
   /** The live field: `hero.state()` as drawn, `hero.set({ tempC, humidity, bank })` as the sliders and the mountain button. */

@@ -10,9 +10,23 @@
   h1 { font: 600 40px/1 "Barlow Condensed", sans-serif; letter-spacing: .02em; margin: 0 0 6px; }
   h1 span { color: #ff6b4a; }
   .lede { margin: 0 0 22px; color: #b9b4aa; max-width: 60ch; }
-  /* the hero: the field at dusk, its words over the sky, its controls under it on a phone and over the grass on a desk */
-  #hero { position: relative; display: grid; background: #151832; }
-  #hero canvas { display: block; width: 100%; height: clamp(300px, 58vh, 560px); }
+  /* the hero: the field at dusk fills the first screen, its words over the sky, LEARN, BUILD and PLAY as lanes down the
+     grass, the night's controls docked along the bottom, and an open lane's cards in a panel at the side */
+  #hero { position: relative; height: 100vh; height: 100svh; min-height: 520px; overflow: hidden; background: #151832; }
+  #hero canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+  .lanes { position: absolute; inset: 0; pointer-events: none; }
+  .lane { --tone: #2dd4bf; position: absolute; left: 0; top: 0; pointer-events: auto; display: grid; justify-items: center; gap: 2px; padding: 10px 18px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--tone) 70%, transparent); background: #101216cc; backdrop-filter: blur(4px); color: #f4f1ea; cursor: pointer; white-space: nowrap; transition: background .15s, box-shadow .15s; }
+  .lane b { font: 600 24px/1 "Barlow Condensed", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--tone); }
+  .lane span { font-size: 12px; color: #b9b4aa; }
+  .lane:hover, .lane:focus-visible, .lane[aria-expanded="true"] { background: color-mix(in srgb, var(--tone) 28%, #101216); box-shadow: 0 0 0 2px var(--tone), 0 0 28px color-mix(in srgb, var(--tone) 45%, transparent); outline: none; }
+  .lane[aria-expanded="true"] b { color: #f4f1ea; }
+  .lane-panel { position: absolute; z-index: 2; top: 16px; right: 16px; bottom: 16px; width: 380px; box-sizing: border-box; overflow: auto; padding: 18px; border-radius: 16px; background: #15171bf2; border: 1px solid #2a2d33; backdrop-filter: blur(8px); box-shadow: 0 20px 60px #0008; }
+  .lane-panel[hidden] { display: none; }
+  .lane-panel .close { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 10px; border: 1px solid #2a2d33; background: #1a1c21; color: #d8d3c8; cursor: pointer; }
+  .lane-panel .close:hover, .lane-panel .close:focus-visible { border-color: #ff6b4a; outline: none; }
+  .lane-panel .sector h2 { font-size: 26px; letter-spacing: .16em; margin-right: 40px; }
+  .lane-panel .sector .line { margin: 0 0 6px; }
+  .lane-panel .cards { grid-template-columns: 1fr !important; }
   #hero .words { position: absolute; inset: 0 0 auto; box-sizing: border-box; max-width: 1080px; margin: 0 auto; padding: max(24px, env(safe-area-inset-top)) 16px 0; pointer-events: none; }
   #hero .words > * { pointer-events: auto; }
   #hero .lede { color: #e4dccd; text-shadow: 0 1px 8px #151832; margin-bottom: 14px; }
@@ -22,7 +36,7 @@
   .btn.build { background: #c2410c; border-color: #c2410c; }
   .btn:hover, .btn:focus-visible { filter: brightness(1.12); outline: none; }
   .btn[aria-pressed="true"] { background: #f4f1ea; color: #15171b; }
-  .panel { box-sizing: border-box; display: grid; gap: 10px; padding: 14px 16px; background: #15171bee; border-top: 1px solid #2a2d33; }
+  .panel { position: absolute; z-index: 1; left: 12px; right: 12px; bottom: 12px; box-sizing: border-box; display: grid; gap: 8px; padding: 12px 14px; background: #15171bdd; border: 1px solid #2a2d33; border-radius: 14px; backdrop-filter: blur(6px); }
   .panel .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
   .panel label { display: flex; align-items: center; gap: 8px; color: #d8d3c8; }
   .panel label svg { flex: none; color: #ff9b7a; }
@@ -32,12 +46,21 @@
   .ramp { display: flex; align-items: center; gap: 8px; color: #8b877f; font-size: 12px; }
   .ramp i { width: 120px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgb(255,236,170), rgb(255,140,80), rgb(230,90,70), rgb(40,150,160), rgb(18,30,70)); }
   @media (min-width: 900px) {
-    .panel { position: absolute; right: max(16px, calc((100% - 1080px) / 2 + 16px)); bottom: 16px; width: 420px; border: 1px solid #2a2d33; border-radius: 14px; backdrop-filter: blur(6px); }
+    /* the night's controls: one slim dock along the bottom, out of the field's way, beside the open lane's panel */
+    .panel { left: 50%; right: auto; bottom: 16px; width: min(1040px, calc(100% - 32px)); transform: translateX(-50%); grid-template-columns: auto 1fr; align-items: center; gap: 6px 22px; transition: width .2s, left .2s; }
+    .panel .back { grid-column: 1 / -1; }
+    body.lane-open .panel { left: 16px; transform: none; width: calc(100% - 412px - 32px); }
+  }
+  @media (max-width: 899px) {
+    .lane { padding: 8px 12px; } .lane b { font-size: 19px; } .lane span { display: none; }
+    .lane-panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 68%; }
+    .panel .back { display: none; }
   }
   section.block { margin-top: 36px; display: grid; gap: 12px; }
   section.block > h2 { margin: 0; font: 600 15px/1 "Barlow Condensed", sans-serif; letter-spacing: .18em; text-transform: uppercase; color: #d8d3c8; }
   #paths { display: grid; gap: 28px; }
   .sector { --tone: #0f766e; display: grid; gap: 10px; }
+  .sector[hidden] { display: none; }
   .sector[data-sector="build"] { --tone: #c2410c; }
   .sector[data-sector="play"] { --tone: #4f46e5; }
   .sector h2 { margin: 0; font: 600 15px/1 "Barlow Condensed", sans-serif; letter-spacing: .18em; text-transform: uppercase; color: color-mix(in srgb, var(--tone) 55%, #f4f1ea); }
@@ -93,11 +116,13 @@
     </div>
     <p class="back" data-out="back"></p>
   </div>
+  <div class="lanes" role="group" aria-label="Learn, build and play: open a lane to see what is in it"></div>
+  <aside class="lane-panel" id="lane-panel" hidden>
+    <button class="close" type="button" aria-label="Close" title="Close (Esc)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    <nav id="paths" aria-label="Learn, build and play"></nav>
+  </aside>
 </header>
 <main>
-  <section class="block"><h2>Pick what you came to do</h2>
-    <nav id="paths" aria-label="Learn, build and play"></nav>
-  </section>
   <section class="block"><h2>From a pedal to the show</h2>
     <ol id="chain"></ol>
   </section>
