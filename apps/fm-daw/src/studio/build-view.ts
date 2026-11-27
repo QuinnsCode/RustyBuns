@@ -144,7 +144,7 @@ export class BuildView {
     const sides: [Side, number, number, number, number][] = [["front", 0, d / 2 + T / 2, w + 2 * T, T], ["back", 0, -d / 2 - T / 2, w + 2 * T, T], ["left", -w / 2 - T / 2, 0, T, d], ["right", w / 2 + T / 2, 0, T, d]];
     // the stacks you placed, indoors or out (pa-room.ts rigStacks)
     const rig = roomRig(room);
-    for (const [i, st] of rigStacks(room).entries()) add(new THREE.Group().add(paStack(st.at, st.yaw, undefined, rig.stack, st.splay, st.pins)), `stack:${i}`, { stack: i });
+    for (const [i, st] of rigStacks(room).entries()) add(new THREE.Group().add(paStack(st, undefined, rig.stack)), `stack:${i}`, { stack: i });
     // the coverage map laid on the floor, just over the grid
     this.heatTex?.dispose(); this.heatTex = null;
     if (this.heatMap) {

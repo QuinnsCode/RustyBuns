@@ -2,7 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
-import { banks, heightMap, highest, type Bank, type GeneratorId, type Ground, type HeightMap, type SystemId, type Terrain } from "@rustybuns/gear";
+import { banks, heightMap, highest, type Bank, type GeneratorId, type Ground, type HeightMap, type SystemId, type Terrain, type TopsOn } from "@rustybuns/gear";
 import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
@@ -89,7 +89,7 @@ export interface Venue { src: string; scale: number; at: [number, number, number
  */
 export type { SystemId };
 /** The PA part of a rig, indoors or out: its stacks, which rig they are, and whether they play mono. */
-export type RoomPa = Pick<Outdoor, "stacks" | "rig" | "mono">;
+export type RoomPa = Pick<Outdoor, "stacks" | "rig" | "mono" | "tops">;
 export interface Outdoor {
   /** Each stack is one column of the rig's boxes. Columns closer than STACK_CLUSTER_M stand as one block (a side of the
    *  floor); `splay` turns that column's top boxes a little off its yaw, so a side's two tops fan out across the floor; `pins`
@@ -101,6 +101,8 @@ export interface Outdoor {
   monitors?: { at: [number, number]; yaw: number }[];
   /** Which rig the stacks are (@rustybuns/gear systems.ts): the horn stack when left out. `?rig=` on the page tries another. */
   rig?: SystemId;
+  /** What the rig's tops sit on (the subs when left out): the sesh's `tops`, the owner's pick in Settings. `?tops=` on the page. */
+  tops?: TopsOn;
   /** The stacks all play one mono sum of the set, as one point source, instead of each the side of the stereo set it stands on. */
   mono?: boolean;
   truss?: { at: [number, number]; yaw: number; w: number; h: number };
