@@ -26,9 +26,10 @@ import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
 import { arrivals, paBoxes, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
-import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, linkEvent, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
 import { partySync } from "./party-sync.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
+import { events, type Event } from "@rustybuns/util/events";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
 import { SKIN } from "../guest-list.ts";
 import { mountLessonCard } from "./lesson-card.ts";
@@ -47,7 +48,8 @@ let room: StudioDef = openScene(parties)?.studio ?? yours() ?? structuredClone(R
 // Signed in with eqosys (on the front door), your parties are on your account (#5932): `owner` names you in join links
 // once the account answers; until then, and signed out, they are this browser's alone.
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
-const sync = partySync(location.origin, () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; });
+const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
+const sync = partySync(location.origin, token);
 let owner: string | null = null;
 let picked: string | undefined = room.spots[0]?.id;
 let why = "";
@@ -779,6 +781,22 @@ function venueRows(): string {
       <div class="row"><button type="button" id="venue-set">${v ? "Update venue" : "Use venue"}</button>${v ? `<button type="button" id="venue-drop">No venue</button>` : ""}</div>
       <p class="hint">${esc(note)}</p>`;
 }
+/** The owner's Qollab events (on their eqosys account), for the party's door: null until read, or signed out. */
+let myEvents: Event[] | null = null;
+const ACCESS_WORDS: Record<Event["who"]["access"], string> = { anyone: "anyone", rsvp: "those who RSVP", invite: "only those invited" };
+/** Who comes into the party's room: anyone with the link, or whom one of the owner's events lets in (#6428). */
+function doorRows(event: string | undefined): string {
+  const tied = myEvents?.find((e) => e.id === event);
+  const options = (myEvents ?? []).map((e) => `<option value="${esc(e.id)}"${e.id === event ? " selected" : ""}>${esc(e.name)} (${esc(ACCESS_WORDS[e.who.access])})</option>`).join("");
+  const kept = event && !tied ? `<option value="${esc(event)}" selected>The event it was tied to</option>` : "";
+  const note = !myEvents ? "Sign in with eqosys to tie this party to one of your events: its room then lets in whom the event does."
+    : tied ? `The room lets in ${ACCESS_WORDS[tied.who.access]}, as the event says. Its password, if it has one, still holds.`
+    : event ? "That event isn't on your account any more: tie the party to another, or to none."
+    : myEvents.length ? "Tie it to one of your events and its room lets in whom the event does." : "You have no events on eqosys yet. Make one there, then tie it here.";
+  return `<h2>Who comes in</h2>
+      <div class="row"><label>Event<select id="party-event"${myEvents ? "" : " disabled"}><option value="">None: anyone with the link</option>${kept}${options}</select></label></div>
+      <p class="hint">${esc(note)}</p>`;
+}
 /** The live party's join link, for anyone on any device: its own room, carrying the scene on stage; null signed out. */
 function joinLink(): string | null {
   const p = parties.parties.find((q) => q.id === parties.live), on = liveStudio(parties);
@@ -797,6 +815,8 @@ function eventLink(walk = false): string | null {
   const u = new URL(joinLink() ?? builtLink(location.origin, on, `event-${p.id}`.slice(0, 64)));
   u.searchParams.set("name", p.name);
   if (walk) u.searchParams.set("walk", "1");
+  // the party's Qollab event: the room's door lets in whom the event does (world.ts eventDoor, #6428)
+  if (p.event) u.searchParams.set("event", p.event);
   return u.href;
 }
 /** Open the plan as The Event: live as it stands, in a new tab (a walk-through, or the room itself). */
@@ -830,6 +850,7 @@ function renderParty() {
       <ul class="scenes">${p.scenes.map((s) => `<li><button type="button" data-scene="${s.id}" aria-pressed="${s.id === p.scene}">${esc(s.performer)}</button><span class="hint">${s.studio.spots.length} seat${s.studio.spots.length === 1 ? "" : "s"}</span>${p.scenes.length > 1 ? x(`data-scene-drop="${s.id}"`, `Take ${s.performer}'s scene out`) : ""}</li>`).join("")}</ul>
       <div class="row"><label>Next performer<input id="scene-name" maxlength="40"></label><button type="button" id="scene-add">Add scene</button></div>
       ${p.scenes.length > 1 ? `<div class="row"><button type="button" id="scene-all">Everyone at once</button></div>` : ""}
+      ${doorRows(p.event)}
       ${venueRows()}
       <h2>Versions</h2>
       <div class="row"><label>What changed<input id="version-note" maxlength="80"></label><button type="button" id="version-save">Save version</button></div>
@@ -857,6 +878,7 @@ function renderParty() {
       : { ok: false, store: parties, why: "That isn't a ShareSplat link: paste the link it gave you when you put the capture online" });
   });
   document.getElementById("venue-drop")?.addEventListener("click", () => partyDo(setVenue(parties, null)));
+  document.getElementById("party-event")?.addEventListener("change", () => partyDo(linkEvent(parties, val("party-event") || null)));
 }
 $("party").addEventListener("click", (e) => {
   const t = e.target instanceof Element ? e.target.closest<HTMLElement>("button") : null, d = t?.dataset;
@@ -972,9 +994,11 @@ render();
 // the front door's The Event (#6440) opens on the Party panel, where Open as event takes the plan live
 if (location.hash === "#party") $("party").scrollIntoView({ block: "start" });
 // your account's parties: what it keeps opens here (another device's work); an account with none takes this browser's
-void eq.ready.then(() => sync.pull()).then((got) => {
+void eq.ready.then(() => sync.pull()).then(async (got) => {
   if (!got) return;
   owner = got.owner;
+  const mine = await events({ url: () => eq.eqosysUrl(), token }).list();
+  if (mine.ok) myEvents = mine.value;
   if (got.store.parties.length) partyDo({ ok: true, store: got.store });
   else { sync.push(parties); render(); }
 });

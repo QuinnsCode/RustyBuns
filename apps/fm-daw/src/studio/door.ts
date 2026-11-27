@@ -7,8 +7,20 @@ import { ROOMS, ROOM_LIST, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
 import type { StudioDef } from "./room.ts";
 import type { HubFriend, HubNote } from "@rustybuns/util/eqosys";
+import type { Full } from "../project.ts";
 
 /** A studio as the pickers show it: its id, name, a line on what it is, and the room itself (for its shot). */
+/** Why an event's room turned this page away (world.ts eventDoor, #6428), in plain words for the entry panel; null for
+ *  any other reason (the password has its own field). Signed out, the way in is to sign in so the event knows who you are. */
+export function turnedAway(full: Full | undefined, signedIn: boolean): string | null {
+  const who = signedIn ? "" : " Sign in with eqosys so it knows who you are.";
+  if (full === "rsvp") return `This event lets in people who RSVPed, and you're not on its list yet.${who}`;
+  if (full === "invite") return `This event is invite only, and you're not on its list.${signedIn ? " Ask whoever is hosting it." : who}`;
+  if (full === "blocked") return "You can't come in to this room.";
+  if (full === "unchecked") return "This room couldn't check the event's guest list just now. Try again in a minute.";
+  return null;
+}
+
 export interface Studio { id: string; name: string; about: string; def: StudioDef }
 /** The studio the pickers show first (the owner's pick): the desert gathering. */
 export const FIRST_STUDIO = "desert-gathering";

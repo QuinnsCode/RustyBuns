@@ -2,14 +2,15 @@
 // token from any Q app (or eqosys's own pages) opens it. Never live, so plain D1 and HTTP: GET /q/events lists yours, POST makes
 // one, and GET, PUT and DELETE /q/events/<id> read, change and delete it. Its owner and its crew (roles on its guest list with
 // `edit`) change it; only the owner deletes it. The public page, RSVPs, tickets and the door come later, on the same row.
-import { draftOf, EVENT_ROLES, EventDraft, EventEdit, EventList, EventMade, EVENTS_OWNED, NewEvent, type Event } from "@rustybuns/util/events";
+import { draftOf, EVENT_ROLES, EventDoor, EventDraft, EventEdit, EventList, EventMade, EVENTS_OWNED, NewEvent, type Event } from "@rustybuns/util/events";
 import { check } from "@rustybuns/util/guard";
 import { can, guestList, GuestList, isIn } from "@rustybuns/util/guests";
 import { bearerOf, cors, tokenOf } from "../door.ts";
 import { json, type Env } from "../env.ts";
 
 /** The paths this file answers. */
-export const isEvents = (pathname: string) => /^\/q\/events(?:\/[\w-]{1,40})?$/.test(pathname);
+export const isEvents = (pathname: string) => /^\/q\/events(?:\/[\w-]{1,40}(?:\/door)?)?$/.test(pathname);
+const DOOR = /^\/q\/events\/([\w-]{1,40})\/door$/;
 
 type Row = { id: string; body: string; guests: string; at: number; edited: number };
 const SELECT = "SELECT id, body, guests, at, edited FROM events";
@@ -20,10 +21,25 @@ function toEvent(r: Row): Event | null {
   return draft && guests ? { id: r.id, ...draft, guests, at: r.at, edited: r.edited } : null;
 }
 
+/** An event's door (#6428): who it lets in and whether that's the caller, for a guest who isn't on its list and so can't
+ *  read it. A token is optional: at an `anyone` event a signed-out guest is in; anywhere else only someone on the list is. */
+async function eventDoor(req: Request, conf: Env, id: string, head: Record<string, string>): Promise<Response> {
+  if (req.method !== "GET") return json({ error: "GET an event's door" }, 405, head);
+  const row = await conf.DB.prepare(`${SELECT} WHERE id = ?`).bind(id).first<Row>();
+  const e = row && toEvent(row);
+  if (!e) return json({ error: "there's no event with that id" }, 404, head);
+  const bearer = bearerOf(req), t = bearer ? await tokenOf(req, conf, bearer, { home: true }) : null;
+  const me = t?.who.id;
+  const ok = e.who.access === "anyone" ? !(me && e.guests.blocked[me]) : !!me && isIn(e.guests, me);
+  return json({ access: e.who.access, in: ok } satisfies EventDoor, 200, { ...head, "cache-control": "private, no-store" });
+}
+
 export async function events(req: Request, conf: Env): Promise<Response> {
   const { pathname } = new URL(req.url), now = Date.now();
   const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST, PUT, DELETE" };
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+  const door = DOOR.exec(pathname)?.[1];
+  if (door) return eventDoor(req, conf, door, head);
   const t = await tokenOf(req, conf, bearerOf(req), { home: true });
   if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
   const me = t.who.id;

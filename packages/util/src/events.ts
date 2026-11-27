@@ -60,6 +60,11 @@ export const EventList = obj({ events: arr(Event, EVENTS_OWNED) });
 export type EventList = Of<typeof EventList>;
 export const EventMade = obj({ event: Event });
 export type EventMade = Of<typeof EventMade>;
+/** GET /q/events/<id>/door, with the caller's own token or none: who the event lets in, and whether that's the caller.
+ *  Nothing else about the event, so an event's room (Qollab Studio's World) asks it for each guest at its door (#6428).
+ *  `in` is true for anyone at an `anyone` event who isn't blocked on its list, else only for someone on the list. */
+export const EventDoor = obj({ access: oneOf(ACCESS), in: bool() });
+export type EventDoor = Of<typeof EventDoor>;
 
 /** An event's crew, as roles on its guest list. The same person can be the producer, the DJ and the promoter: the owner is all
  *  of them, and hands the rest out. `edit` lets someone change the event; the list's own perms run the list. */

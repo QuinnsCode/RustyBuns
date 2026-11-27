@@ -140,6 +140,9 @@ export function connect(opts: {
   // a guest list invite (?invite= on the page): the World puts this person on the list once their hello names them
   const invite = new URLSearchParams(location.search).get("invite");
   if (invite) url.searchParams.set("invite", invite.slice(0, 40));
+  // an event's room (the Event Planner's link, studio/page.ts eventLink): the maker's page names the event, whose door it keeps
+  const event = new URLSearchParams(location.search).get("event");
+  if (event) url.searchParams.set("event", event.slice(0, 40));
   // the World answers each guest act in the order it came
   const asked: ((r: Acted) => void)[] = [];
   let peers = 0;

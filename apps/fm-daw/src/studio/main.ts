@@ -21,7 +21,7 @@ import { FOLLOW_MS, invitedWords, LiveParty, partyFollow, partyFrom } from "./pa
 import { getJson } from "@rustybuns/util/http";
 import { invitedBy } from "@rustybuns/util/lobby";
 import { FIRST_STUDIO } from "./door.ts";
-import { doorWords, follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
+import { doorWords, turnedAway, follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
 import { sideways } from "./picker.ts";
 import { mountSettings } from "./settings.ts";
 import { apply, loopBeats, roomGain, TOPS, type Live, type Op, type Project, type Tops } from "../project.ts";
@@ -1410,6 +1410,11 @@ function door() {
   $("code-gate").hidden = !gate;
   if (gate && here) $("code-why").textContent = status.full === "tries" ? "Too many wrong passwords from here. Wait a minute, then try again."
     : savedCode(here.room) ? "That isn't the password. Ask whoever made the room." : "This room has a password.";
+  // an event's room that turned this page away (#6428): the plain reason, and Enter doesn't walk in alone
+  const away = here && status.state === "full" ? turnedAway(status.full, signedIn()) : null;
+  $("door-why").hidden = !away;
+  $("door-why").textContent = away ?? "";
+  $("play").toggleAttribute("disabled", !!away);
   roomStudios();
   $("me-name").textContent = name;
   $("me-from").textContent = signedIn() ? (lookFrom === "eqosys" ? "Signed in with eqosys, wearing your eqosys character" : "Signed in with eqosys") : "A guest in this browser";

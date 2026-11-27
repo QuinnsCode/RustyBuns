@@ -177,6 +177,9 @@
   #settings .set-shot svg { height: 110px; }
   #settings h3, #settings .set-sample .h { font-size: 28px; }
 }
+/* why an event's room turned this page away (door.ts turnedAway) */
+#menu .entry-why { margin: 4px 0 0; color: #f0c674; font-size: 15px; max-width: 46ch; }
+#menu .entry-why[hidden] { display: none; }
 /* the room's password, asked on the entry panel only when the room has one (main.ts gated), and set in Settings */
 #menu .entry-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 4px 0 0; }
 #menu .entry-code[hidden] { display: none; }
