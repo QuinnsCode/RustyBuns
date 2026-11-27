@@ -154,8 +154,7 @@ summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 .l-tell h3 { margin: 0; font: 400 24px var(--l-display); color: var(--c); text-shadow: 0 0 12px color-mix(in srgb, var(--c) 60%, transparent); }
 .l-tell p { margin: 0; max-width: 52ch; }
 .l-show { min-width: 0; }
-.l-keycaps, .l-shelf { display: flex; flex-wrap: wrap; gap: 8px; }
-.l-keycaps span { padding: 9px 12px; border-radius: 10px; font-size: 12px; background: #14122e; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-bottom-width: 3px; box-shadow: 0 0 10px color-mix(in srgb, var(--c) 18%, transparent); }
+.l-shelf { display: flex; flex-wrap: wrap; gap: 8px; }
 .l-door { display: grid; gap: 8px; }
 .l-door div { display: grid; gap: 2px; padding: 10px 14px; border-radius: 12px; background: #0b0a1e; border: 1px solid; }
 .l-door code { font: 400 13px var(--l-body); }
@@ -177,3 +176,12 @@ summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 /* The world: the agent's files in their sealed frame, filling the page. */
 .page:has(> .world) { padding: 0; overflow: hidden; }
 .world { display: block; width: 100%; height: 100vh; border: 0; color-scheme: normal; }
+
+/* Try one: a button per ready-made world, on the landing and in the dock. */
+.tries { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 14px; }
+.dock .tries { justify-content: flex-start; gap: 6px; }
+.dock .tries button[aria-pressed="true"] { border-color: #18181b; background: #18181b; color: #fff; }
+.landing .tries { margin: 0; }
+.landing .tries button { font: 600 14px var(--l-body); color: #fff; padding: 11px 18px; border-radius: 12px; cursor: pointer; background: #14122e; border: 1px solid var(--cyan); box-shadow: 0 0 14px color-mix(in srgb, var(--cyan) 35%, transparent); }
+.landing .tries button:hover { background: #221f4a; }
+.line.ask code { word-break: normal; font-size: 12px; }

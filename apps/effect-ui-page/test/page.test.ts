@@ -113,6 +113,18 @@ test("Full screen puts the dock away and Show dock brings it back", () =>
       .expect(HtmlLocator.role("button", { name: "Full screen" })).toExist();
   })));
 
+test("a person tries a ready-made world from the landing, no AI connected, and Undo takes it back", () =>
+  run(Effect.gen(function* () {
+    const story = yield* Story.make(ProfilePageNoDeps, { ...props, landing: true });
+    story.send(PageMessage.ClickedTry({ name: "Fish tank" }));
+    expect(story.model.landing).toBe(false);
+    expect(story.model.page.files["world.js"]).toContain("fish");
+    story.resolve(ReportPage, PageMessage.CompletedReportPage());
+    story.send(PageMessage.ClickedUndo());
+    expect(story.model.page).toEqual(starter);
+    story.resolve(ReportPage, PageMessage.CompletedReportPage());
+  })));
+
 test("a fresh room lands on the landing: Copy copies its Claude Code line, and the AI's first write brings up the world", () =>
   run(Effect.gen(function* () {
     const fresh = { ...props, landing: true };

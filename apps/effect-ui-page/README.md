@@ -14,7 +14,8 @@ bun run dev              # http://127.0.0.1:4799
 
 Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
 city: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
-pictures of what that line does. When your AI's first write arrives, the landing gives way to your world; "Skip to the
+pictures of what that line does. Three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
+one click with no AI connected, on the landing, in the dock and in Cmd+K, each with one thing to ask your AI next. When your AI's first write arrives, the landing gives way to your world; "Skip to the
 page" does it by hand. A room this browser already kept opens straight on its page. The dock beside it says how to
 reach the room, with a copy button for each:
 

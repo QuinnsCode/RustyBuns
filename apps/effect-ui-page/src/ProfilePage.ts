@@ -12,9 +12,11 @@ import { apply, backdropUrl, Page } from "./page.ts";
 import { linksFor, prompt } from "./relay.ts";
 import { READ, READ_FILE, TOOLS } from "./tools.ts";
 import { worldDoc } from "./world.ts";
+import { READY } from "./worlds.ts";
 
 export const PageMessage = UiSchema.TaggedEnum({
   ReceivedAgentCall: { call: Call },
+  ClickedTry: { name: Schema.String },
   ClickedUndo: {},
   ClickedReset: {},
   ClickedFull: {},
@@ -67,20 +69,27 @@ const Def = Html.component({ name: "ProfilePage", props: Props, model: Model, me
 // A world is up to 400 KB of text, so its history keeps the last 20, not more.
 const HISTORY = 20, LOG = 8;
 
+/** A tool's request, or a person loading a ready-made world (worlds.ts), which no tool does. */
+type Asked = Request | { readonly _tag: "Load"; readonly files: Page["files"] };
+
 /** One request on the Model: the next Model and the error to report, if it couldn't be done. */
-function step(m: Model, r: Request): { model: Model; error: string | null } {
+function step(m: Model, r: Asked): { model: Model; error: string | null } {
   if (r._tag === "Undo") {
     const [page, ...past] = m.past;
     return page ? { model: { ...m, page, past }, error: null } : { model: m, error: "nothing to undo" };
   }
-  const out = apply(m.page, r);
+  const out = r._tag === "Load" ? { page: { ...m.page, files: r.files } } : apply(m.page, r);
   if ("error" in out) return { model: m, error: out.error };
   return { model: { ...m, page: out.page, past: [m.page, ...m.past].slice(0, HISTORY) }, error: null };
 }
 
 /** Who asked for what: the agent's call, or a person's click (call 0, which no tool call waits on). */
-const asked = (m: typeof PageMessage.Type): [number, string, Request] | null => {
+const asked = (m: typeof PageMessage.Type): [number, string, Asked] | null => {
   switch (m._tag) {
+    case "ClickedTry": {
+      const w = READY.find((r) => r.name === m.name);
+      return w ? [0, `${w.name} (you)`, { _tag: "Load", files: w.files }] : null;
+    }
     case "ReceivedAgentCall": return [m.call.call, m.call.tool, m.call.request];
     case "ClickedUndo": return [0, "undo (you)", { _tag: "Undo" }];
     case "ClickedReset": return [0, "start over (you)", { _tag: "Reset" }];
@@ -125,6 +134,11 @@ const how = Def.fragment((h, online: boolean, last: typeof Logged.Type | undefin
   );
 });
 
+/** One button per ready-made world; the one on screen is pressed. */
+const tryView = Def.fragment((h, on: string | undefined) => h.div.class("tries").attrs({ role: "group", "aria-label": "Try a world" }).children(
+  ...READY.map((w) => h.button.key(w.name).attrs({ type: "button", "data-try": w.name, "aria-pressed": w.name === on ? "true" : "false" })
+    .on("click", PageMessage.ClickedTry({ name: w.name })).children(w.name))));
+
 // The landing: one screen over the night city (city.ts). The sign, the four parts it's made of, one line to copy,
 // and four pictures of what that line does, in words a middle schooler reads at a glance.
 const ICONS = {
@@ -145,26 +159,25 @@ const SIGNS: readonly (readonly [string, Icon, string])[] = [
 
 /** How it's built, for whoever scrolls past the landing: one card per piece, its words and a small picture of the idea. */
 type Show =
-  | { kind: "keys"; items: readonly string[] }
   | { kind: "door"; rows: readonly (readonly [boolean, string, string])[] }
   | { kind: "flow"; items: readonly (readonly [string, string])[]; loop?: boolean }
   | { kind: "data"; rows: readonly (readonly [string, string])[] }
   | { kind: "shelf"; items: readonly string[] };
 const PIECES: readonly { c: string; tag: string; title: string; says: string; show: Show; soon?: boolean }[] = [
   { c: "pink", tag: "WebMCP · MCP", title: "The tools",
-    says: "Your AI writes files, reads them back, and looks for errors.",
-    show: { kind: "keys", items: ["Write a file", "Read a file", "Look at the world", "Undo", "Start over", "Set the backdrop"] } },
+    says: "Your AI gets six tools and uses them for you. There is nothing here for you to press.",
+    show: { kind: "data", rows: [["write", "puts a file in your world"], ["read", "reads a file back"], ["look", "checks for errors"], ["undo", "takes a change back"], ["reset", "starts over"], ["backdrop", "puts a page behind it"]] } },
   { c: "green", tag: "Sandbox", title: "The sealed frame",
-    says: "Your AI's code runs in a box: no network, no cookies, nothing else.",
+    says: "The code your AI writes runs in a locked box. It can't use the network, read cookies or reach your computer.",
     show: { kind: "flow", items: [["index.html", "your AI wrote it"], ["Sealed frame", "scripts only"], ["Your world", "this tab"]] } },
   { c: "violet", tag: "Effect · Schema", title: "The bouncer",
-    says: "Every write is checked at the door, and your AI is told why.",
+    says: "The page checks every file before it lands. If one is wrong, your AI is told why and can fix it.",
     show: { kind: "door", rows: [[true, 'path: "world.js"', "let in"], [false, 'path: "../secrets"', "bounced: a file name like world.js"], [false, "text: 3 MB", "bounced: a file is 100,000 characters at most"]] } },
   { c: "cyan", tag: "Effect UI", title: "The screen",
-    says: "One loop around your world: every write, undo and start over.",
+    says: "Each change reloads your world right away, so you watch it being built. Undo takes a change back.",
     show: { kind: "flow", loop: true, items: [["Your files", ""], ["A write arrives", ""], ["Work out what's next", ""], ["Reload the frame", ""]] } },
   { c: "amber", tag: "Cloudflare", title: "Your room",
-    says: "The secret link is the key. Share it only with AIs you trust.",
+    says: "Your AI reaches this tab through a secret link. Anyone with the link can change your world, so keep it private.",
     show: { kind: "flow", items: [["Your AI", ""], ["Your room", "Cloudflare Worker"], ["Your world", "this tab"]] } },
   { c: "amber", tag: "Cloudflare Artifacts · coming", title: "The world of worlds", soon: true,
     says: "Soon: your world is kept in Artifacts and joins everyone else's.",
@@ -173,7 +186,6 @@ const PIECES: readonly { c: string; tag: string; title: string; says: string; sh
 
 const showView = Def.fragment((h, s: Show) => {
   switch (s.kind) {
-    case "keys": return h.div.class("l-show", "l-keycaps").children(...s.items.map((k) => h.span.key(k).children(k)));
     case "door": return h.div.class("l-show", "l-door").children(...s.rows.map(([ok, code, said]) => h.div.key(code).class(ok ? "in" : "out").children(h.code(code), h.b(said))));
     case "flow": return h.div.class("l-show", "l-flow").children(
       ...s.items.flatMap(([name, small], i) => [i > 0 && h.i.key(`a${i}`).attr("aria-hidden", "true"), h.span.key(name).children(name, small && h.small(small))]),
@@ -187,7 +199,7 @@ const deepView = Def.fragment((h) => h.section.class("l-deep").attrs({ id: "how"
   h.header.class("l-deep-head").children(
     h.p.class("l-eyebrow").children("For the curious"),
     h.h2("How it's built"),
-    h.p("You say ", h.q("make me a rainy city"), ". Then:"),
+    h.p("You say ", h.q("make me a rainy city"), ". Here is what happens next, piece by piece."),
   ),
   ...PIECES.map((p) => h.article.class("l-piece", `c-${p.c}`, p.soon === true && "soon").key(p.title).children(
     h.div.class("l-tell").children(h.span.class("l-ptag").children(p.tag), h.h3(p.title), h.p(p.says)),
@@ -213,6 +225,9 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
       h.h1.class("l-word").children("Agent Page"),
       h.p.class("l-line").children("Your AI writes your world. You watch it light up."),
       h.div.class("l-signs").children(...SIGNS.map(([name, i, c]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), name))),
+      h.p.class("l-alt").children("Try one now, no AI needed:"),
+      tryView(h, undefined),
+      h.p.class("l-alt").children("Or connect your AI and ask for your own:"),
       h.div.class("l-bar").children(
         h.code(claude.text),
         h.button.attr("type", "button").class("l-go").on("click", PageMessage.ClickedCopy({ what: claude.what, text: claude.text }))
@@ -259,8 +274,8 @@ export const ProfilePageNoDeps = Def.make({
     if (!a) return $.model;
     const [call, tool, r] = a;
     const { model, error } = step($.model, r);
-    // The agent's first change that lands takes the landing down: the page it is building comes up.
-    const landing = model.landing && !(call > 0 && error === null);
+    // The agent's first change that lands, or a world the person picks, takes the landing down.
+    const landing = model.landing && !((call > 0 || r._tag === "Load") && error === null);
     return $.set({ ...model, landing, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
       .run(ReportPage.make({ call, error, page: model.page }));
   },
@@ -277,6 +292,7 @@ export const ProfilePageNoDeps = Def.make({
     const copy = (what: string, text: string, label?: string) => h.button.attr("type", "button").class("copy")
       .attr("aria-label", label ? undefined : `${copied === what ? "Copied" : "Copy"} the ${what} line`)
       .on("click", PageMessage.ClickedCopy({ what, text })).children(copied === what ? "Copied" : label ?? "Copy");
+    const on = READY.find((w) => Object.entries(w.files).every(([path, text]) => page.files[path] === text));
     return h.div.class("shell", full && "full").children(
       // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
       page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
@@ -289,6 +305,9 @@ export const ProfilePageNoDeps = Def.make({
           .attr("aria-pressed", full ? "true" : "false").on("click", PageMessage.ClickedFull()).children(full ? "Show dock" : "Full screen"),
       ),
       h.aside.class("dock").children(
+        h.h3("Try one"),
+        tryView(h, on?.name),
+        on && h.div.class("line", "ask").children(h.span("Then ask your AI"), h.code(on.ask), copy("ask", on.ask, copied === "ask" ? "Copied" : "Copy the ask")),
         how(h, online, log.find((l) => l.call > 0)),
         h.h3("Connect your agent"),
         h.p.class("status", online && "on").attr("role", "status").children(online ? "Ready: any agent can reach this page now." : "Connecting to the relay…"),
