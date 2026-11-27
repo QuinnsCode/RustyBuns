@@ -1,0 +1,19 @@
+[package]
+name = "steer-embed"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+# One small binary for `bun run steer` (#6200): text in on stdin, one 384-number vector per text out, then it exits.
+# Its own workspace, so the repo's native/ build never pulls ONNX Runtime in.
+[workspace]
+
+[dependencies]
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
+tokenizers = { version = "0.21", default-features = false, features = ["fancy-regex"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
