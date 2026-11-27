@@ -9,8 +9,8 @@ import { hasSwitch, type Switches } from "./audio/hear.ts";
 import { strikeState, striking } from "./strike.ts";
 
 /** `text` the line, `key` the piece it is about (the marker), `to` where that piece goes: the free stand, lit on the
- * floor so the thin tripod reads from the door. */
-export type Next = { text: string; key?: string; to?: string };
+ * floor so the thin tripod reads from the door; `at` a spot on the floor it goes instead (a stand's tape mark). */
+export type Next = { text: string; key?: string; to?: string; at?: { x: number; z: number } };
 
 /** What the crew calls a piece, the same on the Next line, the arrow and its stencil: the case with the cables is the
  * "cable case" (stencil CABLES), any other road case the "backline case" (stencil BACKLINE), the rest by catalog name. */
@@ -44,6 +44,14 @@ const stands = (w: World) => w.items.filter((i) => i.gear === "stand-tripod" && 
 const over = (s: Item, i: Item) => s !== i && i.y > 0.9 && Math.hypot(s.x - i.x, s.z - i.z) < 0.45;
 const nearest = (w: World, list: Item[]) => list.sort((a, b) => Math.hypot(a.x - w.you.x, a.z - w.you.z) - Math.hypot(b.x - w.you.x, b.z - w.you.z))[0];
 const freeStand = (w: World) => nearest(w, stands(w).filter((s) => !w.items.some((i) => isTop(i) && over(s, i))));
+// Where the level tapes a spot for a stand, the stand goes there first: the nearest one not yet on its tape.
+const markOf = (w: World, key: string) => w.level.marks?.find((m) => m.key === key);
+const offMark = (w: World, i: Item) => { const m = markOf(w, i.key); return !!m && Math.hypot(i.x - m.x, i.z - m.z) > 0.5; };
+const strayStand = ({ w }: At) => nearest(w, stands(w).filter((s) => offMark(w, s)));
+/** A stand by its key: stand-r -> stand R. */
+const standName = (key: string) => key.replace(/^stand-(\w+)$/, (_, s: string) => `stand ${s.toUpperCase()}`);
+/** The stand a top goes on: its own (TOP R on stand R) while that one is free, else the nearest free one. */
+const standFor = (w: World, top: Item | null | undefined) => { const free = freeStand(w), own = top && stands(w).find((s) => s.key === top.key.replace(/^top-/, "stand-") && !w.items.some((i) => isTop(i) && over(s, i))); return own || free; };
 const bareTop = ({ w }: At) => freeStand(w) && nearest(w, w.items.filter((i) => isTop(i) && i.key !== w.held?.key && !stands(w).some((s) => over(s, i))));
 
 /** The crew's tape on a piece: its key in caps (top-l -> TOP L). Cases carry a stencil already and stands have no face.
@@ -55,11 +63,17 @@ export function tapeLabel(key: string, id: string): string | undefined {
 
 /** What the edge arrow calls the piece it points at, and how far it is: a speaker by its tape, the stand you carry a
  *  speaker to as that speaker's ("stand for TOP R, 3 m"), anything else by its name. */
+/** The edge arrow's words for a tape mark: the stand in your hands goes there. */
+export function towardMark(w: World, at: { x: number; z: number }): string {
+  const h = heldItem(w), m = Math.max(1, Math.round(Math.hypot(at.x - w.you.x, at.z - w.you.z)));
+  return `tape for ${h ? standName(h.key) : "it"}, ${m} m`;
+}
+
 export function towardName(w: World, c: Cables, key: string): string {
   const i = w.items.find((x) => x.key === key), h = heldItem(w);
   if (!i) return "";
   const held = h && tapeLabel(h.key, h.gear), m = Math.max(1, Math.round(Math.hypot(i.x - w.you.x, i.z - w.you.z)));
-  const name = tapeLabel(i.key, i.gear) ?? (held && i.gear.startsWith("stand") ? `stand for ${held}` : callName(w, c, key));
+  const name = tapeLabel(i.key, i.gear) ?? (held && i.gear.startsWith("stand") ? `stand for ${held}` : markOf(w, key) ? standName(key) : callName(w, c, key));
   return `${name}, ${m} m`;
 }
 
@@ -68,9 +82,10 @@ const grabTop = (s: At) => { const t = bareTop(s)!; return `Grab ${tapeLabel(t.k
 
 /** Each step is done while its job doesn't apply: the first one that does is what to do next. */
 const FIRST_MINUTE: Step<At>[] = [
-  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : isTop(h) && freeStand(w) ? "Carry it to the stand: F sets it on" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? freeStand(w)?.key : undefined; } },
+  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : offMark(w, h) ? "Set it on its tape on the stage: F" : isTop(h) && freeStand(w) ? "Carry it to the stand: F sets it on" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? standFor(w, h)?.key : undefined; } },
   { job: "Plug it in: look at a jack and press F", done: ({ c }) => !inHand(c) },
   { job: (s) => `Bring the ${callName(s.w, s.c, outdoors(s)!.key)} in`, done: (s) => !outdoors(s), key: (s) => outdoors(s)?.key },
+  { job: (s) => `Take ${standName(strayStand(s)!.key)} to its tape on the stage: F`, done: (s) => !strayStand(s), key: (s) => strayStand(s)?.key },
   { job: grabTop, done: (s) => !bareTop(s), key: (s) => bareTop(s)?.key },
   { job: "Take a cable from the cable case: F", done: ({ c }) => !c.caseKey || c.runs.some((r) => "plug" in r.a || "plug" in r.b), key: ({ c }) => c.caseKey ?? undefined },
   { job: (s) => `Switch on the ${callName(s.w, s.c, switchedOff(s)!.key)}: look at it, press P`, done: (s) => !switchedOff(s), key: (s) => switchedOff(s)?.key },
@@ -79,7 +94,11 @@ const FIRST_MINUTE: Step<At>[] = [
 export function nextStep(w: World, c: Cables, on: Switches): Next | null {
   const at = { w, c, on }, n = nextOf(FIRST_MINUTE, at);
   if (!n) return null;
-  const top = bareTop(at), to = (top && n.job === grabTop(at)) || n.key === freeStand(w)?.key ? freeStand(w)?.key : undefined;
+  const h = heldItem(w), stray = n.key ? strayStand(at) : undefined;
+  // A stand off its tape (in your hands, or the one to take) goes to the tape, not onto another stand.
+  const going = h && !n.key && offMark(w, h) ? h : stray?.key === n.key ? stray : undefined, mark = going && markOf(w, going.key);
+  if (mark) return { text: n.job, ...(n.key ? { key: n.key } : {}), at: { x: mark.x, z: mark.z } };
+  const top = bareTop(at), stand = standFor(w, h && isTop(h) ? h : top), to = (top && n.job === grabTop(at)) || (n.key && n.key === stand?.key) ? stand?.key : undefined;
   return { text: n.job, ...(n.key ? { key: n.key } : {}), ...(to ? { to } : {}) };
 }
 /** The centre prompt when your hands are free and you look at nothing. While there's setting up left it says nothing (the

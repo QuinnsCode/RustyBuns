@@ -43,6 +43,8 @@ export interface Level {
   outlets: { key: string; x: number; y: number; z: number; circuit?: string; amps?: 15 | 20 }[];
   /** Where people walk: a cable lying across one with no ramp over it is a trip hazard. */
   walkways?: { name: string; x0: number; x1: number; z0: number; z1: number }[];
+  /** The crew's spike marks: where a piece (a speaker stand, by its key) goes, taped on the floor before load-in. */
+  marks?: readonly { key: string; x: number; z: number }[];
   start: { x: number; z: number; yaw: number };
   items: Item[];
   /** What comes off the truck only when a crew plays: a load too heavy for one (crewLoad puts it in the world). */
