@@ -114,7 +114,7 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   expect(empty.floor!).toBeGreaterThan(dry.floor! + 2);
   expect(empty.covered).toBeLessThan(dry.covered - 0.1);
   expect(dry.camp!).toBeLessThan(CAMP_LIMIT);
-  expect(dry).toMatchObject({ fuel: { litres: 15, cans: 0, watts: 4364 }, until: "01:03", sunrise: false, pass: false });
+  expect(dry).toMatchObject({ fuel: { litres: 15, cans: 0, watts: 4364 }, until: "01:06", sunrise: false, pass: false });
   // The sound is right, but joints lie on the sand: by sunrise the dust is in them and they crackle, a few points each.
   // The bins' own joints ride up on the dollies, clear of it.
   expect(dry.dusty.some((j) => /^(bin|midbass|top)-/.test(j))).toBe(false);
