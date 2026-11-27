@@ -19,7 +19,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./circuit": "./src/circuit/index.ts"
+    "./circuit": "./src/circuit/index.ts",
+    "./crossover": "./src/crossover.ts"
   },
   "files": [
     "src"

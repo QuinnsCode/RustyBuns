@@ -30,7 +30,7 @@ import { endedClicks, endedManager } from "./ended.ts";
 import { installFirst } from "./install-first.ts";
 import { lastPromptBin, lastPromptHooks, lastPromptPersist, lastPromptTasks } from "./lastprompt.ts";
 import { screenTerminal } from "./screen.ts";
-import { plainCheckout, slowCheckout, startFromDefault } from "./checkout.ts";
+import { clonedCheckout, plainCheckout, slowCheckout, startFromDefault } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
 import { MACHINE_PATCHES } from "../live/breaker.ts";
@@ -76,7 +76,7 @@ let shared: Promise<Map<string, string>> | undefined;
 const stamp = path.join(office, ".rustybuns");
 // what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
 // a new patch in prepare() needs a new word here, or a restart skips it
-const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended checkout pool breaker toldwhilebooting`;
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended checkout pool breaker toldwhilebooting cowcheckout`;
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
@@ -168,7 +168,7 @@ async function prepare(tag: string) {
   // 6a2. #5523: a checkout of this repo outran upstream's 20 s `git worktree add` timeout
   // and a worktree starts from origin/main, not from whatever branch the floor checkout was left on; a hire on a full
   // disk says so before its checkout, and a failed git keeps its error lines (2026-11-22)
-  writeFileSync(path.join(srv, "worktrees.js"), plainCheckout(startFromDefault(slowCheckout(readFileSync(path.join(srv, "worktrees.js"), "utf8")))));
+  writeFileSync(path.join(srv, "worktrees.js"), clonedCheckout(plainCheckout(startFromDefault(slowCheckout(readFileSync(path.join(srv, "worktrees.js"), "utf8"))))));
   // #5656: a worktree on its way out hands its node_modules to the pool (live/install.ts) instead of deleting ~250k files
   prepend("worktrees.js", "import { poolModules as __rbPool } from './rb-install.js';\n");
   patch("worktrees.js", "                if (existsSync(abs)) {\n                    try {\n",
@@ -435,7 +435,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/breaker.ts", "rb-breaker.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/reaper.ts", "rb-reaper.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["live/screen.ts", "rb-screen.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/breaker.ts", "rb-breaker.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/clone.ts", "rb-clone.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/reaper.ts", "rb-reaper.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["live/screen.ts", "rb-screen.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"], ["train/server.ts", "rb-train.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {

@@ -12,7 +12,7 @@ const ids = Object.keys(PANELS) as GearId[];
 test.each(ids)("%s's panel is real connectors on its face, wired to the catalog's jacks", (id) => {
   const panel = PANELS[id];
   expect(catalogIds).toContain(id);
-  expect(catalogGear(id).speaker).toBeDefined();
+  expect(panel!.drive === "amp" ? catalogGear(id).amp : catalogGear(id).speaker).toBeDefined();
   const [w, h, d] = GEAR_SIZES[id].map((m) => m * 1000);
   for (const s of panel!.sockets) {
     expect(CONNECTORS[s.type].genders, `${id} ${s.role}`).toContain(s.gender);

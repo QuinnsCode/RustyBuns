@@ -80,8 +80,8 @@ const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[
   { name: "the dive bar's sub with no mains is silent", placed: bar, cables: barCables.filter((x) => x.to[0] !== "sub" || x.kind !== "power"), outlets: [wall(15)], fed: { topL: true, topR: true, sub: false }, problems: ["no-power sub"] },
   { name: "two 8 ohm boxes on a 4 ohm minimum head are fine", placed: chain(2), cables: chainCables(2), outlets: [wall(15)], fed: { box1: true, box2: true }, problems: [] },
   { name: "three are 2.67 ohms and not", placed: chain(3), cables: chainCables(3), outlets: [wall(15)], fed: { box1: false, box2: false, box3: false }, problems: ["low-load head,box1,box2,box3"] },
-  { name: "a triple 21 alone on a 2 ohm rack channel is fed", placed: subs(1), cables: subCables(1), outlets: [wall(15)], fed: { sub1: true }, problems: [] },
-  { name: "two triple 21s linked on one channel are 1.33 ohms and not", placed: subs(2), cables: subCables(2), outlets: [wall(15)], fed: { sub1: false, sub2: false }, problems: ["low-load rack,sub1,sub2"] },
+  { name: "a triple 21 alone on a 2 ohm rack channel is fed", placed: subs(1), cables: subCables(1), outlets: [wall(20)], fed: { sub1: true }, problems: [] },
+  { name: "two triple 21s linked on one channel are 1.33 ohms and not", placed: subs(2), cables: subCables(2), outlets: [wall(20)], fed: { sub1: false, sub2: false }, problems: ["low-load rack,sub1,sub2"] },
   {
     name: "a speaker cable in a power jack",
     placed: garage,
@@ -108,8 +108,8 @@ const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[
   },
   { name: "the stage: a DI's thru to the amp and XLR to the desk hums", placed: stage(false), cables: stageCables, outlets: [stageWall], fed: { cab: true, topL: true }, problems: ["hum di,head,desk"] },
   { name: "the stage with the DI's ground lifted is quiet", placed: stage(true), cables: stageCables, outlets: [stageWall], fed: { cab: true, topL: true }, problems: [] },
-  { name: "the first gig: a condenser on 48 V through the desk and rack to a wedge", placed: gig(true), cables: gigCables, outlets: [wall(15)], fed: { wedge: true }, problems: [] },
-  { name: "the first gig with 48 V off: the condenser is silent, and so is the desk it is patched into", placed: gig(false), cables: gigCables, outlets: [wall(15)], fed: { wedge: false }, problems: ["no-phantom mic,desk"] },
+  { name: "the first gig: a condenser on 48 V through the desk and rack to a wedge", placed: gig(true), cables: gigCables, outlets: [wall(20)], fed: { wedge: true }, problems: [] },
+  { name: "the first gig with 48 V off: the condenser is silent, and so is the desk it is patched into", placed: gig(false), cables: gigCables, outlets: [wall(20)], fed: { wedge: false }, problems: ["no-phantom mic,desk"] },
   {
     name: "an outlet that isn't there, and a jack the box doesn't have",
     placed: garage,
@@ -145,4 +145,17 @@ test("amps on last and off first: anything switched upstream of an amp that is o
   expect(thumps(gig(true), gigCables, right)).toEqual([]);
   const wrong = [{ id: "rack", on: true }, { id: "desk", on: true }, { id: "desk", on: false }, { id: "rack", on: false }];
   expect(thumps(gig(true), gigCables, wrong).map((p) => `${p.kind} ${p.items.join(",")}`)).toEqual(["thump desk,rack", "thump desk,rack"]);
+});
+
+test("the spider box: a 12U rack on one 20 A duplex trips that leg; on the L6-30 it holds, and the desk rides a duplex", () => {
+  const placed: Placed[] = [{ id: "gen", gear: "generator-100kva" }, { id: "spider", gear: "distro-box" }, { id: "rack", gear: "amp-rack-12u" }, { id: "desk", gear: "mixer-small" }];
+  const run = (rackOn: string) => compile(placed, [
+    c("power", "gen power-out-1", "spider power-in"),
+    c("power", `spider ${rackOn}`, "rack power-in"),
+    c("power", "spider power-out-2", "desk power-in"),
+  ]).problems.filter((p) => p.kind === "breaker");
+  const tripped = run("power-out-1");
+  expect(tripped.map((p) => [p.circuit, p.items])).toEqual([["spider power-out-1", ["spider", "rack"]]]);
+  expect(tripped[0]!.message).toContain("20 A 120 V leg");
+  expect(run("power-out-7")).toEqual([]);
 });

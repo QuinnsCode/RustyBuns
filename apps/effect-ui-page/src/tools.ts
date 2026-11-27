@@ -1,37 +1,48 @@
-// The page's tools as one list, for every door: WebMCP in the page (agent.ts), and HTTP and MCP in the relay
+// The world's tools as one list, for every door: WebMCP in the page (agent.ts), and HTTP and MCP in the relay
 // (relay.ts), for an agent in a terminal (Claude Code, Codex, opencode). No DOM or Bun here: the Worker, the
 // local dev server and the page all import it. The frames between the relay and the page are here too.
 import { bool, obj, opt, raw, int, str, type Of } from "@rustybuns/util/guard";
 import type { Hints, InputSchema } from "@rustybuns/util/commands";
 import { Schema } from "effect";
-import { AddBlock, EditBlock, MoveBlock, RemoveBlock, Reset, SetBackdrop, SetProfile, SetTheme } from "./page.ts";
+import { FILE_MAX, FILES_MAX, Path, Reset, SetBackdrop, WORLD_MAX, WriteFile } from "./page.ts";
+import { LIBRARY_HOSTS } from "./world.ts";
 
 export const Undo = Schema.TaggedStruct("Undo", {});
 /** What a call asks the page for: an action on the page, or undo (which needs the page's history). */
-export const Request = Schema.Union([SetProfile, SetTheme, AddBlock, EditBlock, RemoveBlock, MoveBlock, SetBackdrop, Reset, Undo]);
+export const Request = Schema.Union([WriteFile, SetBackdrop, Reset, Undo]);
 export type Request = typeof Request.Type;
 
-type Tagged = typeof SetProfile | typeof SetTheme | typeof AddBlock | typeof EditBlock | typeof RemoveBlock | typeof MoveBlock | typeof SetBackdrop | typeof Reset | typeof Undo;
+type Tagged = typeof WriteFile | typeof SetBackdrop | typeof Reset | typeof Undo;
 export interface Tool { name: string; title: string; description: string; schema: Tagged; hints?: Hints }
 
-const block = "A block is {kind, title, body, items}: text (title and body), links (items with label and an https url), stats (items with label and value), quote (body, title says who) or tags (items with a label).";
+/** How a world is made, told once with the write tool: what the frame opens, how files load, what it may reach. */
+const HOW = [
+  "The world is a few text files that run in a sealed frame filling the person's screen, like a codeSplitter page.",
+  "index.html is what the frame opens. It loads your other files with <script src=\"world.js\"> (type=\"module\" too) and <link rel=\"stylesheet\" href=\"style.css\">; a module imports another of your files as \"./name.js\".",
+  `Libraries load from ${LIBRARY_HOSTS.join(", ")} at a pinned version: import * as THREE from "https://esm.sh/three@0.170.0".`,
+  "The frame is sealed: no fetch or sockets, no cookies or localStorage, no forms. Images, sounds and models are drawn in code or written as data: URLs.",
+  `A file is ${FILE_MAX.toLocaleString("en")} characters at most, the world ${WORLD_MAX.toLocaleString("en")}, ${FILES_MAX} files.`,
+].join(" ");
 
 export const TOOLS: readonly Tool[] = [
-  { name: "page_set_profile", title: "Set the name and tagline", schema: SetProfile, description: "Set the page's name (the big heading) and tagline (the line under it). Leave one out to keep it." },
-  { name: "page_set_theme", title: "Set the theme", schema: SetTheme, description: "Set the colors (#rrggbb: accent, paper behind everything, ink for text) and the font (sans, serif, mono, rounded). Leave any out to keep it." },
-  { name: "page_add_block", title: "Add a block", schema: AddBlock, description: `Add a block at index \`at\` (the end when left out). ${block} The answer has its id.` },
-  { name: "page_edit_block", title: "Edit a block", schema: EditBlock, description: `Change the fields given of the block with this id; items, when given, replaces the whole list. ${block}` },
-  { name: "page_move_block", title: "Move a block", schema: MoveBlock, description: "Move the block with this id to index `to` (0 is the top)." },
-  { name: "page_remove_block", title: "Remove a block", schema: RemoveBlock, description: "Remove the block with this id. page_undo puts it back.", hints: { destructiveHint: true } },
-  { name: "page_set_backdrop", title: "Set the backdrop", schema: SetBackdrop, description: "Put a codeSplitter profile page (that handle's public `page` repo, its own world or scene) full screen behind the blocks, in a sandbox: \"quinn\" shows @quinn's. \"\" takes it away. Pick ink and a paper that read over it." },
+  { name: "page_write_file", title: "Write a file", schema: WriteFile, description: `Set one file of the world to this whole text, and the frame reloads with it. "" takes the file away. ${HOW} Then call page_read: it says what went wrong in the frame, if anything.` },
+  { name: "page_set_backdrop", title: "Set the backdrop", schema: SetBackdrop, description: "Put a codeSplitter profile page (that handle's public `page` repo) full screen behind the world, seen where the world leaves the background clear: \"quinn\" shows @quinn's. \"\" takes it away." },
   { name: "page_undo", title: "Undo", schema: Undo, description: "Take back the last change, the agent's or the person's." },
-  { name: "page_reset", title: "Start over", schema: Reset, description: "Put the page back to the starter. page_undo puts it back.", hints: { destructiveHint: true } },
+  { name: "page_reset", title: "Start over", schema: Reset, description: "Put the world back to the starter city. page_undo puts it back.", hints: { destructiveHint: true } },
 ];
 
 export const READ = {
-  name: "page_read", title: "Read the page",
-  description: `The page as it stands: name, tagline, theme, blocks (each with its id) and backdrop (a codeSplitter handle, when set). ${block}`,
+  name: "page_read", title: "Look at the world",
+  description: "The world as it stands: each file's path and size, the backdrop (a codeSplitter handle, when set), and what the frame said since it last loaded: errors with their file and line, and loads it blocked. Call it after each write. page_read_file gives a file's text.",
   inputSchema: { type: "object", properties: {} } satisfies InputSchema,
+  annotations: { readOnlyHint: true } satisfies Hints,
+};
+
+export const ReadFile = Schema.Struct({ path: Path });
+export const READ_FILE = {
+  name: "page_read_file", title: "Read a file",
+  description: "One file of the world, its whole text. page_read lists them.",
+  inputSchema: { type: "object", properties: { path: { type: "string", description: "A path page_read listed, like index.html or world.js" } }, required: ["path"] } satisfies InputSchema,
   annotations: { readOnlyHint: true } satisfies Hints,
 };
 
@@ -49,7 +60,7 @@ export const decode = (tool: Tool, args: unknown): Request =>
   Schema.decodeUnknownSync(Request)({ ...(typeof args === "object" && args !== null ? args : {}), _tag: tool.schema.fields._tag.schema.literal });
 
 /** Every tool as an agent is told of it: name, title, description, inputSchema and annotations. */
-export const listTools = () => [READ, ...TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: inputSchema(t.schema), annotations: t.hints ?? {} }))];
+export const listTools = () => [READ, READ_FILE, ...TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: inputSchema(t.schema), annotations: t.hints ?? {} }))];
 export const toolNames = new Set(listTools().map((t) => t.name));
 
 /** The relay to the page: run this tool with these arguments. */

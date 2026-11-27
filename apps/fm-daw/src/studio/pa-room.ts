@@ -15,6 +15,8 @@ import { airAbsorption, levelAt, MILD_FIELD, screenPath, source, speedOfSound, s
 import { BODY_HZ } from "./jam.ts";
 import { roomLand, thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
+import { crossover, type Crossover } from "./crossover-audio.ts";
+import { heardBands, rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
 
 /** Metres a second, indoors (out of doors the field's air sets it: roomField). */
 export const SOUND_SPEED = 343;
@@ -243,6 +245,11 @@ export class PaRoom {
   private norm = 1;
   /** The set after the rig's low end and voicing, or nothing indoors (the input as it is). */
   private voiced: AudioNode | null = null;
+  /** Out of doors, the rig's crossover as its amps' DSP has it (#6473): the set split into the bands and summed. */
+  private xo: Crossover | null = null;
+  /** The rig's preset (what the bands are heard against) and the bands as set. */
+  private preset: ChannelDsp[] = [];
+  private set: readonly ChannelDsp[] = [];
 
   constructor(private ctx: BaseAudioContext, def: StudioDef, to: AudioNode) {
     this.input = new GainNode(ctx);
@@ -253,7 +260,11 @@ export class PaRoom {
       const rig = systemSound(roomRig(def)), chain: AudioNode[] = [new BiquadFilterNode(ctx, { type: "highpass", frequency: rig.lowCut, Q: 0.7 })];
       for (const b of rig.voicing) chain.push(new BiquadFilterNode(ctx, { type: "peaking", frequency: b.hz, gain: b.db, Q: b.q }));
       const voiced = chain.reduce((a, n) => (a.connect(n), n), this.input as AudioNode);
-      this.voiced = voiced;
+      this.preset = rigCrossover(roomRig(def).id).map((b) => b.dsp);
+      this.set = this.preset;
+      this.xo = crossover(ctx, heardBands(this.preset, this.preset));
+      voiced.connect(this.xo.input);
+      this.voiced = this.xo.output;
     }
     const from = this.voiced ?? this.input;
     this.norm = floorLevel(speakers);
@@ -301,6 +312,11 @@ export class PaRoom {
       this.wet.gain.gain.setTargetAtTime(WET * Math.sqrt(Math.min(1, loudest)), now, k);
     }
   }
+
+  /** The rig's crossover bands as they're set (null indoors). */
+  bands(): readonly ChannelDsp[] | null { return this.xo ? this.set : null; }
+  /** Set the crossover's bands (an amp's DSP moved), heard against the preset. False indoors, where there's no rig. */
+  setBands(bands: readonly ChannelDsp[]): boolean { if (!this.xo) return false; this.set = bands; this.xo.set(heardBands(bands, this.preset)); return true; }
 
   /** The speakers as you hear them now, for the harness. */
   state() {

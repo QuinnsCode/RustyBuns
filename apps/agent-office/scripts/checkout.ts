@@ -64,3 +64,23 @@ export function plainCheckout(js: string) {
     "    return (said.length ? said.slice(-3).join(' · ') : lines.pop()) ?? 'git failed';\n");
   return js;
 }
+
+// Each hire wrote the whole checkout again (1.2 GB of this repo). The new worktree now clones the floor checkout's files
+// instead (live/clone.ts); a fill that fails takes its worktree and branch with it, as a failed `worktree add` would.
+
+/** server/worktrees.js: a hire's worktree is added without a checkout, then filled with copy-on-write clones. */
+export function clonedCheckout(js: string) {
+  const rel = "worktrees.js";
+  js = "import { fillWorktree as __rbFill } from './rb-clone.js';\n" + js;
+  return once(js, rel, "            this.gitSync(['worktree', 'add', '-b', branch, path.resolve(root, rel), base]);\n",
+    "            const abs = path.resolve(root, rel);\n" +
+    "            this.gitSync(['worktree', 'add', '--no-checkout', '-b', branch, abs, base]);\n" +
+    "            try {\n" +
+    "                __rbFill(this.dir, abs, " + CHECKOUT_TIMEOUT_MS + ");\n" +
+    "            }\n" +
+    "            catch (err) {\n" +
+    "                this.gitSync(['worktree', 'remove', '--force', abs]);\n" +
+    "                this.gitSync(['branch', '-D', branch]);\n" +
+    "                throw err;\n" +
+    "            }\n");
+}
