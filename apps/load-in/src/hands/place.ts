@@ -102,7 +102,7 @@ export const PALM_FACE: V3 = [0.004, PALM.front, -0.05];
 export function carryFrames(box: Box, kg: number): { right: Frame; left: Frame } {
   const c = Math.cos(box.rot), s = Math.sin(box.rot);
   const toWorld = (v: V3): V3 => [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
-  const y = box.h * (0.78 - Math.min(0.25, kg / 200)), z = box.d * 0.12;
+  const y = box.h * (0.92 - Math.min(0.25, kg / 200)), z = box.d * 0.3;
   // In the box's own frame: hand y (back) = +x, z (to the elbow) = +z toward you, x = y cross z = -y (thumb up).
   const local: Frame = { o: [0, 0, 0], x: [0, -1, 0], y: [1, 0, 0], z: [0, 0, 1] };
   const side = (f: Frame, sx: Side): Frame => {
