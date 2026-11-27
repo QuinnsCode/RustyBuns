@@ -1,5 +1,6 @@
-// The gear Load In carries: our own generic boxes with plausible numbers. Ids, sizes and weights
-// match the shared table in #4849 so the models (packages/models) and this math join on `id`.
+// The gear Load In carries: our own generic boxes with plausible numbers, and real products where a box copies one (the
+// QSC amps in the racks, #6472: their numbers from QSC's spec sheets and manuals, a guess marked as one). Ids, sizes and
+// weights match the shared table in #4849 so the models (packages/models) and this math join on `id`.
 
 /** Where a cable plugs in. `power-out` and the input/output kinds can come several to a box. */
 export type JackKind =
@@ -59,6 +60,13 @@ export type Gear = {
   amp?: AmpSpec;
   /** Mains draw in watts, idle and at show level. */
   draw?: { idle: number; loud: number };
+  /** A power distro (a spider box): what feeds it, and its outputs in jack order, each group on its own breaker per
+   *  outlet. Its `power-out` jacks are the outputs, numbered across the groups. */
+  distro?: Distro;
+  /** Rack-mount gear: its height in U (1U is 44.45 mm). */
+  units?: number;
+  /** A rack case: its height in U, and the gear bolted in it from the top (pre-wired to the case's own panels). */
+  rack?: { units: number; holds: readonly { id: string; u: number }[] };
   /** A generator's rating, and its fuel: the tank, what it burns ticking over, and litres more per kWh it makes. */
   generator?: { kva: number; powerFactor: number; tankL: number; idleLph: number; perKwh: number };
   /** A fuel can: the litres it holds full. */
@@ -72,7 +80,29 @@ export type Gear = {
   deck?: { out: "phono" | "line" };
 };
 
+/** A distro's feed and its outputs: `n` outlets of one kind, each on its own `amps` breaker at `volts`. */
+export type Distro = { input: { volts: number; amps: number }; outputs: readonly { n: number; volts: number; amps: number; what: string }[] };
+/** A distro's outlets one by one, in jack order: the breaker each sits behind. */
+export const distroLegs = (g: Gear): { volts: number; amps: number }[] =>
+  (g.distro?.outputs ?? []).flatMap((o) => Array.from({ length: o.n }, () => ({ volts: o.volts, amps: o.amps })));
+
 const box = (w: number, h: number, d: number) => ({ w, h, d });
+const ampsById = new Map<string, Gear>();
+/** A rack case and the amps in it: its channels, watts and draw are theirs added up, its weight the case's and theirs. */
+function rackBuild(r: Pick<Gear, "id" | "what" | "size" | "jacks" | "wheels"> & { caseKg: number; units: number; holds: { id: string; u: number }[] }): Gear {
+  const amps = r.holds.map((h) => { const g = ampsById.get(h.id); if (!g?.amp) throw new Error(`${r.id} holds ${h.id}, no amp listed before it`); return g; });
+  const first = amps[0]!.amp!;
+  if (amps.some((g) => g.id !== amps[0]!.id)) throw new Error(`${r.id}: one model of amp to a rack`);
+  return {
+    id: r.id, what: r.what, size: r.size, jacks: r.jacks, ...(r.wheels ? { wheels: r.wheels } : {}),
+    kg: r.caseKg + amps.reduce((k, g) => k + g.kg, 0),
+    rack: { units: r.units, holds: r.holds },
+    amp: { channels: first.channels * amps.length, watts: first.watts },
+    draw: amps.reduce((d, g) => ({ idle: d.idle + g.draw!.idle, loud: d.loud + g.draw!.loud }), { idle: 0, loud: 0 }),
+  };
+}
+/** Note an amp as it's listed, so a rack after it can hold it. */
+const amp = (g: Gear): Gear => (ampsById.set(g.id, g), g);
 
 const list: Gear[] = [
   {
@@ -129,15 +159,33 @@ const list: Gear[] = [
     jacks: { "speaker-in": 1 },
     speaker: { sensitivity: 100, maxSpl: 124, ratedWatts: 240, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 80, highCut: 5000, rearLoss: 12 },
   },
-  {
+  // The amp both racks hold (#6472): the QSC PLD4.5 (PLD spec sheet 09/19/16, user manual TD-000368-00-A). 4 channels in
+  // 2U, 89 x 482 x 406 mm, 10.0 kg; 1150 / 1250 / 625 W continuous into 8 / 4 / 2 ohms, the four channels sharing its
+  // 5000 W; locking IEC mains. Its sheets give heat, not current, so the draw is what it puts out plus what it turns to
+  // heat: idle 286 BTU/hr (84 W); at show level, the sheet's 1/3 power into 4 ohms, the figure a circuit is sized by (a
+  // rig run hard): 1667 W out and 1708 BTU/hr (500 W) of heat, 2167 W. At 1/8 power ("typical music") it is 960 W. Back: 4 XLR in, 4 XLR thru, an NL4 per channel.
+  amp({
+    id: "qsc-pld4-5",
+    what: "QSC PLD4.5 power amp, 4 x 1250 W",
+    size: box(0.482, 0.089, 0.406),
+    kg: 10,
+    units: 2,
+    jacks: { "power-in": 1, "xlr-in": 4, "xlr-out": 4, "speaker-out": 4 },
+    amp: { channels: 4, watts: { 8: 1150, 4: 1250, 2: 625 } },
+    draw: { idle: 84, loud: 2167 },
+  }),
+  // A small band's rack: a 4U shock rack on casters (its 25 kg is typical of the class, a guess) holding one PLD4.5 at the
+  // top, a blank under it for air and a 1U panel, wired inside, so what the crew cables is the panel: 4 XLR in, an NL4
+  // per channel, one mains inlet (a locking IEC, as the amp's own).
+  rackBuild({
     id: "amp-rack-4u",
-    what: "rolling rack, two power amps",
+    what: "4U amp rack, a QSC PLD4.5",
     size: box(0.6, 0.4, 0.65),
-    kg: 35,
+    caseKg: 25,
+    units: 4,
+    holds: [{ id: "qsc-pld4-5", u: 1 }],
     jacks: { "power-in": 1, "xlr-in": 4, "speaker-out": 4 },
-    amp: { channels: 4, watts: { 8: 650, 4: 1000, 2: 1400 } },
-    draw: { idle: 120, loud: 1500 },
-  },
+  }),
   {
     id: "mixer-small",
     what: "12-channel mixer",
@@ -155,12 +203,18 @@ const list: Gear[] = [
     generator: { kva: 7, powerFactor: 0.9, tankL: 25, idleLph: 0.6, perKwh: 0.35 },
     wheels: "small",
   },
+  // The spider box: Lex Products' hanging spider box (PH050Z3-NMW-26CC1DF, its datasheet of 2020-05-19): a 50 A
+  // California-style locking inlet at 125/250 V single phase, six 20 A branch breakers and one 30 A double pole, six
+  // NEMA 5-20 GFCI duplexes at 120 V and one L6-30 twist-lock at 240 V. The sheet doesn't say which outlets share a
+  // breaker: one breaker per duplex (six and six) is our reading. A duplex is one jack here. 13.25 x 14.25 x 11.5 in,
+  // 29 lb (a dealer's copy of its listing). Its 50 A feed-thru isn't modelled.
   {
     id: "distro-box",
-    what: "power distro",
-    size: box(0.4, 0.3, 0.25),
-    kg: 10,
-    jacks: { "power-in": 1, "power-out": 6 },
+    what: "50 A spider box",
+    size: box(0.337, 0.362, 0.292),
+    kg: 13.2,
+    jacks: { "power-in": 1, "power-out": 7 },
+    distro: { input: { volts: 240, amps: 50 }, outputs: [{ n: 6, volts: 120, amps: 20, what: "NEMA 5-20 GFCI duplex" }, { n: 1, volts: 240, amps: 30, what: "L6-30 twist-lock" }] },
   },
   { id: "cable-ramp-2ch", what: "two-channel cable ramp, links end to end", size: box(0.9, 0.08, 0.5), kg: 13, jacks: {} },
   { id: "road-case-m", what: "road case on wheels", size: box(0.6, 0.5, 0.5), kg: 14, jacks: {} },
@@ -447,18 +501,21 @@ const list: Gear[] = [
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 101, maxSpl: 136, ratedWatts: 600, ohms: 8, coverage: { h: 120, v: 90 }, lowCut: 50, highCut: 150, rearLoss: 8 },
   },
-  {
-    // A stage's amps: three 4-channel DSP amps in a 12U rack on casters. Mains at show level is about an eighth of the
-    // rated output (music's crest factor) over class-D efficiency: ~5 kW from ~36 kW of channels.
+  // A stage's amps: three PLD4.5s in a 12U shock rack on casters (the case's 65 kg is a guess, typical of the class), a
+  // 1U input panel on top, the amps with a blank between each for air, a 1U output panel and a 1U power panel under
+  // them. The output panel takes the twelve channels on 8 NL4s: the first four carry two channels each (1+/1- and
+  // 2+/2-, a stack's two ways) and the last four one each; the input panel 4 XLRs, routed to the twelve channels by the
+  // amps' own DSP; the power panel one TRUE1 inlet feeding the three amps' IECs.
+  rackBuild({
     id: "amp-rack-12u",
-    what: "stage amp rack, 12 channels",
+    what: "12U amp rack, three QSC PLD4.5",
     size: box(0.6, 1.05, 0.75),
-    kg: 95,
+    caseKg: 65,
+    units: 12,
+    holds: [{ id: "qsc-pld4-5", u: 2 }, { id: "qsc-pld4-5", u: 5 }, { id: "qsc-pld4-5", u: 8 }],
     jacks: { "power-in": 1, "xlr-in": 4, "speaker-out": 8 },
-    amp: { channels: 12, watts: { 8: 1700, 4: 3000, 2: 4000 } },
-    draw: { idle: 450, loud: 5200 },
     wheels: "small",
-  },
+  }),
   {
     // A silenced 100 kVA three-phase set on a trailer, 120/208 V: 80 kW at 0.8 power factor, a 300 L tank, about 22 L/h
     // at three quarters load (typical of the class's fuel tables).

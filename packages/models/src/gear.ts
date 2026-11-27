@@ -44,7 +44,7 @@ export const GEAR_SIZES = {
   "amp-rack-4u": [0.6, 0.4, 0.65],
   "mixer-small": [0.4, 0.1, 0.35],
   "generator-7kva": [0.7, 0.6, 0.55],
-  "distro-box": [0.4, 0.3, 0.25],
+  "distro-box": [0.337, 0.362, 0.292],
   "cable-ramp-2ch": [0.9, 0.08, 0.5],
   "road-case-m": [0.6, 0.5, 0.5],
   "trunk-case": [0.95, 0.6, 0.55],
@@ -80,6 +80,7 @@ export const GEAR_SIZES = {
   "sculpted-3way-lh": [0.8539, 0.6712, 0.6599],
   "arc-sub-18": [0.6568, 0.55, 0.6952],
   "amp-rack-12u": [0.6, 1.05, 0.75],
+  "qsc-pld4-5": [0.482, 0.089, 0.406],
   "generator-100kva": [1.3, 2.0, 3.6],
   // Desert Gathering's other rigs (packages/gear systems.ts): sizes from the makers' sheets, or typical of the class
   "synergy-horn": [0.711, 0.711, 0.647],
@@ -631,31 +632,81 @@ function cab1960aPieces(): Record<string, Build> {
   return { cabinet: cab, grille, piping, corners, hardware: hw };
 }
 
-/** A rolling rack: a case on casters with its front lid off, two power amps in the rails. */
-function ampRack(): Build {
-  const [w, h, d] = GEAR_SIZES["amp-rack-4u"], b: Build = { pieces: [], marks: [] }, wheel = 0.035, floor = wheel * 2 + 0.005;
-  const ch = h - floor;
-  b.pieces.push(box("paint", [w, ch, d - 0.02], [0, floor + ch / 2, -0.01], { bevel: 0.012 }));
-  for (let i = 0; i < 2; i++) {
-    const y = floor + ch * (0.27 + i * 0.47);
-    b.pieces.push(box("panel", [w - 0.04, ch * 0.42, 0.012], [0, y, d / 2 - 0.016]));
-    for (const x of [-1, 1]) b.pieces.push(...handle("chrome", [x * (w / 2 - 0.045), y, d / 2 - 0.01], "z", ch * 0.25, 0.008));
-    b.pieces.push(disc("light", 0.005, 0.006, "z", [-w * 0.3, y, d / 2 - 0.008], 4));
-    for (const x of [0.1, 0.2]) b.pieces.push(disc("knob", 0.014, 0.012, "z", [x, y, d / 2 - 0.004], 6));
+/** 1U, as the racks' rails measure it. */
+const RU = 0.04445;
+
+/**
+ * A QSC PLD4.5's front, 482 x 89 mm (its spec sheet), facing +z at `z`, centred on (x, y): the rack ears with their
+ * cast handles, the four output channels' Mute buttons each under its Limit, -10 and -20 LEDs, the soft power and
+ * Select buttons, the inputs' Signal and Clip LEDs, the 400 x 240 colour LCD and its HOME, ENTER, EXIT and GAIN keys
+ * round the MASTER knob, in the order the user manual's front-panel legend (TD-000368-00-A) numbers them. The legend
+ * gives the order, not the millimetres: where each sits across the face is read from that order and is a guess.
+ */
+function pldFront(b: Build, x: number, y: number, z: number) {
+  const w = 0.482, h = 0.088;
+  b.pieces.push(box("panel", [w, h, 0.004], [x, y, z - 0.002], { bevel: 0.001 }));
+  for (const sx of [-1, 1]) b.pieces.push(...handle("chrome", [x + sx * (w / 2 - 0.022), y, z], "z", h * 0.72, 0.018));
+  b.pieces.push(disc("light", 0.006, 0.004, "z", [x - 0.185, y + 0.012, z + 0.001], 10)); // soft power, its ring lit
+  for (let i = 0; i < 4; i++) {
+    const cx = x - 0.15 + i * 0.03;
+    b.pieces.push(box("knob", [0.016, 0.01, 0.004], [cx, y - 0.026, z + 0.002])); // Mute
+    for (let k = 0; k < 3; k++) b.pieces.push(disc("light", 0.0022, 0.003, "z", [cx, y - 0.008 + k * 0.011, z + 0.0015], 6)); // Limit, -10, -20
+    b.pieces.push(box("knob", [0.012, 0.007, 0.003], [cx + 0.11, y - 0.026, z + 0.0015])); // Select
+    for (let k = 0; k < 2; k++) b.pieces.push(disc("light", 0.0022, 0.003, "z", [cx + 0.11, y - 0.004 + k * 0.012, z + 0.0015], 6)); // Signal, Clip
   }
-  for (const x of [-1, 1]) for (const z of [-1, 1]) {
-    b.pieces.push(disc("rubber", wheel, 0.025, "x", [x * (w / 2 - 0.06), wheel, z * (d / 2 - 0.06)], 8));
-    b.pieces.push(box("metal", [0.04, 0.012, 0.05], [x * (w / 2 - 0.06), floor - 0.004, z * (d / 2 - 0.06)]));
+  b.pieces.push(box("pcblue", [0.074, 0.044, 0.002], [x + 0.098, y + 0.002, z + 0.001])); // the LCD
+  b.pieces.push(disc("knob", 0.014, 0.012, "z", [x + 0.172, y + 0.004, z + 0.006], 16)); // MASTER
+  for (const [dx, dy] of [[-0.024, 0.024], [0.024, 0.024], [-0.024, -0.016], [0.024, -0.016]] as const) b.pieces.push(box("knob", [0.01, 0.006, 0.003], [x + 0.172 + dx * 0.55, y + dy, z + 0.0015])); // HOME, ENTER, EXIT, GAIN
+}
+
+/** A rack's blank plate, `u` high, slotted for air, its top edge at `top`. */
+function blank(b: Build, units: number, top: number, z: number) {
+  const h = units * RU - 0.001;
+  b.pieces.push(box("panel", [0.482, h, 0.003], [0, top - h / 2, z - 0.0015]));
+  for (let k = 0; k < units * 2; k++) b.pieces.push(box("metal", [0.36, 0.004, 0.002], [0, top - (k + 0.75) * (h / (units * 2)), z]));
+}
+
+/** The QSC PLD4.5 itself, out of a rack: its front, a 432 mm chassis 406 deep behind the ears, the back panel. */
+function pld(): Build {
+  const [w, h, d] = GEAR_SIZES["qsc-pld4-5"], b: Build = { pieces: [], marks: [] }, body = 0.432;
+  b.pieces.push(box("paint", [body, h - 0.002, d - 0.006], [0, h / 2, -0.003], { bevel: 0.002 }));
+  pldFront(b, 0, h / 2, d / 2);
+  socketPanel(b, "qsc-pld4-5", "back", [0, h / 2, -d / 2], [body - 0.01, h - 0.01]);
+  mark(b, "grab", [w / 2 - 0.022, h / 2, d / 2 + 0.03], [0, 0, 1]);
+  return b;
+}
+
+/**
+ * A shock rack on casters with its front lid off, `units` of rails, and what it holds from the top (the catalog's
+ * `rack`): a PLD4.5 front at each, blanks between; the case's own back panel (panels.ts) is what a cable goes in.
+ */
+function rackCase(id: "amp-rack-4u" | "amp-rack-12u", units: number, amps: number[], wheel: number, plate: { y: number; area: [number, number] }): Build {
+  const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, floor = wheel * 2 + 0.005, ch = h - floor;
+  const open = units * RU, top = floor + ch / 2 + open / 2, face = d / 2 - 0.03;
+  // the shell: walls round the rails, lips on the open front, the rails' black inside
+  for (const sx of [-1, 1]) b.pieces.push(box("paint", [(w - 0.482) / 2, ch, d - 0.02], [sx * (w / 2 - (w - 0.482) / 4), floor + ch / 2, -0.01], { bevel: 0.01 }));
+  for (const sy of [-1, 1]) b.pieces.push(box("paint", [0.482, (ch - open) / 2, d - 0.02], [0, floor + ch / 2 + sy * (open / 2 + (ch - open) / 4), -0.01], { bevel: 0.006 }));
+  b.pieces.push(box("metal", [0.482, open, 0.01], [0, floor + ch / 2, -d / 2 + 0.02]));
+  for (const sx of [-1, 1]) b.pieces.push(box("chrome", [0.016, open, 0.004], [sx * 0.2335, floor + ch / 2, face - 0.004]));
+  let u = 1;
+  for (const at of [...amps, units + 1]) {
+    if (at > u) blank(b, at - u, top - (u - 1) * RU, face);
+    if (at <= units) { pldFront(b, 0, top - (at - 1) * RU - RU, face); u = at + 2; }
   }
-  for (const x of [-1, 1]) b.pieces.push(...handle("metal", [x * w / 2, floor + ch * 0.6, 0], x > 0 ? "x" : "-x", 0.16, 0.012));
-  b.pieces.push(box("panel", [w * 0.8, ch * 0.5, 0.008], [0, floor + ch * 0.5, -d / 2 - 0.012]));
-  const back = -d / 2 - 0.016;
-  jacks(b, numbered("xlr-in", 4), "back", [-0.21, floor + ch * 0.62, back], [0.06, 0, 0]);
-  jacks(b, numbered("speaker-out", 4), "back", [0.03, floor + ch * 0.62, back], [0.06, 0, 0]);
-  jacks(b, ["power-in"], "back", [0.18, floor + ch * 0.38, back], [0, 0, 0], 0.016);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    b.pieces.push(disc("rubber", wheel, 0.028, "x", [sx * (w / 2 - 0.07), wheel, sz * (d / 2 - 0.07)], 10));
+    b.pieces.push(box("metal", [0.05, 0.012, 0.06], [sx * (w / 2 - 0.07), floor - 0.004, sz * (d / 2 - 0.07)]));
+  }
+  for (const sx of [-1, 1]) b.pieces.push(...handle("metal", [sx * w / 2, floor + ch * 0.6, 0], sx > 0 ? "x" : "-x", 0.16, 0.012));
+  // the back: the case's own panel, as the crew sees it
+  b.pieces.push(box("panel", [plate.area[0], plate.area[1], 0.006], [0, plate.y, -d / 2 + 0.001]));
+  socketPanel(b, id, "back", [0, plate.y, -d / 2 - 0.002], plate.area);
   mark(b, "grab", [w / 2 + 0.012, floor + ch * 0.6, 0], [1, 0, 0]);
   return b;
 }
+
+/** A small band's 4U rack: one PLD4.5 at the top (catalog's `rack`), blanks under it. */
+const ampRack = (): Build => rackCase("amp-rack-4u", 4, [1], 0.035, { y: 0.25, area: [0.47, 0.07] });
 
 /** A 12-channel mixer (8 mic, 4 line): a low wedge, a column of knobs and a fader per channel, jacks along the back. */
 function mixer(): Build {
@@ -704,13 +755,35 @@ function generator(): Build {
   return b;
 }
 
+/**
+ * The spider box (Lex Products' hanging spider box, its datasheet): a molded rubber body with a handle on top and
+ * hanging brackets on its back, six 20 A GFCI duplexes (each its own jack) in two rows on the front with a GFCI module's
+ * test and reset buttons and LED beside each, the L6-30 twist-lock under them, the breakers behind a clear window on
+ * top of the face, and the 50 A California-style inlet on its left side. The sheet gives the parts, not where each sits:
+ * the layout is a guess from the box's size.
+ */
 function distro(): Build {
-  const [w, h, d] = GEAR_SIZES["distro-box"], b: Build = { pieces: [], marks: [] }, body = h - 0.03;
-  b.pieces.push(box("lid", [w, body, d], [0, body / 2, 0], { bevel: 0.015 }));
-  b.pieces.push(...handle("rubber", [0, body, 0], "y", 0.16, 0.03));
-  b.pieces.push(box("panel", [w - 0.06, body * 0.55, 0.008], [0, body * 0.5, d / 2]));
-  jacks(b, numbered("power-out", 6), "front", [-w * 0.32, body * 0.5, d / 2 + 0.004], [w * 0.128, 0, 0], 0.016);
-  jacks(b, ["power-in"], "left", [-w / 2, body * 0.5, 0], [0, 0, 0], 0.02);
+  const [w, h, d] = GEAR_SIZES["distro-box"], b: Build = { pieces: [], marks: [] }, body = h - 0.04;
+  b.pieces.push(box("rubber", [w, body, d], [0, body / 2, 0], { bevel: 0.025 }));
+  b.pieces.push(...handle("rubber", [0, body, 0], "y", 0.18, 0.035));
+  for (const sx of [-1, 1]) b.pieces.push(box("metal", [0.03, 0.12, 0.012], [sx * w * 0.3, body * 0.72, -d / 2 - 0.006])); // hanging brackets
+  b.pieces.push(box("panel", [w - 0.05, body * 0.7, 0.008], [0, body * 0.47, d / 2]));
+  b.pieces.push(box("mesh", [w * 0.6, 0.04, 0.004], [0, body * 0.84, d / 2 + 0.004])); // the breakers' window
+  const rows = [body * 0.62, body * 0.42], cols = [-w * 0.3, 0, w * 0.3];
+  const outs: string[] = [];
+  rows.forEach((y, r) => cols.forEach((x, c) => {
+    b.pieces.push(box("knob", [0.07, 0.07, 0.006], [x, y, d / 2 + 0.006], { bevel: 0.004 })); // the duplex's plate
+    for (const dy of [0.016, -0.016]) b.pieces.push(box("metal", [0.026, 0.018, 0.003], [x - 0.008, y + dy, d / 2 + 0.01]));
+    b.pieces.push(disc("light", 0.003, 0.004, "z", [x + 0.024, y + 0.024, d / 2 + 0.01], 6)); // the GFCI's LED
+    for (const dy of [0, -0.016]) b.pieces.push(box("knob", [0.012, 0.008, 0.004], [x + 0.024, y + dy, d / 2 + 0.011])); // test, reset
+    outs.push(`power-out-${r * 3 + c + 1}`);
+  }));
+  jacks(b, outs.slice(0, 3), "front", [cols[0]! - 0.008, rows[0]!, d / 2 + 0.012], [w * 0.3, 0, 0], 0.012);
+  jacks(b, outs.slice(3), "front", [cols[0]! - 0.008, rows[1]!, d / 2 + 0.012], [w * 0.3, 0, 0], 0.012);
+  b.pieces.push(disc("knob", 0.03, 0.012, "z", [0, body * 0.2, d / 2 + 0.006], 16)); // the L6-30's collar
+  jacks(b, ["power-out-7"], "front", [0, body * 0.2, d / 2 + 0.013], [0, 0, 0], 0.02);
+  b.pieces.push(disc("knob", 0.04, 0.03, "x", [-w / 2 - 0.012, body * 0.5, 0], 16)); // the 50 A inlet's housing
+  jacks(b, ["power-in"], "left", [-w / 2 - 0.028, body * 0.5, 0], [0, 0, 0], 0.024);
   mark(b, "grab", [0, h, 0]);
   return b;
 }
@@ -2635,27 +2708,8 @@ function arcline118Pieces(): Record<string, Build> {
   return onSkids({ cabinet: cab, grille, driver, port, handles, fittings, jacks: jack }, skid, w, d, mm(80));
 }
 
-/** A stage's 12U rack: a tall case on casters, three amps in the rails, the inputs and two rows of speaker outs behind. */
-function ampRack12(): Build {
-  const [w, h, d] = GEAR_SIZES["amp-rack-12u"], b: Build = { pieces: [], marks: [] }, wheel = 0.045, floor = wheel * 2 + 0.005, ch = h - floor;
-  b.pieces.push(box("paint", [w, ch, d - 0.02], [0, floor + ch / 2, -0.01], { bevel: 0.014 }));
-  for (let i = 0; i < 3; i++) {
-    const y = floor + ch * (0.18 + i * 0.32);
-    b.pieces.push(box("panel", [w - 0.04, ch * 0.24, 0.012], [0, y, d / 2 - 0.016]));
-    for (const x of [-1, 1]) b.pieces.push(...handle("chrome", [x * (w / 2 - 0.045), y, d / 2 - 0.01], "z", ch * 0.14, 0.008));
-    for (let k = 0; k < 4; k++) b.pieces.push(disc("light", 0.004, 0.006, "z", [-w * 0.3 + k * 0.03, y + 0.02, d / 2 - 0.008], 4));
-  }
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", wheel, 0.03, "x", [x * (w / 2 - 0.07), wheel, z * (d / 2 - 0.07)], 8));
-  for (const x of [-1, 1]) b.pieces.push(...handle("metal", [x * w / 2, floor + ch * 0.7, 0], x > 0 ? "x" : "-x", 0.18, 0.012));
-  b.pieces.push(box("panel", [w * 0.84, ch * 0.6, 0.008], [0, floor + ch * 0.5, -d / 2 - 0.012]));
-  const back = -d / 2 - 0.016;
-  jacks(b, numbered("xlr-in", 4), "back", [-0.21, floor + ch * 0.74, back], [0.06, 0, 0]);
-  jacks(b, numbered("speaker-out", 8).slice(0, 4), "back", [-0.21, floor + ch * 0.56, back], [0.06, 0, 0], 0.014);
-  jacks(b, numbered("speaker-out", 8).slice(4), "back", [-0.21, floor + ch * 0.44, back], [0.06, 0, 0], 0.014);
-  jacks(b, ["power-in"], "back", [0.16, floor + ch * 0.3, back], [0, 0, 0], 0.02);
-  mark(b, "grab", [w / 2 + 0.012, floor + ch * 0.7, 0], [1, 0, 0]);
-  return b;
-}
+/** A stage's 12U rack: three PLD4.5s with a blank between each (catalog's `rack`), the case's panel behind. */
+const ampRack12 = (): Build => rackCase("amp-rack-12u", 12, [2, 5, 8], 0.045, { y: 0.77, area: [0.5, 0.32] });
 
 /** The site's 100 kVA set: a silenced canopy on a two-axle trailer, louvres at both ends, an exhaust stack on the roof,
  * the drawbar and jockey wheel at the front, and the three-phase outlets on the back panel. */
@@ -3132,6 +3186,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "sculpted-3way-lh": whole("sculpted-3way-lh"),
   "arc-sub-18": whole("arc-sub-18"),
   "amp-rack-12u": ampRack12,
+  "qsc-pld4-5": pld,
   "generator-100kva": siteGenerator,
   "synergy-horn": whole("synergy-horn"),
   "tapped-horn-18": whole("tapped-horn-18"),

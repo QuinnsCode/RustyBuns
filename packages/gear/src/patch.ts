@@ -2,7 +2,7 @@
 // `compile` says which speakers are fed (power where they need it, and signal from a source)
 // and lists every problem a roadie would get yelled at for, each naming the items and the jack.
 
-import { gear as catalog, jackNames, type Gear } from "./catalog.ts";
+import { distroLegs, gear as catalog, jackNames, type Gear } from "./catalog.ts";
 import { ampWatts, circuitLoad, generatorLoad, parallel, type Circuit } from "./power.ts";
 
 /**
@@ -205,6 +205,32 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
     if (!root) continue;
     const key = outlets.get(root)?.circuit ?? root;
     loads.set(key, [...(loads.get(key) ?? []), id]);
+  }
+  // A distro's legs: each output's breaker against everything hung off it (through any distros further on), and its
+  // input against all of it. A 12U rack on one 20 A leg trips that leg, not the whole box.
+  const under = (id: string, jack: string, seen = new Set<string>()): string[] => {
+    const out: string[] = [];
+    for (const [down, j] of drives.get(`${id}\0${jack}`) ?? []) {
+      if (j !== "power-in" || seen.has(down)) continue;
+      seen.add(down);
+      const g = items.get(down);
+      if (g?.draw) out.push(down);
+      if (g) for (const o of jackNames(g).filter((n) => jackKind(n) === "power-out")) out.push(...under(down, o, seen));
+    }
+    return out;
+  };
+  for (const [id, g] of items) {
+    if (!g.distro) continue;
+    const legs = distroLegs(g);
+    const all: string[] = [];
+    legs.forEach((leg, i) => {
+      const jack = legs.length === 1 ? "power-out" : `power-out-${i + 1}`, on = under(id, jack);
+      all.push(...on);
+      const f = circuitLoad(on.flatMap((x) => items.get(x) ?? []), leg);
+      if (f.trips) problems.push({ kind: "breaker", items: [id, ...on], jack, circuit: `${id} ${jack}`, message: `${on.join(", ")}: ${Math.round(f.watts)} W on ${id} ${jack}, a ${leg.amps} A ${leg.volts} V leg rated ${Math.round(f.limit)} W: its breaker trips` });
+    });
+    const f = circuitLoad(all.flatMap((x) => items.get(x) ?? []), g.distro.input);
+    if (f.trips) problems.push({ kind: "breaker", items: [id, ...all], jack: "power-in", circuit: `${id} power-in`, message: `${all.join(", ")}: ${Math.round(f.watts)} W through ${id}, fed ${g.distro.input.amps} A at ${g.distro.input.volts} V (${Math.round(f.limit)} W): its main breaker trips` });
   }
   for (const [key, on] of loads) {
     const outlet = [...outlets.values()].find((o) => o.circuit === key);

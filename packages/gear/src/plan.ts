@@ -100,8 +100,8 @@ export const GENERATOR_IDS = ["generator-7kva", "generator-100kva"] as const;
 export type GeneratorId = (typeof GENERATOR_IDS)[number];
 /** The amp rack a rig's passive boxes run off: twelve channels in each. */
 export const RACK = "amp-rack-12u";
-/** What one outlet carries on each generator: the small set's 30 A twist-lock at 240 V, the trailer's distro a 30 A 208 V feed. */
-export const OUTLETS: Record<GeneratorId, Circuit> = { "generator-7kva": { volts: 240, amps: 30 }, "generator-100kva": { volts: 208, amps: 30 } };
+/** What one outlet carries on each generator: the small set's 30 A twist-lock at 240 V, the trailer's distro a 50 A 208 V California-style feed (what a 12U rack of three PLD4.5s, 6.5 kW at show level, needs: a 30 A 208 V leg carries 6.2 kW). */
+export const OUTLETS: Record<GeneratorId, Circuit> = { "generator-7kva": { volts: 240, amps: 30 }, "generator-100kva": { volts: 208, amps: 50 } };
 
 /** A whole rig on the ground: the system, its stacks, the sub block, the booth monitors (a mid-high horn on a stand each),
  *  the generator (where it stands, and which set: the smallest that holds when left out) and the desk the signal comes from. */

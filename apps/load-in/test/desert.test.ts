@@ -3,7 +3,7 @@
 // sand dollies and stood in a line, the amp racks, the distro and the mixer beside the wall, the long feed from the
 // generator, and the wall patched. The fader is set for the floor full at the peak of the night, so the empty desert
 // at dusk reads hot; the horns beam, so the camp sleeps. It passes once the joints on the sand are taped and a jerry
-// can sits by the generator: on the 15 litres it came with the wall goes quiet at 3 am. Then how the bins stand decides
+// can sits by the generator: on the 15 litres it came with, two racks of real amps run hard drain it by 1 am. Then how the bins stand decides
 // the bass, and how high the mid-highs stand decides the back of a full floor. The same calls `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { SAND, WALK, holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
@@ -109,12 +109,12 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   // wall runs out of fuel before dawn.
   master(w, -10);
   const dry = desertState(w, c), empty = score(w, c, heat(w, c, "high", null));
-  expect(dry).toMatchObject({ generator: { watts: 3030, trips: false }, bass: 1, tripped: false });
+  expect(dry).toMatchObject({ generator: { watts: 4364, trips: false }, bass: 1, tripped: false });
   expect(dry.covered).toBeGreaterThan(0.8);
   expect(empty.floor!).toBeGreaterThan(dry.floor! + 2);
   expect(empty.covered).toBeLessThan(dry.covered - 0.1);
   expect(dry.camp!).toBeLessThan(CAMP_LIMIT);
-  expect(dry).toMatchObject({ fuel: { litres: 15, cans: 0, watts: 3030 }, until: "03:00", sunrise: false, pass: false });
+  expect(dry).toMatchObject({ fuel: { litres: 15, cans: 0, watts: 4364 }, until: "01:06", sunrise: false, pass: false });
   // The sound is right, but joints lie on the sand: by sunrise the dust is in them and they crackle, a few points each.
   // The bins' own joints ride up on the dollies, clear of it.
   expect(dry.dusty.some((j) => /^(bin|midbass|top)-/.test(j))).toBe(false);

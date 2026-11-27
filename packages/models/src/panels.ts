@@ -26,8 +26,9 @@ export type Socket = {
 
 export type Panel = {
   face: "back" | "front" | "bottom";
+  /** passive, biamp and triamp are a speaker's; an amp's (or an amp rack's) panel is `amp`. */
   /** passive (one amp channel), biamp or triamp (two or three channels down one cable), or powered (its amp inside). */
-  drive: "passive" | "biamp" | "triamp" | "powered";
+  drive: "passive" | "biamp" | "triamp" | "powered" | "amp";
   /** How the pins are wired, as the sheet gives it, or what we assumed. */
   pins: string;
   sockets: Socket[];
@@ -63,8 +64,43 @@ const k2 = (across: 2 | 3): Socket[] => {
   ];
 };
 
-/** Every speaker's panel, by gear id. */
+const xlrF = (jack: string, role: string, x: number, y: number): Socket => ({ jack, type: "xlr3", gender: "female", role, at: [x, y] });
+const xlrM = (jack: string, role: string, x: number, y: number): Socket => ({ jack, type: "xlr3", gender: "male", role, at: [x, y] });
+const row = <T>(n: number, from: number, step: number, make: (i: number, x: number) => T) => Array.from({ length: n }, (_, i) => make(i, from + i * step));
+
+/** Every speaker's and amp's panel, by gear id. */
 export const PANELS: { readonly [id in GearId]?: Panel } = {
+  // ---- the amps (#6472) ----
+  "qsc-pld4-5": {
+    face: "back", drive: "amp", pins: "NL4 per channel on 1+/1-; the bridged NL4s and parallel modes aren't cabled in the game",
+    sockets: [
+      ...row(4, -190, 34, (i, x) => xlrF(`xlr-in-${i + 1}`, `input ${i + 1}`, x, 62)),
+      ...row(4, -190, 34, (i, x) => xlrM(`xlr-out-${i + 1}`, `line out ${i + 1}`, x, 27)),
+      ...row(4, -40, 40, (i, x) => nl4(`speaker-out-${i + 1}`, `output ${"ABCD"[i]}`, x, 44)),
+      { jack: "power-in", type: "iec", gender: "male", role: "mains in (locking IEC)", at: [170, 44] },
+    ],
+    ref: "qsc/q_amp_pld_usermanual.pdf (TD-000368-00-A) rear-panel legend: 4 XLR-F in, 4 XLR-M out, 4 NL4, locking IEC; the order across is the legend's, the millimetres inferred",
+  },
+  "amp-rack-4u": {
+    face: "back", drive: "amp", pins: "NL4 n on 1+/1- for the amp's channel n, wired inside the case",
+    sockets: [
+      ...row(4, -165, 35, (i, x) => xlrF(`xlr-in-${i + 1}`, `input ${i + 1}`, x, 250)),
+      ...row(4, -10, 35, (i, x) => nl4(`speaker-out-${i + 1}`, `channel ${"ABCD"[i]}`, x, 250)),
+      { jack: "power-in", type: "iec", gender: "male", role: "mains in (locking IEC)", at: [170, 250] },
+    ],
+    ref: "our own rack build (catalog amp-rack-4u): a 1U panel on the back of the case, place assumed",
+  },
+  "amp-rack-12u": {
+    face: "back", drive: "amp", pins: "NL4 1-4: channels 1+2, 3+4, 5+6, 7+8 on 1+/1- and 2+/2- (a stack's two ways); NL4 5-8: channels 9-12 on 1+/1-",
+    sockets: [
+      ...row(4, -60, 40, (i, x) => xlrF(`xlr-in-${i + 1}`, `input ${"ABCD"[i]}`, x, 880)),
+      ...row(4, -105, 70, (i, x) => nl4(`speaker-out-${i + 1}`, `channels ${2 * i + 1}+${2 * i + 2}`, x, 800)),
+      ...row(4, -105, 70, (i, x) => nl4(`speaker-out-${i + 5}`, `channel ${i + 9}`, x, 735)),
+      { jack: "power-in", type: "powercon-true1", gender: "male", role: "mains in (TRUE1, feeds the three amps' IECs)", at: [0, 655] },
+    ],
+    ref: "our own rack build (catalog amp-rack-12u): input, output and power panels on the back of the case, place assumed",
+  },
+  // ---- the speakers ----
   "stack-mid-high": {
     face: "back", drive: "biamp", pins: "LF on 1+/1-, mid and HF on 2+/2- (the maker's usual; the sheet gives no pins)",
     sockets: pair(nl4, [[42, 770], [-42, 770]]), ref: "f1/res2-spec.pdf p1 (2 x NL4), res2-wd.png: plate on the centre line ~150 mm down",
