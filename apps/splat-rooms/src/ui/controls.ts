@@ -6,7 +6,9 @@ import { SKIN } from "./eqosys.ts";
  * The Controls sheet as the gadget watch's settings plate: riveted glass with a stamped hairline inside the edge, the
  * red-and-cream hatched trim along its top, a stencilled serial beside the title, and each section an inset panel.
  * A switch's row gives its words the width a slider's track would take, so "Toggle instead of hold" stays on one line.
- * The sheet's edge is the menu console's: a 1px cyan hairline and a soft outer glow, so both read as one device.
+ * The sheet's edge is the menu console's: a 1px cyan hairline and a soft outer glow, so both read as one device. Its top band
+ * is the menu's Band drawn in CSS (red wedge, a second red slash, cream hatch) stamped SR-LAB · FIELD CONTROLS, and the close
+ * X sits in the cog's dark-glass well with a cyan hairline and an inner bevel.
  * Each kit tab keeps its small gamepad, keyboard, mouse or phone icon beside its letter. The fold knobs are small, flat knurled
  * brass rims round a dark centre, stencilled FOLD and OPEN under them; an OFF rocker sits in a steel-grey housing with its
  * word readable, and a switch the game lacks keeps its brass housing, dimmed (no dashed edge).
@@ -14,10 +16,15 @@ import { SKIN } from "./eqosys.ts";
  * Red is kept for what is live: only the active kit's SR-KIT serial is red, and a folded section's tab is a thin cream line.
  * Faders run over an engraved scale (ten ticks, a longer one at the middle), and the Keyboard list's keys are dark-glass caps.
  */
-const LAB_CSS = `.ui-house .gc-card{box-shadow:0 0 0 1px rgb(92 214 239 / .3),0 0 28px -6px rgb(92 214 239 / .55),0 30px 80px -30px #000;border-color:var(--edge-hi);border-top:0;backdrop-filter:blur(8px);position:relative;padding-top:26px;
+const LAB_CSS = `.ui-house .gc-card{box-shadow:0 0 0 1px rgb(92 214 239 / .3),0 0 28px -6px rgb(92 214 239 / .55),0 30px 80px -30px #000;border-color:var(--edge-hi);border-top:0;backdrop-filter:blur(8px);position:relative;padding-top:32px;
 background:var(--rivets),var(--wear),var(--panel);outline:1px solid rgb(239 228 201 / .06);outline-offset:-5px}
-.ui-house .gc-card::before{content:"";position:absolute;left:0;right:0;top:0;height:7px;
-background:linear-gradient(100deg,var(--red) 0 132px,transparent 132px),repeating-linear-gradient(-55deg,rgb(239 228 201 / .45) 0 3px,transparent 3px 8px)}
+.ui-house .gc-card::before{content:"SR-LAB \\00b7  FIELD CONTROLS";position:absolute;left:0;right:0;top:0;height:14px;box-sizing:border-box;padding-left:10px;white-space:nowrap;overflow:hidden;
+font:700 8px/14px var(--mono);letter-spacing:.14em;color:var(--cream);
+background:linear-gradient(var(--red),var(--red)) 0 0/169px 14px no-repeat,linear-gradient(to bottom right,var(--red) 50%,transparent 50%) 169px 0/14px 14px no-repeat,
+linear-gradient(to top left,var(--red) 50%,transparent 50%) 177px 0/14px 14px no-repeat,linear-gradient(to bottom right,var(--red) 50%,transparent 50%) 191px 0/14px 14px no-repeat,
+repeating-linear-gradient(-55deg,rgb(239 228 201 / .3) 0 3px,transparent 3px 8px)}
+.ui-house .gc-close{background:linear-gradient(180deg,rgb(255 255 255 / .07),rgb(0 0 0 / .3)),var(--glass);border-color:rgb(92 214 239 / .35);color:var(--accent);
+box-shadow:inset 0 1px 0 rgb(255 255 255 / .1),inset 0 -2px 3px rgb(0 0 0 / .55),0 0 10px -4px rgb(92 214 239 / .6)}
 .gc-head h2{font:600 1.5rem/1 var(--silk);letter-spacing:.06em;text-transform:uppercase}
 .gc-head h2::after{content:"SR-CTL · 0417";margin-left:12px;padding:2px 7px;vertical-align:middle;border:1px solid var(--oxide);border-radius:2px;
 font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0 0 0 / .3)}
