@@ -76,3 +76,10 @@ summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 
 /* The full-screen switch, in the page's top right corner. */
 .full-toggle { position: absolute; top: 14px; right: 14px; white-space: nowrap; font-size: 13px; padding: 4px 12px; background: color-mix(in srgb, var(--paper) 85%, var(--ink)); color: var(--ink); border-color: color-mix(in srgb, var(--ink) 20%, transparent); }
+
+/* A backdrop: someone's codeSplitter page fills the window behind the blocks, which turn to glass over it. */
+.backdrop { position: fixed; inset: 0; width: 100vw; height: 100vh; border: 0; z-index: 0; pointer-events: none; }
+.shell > .page, .shell > .dock { position: relative; z-index: 1; }
+.page.over { background: transparent; }
+.page.over .block { background: color-mix(in srgb, var(--paper) 72%, transparent); backdrop-filter: blur(6px); }
+.page.over header { display: inline-flex; padding: 14px 20px; border-radius: 18px; background: color-mix(in srgb, var(--paper) 72%, transparent); backdrop-filter: blur(6px); }

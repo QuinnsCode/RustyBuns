@@ -4,14 +4,14 @@
 import { bool, obj, opt, raw, int, str, type Of } from "@rustybuns/util/guard";
 import type { Hints, InputSchema } from "@rustybuns/util/commands";
 import { Schema } from "effect";
-import { AddBlock, EditBlock, MoveBlock, RemoveBlock, Reset, SetProfile, SetTheme } from "./page.ts";
+import { AddBlock, EditBlock, MoveBlock, RemoveBlock, Reset, SetBackdrop, SetProfile, SetTheme } from "./page.ts";
 
 export const Undo = Schema.TaggedStruct("Undo", {});
 /** What a call asks the page for: an action on the page, or undo (which needs the page's history). */
-export const Request = Schema.Union([SetProfile, SetTheme, AddBlock, EditBlock, RemoveBlock, MoveBlock, Reset, Undo]);
+export const Request = Schema.Union([SetProfile, SetTheme, AddBlock, EditBlock, RemoveBlock, MoveBlock, SetBackdrop, Reset, Undo]);
 export type Request = typeof Request.Type;
 
-type Tagged = typeof SetProfile | typeof SetTheme | typeof AddBlock | typeof EditBlock | typeof RemoveBlock | typeof MoveBlock | typeof Reset | typeof Undo;
+type Tagged = typeof SetProfile | typeof SetTheme | typeof AddBlock | typeof EditBlock | typeof RemoveBlock | typeof MoveBlock | typeof SetBackdrop | typeof Reset | typeof Undo;
 export interface Tool { name: string; title: string; description: string; schema: Tagged; hints?: Hints }
 
 const block = "A block is {kind, title, body, items}: text (title and body), links (items with label and an https url), stats (items with label and value), quote (body, title says who) or tags (items with a label).";
@@ -23,13 +23,14 @@ export const TOOLS: readonly Tool[] = [
   { name: "page_edit_block", title: "Edit a block", schema: EditBlock, description: `Change the fields given of the block with this id; items, when given, replaces the whole list. ${block}` },
   { name: "page_move_block", title: "Move a block", schema: MoveBlock, description: "Move the block with this id to index `to` (0 is the top)." },
   { name: "page_remove_block", title: "Remove a block", schema: RemoveBlock, description: "Remove the block with this id. page_undo puts it back.", hints: { destructiveHint: true } },
+  { name: "page_set_backdrop", title: "Set the backdrop", schema: SetBackdrop, description: "Put a codeSplitter profile page (that handle's public `page` repo, its own world or scene) full screen behind the blocks, in a sandbox: \"quinn\" shows @quinn's. \"\" takes it away. Pick ink and a paper that read over it." },
   { name: "page_undo", title: "Undo", schema: Undo, description: "Take back the last change, the agent's or the person's." },
   { name: "page_reset", title: "Start over", schema: Reset, description: "Put the page back to the starter. page_undo puts it back.", hints: { destructiveHint: true } },
 ];
 
 export const READ = {
   name: "page_read", title: "Read the page",
-  description: `The page as it stands: name, tagline, theme and blocks (each with its id). ${block}`,
+  description: `The page as it stands: name, tagline, theme, blocks (each with its id) and backdrop (a codeSplitter handle, when set). ${block}`,
   inputSchema: { type: "object", properties: {} } satisfies InputSchema,
   annotations: { readOnlyHint: true } satisfies Hints,
 };
