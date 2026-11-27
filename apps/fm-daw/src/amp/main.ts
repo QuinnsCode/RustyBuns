@@ -25,7 +25,7 @@ import { icon } from "./icons.ts";
 import { h, iconButton } from "./dom.ts";
 import { benchSlot } from "./bench-slot.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
-import { DEFAULT_DRIVE, onParts, readParts } from "./parts-store.ts";
+import { DEFAULT_DRIVE, keepParts, onParts, readParts } from "./parts-store.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { startMidi } from "../ui/input.ts";
 import { MODES, Screen, lightLevels, topHz, hzLabel, type ScreenMode } from "./screens.ts";
@@ -100,22 +100,23 @@ function loadState(): State {
     cables: [...STAGE.cables],
     order: freshOrder(), lit: [],
   };
+  // The knobs and swaps are parts-store's: its copy wins over the one in an older save here.
+  const parts = readParts();
   try {
     const raw = localStorage.getItem(KEY);
     const saved = raw ? check(Saved, JSON.parse(raw)) : null;
     if (saved) {
       return {
-        ...saved, knobs: { ...fresh.knobs, ...saved.knobs }, loop: saved.loop ?? fresh.loop, cables: saved.cables ?? fresh.cables,
+        ...saved, drive: parts.drive, swaps: parts.swaps, knobs: { ...fresh.knobs, ...saved.knobs }, loop: saved.loop ?? fresh.loop, cables: saved.cables ?? fresh.cables,
         order: tidyOrder(saved.order ?? fresh.order), lit: saved.lit ?? (saved.pedal ? [saved.pedal] : []),
       };
     }
   } catch { /* private window or bad JSON: start fresh */ }
-  // Q Builder may have kept knobs and swaps here before Q Amp was ever opened.
-  const parts = readParts();
   return { ...fresh, drive: parts.drive, swaps: parts.swaps };
 }
 const S = loadState();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } };
+/** The page's store, and the knobs and swaps into parts-store only if they changed (so a save never undoes Q Builder's). */
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } keepParts({ drive: S.drive, swaps: S.swaps }); };
 const loopOf = () => (S.loop ??= freshLoop());
 const ampOf = (id: string): AmpDef => AMPS.find((a) => a.id === id) ?? AMPS[0];
 
