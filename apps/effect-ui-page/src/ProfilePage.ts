@@ -7,7 +7,7 @@ import { Command, Component, Subscription, UiSchema } from "@effect/ui";
 import { Html } from "@effect/ui/html";
 import { Effect, Schema, Stream } from "effect";
 import { Agent, Call, type Request } from "./agent.ts";
-import { apply, type Block, Page } from "./page.ts";
+import { apply, backdropUrl, type Block, Page } from "./page.ts";
 import { linksFor, prompt } from "./relay.ts";
 import { READ, TOOLS } from "./tools.ts";
 
@@ -167,7 +167,11 @@ export const ProfilePageNoDeps = Def.make({
       .attr("aria-label", label ? undefined : `${copied === what ? "Copied" : "Copy"} the ${what} line`)
       .on("click", PageMessage.ClickedCopy({ what, text })).children(copied === what ? "Copied" : label ?? "Copy");
     return h.div.class("shell", full && "full").children(
-      h.main.class("page").attr("style", `--accent:${t.accent};--paper:${t.paper};--ink:${t.ink};--font:${FONTS[t.font]}`).children(
+      // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
+      page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
+        src: backdropUrl(page.backdrop), sandbox: "allow-scripts", referrerpolicy: "no-referrer", title: `@${page.backdrop}'s codeSplitter page`, style: `background:${t.paper}`, "aria-hidden": "true", tabindex: "-1",
+      }),
+      h.main.class("page", page.backdrop && "over").attr("style", `--accent:${t.accent};--paper:${t.paper};--ink:${t.ink};--font:${FONTS[t.font]}`).children(
         h.button.attr("type", "button").class("full-toggle").attr("title", full ? "Show the dock (Connect, tools, last calls)" : "Full screen: the page alone")
           .attr("aria-pressed", full ? "true" : "false").on("click", PageMessage.ClickedFull()).children(full ? "Show dock" : "Full screen"),
         h.header(h.div.class("avatar").children(initials(page.name)), h.div(h.h1(page.name), h.p.class("tagline").children(page.tagline))),

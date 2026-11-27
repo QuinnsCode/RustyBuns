@@ -33,6 +33,11 @@ export const PAGE_REPO = "page";
 /** Where a page may load libraries from: pinned versions are the author's job. */
 export const LIBRARY_HOSTS = ["https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://unpkg.com", "https://esm.sh"];
 
+/** Sites that may show a profile page in a frame besides codeSplitter itself: the Agent Page (apps/effect-ui-page),
+ *  deployed and on this machine, which puts someone's page behind theirs. The page is public and runs in an opaque
+ *  sandbox with no session, so a frame elsewhere sees nothing it couldn't fetch. */
+export const PAGE_FRAMERS = ["https://agent-page.notryanquinn.workers.dev", "http://127.0.0.1:*", "http://localhost:*"];
+
 /** A page loads images and media from outside only when its index.html says so with this tag; visitors are told. */
 export const OUTSIDE_MEDIA = /<meta\s+name=["']codesplitter-outside-media["']\s+content=["']allow["']\s*\/?>/i;
 
@@ -48,7 +53,7 @@ const pageCsp = (outside: boolean) => [
   "worker-src blob:",
   "form-action 'none'",
   "base-uri 'self'",
-  "frame-ancestors 'self'",
+  `frame-ancestors 'self' ${PAGE_FRAMERS.join(" ")}`,
 ].join("; ");
 
 /** The default: a page's own files, uploads and data URLs only, so its script can't carry what it reads out in an image URL. */
@@ -202,7 +207,8 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   if (outside) body += OUTSIDE_NOTICE;
   return new Response(req.method === "HEAD" ? null : body, {
     headers: {
-      "content-type": `${type}; charset=utf-8`, "content-security-policy": pageCsp(outside), "x-frame-options": "SAMEORIGIN", "cache-control": "no-cache",
+      "content-type": `${type}; charset=utf-8`, // Browsers that read frame-ancestors ignore x-frame-options; it's the fallback (codeSplitter only) for the rest.
+      "content-security-policy": pageCsp(outside), "x-frame-options": "SAMEORIGIN", "cache-control": "no-cache",
       // The page's origin is opaque, so its module scripts and fetches are cross-origin to its own files.
       "access-control-allow-origin": "*",
     },

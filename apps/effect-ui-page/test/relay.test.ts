@@ -51,7 +51,7 @@ describe("an agent over MCP", () => {
     const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
     expect(init.result).toMatchObject({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "agent-page" } });
     expect((await post("/mcp", { jsonrpc: "2.0", method: "notifications/initialized" })).status).toBe(202);
-    expect((await rpc("tools/list")).result.tools).toHaveLength(9);
+    expect((await rpc("tools/list")).result.tools).toHaveLength(10);
     const ok = await rpc("tools/call", { name: "page_set_profile", arguments: { name: "Ada" } });
     expect(ok.result.isError).toBe(false);
     expect(JSON.parse(ok.result.content[0].text)).toEqual({ ok: true, page: { name: "Ada" } });

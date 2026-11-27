@@ -18,7 +18,17 @@ describe("an agent's tool call", () => {
       ["page_set_theme", { font: "comic" }],
       ["page_add_block", { kind: "links", title: "Me", items: [{ label: "x", url: "javascript:alert(1)" }] }],
       ["page_add_block", { title: "no kind" }],
+      ["page_set_backdrop", { codesplitter: "../me/../admin" }],
     ] as const) expect(() => decode(tool(name), args)).toThrow();
+  });
+
+  test("puts a codeSplitter page behind the blocks, and takes it away", () => {
+    const asked = decode(tool("page_set_backdrop"), { codesplitter: "quinn" });
+    expect(asked).toEqual({ _tag: "SetBackdrop", codesplitter: "quinn" });
+    const set = apply(starter, { _tag: "SetBackdrop", codesplitter: "quinn" });
+    expect("page" in set && set.page.backdrop).toBe("quinn");
+    const off = "page" in set ? apply(set.page, { _tag: "SetBackdrop", codesplitter: "" }) : set;
+    expect("page" in off && "backdrop" in off.page).toBe(false);
   });
 
   test("tells the agent which arguments it takes", () => {
