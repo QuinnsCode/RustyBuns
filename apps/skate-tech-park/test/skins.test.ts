@@ -5,11 +5,6 @@ import * as THREE from "three";
 import { fingerboard, roadster } from "../src/models.ts";
 import { SWAP_TIME, Skins } from "../src/render/skins.ts";
 
-const meshes = (g: THREE.Object3D) => {
-  let n = 0;
-  g.traverse((o) => { if ((o as THREE.Mesh).isMesh) n++; });
-  return n;
-};
 const PIVOT = { fingerboard: 0.45, roadster: 0.6 };
 
 test("Tab hands over from one skin to the other, and both rest at full size", () => {

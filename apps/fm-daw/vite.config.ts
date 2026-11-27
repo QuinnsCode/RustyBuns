@@ -14,8 +14,18 @@ const open = /^\/(jam|decks)(\.html)?(\?|$)/;
 const headers = (s: { middlewares: { use(f: (req: { url?: string }, res: { setHeader(k: string, v: string): void }, next: () => void) => void): void } }) =>
   void s.middlewares.use((req, res, next) => { if (!open.test(req.url ?? "")) for (const [k, v] of Object.entries(isolation)) res.setHeader(k, v); next(); });
 const isolate: Plugin = { name: "isolate-but-the-decks", configureServer: headers, configurePreviewServer: headers };
+// As the Worker does live (src/worker.ts): a bare visit lands on the front door, /paths too; /desk is the DAW (the
+// SPA fallback serves index.html for it, as for /sesh/<name>).
+type Res = { statusCode: number; setHeader(k: string, v: string): void; end(): void };
+const door = (s: { middlewares: { use(f: (req: { url?: string }, res: Res, next: () => void) => void): void } }) =>
+  void s.middlewares.use((req, res, next) => {
+    const path = (req.url ?? "").split("?")[0];
+    if ((path === "/" && !/[?&]room=/.test(req.url ?? "")) || path === "/paths") { res.statusCode = 302; res.setHeader("Location", "/door.html"); res.end(); return; }
+    next();
+  });
+const frontDoor: Plugin = { name: "land-on-the-door", configureServer: door, configurePreviewServer: door };
 export default defineConfig({
-  plugins: [rustybuns(), isolate],
+  plugins: [rustybuns(), isolate, frontDoor],
   esbuild: { jsx: "automatic" },
   // The WAM SDK sends its audio-thread classes over as text (src/ui/wam.ts). Pre-bundled, their static fields become
   // helper calls that text doesn't carry, and a web plugin never starts: it's served as it is.

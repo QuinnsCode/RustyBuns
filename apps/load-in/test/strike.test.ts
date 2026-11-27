@@ -5,7 +5,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { setDial } from "../src/assists.ts";
 import { LOOP_S, coil, loop, loopsFor, newCables, plug, settle, takeCable, unplug, walkWith, type Way } from "../src/cables/cables.ts";
-import { dims, newWorld, pickUp, putDown, type World } from "../src/sim.ts";
+import { dims, newWorld, pickUp, putDown } from "../src/sim.ts";
 import { DIVE_BAR } from "../src/venues/dive-bar.ts";
 import { inTruck, shut, stow, strike, strikeState } from "../src/strike.ts";
 import { DESERT } from "../src/venues/desert.ts";

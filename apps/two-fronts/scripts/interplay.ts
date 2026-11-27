@@ -185,7 +185,7 @@ function war(seed: number, landing: LandingRules | undefined, maxTurns = 40): Wa
   const open: { system: string; f: Faction; had: number; turn: number }[] = [];
   while (w.turns < maxTurns && !c.winner) {
     const before = c, all = FACTIONS.map((f) => aiOrders(c, f));
-    c = { ...c, attacks: declareAttacks(c, all) };
+    c = Object.assign({}, c, { attacks: declareAttacks(c, all) });
     for (const o of all) o.retreats = aiRetreats(c, o);
     c = resolveTurn(c, all);
     if (c.deploying) c = deployTurn(c, c.deploying.map((f) => ({ faction: f, orders: [], deploys: aiDeploys(c, f) })));

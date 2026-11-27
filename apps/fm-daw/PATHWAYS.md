@@ -148,8 +148,7 @@ what power, before the truck is loaded.
 
 **Works today:**
 - Step 1: the studio builder (`/rooms.html`, `src/studio/builder.ts`): size, materials, panels, booths, seats.
-- Step 2: a room, indoors or out, picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the rig cards, `rig-cards.ts`, draw each to
-  scale). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
+- Step 2: a room, indoors or out, picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the owner picks one in the jam room's Settings, #6420). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
   tops and sets a line array's pins (#5863). Indoors the stacks are the room's own `pa` (with none, a club stack
   stands either side of the decks), drawn in the builder and on Walk in, with the same power check and gear list (#5883).
 - Step 3: the Coverage button draws the PA's mids and highs over the floor, on the blueprint or the 3D view's floor (`src/studio/coverage.ts`),
@@ -233,7 +232,7 @@ circuit on its own thread, not your guitar through Q Amp's audio thread, and onl
 
 ## The front door
 
-`/door.html` is the landing page ([#6019](https://github.com/QuinnsCode/RustyBuns/issues/6019)). Its hero is a live field at dusk
+`/door.html` (also `/` and `/paths`) is the landing page ([#6019](https://github.com/QuinnsCode/RustyBuns/issues/6019)). Its hero is a live field at dusk
 (`src/hero.ts`, drawn by `src/front-hero.ts`): two stacks and the map of their highs (4 kHz, `@rustybuns/gear`'s outdoor model) on the
 grass. The Air and Humidity sliders and the Bank button change the map, and **Hear it from the back** loops a beat through an EQ
 set by what the field took from each band at the back. Start learning and Start building open `/studio.html` and `/rooms.html`.
@@ -243,4 +242,4 @@ Event asks you to sign in; the rest work signed out. Every page has a way back: 
 along the top (`src/way.ts`), or the round house button in the corner of the decks and the studio builder
 (`mountBack`). Then the pedal-to-show chain, what works today and a word for crews and classes (`CHAIN`, `LIVE`, `PITCHES` in `src/paths.ts`).
 `qdoor.state()` and `qdoor.hero.state()` / `qdoor.hero.set({ tempC, humidity, bank })` for probes; `test/front-door.test.ts` checks the cards and that the field darkens at the back with dry air and behind a bank, and `test/front-door-paths.test.ts` walks every card to its first step and back at
-phone and desktop sizes. `/` is still the desk, so a link someone was sent lands where it always did.
+phone and desktop sizes. A bare visit to `/` (and to `/paths`) lands here; the desk is `/desk`, and an old `/?room=` link still opens its sesh.

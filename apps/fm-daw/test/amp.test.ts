@@ -44,7 +44,7 @@ test("working the knobs while the riff plays: rebuilds only what moved, never pa
   play(40);
   for (const [what, change, fresh] of moves) {
     const before = live.rig;
-    s = { ...s, ...change };
+    s = Object.assign({}, s, change); // a new object each move, so applySettings sees what changed
     live = applySettings(s, live, SR);
     expect([what, live.rig !== before]).toEqual([what, fresh]);
     play(40);
@@ -82,7 +82,7 @@ test("the effects loop: machines switched and turned while the riff plays, then 
     ["tape off", [{ kind: "bbd", mode: "flanger", rate: 4, depth: 6 }, { kind: "spring", dwell: 10, mix: 6 }]],
   ];
   for (const [what, loop] of moves) {
-    s = { ...s, loop };
+    s = Object.assign({}, s, { loop });
     live = applySettings(s, live, SR);
     expect([what, live.rig === amp]).toEqual([what, true]); // the tubes are never rebuilt for the loop
     play(100);

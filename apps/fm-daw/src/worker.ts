@@ -1,5 +1,5 @@
-// Cloudflare shell. Serves the page at /sesh/<name> (a bare visit gets a new name),
-// and routes /ws?room=<name> to a World Durable Object, the same class the desktop
+// Cloudflare shell. A bare visit to / lands on the front door (/door.html, also /paths); /desk serves the DAW at a new
+// /sesh/<name>, and routes /ws?room=<name> to a World Durable Object, the same class the desktop
 // host runs in-process. Each sesh is one shared groove. Visitors are anonymous: the Worker vouches a random id,
 // the way the desktop host vouches its one local user. The Lobby counts the open
 // rooms (MAX_ROOMS at once) and keeps the sign-up list for when they're all taken. A sesh can
@@ -8,6 +8,7 @@
 import World, { type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby, { IDLE_MS } from "./lobby.ts";
 import { bounceFromPath, seshFromPath, seshName } from "./sesh.ts";
+import { DOOR } from "./paths.ts";
 import Profile from "./profile.ts";
 import { partyOwner, PARTIES_MAX } from "./party-store.ts";
 import { personId } from "./chat.ts";
@@ -101,11 +102,14 @@ export default {
       if (code) headers.set("X-Sesh-Code", code);
       return env.WORLD.get(env.WORLD.idFromName(room)).fetch(new Request(req, { headers }));
     }
-    if (url.pathname === "/" && req.method === "GET") {
+    if ((url.pathname === "/" || url.pathname === "/desk") && req.method === "GET") {
       // an old ?room= link keeps its groove under the new address
       const old = url.searchParams.get("room")?.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 64);
+      // a bare visit lands on the front door (the paths); the desk lives at /desk, which hands out a new sesh
+      if (!old && url.pathname === "/") return Response.redirect(new URL(DOOR, url).href, 302);
       return Response.redirect(new URL(`/sesh/${old || seshName()}`, url).href, 302);
     }
+    if (url.pathname === "/paths" && req.method === "GET") return Response.redirect(new URL(DOOR, url).href, 302);
     const bounce = bounceFromPath(url.pathname);
     if (bounce) {
       // Any page may play a sesh's bounce (a DJ's decks on another site), so the read is open to every origin.

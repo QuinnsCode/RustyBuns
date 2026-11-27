@@ -116,8 +116,8 @@ export class Overlay {
       wheels.append(w);
       return w;
     };
-    this.pitchEl = wheel("pitch", "Pitch bend: drag, or hold the up and down arrows");
-    this.modEl = wheel("mod", "Mod (vibrato): drag, or [ and ]");
+    this.pitchEl = wheel("pitch", "Pitch bend: drag (Q holds the view so the mouse is free), or hold the up and down arrows");
+    this.modEl = wheel("mod", "Mod (vibrato): drag (Q holds the view so the mouse is free), or [ and ]");
     this.drag(this.pitchEl, (y) => { this.wheels.pitch = 1 - 2 * y; }, () => { this.wheels.held = false; });
     this.drag(this.modEl, (y) => { this.wheels.mod = 1 - y; }, () => {});
     this.root.append(wheels, this.keysEl);

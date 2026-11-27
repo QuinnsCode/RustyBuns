@@ -1,7 +1,6 @@
 // The landscape features of the kit: each answers the height a rider would meet, and the parks that
 // use them still load with them in place.
 import { expect, test } from "bun:test";
-import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { fallenLog, geyserCone, halfpipe, K, L, outcrop, rollers, tabletop } from "../src/levels/pieces.ts";
 import { IDLE, start, step } from "../src/sim.ts";

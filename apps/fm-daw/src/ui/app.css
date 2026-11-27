@@ -1,17 +1,27 @@
 /* Fonts are bundled (App.tsx): the desktop host is cross-origin isolated and may be offline. */
 
-:root {
+:root, :root[data-theme="dark"] {
   --bg: #141518; --panel: #1d1f23; --raised: #262930; --edge: #33373f; --ink: #eceef1; --dim: #9aa1ab;
   --hot: #ff4d3d; --ok: #4fd18b; --warn: #ffb000; --cell: #2b2f37; --cell-beat: #343944;
   --silk: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "IBM Plex Sans", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* how much of a track's colour its text keeps (the rest is ink): bright track colours wash out on the light look */
+  --track-text: 100%;
   color-scheme: dark;
 }
+/* the light look: picked on the desk (ThemePick, data-theme on <html>), or the OS's under System (no data-theme) */
+:root[data-theme="light"] {
+  --bg: #c9ccd0; --panel: #dcdfe2; --raised: #eceef0; --edge: #b4b9bf; --ink: #17191c; --dim: #555c66;
+  --hot: #d42a1c; --ok: #158a4f; --warn: #a86f00; --cell: #c8ccd1; --cell-beat: #babfc6;
+  --track-text: 55%;
+  color-scheme: light;
+}
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme]) {
     --bg: #c9ccd0; --panel: #dcdfe2; --raised: #eceef0; --edge: #b4b9bf; --ink: #17191c; --dim: #555c66;
     --hot: #d42a1c; --ok: #158a4f; --warn: #a86f00; --cell: #c8ccd1; --cell-beat: #babfc6;
+    --track-text: 55%;
     color-scheme: light;
   }
 }
@@ -93,7 +103,7 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
   border: 0; border-left: 4px solid var(--track); border-radius: 4px; background: transparent; font-weight: 500;
 }
 .track-name kbd { font-size: .7rem; }
-.track-name .take-mark { margin-left: 6px; color: var(--track); flex: none; }
+.track-name .take-mark { margin-left: 6px; color: color-mix(in srgb, var(--track) var(--track-text), var(--ink)); flex: none; }
 .track-name .kind { margin-left: auto; font: 600 .7rem var(--silk); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
 .track.sel .track-name { background: color-mix(in srgb, var(--track) 22%, var(--raised)); }
 .ms { width: 26px; height: 26px; border: 1px solid var(--edge); border-radius: 3px; background: var(--raised); font: 700 .78rem var(--silk); color: var(--dim); }
@@ -101,7 +111,16 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .ms.solo.on { background: var(--ok); color: #04210f; border-color: var(--ok); }
 
 .center { display: grid; align-content: start; gap: 14px; padding: 14px 20px 18px; min-width: 0; }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.toolbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 12px; min-width: 0; }
+/* like with like: each group keeps its pieces together; a narrow screen wraps whole groups, never sideways */
+.toolbar .tool-group { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.toolbar .tool-group + .tool-group, .toolbar .add-menu + .tool-group { padding-left: 12px; border-left: 1px solid var(--edge); }
+.toolbar .tabs { flex: none; }
+.toolbar .strength { display: inline-flex; align-items: center; gap: 6px; }
+.toolbar .strength input { width: 84px; }
+.toolbar .strength .silk { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) { .toolbar { flex-wrap: wrap; } .toolbar .spacer { display: none; } }
+@media (max-width: 520px) { .toolbar .tabs { max-width: 100%; overflow-x: auto; } .toolbar .tool-group + .tool-group, .toolbar .add-menu + .tool-group { padding-left: 0; border-left: 0; } }
 .toolbar .check { padding: 0; }
 
 /* drum grid */
@@ -191,7 +210,7 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .op legend .silk { display: inline; color: var(--ink); }
 .op .role { font: 500 .72rem var(--mono); color: var(--dim); }
 .op.carrier { border-color: color-mix(in srgb, var(--track) 55%, var(--edge)); }
-.op.carrier .role { color: var(--track); }
+.op.carrier .role { color: color-mix(in srgb, var(--track) var(--track-text), var(--ink)); }
 .amp-insert { display: grid; gap: 12px; padding: 14px; background: var(--panel); border: 1px solid var(--edge); border-top: 3px solid var(--track); border-radius: 6px; }
 .amp-insert .faders { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 16px; }
 .fader { display: grid; grid-template-columns: 62px 1fr 58px; align-items: center; gap: 6px; }
@@ -200,7 +219,7 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .fader output { font: 500 .74rem var(--mono); text-align: right; color: var(--dim); white-space: nowrap; }
 .fader.learn { outline: 1px dashed var(--edge); outline-offset: 2px; border-radius: 4px; cursor: crosshair; }
 .fader.learn.armed { outline: 2px solid var(--track); }
-.fader output.cc { color: var(--track); }
+.fader output.cc { color: color-mix(in srgb, var(--track) var(--track-text), var(--ink)); }
 .learn-map { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; font: 500 .72rem var(--mono); }
 .learn-map li { display: flex; align-items: center; gap: 4px; padding: 1px 4px 1px 6px; background: var(--raised); border: 1px solid var(--edge); border-radius: 4px; }
 .learn-map button { padding: 0 4px; line-height: 1.2; }
@@ -415,7 +434,7 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .clip-lane { position: relative; min-width: 0; padding: 6px 0; border-top: 1px solid var(--edge); }
 .clip-tools { position: absolute; left: 0; top: 6px; bottom: 6px; width: var(--tl-left, 40px); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; }
 .clip-tools .icon { display: grid; place-items: center; width: 32px; height: 26px; padding: 0; }
-.clip-tools .icon.on { color: var(--track); border-color: var(--track); }
+.clip-tools .icon.on { color: color-mix(in srgb, var(--track) var(--track-text), var(--ink)); border-color: var(--track); }
 .clip-box { position: relative; min-width: 0; margin-left: var(--tl-left, 40px); width: var(--tl-width, auto); border-radius: 4px; background: var(--cell); }
 .clip-box canvas { display: block; touch-action: pan-y; outline: none; border-radius: 4px; }
 .clip-box canvas:focus-visible { box-shadow: inset 0 0 0 1px var(--track); }

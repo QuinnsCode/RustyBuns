@@ -8,9 +8,6 @@ import { start } from "../src/sim.ts";
 
 const level = makeLevel({ name: "flat", pieces: [], rails: [], spawns: [{ name: "car", x: 0, z: -90, yaw: 0 }], bounds: { minX: -50, maxX: 50, minZ: -100, maxZ: 400 } });
 const BOX = level.bounds;
-// What the board covers of the view: its size over the camera's distance, at the lens in use.
-const onScreen = (c: Chase, cam: THREE.PerspectiveCamera, b: { x: number; y: number; z: number }) =>
-  1 / (c.pos.distanceTo(new THREE.Vector3(b.x, b.y, b.z)) * Math.tan((cam.fov * Math.PI) / 360));
 
 test("a rise between the board and the camera brings the camera in, above the rise", () => {
   const wall = piece("box", "wall", 0, -4, 0, 20, 4, 6, 6); // a 6 m block just behind the board
