@@ -4,7 +4,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CHECKOUT_TIMEOUT_MS, plainCheckout, slowCheckout, startFromDefault } from "../scripts/checkout.ts";
+import { CHECKOUT_TIMEOUT_MS, clonedCheckout, plainCheckout, slowCheckout, startFromDefault } from "../scripts/checkout.ts";
 import { beforePinned, pinnedTest, unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
@@ -14,9 +14,10 @@ let file = "";
 let mod: { Worktrees: new (dir: string) => { create(slug: string): unknown; gitSync(a: string[]): string }; gitError(e: unknown): string };
 beforePinned(async () => {
   file = path.join(await unpackPinned(), "dist/server/server/worktrees.js");
-  writeFileSync(file, plainCheckout(startFromDefault(slowCheckout(readFileSync(file, "utf8")))));
+  writeFileSync(file, clonedCheckout(plainCheckout(startFromDefault(slowCheckout(readFileSync(file, "utf8"))))));
   // the office bundles live/sweep.ts next to it as rb-sweep.js
   writeFileSync(path.join(path.dirname(file), "rb-sweep.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/sweep.ts"))};\n`);
+  writeFileSync(path.join(path.dirname(file), "rb-clone.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/clone.ts"))};\n`);
   mod = await import(file);
 });
 
