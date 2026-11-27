@@ -18,10 +18,15 @@ export const Call = Schema.Struct({ call: Schema.Number, tool: Schema.String, re
 export type Call = typeof Call.Type;
 
 export interface Report { readonly call: number; readonly error: string | null; readonly page: Page }
+/** An agent's page_read, and what the world's frame said (world.ts), for the page's step strip. */
+export const Seen = Schema.Literals(["read", "start", "loaded", "error"]);
+export type Seen = typeof Seen.Type;
 
 export class Agent extends Context.Service<Agent, {
   /** The agent's calls, in the order they came. */
   readonly calls: Stream.Stream<Call>;
+  /** What the page saw besides calls: an agent read it (page_read), and its frame started, loaded or went wrong. */
+  readonly seen: Stream.Stream<Seen>;
   /** Whether the room's relay is connected: agents in a terminal can reach the page while it is. */
   readonly online: Stream.Stream<boolean>;
   /** What came of a call (0 for a person's click): answers the agent waiting on it. */
@@ -48,6 +53,7 @@ const PALETTE: Readonly<Record<string, { ask?: string }>> = {
 export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect.gen(function* () {
   const queue = yield* Queue.unbounded<Call>();
   const online = yield* Queue.unbounded<boolean>();
+  const seen = yield* Queue.unbounded<Seen>();
   const waiting = new Map<number, (r: Report) => void>();
   let page = initial, next = 1;
   // What the world's frame said since it last loaded (world.ts's reporter): its errors and blocked loads, newest last.
@@ -56,7 +62,10 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     const frame = document.querySelector("iframe.world");
     if (!(frame instanceof HTMLIFrameElement) || e.source !== frame.contentWindow || field(e.data, SAID_KEY) !== true) return;
     const kind = field(e.data, "kind"), text = String(field(e.data, "text") ?? "");
+    if (kind === "start" || kind === "loaded") Queue.offerUnsafe(seen, kind);
+    else Queue.offerUnsafe(seen, "error");
     if (kind === "start") said = [];
+    else if (kind === "loaded") return;
     else if (said.length < 20) said.push(`${kind === "blocked" ? "blocked" : "error"}: ${text}`);
   };
   addEventListener("message", heard);
@@ -70,7 +79,10 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     });
   };
   const off = addCommands([
-    { ...READ, group: "Page", palette: false, execute: () => ({ files: listing(page), ...(page.backdrop ? { backdrop: page.backdrop } : {}), said: said.length ? said : ["nothing: no errors since it loaded"] }) },
+    { ...READ, group: "Page", palette: false, execute: (_args, from) => {
+      if (from === "agent") Queue.offerUnsafe(seen, "read");
+      return { files: listing(page), ...(page.backdrop ? { backdrop: page.backdrop } : {}), said: said.length ? said : ["nothing: no errors since it loaded"] };
+    } },
     { ...READ_FILE, group: "Page", palette: false, execute: (args) => {
       const { path } = Schema.decodeUnknownSync(ReadFile)(args);
       const text = page.files[path];
@@ -92,6 +104,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   return Agent.of({
     calls: Stream.fromQueue(queue),
     online: Stream.fromQueue(online),
+    seen: Stream.fromQueue(seen),
     report: (r) => Effect.sync(() => {
       page = r.page;
       try { localStorage.setItem(savedKey(room), JSON.stringify(r.page)); } catch { /* private window: kept for this visit only */ }

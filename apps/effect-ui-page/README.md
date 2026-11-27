@@ -13,11 +13,14 @@ bun run dev              # http://127.0.0.1:4799
 ```
 
 Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
-city: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
+city. Two cards at the top: **What is Agent World?** opens a short explainer in place, and **Create your world**
+signs you in with eqosys and opens your world (the room this browser keeps, or this one); signed in already, it goes
+straight there, and where eqosys can't be reached (local dev) it says so in one line. Below them: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
 pictures of what that line does. Three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
-one click with no AI connected, on the landing, in the dock and in Cmd+K, each with one thing to ask your AI next. When your AI's first write arrives, the landing gives way to your world; "Skip to the
-page" does it by hand. A room this browser already kept opens straight on its page. The dock beside it says how to
-reach the room, with a copy button for each:
+one click with no AI connected, on the landing, in the dock and in Cmd+K, each with one thing to ask your AI next. When your AI first reads the page or changes it, the landing gives way to your world;
+"Skip to the page" does it by hand. A room this browser already kept opens straight on its page. The console, one
+panel in the middle of the screen (**Hide** puts it away, **Show** brings it back), says how to reach the room, with a
+copy button for each:
 
 - **Paste into any agent.** "Copy the prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
   T3 Code. They tell the agent to call the page's tools with `curl`, so there's nothing to install or configure.
@@ -29,8 +32,11 @@ reach the room, with a copy button for each:
 - **In the browser:** an agent with WebMCP (`document.modelContext`) sees the same tools on the page itself.
 
 Then ask for a world: "make me a rainy neon city in three.js, slowly orbiting". The world reloads with each file the
-agent writes, and the dock lists its calls. A new room starts with a small isometric rain city (`src/starter.ts`) to
-change or throw away.
+agent writes, and the console lists its calls. A step strip there shows where your AI is: Waiting for your AI, Your
+AI is here (its first `page_read`), Asking you about your world (a `page_status`), Writing the code (its first write),
+Your world is up (the frame loaded with no errors after a write). The AI asks you three things in its own chat (the
+ground, what is on it, the weather) before it writes; the page never asks. A new room starts with a night desert
+(`src/starter.ts`) to change or throw away.
 
 | Tool | Does |
 |---|---|
@@ -38,13 +44,14 @@ change or throw away.
 | `page_read_file` | One file's whole text |
 | `page_write_file` | Set one file (`index.html`, `world.js`, `lib/noise.js`, ...) to this text; `""` takes it away. Its description tells the agent how files load and what the frame allows |
 | `page_set_backdrop` | A codeSplitter handle whose profile page (their public `page` repo) fills the window behind the world; `""` takes it away |
-| `page_undo`, `page_reset` | Take back the last change, or go back to the starter city |
+| `page_undo`, `page_reset` | Take back the last change, or go back to the starter desert |
+| `page_status` | A few words (80 characters at most) on what the AI is doing, shown in the console and the step strip. Changes no file, nothing to undo |
 
 A write answers with the files (paths and sizes, not their text), or why it couldn't be done. The Undo and Start over
-buttons do the same as the tools. This browser keeps each room's world for the next visit. **Full screen** (or `?full`
-on the link) puts the dock away.
+buttons do the same as the tools. This browser keeps each room's world for the next visit. `?full` on the link opens with the
+console put away.
 
-The room's link is its key: there's no sign-in, so share it only with agents you want building your world. The page
+The room's link is its key (signing in names you, it doesn't lock the room), so share it only with agents you want building your world. The page
 has to stay open: it holds the world, and an agent that calls while no tab is open is told to ask you to open it.
 
 What keeps it safe, in short:
@@ -77,7 +84,9 @@ Durable Object per room and no storage, AI or other paid bindings.
   function that changes it. A tool's JSON Schema for the agent comes from the same Schema that checks its call.
 - `src/world.ts`: the sealed frame's document: `index.html` with the world's own scripts and styles put inline, its
   modules' imports of each other through an import map, the policy and the reporter first. `src/starter.ts`: the
-  starter city's two files.
+  starter desert's two files (`src/rain-city.ts` is the Rainy city try-one world).
+- `src/account.ts`: "Create your world": eqosys sign-in (`@rustybuns/util/eqosys`) and the room this browser keeps
+  as the person's own. Client side only for now.
 - `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP) and the frames between the relay and the page.
 - `src/agent.ts`: the `Agent` service in the page. Its Layer puts the WebMCP tools up (`@rustybuns/util/commands`)
   and keeps a socket to the room's relay while the page is mounted. A call from either becomes a message on a queue

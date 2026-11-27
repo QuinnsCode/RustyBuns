@@ -2,11 +2,8 @@
 * { box-sizing: border-box; }
 body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #fafafa; color: #18181b; }
 
-.shell { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 100vh; }
-@media (max-width: 760px) { .shell { grid-template-columns: 1fr; } }
-/* Full screen: the page alone fills the window; the dock is put away, and agents still reach the page. */
-.shell.full { grid-template-columns: 1fr; }
-.shell.full .dock { display: none; }
+/* The world fills the window; the console floats over it in the middle until Hide (or ?full) puts it away. */
+.shell { min-height: 100vh; }
 .shell.full .block { max-width: 960px; }
 
 /* The agent's page: every color and the font come from the theme, as CSS variables on .page. */
@@ -30,7 +27,23 @@ body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #fafafa; col
 .tag { padding: 4px 12px; border-radius: 999px; background: var(--accent); color: var(--paper); font-size: 13px; font-weight: 600; }
 
 /* The dock: the tools an agent sees and what it last did. */
-.dock { background: var(--dock); border-left: 1px solid var(--line); padding: 24px 20px; font-size: 14px; }
+.dock { position: fixed; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100vw - 24px)); max-height: min(82vh, 760px); overflow-y: auto; overscroll-behavior: contain; background: color-mix(in srgb, var(--dock) 94%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px rgba(0, 0, 0, .35); padding: 16px 18px 18px; font-size: 14px; }
+.dock-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+.dock-head h2 { margin: 0; font-size: 16px; }
+.dock button.hide { padding: 4px 14px; font-size: 13px; }
+
+/* The step strip: where the agent is, five steps in a row, the current one lit. */
+.strip { margin: 0 0 16px; }
+.strip ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.strip li { display: grid; justify-items: center; gap: 4px; text-align: center; font-size: 11px; line-height: 1.25; color: var(--muted); padding: 8px 2px; border-radius: 10px; }
+.strip .l-i { width: 20px; height: 20px; filter: none; }
+.strip li.done { color: #166534; }
+.strip li.now { color: #fff; background: #18181b; font-weight: 600; }
+.strip li.now .l-i { animation: s-pulse 1.6s ease-in-out infinite; }
+@keyframes s-pulse { 50% { opacity: .45; } }
+.strip .said { margin: 8px 0 0; padding: 6px 10px; border-radius: 10px; background: #fff; border: 1px solid var(--line); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .strip li.now .l-i { animation: none; } }
+@media (max-width: 420px) { .strip li span { font-size: 10px; } }
 .dock h3 { margin: 0 0 8px; font-size: 14px; }
 .dock h3 + * { margin-top: 0; }
 .muted { color: var(--muted); }
@@ -75,11 +88,11 @@ summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 .safe b { color: #18181b; }
 
 /* The full-screen switch, in the page's top right corner. */
-.full-toggle { position: absolute; top: 14px; right: 14px; white-space: nowrap; font-size: 13px; padding: 4px 12px; background: color-mix(in srgb, var(--paper) 85%, var(--ink)); color: var(--ink); border-color: color-mix(in srgb, var(--ink) 20%, transparent); }
+.full-toggle { position: fixed; z-index: 2; bottom: 16px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 13px; padding: 6px 16px; background: rgba(255, 255, 255, .9); color: #18181b; box-shadow: 0 6px 20px rgba(0, 0, 0, .3); }
 
 /* A backdrop: someone's codeSplitter page fills the window behind the blocks, which turn to glass over it. */
 .backdrop { position: fixed; inset: 0; width: 100vw; height: 100vh; border: 0; z-index: 0; pointer-events: none; }
-.shell > .page, .shell > .dock { position: relative; z-index: 1; }
+.shell > .page { position: relative; z-index: 1; }
 .page.over { background: transparent; }
 .page.over .block { background: color-mix(in srgb, var(--paper) 72%, transparent); backdrop-filter: blur(6px); }
 .page.over header { display: inline-flex; padding: 14px 20px; border-radius: 18px; background: color-mix(in srgb, var(--paper) 72%, transparent); backdrop-filter: blur(6px); }
@@ -185,3 +198,16 @@ summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 .landing .tries button { font: 600 14px var(--l-body); color: #fff; padding: 11px 18px; border-radius: 12px; cursor: pointer; background: #14122e; border: 1px solid var(--cyan); box-shadow: 0 0 14px color-mix(in srgb, var(--cyan) 35%, transparent); }
 .landing .tries button:hover { background: #221f4a; }
 .line.ask code { word-break: normal; font-size: 12px; }
+
+/* Agent World's two cards at the top of the landing: what it is (opens in place), and signing in for your own world. */
+.l-cards { width: min(760px, 100%); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.landing button.l-card { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 12px; text-align: left; padding: 12px 16px; border-radius: 14px; cursor: pointer; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); color: var(--l-ink); font: 200 12px/1.4 var(--l-body); box-shadow: 0 0 16px color-mix(in srgb, var(--c) 22%, transparent); }
+.landing button.l-card:hover { background: rgba(20, 18, 46, .8); }
+.l-card .l-i { grid-row: span 2; width: 22px; height: 22px; color: var(--c); }
+.l-card b { font: 600 14px var(--l-body); color: var(--c); }
+.l-card span { color: var(--l-dim); }
+.l-explain { grid-column: 1 / -1; padding: 14px 16px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, .14); }
+.l-explain p { margin: 0; font-size: 13px; max-width: 64ch; }
+.l-explain p + p { margin-top: 6px; color: var(--l-dim); }
+.l-cards > .l-alt { grid-column: 1 / -1; }
+@media (max-width: 520px) { .l-cards { grid-template-columns: 1fr; } }

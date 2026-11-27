@@ -1,13 +1,14 @@
 // The page as one Effect UI component: a Model (the world's files, what they were before each change, the agent's
 // last calls), messages for what happened (an agent called a tool, a person clicked undo or start over), and a view:
-// the world in its sealed frame (world.ts) with the dock beside it.
+// the world in its sealed frame (world.ts) with the console over it, and the landing before it.
 // Every change, the agent's or a person's, goes through `update` and ends by reporting the page (ReportPage), which
-// answers the agent's waiting tool call and keeps page_read current. The dock beside the page says how to connect
-// an agent: a prompt to paste into any agent that can run curl, or one `mcp add` line for each terminal agent.
+// answers the agent's waiting tool call and keeps page_read current. The console says where the agent is (the step
+// strip) and how to connect one: a prompt to paste into any agent that can run curl, or one `mcp add` line for each
+// terminal agent.
 import { Command, Component, Subscription, UiSchema } from "@effect/ui";
 import { Html } from "@effect/ui/html";
 import { Effect, Schema, Stream } from "effect";
-import { Agent, Call, type Request } from "./agent.ts";
+import { Agent, Call, type Request, Seen } from "./agent.ts";
 import { apply, backdropUrl, Page } from "./page.ts";
 import { linksFor, prompt } from "./relay.ts";
 import { READ, READ_FILE, TOOLS } from "./tools.ts";
@@ -26,7 +27,16 @@ export const PageMessage = UiSchema.TaggedEnum({
   ClickedCopy: { what: Schema.String, text: Schema.String },
   CompletedCopy: { what: Schema.String },
   FailedCopy: { what: Schema.String },
+  /** An agent read the page, or the world's frame started, loaded or went wrong (agent.ts): the step strip moves. */
+  Saw: { what: Seen },
+  ClickedExplain: {},
+  ClickedCreate: {},
+  CreatedWorld: { went: Schema.Literals(["here", "away", "off"]) },
 });
+
+/** "Create your world": sign in with eqosys, or open the world this browser keeps (account.ts, loaded only when pressed). */
+export const CreateWorld = Command.make("effect-ui-page/CreateWorld", { args: { room: Schema.String } }, ({ room }) =>
+  Effect.promise(() => import("./account.ts").then((a) => a.createWorld(room))).pipe(Effect.map((went) => PageMessage.CreatedWorld({ went }))));
 
 /** Put text on the clipboard. */
 export const CopyText = Command.make("effect-ui-page/CopyText", { args: { what: Schema.String, text: Schema.String } }, ({ what, text }) =>
@@ -59,10 +69,19 @@ const Model = Schema.Struct({
   full: Schema.Boolean,
   /** The landing: a fresh room shows it until the agent's first change, or until the person skips it. */
   landing: Schema.Boolean,
+  /** The landing's "What is Agent World?" card is open. */
+  explain: Schema.Boolean,
+  /** "Create your world" found no eqosys to sign in with (local dev). */
+  noSignIn: Schema.Boolean,
+  /** How far the agent has got, for the step strip: it is here, it asked, it wrote, the frame since its last load. */
+  steps: Schema.Struct({ here: Schema.Boolean, asked: Schema.Boolean, wrote: Schema.Boolean, clean: Schema.Boolean, up: Schema.Boolean }),
+  /** The agent's last page_status. */
+  status: Schema.NullOr(Schema.String),
 });
 type Model = typeof Model.Type;
 
-const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean });
+/** `who`: the eqosys name this browser is signed in as (account.ts), or null. */
+const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean, who: Schema.NullOr(Schema.String) });
 
 const Def = Html.component({ name: "ProfilePage", props: Props, model: Model, message: PageMessage });
 
@@ -78,6 +97,7 @@ function step(m: Model, r: Asked): { model: Model; error: string | null } {
     const [page, ...past] = m.past;
     return page ? { model: { ...m, page, past }, error: null } : { model: m, error: "nothing to undo" };
   }
+  if (r._tag === "Status") return { model: { ...m, status: r.text }, error: null };
   const out = r._tag === "Load" ? { page: { ...m.page, files: r.files } } : apply(m.page, r);
   if ("error" in out) return { model: m, error: out.error };
   return { model: { ...m, page: out.page, past: [m.page, ...m.past].slice(0, HISTORY) }, error: null };
@@ -150,6 +170,12 @@ const ICONS = {
   bot: ["M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z", "M12 8V4", "M9 13v2", "M15 13v2"],
   wrench: ["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9Z"],
   screen: ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z", "M8 21h8", "M12 17v4"],
+  hourglass: ["M5 22h14", "M5 2h14", "M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22", "M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"],
+  ask: ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
+  code: ["m16 18 6-6-6-6", "m8 6-6 6 6 6"],
+  globe: ["M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"],
+  info: ["M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z", "M12 16v-4", "M12 8h.01"],
+  sparkles: ["M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0Z"],
 } as const;
 type Icon = keyof typeof ICONS;
 
@@ -217,11 +243,39 @@ const STEPS: readonly (readonly [Icon, string, string, string, string])[] = [
 const maskOf = (name: Icon) => `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name].map((d) => `<path d="${d}"/>`).join("")}</svg>`)}")`;
 const icon = Def.fragment((h, name: Icon) => h.i.class("l-i").attrs({ "aria-hidden": "true", style: `--icon:${maskOf(name)}` }));
 
-const landingView = Def.fragment((h, room: string, origin: string, online: boolean, copied: string | null) => {
+/** The step strip's five steps, and which one the agent is on. */
+const STRIP: readonly (readonly [Icon, string])[] = [
+  ["hourglass", "Waiting for your AI"], ["bot", "Your AI is here"], ["ask", "Asking you about your world"], ["code", "Writing the code"], ["globe", "Your world is up"],
+];
+const stepOf = (s: Model["steps"]) => (s.up ? 4 : s.wrote ? 3 : s.asked ? 2 : s.here ? 1 : 0);
+const stripView = Def.fragment((h, steps: Model["steps"], status: string | null) => {
+  const now = stepOf(steps);
+  return h.section.class("strip").attr("aria-label", "Where your AI is").children(
+    h.ol.children(...STRIP.map(([i, says], n) => h.li.key(says).class(n < now && "done", n === now && "now").attr("aria-current", n === now ? "step" : undefined)
+      .children(icon(h, i), h.span(says)))),
+    status !== null && h.p.class("said").attr("role", "status").children(h.b("Your AI: "), status),
+  );
+});
+
+/** The two cards at the top of the landing: what Agent World is (opens in place), and signing in for your own world. */
+const cardsView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: string | null) => h.div.class("l-cards").children(
+  h.button.attr("type", "button").class("l-card", "c-cyan").attrs({ "aria-expanded": explain ? "true" : "false", "aria-controls": "l-explain" })
+    .on("click", PageMessage.ClickedExplain()).children(icon(h, "info"), h.b("What is Agent World?"), h.span("Read it in 20 seconds")),
+  h.button.attr("type", "button").class("l-card", "c-pink").on("click", PageMessage.ClickedCreate())
+    .children(icon(h, "sparkles"), h.b("Create your world"), h.span(who ? `Signed in as ${who}` : "Sign in with eqosys to get your plot")),
+  explain && h.div.class("l-explain").attrs({ id: "l-explain", role: "region", "aria-label": "What is Agent World?" }).children(
+    h.p("You get a plot of your own. Your AI builds a world on it: first it asks you three things in your own chat (the ground, what is on it, the weather), then it writes the code while you watch."),
+    h.p("Every world joins one big map that anyone can walk through."),
+  ),
+  noSignIn && h.p.class("l-alt").attr("role", "alert").children("Sign-in isn't reachable from here, so your world stays in this browser: Skip to the page below."),
+));
+
+const landingView = Def.fragment((h, room: string, origin: string, online: boolean, copied: string | null, explain: boolean, noSignIn: boolean, who: string | null) => {
   const claude = connectLines(origin, room)[0]!;
   return h.div.class("l-wrap").children(h.section.class("landing").attr("aria-label", "Agent Page").children(
     h.div.class("l-sign").attr("aria-hidden", "true").children("エージェント"),
     h.div.class("l-stage").children(
+      cardsView(h, explain, noSignIn, who),
       h.h1.class("l-word").children("Agent Page"),
       h.p.class("l-line").children("Your AI writes your world. You watch it light up."),
       h.div.class("l-signs").children(...SIGNS.map(([name, i, c]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), name))),
@@ -260,7 +314,8 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
 });
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, full: $.props.full, landing: $.props.landing }),
+  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, full: $.props.full, landing: $.props.landing,
+    explain: false, noSignIn: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
   update: ($, message) => {
     switch (message._tag) {
       case "ChangedRelay": return $.evolve({ online: message.online });
@@ -269,6 +324,19 @@ export const ProfilePageNoDeps = Def.make({
       case "FailedCopy": return $.evolve({ copied: `failed: ${message.what}` });
       case "ClickedFull": return $.evolve({ full: !$.model.full });
       case "ClickedLeaveLanding": return $.evolve({ landing: false });
+      case "ClickedExplain": return $.evolve({ explain: !$.model.explain });
+      case "ClickedCreate": return $.run(CreateWorld.make({ room: $.props.room }));
+      case "CreatedWorld": return message.went === "here" ? $.evolve({ landing: false }) : $.evolve({ noSignIn: message.went === "off" });
+      case "Saw": {
+        // The frame's word on its last load: up once it loaded with no error after the agent's write.
+        const s = $.model.steps;
+        switch (message.what) {
+          case "read": return $.evolve({ landing: false, steps: { ...s, here: true } });
+          case "start": return $.evolve({ steps: { ...s, clean: true, up: false } });
+          case "error": return $.evolve({ steps: { ...s, clean: false, up: false } });
+          case "loaded": return $.evolve({ steps: { ...s, up: s.wrote && s.clean } });
+        }
+      }
     }
     const a = asked(message);
     if (!a) return $.model;
@@ -276,7 +344,10 @@ export const ProfilePageNoDeps = Def.make({
     const { model, error } = step($.model, r);
     // The agent's first change that lands, or a world the person picks, takes the landing down.
     const landing = model.landing && !((call > 0 || r._tag === "Load") && error === null);
-    return $.set({ ...model, landing, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
+    // An agent's call says it is here; its page_status that it is asking; its first write that lands that it is writing.
+    const s = model.steps;
+    const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || (r._tag === "WriteFile" && error === null) } : s;
+    return $.set({ ...model, landing, steps, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
       .run(ReportPage.make({ call, error, page: model.page }));
   },
   subscriptions: () => [
@@ -284,10 +355,12 @@ export const ProfilePageNoDeps = Def.make({
       Stream.map((call) => PageMessage.ReceivedAgentCall({ call })))),
     Subscription.make("relay", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).online; })).pipe(
       Stream.changes, Stream.map((online) => PageMessage.ChangedRelay({ online })))),
+    Subscription.make("seen", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).seen; })).pipe(
+      Stream.map((what) => PageMessage.Saw({ what })))),
   ],
-  view: (h, { page, past, log, online, copied, full, landing }) => {
-    const { room, origin } = h.props;
-    if (landing) return landingView(h, room, origin, online, copied);
+  view: (h, { page, past, log, online, copied, full, landing, explain, noSignIn, steps, status }) => {
+    const { room, origin, who } = h.props;
+    if (landing) return landingView(h, room, origin, online, copied, explain, noSignIn, who);
     // A button with its own label says it; the short "Copy" ones beside each line name their agent for a screen reader.
     const copy = (what: string, text: string, label?: string) => h.button.attr("type", "button").class("copy")
       .attr("aria-label", label ? undefined : `${copied === what ? "Copied" : "Copy"} the ${what} line`)
@@ -301,10 +374,16 @@ export const ProfilePageNoDeps = Def.make({
       h.main.class("page", page.backdrop && "over").children(
         // The world the agent wrote, sealed: scripts run in an opaque origin, with no reach into this page.
         h.iframe.class("world").attrs({ srcdoc: worldDoc(page), sandbox: "allow-scripts allow-pointer-lock", referrerpolicy: "no-referrer", title: "Your world", allow: "fullscreen" }),
-        h.button.attr("type", "button").class("full-toggle").attr("title", full ? "Show the dock (Connect, tools, last calls)" : "Full screen: the page alone")
-          .attr("aria-pressed", full ? "true" : "false").on("click", PageMessage.ClickedFull()).children(full ? "Show dock" : "Full screen"),
+        // Put away (Hide, or ?full on the link), the console leaves one small button to bring it back.
+        full && h.button.attr("type", "button").class("full-toggle").attr("title", "Show the console (Connect, steps, last calls)").on("click", PageMessage.ClickedFull()).children("Show"),
       ),
-      h.aside.class("dock").children(
+      // The console: one panel in the middle of the screen, over the world, until Hide puts it away.
+      !full && h.aside.class("dock").attr("aria-label", "Console").children(
+        h.div.class("dock-head").children(
+          h.h2("Console"),
+          h.button.attr("type", "button").class("hide").attr("title", "Put the console away to see your world").on("click", PageMessage.ClickedFull()).children("Hide"),
+        ),
+        stripView(h, steps, status),
         h.h3("Try one"),
         tryView(h, on?.name),
         on && h.div.class("line", "ask").children(h.span("Then ask your AI"), h.code(on.ask), copy("ask", on.ask, copied === "ask" ? "Copied" : "Copy the ask")),

@@ -74,6 +74,8 @@ export const APPS: QApp[] = [
   { id: "codesplitter", name: "codeSplitter", kind: "suite", origins: ["https://codesplitter.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Productivity", maturity: "beta", featured: true, hero: true },
   { id: "playground", name: "Playground", kind: "suite", origins: ["https://rustybuns-playground.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Productivity" },
   { id: "hello-world", name: "Hello World", kind: "suite", origins: ["https://hello-world.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Productivity" },
+  // Agent Page (apps/effect-ui-page): "Create your world" signs in from its root. Listed as soon until the owner registers it live.
+  { id: "agent-page", name: "Agent Page", kind: "suite", origins: ["https://agent-page.notryanquinn.workers.dev"], starts: ["member"], genre: "Productivity", maturity: "experimental", soon: true },
   { id: "at-lens", name: "AT Lens", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Productivity", maturity: "experimental" },
   { id: "auto-rig", name: "Auto Rig", kind: "suite", origins: ["https://auto-rig.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Productivity" },
   // The owner's own scheduler (apps/cron-swanson), on Railway: only CRON_SWANSON_OWNER's account gets past its server.

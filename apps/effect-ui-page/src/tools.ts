@@ -8,11 +8,16 @@ import { FILE_MAX, FILES_MAX, Path, Reset, SetBackdrop, WORLD_MAX, WriteFile } f
 import { LIBRARY_HOSTS } from "./world.ts";
 
 export const Undo = Schema.TaggedStruct("Undo", {});
-/** What a call asks the page for: an action on the page, or undo (which needs the page's history). */
-export const Request = Schema.Union([WriteFile, SetBackdrop, Reset, Undo]);
+/** A few words on what the agent is doing, for the page to show: no file changes, nothing to undo. */
+export const Status = Schema.TaggedStruct("Status", { text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)) });
+/** What a call asks the page for: an action on the page, undo (which needs the page's history), or a status line. */
+export const Request = Schema.Union([WriteFile, SetBackdrop, Reset, Undo, Status]);
 export type Request = typeof Request.Type;
 
-type Tagged = typeof WriteFile | typeof SetBackdrop | typeof Reset | typeof Undo;
+type Tagged = typeof WriteFile | typeof SetBackdrop | typeof Reset | typeof Undo | typeof Status;
+
+/** What the agent does before a new world, told in the tools, the pasted prompt and the MCP instructions alike. */
+export const ASK = "Before writing a new world, ask the person three things in your chat, one at a time: what the ground is, what is on it, what the weather is. Say page_status while you ask, then write it.";
 export interface Tool { name: string; title: string; description: string; schema: Tagged; hints?: Hints }
 
 /** How a world is made, told once with the write tool: what the frame opens, how files load, what it may reach. */
@@ -22,13 +27,15 @@ const HOW = [
   `Libraries load from ${LIBRARY_HOSTS.join(", ")} at a pinned version: import * as THREE from "https://esm.sh/three@0.170.0".`,
   "The frame is sealed: no fetch or sockets, no cookies or localStorage, no forms. Images, sounds and models are drawn in code or written as data: URLs.",
   `A file is ${FILE_MAX.toLocaleString("en")} characters at most, the world ${WORLD_MAX.toLocaleString("en")}, ${FILES_MAX} files.`,
+  ASK,
 ].join(" ");
 
 export const TOOLS: readonly Tool[] = [
   { name: "page_write_file", title: "Write a file", schema: WriteFile, description: `Set one file of the world to this whole text, and the frame reloads with it. "" takes the file away. ${HOW} Then call page_read: it says what went wrong in the frame, if anything.` },
   { name: "page_set_backdrop", title: "Set the backdrop", schema: SetBackdrop, description: "Put a codeSplitter profile page (that handle's public `page` repo) full screen behind the world, seen where the world leaves the background clear: \"quinn\" shows @quinn's. \"\" takes it away." },
   { name: "page_undo", title: "Undo", schema: Undo, description: "Take back the last change, the agent's or the person's." },
-  { name: "page_reset", title: "Start over", schema: Reset, description: "Put the world back to the starter city. page_undo puts it back.", hints: { destructiveHint: true } },
+  { name: "page_reset", title: "Start over", schema: Reset, description: "Put the world back to the starter desert. page_undo puts it back.", hints: { destructiveHint: true } },
+  { name: "page_status", title: "Say what you're doing", schema: Status, description: "Show the person a few words on what you are doing, like \"Asking about the weather\"." },
 ];
 
 export const READ = {
