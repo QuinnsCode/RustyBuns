@@ -1,7 +1,7 @@
 // The amp's live chain, apart from the audio thread so a test can play it:
 // settings in, a rig out (rebuilding only what changed), and the speaker limiter.
 import { AMPS, DEFAULT_ROOM, PEDALS, boardLinks, buildRig, deskRig, type PedalDef } from "../circuit/amps.ts";
-import { POWER_VOLTS, Rig, splitRig, type Blend, type Link, type Mod, type Netlist, type RigSpec, type Slot } from "@rustybuns/gear/circuit";
+import { POWER_VOLTS, Rig, splitRig, type Blend, type Link, type Mod, type Netlist, type RigSpec, type ScopeAt, type Slot } from "@rustybuns/gear/circuit";
 import type { AmpSettings, ChainSlot } from "./messages.ts";
 import { MACHINES } from "../circuit/circuits.ts";
 
@@ -28,6 +28,28 @@ export interface Live { rig: Rig; chain: string; keys: string[]; mic: string; sc
  * worker) the volts the part ahead rests at.
  */
 export interface Part { cuts: number[]; index: number; inRest?: number }
+
+/**
+ * Keeps a scope (numbered across the whole rig) on whichever rig plays its link: part `index` of a rig split at
+ * `cuts` has links `cuts[index - 1]` up to `cuts[index]`. Put on again whenever the rig is new; nothing between.
+ */
+export class Scoped {
+  private at: ScopeAt | null = null;
+  private on: Rig | null = null;
+  aim(at: ScopeAt | null): void { this.at = at; this.on = null; }
+  /** Before `rig` plays: its scope, if it isn't on already. */
+  keep(rig: Rig, cuts: readonly number[], index: number): void {
+    if (rig === this.on) return;
+    this.on = rig;
+    const lo = index ? cuts[index - 1] ?? Infinity : 0, hi = cuts[index] ?? Infinity, at = this.at;
+    rig.setScope(at && at.link >= lo && at.link < hi ? { link: at.link - lo, net: at.net } : null);
+  }
+  /** The scope's volts since the last report, for a meter (left out when this rig has none). */
+  report(rig: Rig | null | undefined): { scope?: number[] } {
+    const v = rig && this.on === rig && this.at ? rig.scope() : null;
+    return v && v.length ? { scope: Array.from(v) } : {};
+  }
+}
 
 /** Each `Pot` part's turn, in netlist order (what `Rig.setPot` numbers them by). */
 const potTurns = (net: Netlist): number[] => net.parts.flatMap((p) => (p.kind === "Pot" ? [p.at ?? 0.5] : []));

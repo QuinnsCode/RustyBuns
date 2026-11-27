@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEnv, emptyHome, withLocalBins, HOST_FLAGS, hostCommand, hostEnv, bwrapArgs, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
+import { buildEnv, deniedPaths, emptyHome, withLocalBins, HOST_FLAGS, hostCommand, hostEnv, bwrapArgs, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
 
 test("buildEnv drops the deploy's logins and keeps what a build reads (#1114)", () => {
   const env = buildEnv({
@@ -11,7 +11,10 @@ test("buildEnv drops the deploy's logins and keeps what a build reads (#1114)", 
     HCLOUD_TOKEN: "x", RAILWAY_API_TOKEN: "x", OP_SERVICE_ACCOUNT_TOKEN: "x", GITHUB_TOKEN: "x", GH_TOKEN: "x",
     AWS_SECRET_ACCESS_KEY: "x", AWS_ACCESS_KEY_ID: "x", GONE: undefined,
   });
-  expect(Object.keys(env).sort()).toEqual(["GITHUB_SHA", "HOME", "JEKYLL_ENV", "NODE_ENV", "NPM_TOKEN", "PATH", "VITE_API"]);
+  expect(Object.keys(env).sort()).toEqual(["GITHUB_SHA", "HOME", "JEKYLL_ENV", "NODE_ENV", "NPM_TOKEN", "PATH", "VITE_API",
+    "npm_config_manage_package_manager_versions", "pnpm_config_manage_package_manager_versions"]);
+  // pnpm's version switch is off: a clone pinned to another pnpm can't start a self-install loop (#5764)
+  expect(env.npm_config_manage_package_manager_versions).toBe("false");
 });
 
 test("emptyHome swaps HOME, keeps the caches that exist and drops pointers at real config (#1128)", () => {
@@ -46,6 +49,7 @@ test("hostEnv drops credentials and keeps what a host runs on", () => {
     RB_TOKEN: "launch", RB_LISTEN: "127.0.0.1:1", SSH_AUTH_SOCK: "/s", GIT_SSH_COMMAND: "ssh",
     CLOUDFLARE_API_TOKEN: "x", CLOUDFLARE_ACCOUNT_ID: "x", GITHUB_TOKEN: "x", GH_TOKEN: "x", AWS_SECRET_ACCESS_KEY: "x",
     ANTHROPIC_API_KEY: "x", OP_SERVICE_ACCOUNT_TOKEN: "x", NPM_TOKEN: "x", MY_PASSWORD: "x", STRIPE_KEY: "x", GONE: undefined,
+    RB_DEPLOY_REPORT_KEY: "x", RB_DRAIN_SECRET: "x",
   });
   expect(Object.keys(env).sort()).toEqual(["GIT_SSH_COMMAND", "HOME", "LANG", "PATH", "RB_LISTEN", "RB_TOKEN", "SSH_AUTH_SOCK", "TMPDIR", "USER"]);
 });
@@ -74,6 +78,15 @@ test("the profile denies home credentials and the project's secret files, up to 
       expect(p).toContain(`(subpath "${s}")`);
     for (const d of ["apps/a/.env", "apps/a/.dev.vars", ".env", ".alchemy"]) expect(p).toMatch(new RegExp(`subpath ".*/${d.replace(".", "\\.")}"`));
     expect(p).not.toContain(".env.schema");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the profile covers wrangler's macOS login and the state every worktree shares in .git", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sb-")));
+  try {
+    Bun.spawnSync(["git", "init", "-q", root]);
+    const paths = deniedPaths(root, "/Users/me", { XDG_CONFIG_HOME: "/x/cfg" });
+    for (const p of ["/Users/me/Library/Preferences/.wrangler", "/x/cfg/.wrangler", join(root, ".git/rustybuns")]) expect(paths).toContain(p);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

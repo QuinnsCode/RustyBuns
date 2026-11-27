@@ -1,4 +1,5 @@
 import type { RouteMiddleware } from "rwsdk/router";
+import { EQOSYS } from "../board.ts";
 
 export const setCommonHeaders = (): RouteMiddleware => ({ response, rw: { nonce } }) => {
   if (!import.meta.env.VITE_IS_DEV_SERVER) response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
@@ -6,6 +7,6 @@ export const setCommonHeaders = (): RouteMiddleware => ({ response, rw: { nonce 
   response.headers.set("Referrer-Policy", "no-referrer");
   response.headers.set(
     "Content-Security-Policy",
-    `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none';`,
+    `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; connect-src 'self' ${EQOSYS}; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none';`,
   );
 };

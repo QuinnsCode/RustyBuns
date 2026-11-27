@@ -2,36 +2,27 @@
 //
 //   bun run office:sweep                         what it would free, GB per item
 //   bun run office:sweep -- --go                 free it
-//   bun run office:sweep -- --only=scratch,bun   just those (scratch, bun, caches, playwright, modules, worktrees)
+//   bun run office:sweep -- --only=scratch,bun   just those (scratch, bun, caches, playwright, modules, claude-trees, worktrees)
+//   bun run office:sweep -- --only=claude-trees --go   node_modules of idle Claude Code worktrees (.claude/worktrees)
 //   bun run office:sweep -- --repo <dir> --keep <dir>
 //
 // Repos default to every ~/agent-office/<owner>/<repo> with an .agent-office folder. `--keep` adds checkouts whose
 // bun.lock the Bun cache must keep (your own clones elsewhere; a missed one only costs a download, nothing breaks).
 // `modules` deletes node_modules and git-ignored dist/target/.wrangler/tmp of worktrees no worker sits at (asks
 // `office-workers list`, skips if the office is down). `playwright` deletes browser builds no playwright-core names.
-// `worktrees` only lists: sending a worker home is the owner's call. ~/Downloads and anything else you made is never read.
-import { existsSync, readdirSync } from "node:fs";
+// `claude-trees` does the same in `.claude/worktrees` where no process runs and nothing changed for a day; it frees
+// only when named in --only. `worktrees` only lists: sending a worker home is the owner's call. ~/Downloads and anything else you made is never read.
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { arr, bool, check, obj, opt, str } from "@rustybuns/util/guard";
-import { caches, duKb, gb, inUse, listTrees, pruneBunCache, prunePlaywright, sweepBuilt, sweepScratch } from "../live/sweep.ts";
+import { caches, duKb, gb, inUse, listTrees, officeRepos, pruneBunCache, prunePlaywright, sweepBuilt, sweepClaudeTrees, sweepScratch } from "../live/sweep.ts";
 
 const args = process.argv.slice(2);
 const go = args.includes("--go");
 const many = (flag: string) => args.flatMap((a, i) => (a === flag && args[i + 1] ? [path.resolve(args[i + 1]!)] : []));
 const only = args.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const want = (part: string) => (only ? only.includes(part) : part !== "worktrees");
-
-function officeRepos(): string[] {
-  const root = path.join(homedir(), "agent-office");
-  const out: string[] = [];
-  for (const owner of existsSync(root) ? readdirSync(root, { withFileTypes: true }) : []) {
-    if (!owner.isDirectory()) continue;
-    for (const repo of readdirSync(path.join(root, owner.name), { withFileTypes: true }))
-      if (repo.isDirectory() && existsSync(path.join(root, owner.name, repo.name, ".agent-office"))) out.push(path.join(root, owner.name, repo.name));
-  }
-  return out;
-}
 
 /** The worktree paths workers on `repo`'s floor still use (not "landed: free to go"), from the office; undefined when it doesn't answer. */
 async function seatedTrees(repo: string): Promise<string[] | undefined> {
@@ -52,9 +43,12 @@ let total = 0;
 console.log(`🧹 ${go ? "Sweeping" : "Dry run (--go to free it)"}; repos: ${repos.map((r) => r.replace(homedir(), "~")).join(", ") || "none"}`);
 
 if (want("scratch")) {
-  const r = await sweepScratch(repos, go);
+  // empty desks' scratch too, only when the office says who sits where on every floor
+  const seated = await Promise.all(repos.map(seatedTrees));
+  const live = seated.every(Boolean) ? seated.flatMap((s) => s ?? []) : undefined;
+  const r = await sweepScratch(repos, go, undefined, live);
   total += r.bytes;
-  console.log(`scratch of gone worktrees: ${r.paths.length} folders, ${verb} ${gb(r.bytes)}`);
+  console.log(`scratch of gone worktrees${live ? " and empty desks idle a day" : " (empty desks skipped: `office-workers list` didn't answer)"}: ${r.paths.length} folders, ${verb} ${gb(r.bytes)}`);
 }
 
 if (want("bun")) {
@@ -90,6 +84,18 @@ if (want("modules")) {
     const r = await sweepBuilt(repo, live, go);
     total += r.bytes;
     console.log(`node_modules and build output of worktrees nobody sits at in ${repo.replace(homedir(), "~")}: ${r.paths.length} folders, ${verb} ${gb(r.bytes)} (du counts APFS clones in full, so it frees less)`);
+  }
+}
+
+// Claude Code's own worktrees (#6181): nobody says whether a session still runs in one, so a plain --go only lists
+// them; they go only when named (--only=claude-trees --go).
+if (want("claude-trees")) {
+  const free = go && !!only?.includes("claude-trees");
+  for (const repo of repos) {
+    const r = await sweepClaudeTrees(repo, free);
+    if (!r.paths.length && !r.skipped) continue;
+    total += free ? r.bytes : 0;
+    console.log(`node_modules and build output of Claude Code worktrees in ${repo.replace(homedir(), "~")}: ${r.paths.length} folders, ${free ? "freed" : "would free"} ${gb(r.bytes)}${free ? "" : go ? " (only with --only=claude-trees)" : ""}; ${r.skipped} in use or changed today kept`);
   }
 }
 

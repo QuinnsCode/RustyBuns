@@ -14,8 +14,8 @@ import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";
 import { AmpThreads, type Threads } from "./threads.ts";
 import { arr, check, num, nul, obj, oneOf, opt, or, rec, str } from "@rustybuns/util/guard";
-import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
-import type { LoopSpec } from "@rustybuns/gear/circuit";
+import { AMPS, PEDALS, boardLinks, type AmpDef, type Knobs } from "../circuit/amps.ts";
+import { SCOPE_SAMPLES, nodeNumbers, type LoopSpec } from "@rustybuns/gear/circuit";
 import { STAGE, compile, heard, type Cable, type End, type Patch } from "../circuit/patch.ts";
 import { patchView } from "./patch-view.ts";
 import { riff } from "../circuit/riff.ts";
@@ -25,11 +25,16 @@ import { icon } from "./icons.ts";
 import { h, iconButton } from "./dom.ts";
 import { benchSlot } from "./bench-slot.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
+import { DEFAULT_DRIVE, onParts, readParts } from "./parts-store.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { startMidi } from "../ui/input.ts";
 import { MODES, Screen, lightLevels, topHz, hzLabel, type ScreenMode } from "./screens.ts";
 import type { AmpSettings, ChainSlot, FromAmp } from "./messages.ts";
 import type { MountedStage, StageAmp } from "./stage3d.ts";
+import { AMP_LESSON } from "./lesson.ts";
+import { mountLessonCard } from "../studio/lesson-card.ts";
+import { oneAtATime, PageLesson } from "../studio/page-lesson.ts";
+import { BUILD_LESSON, clipperNow } from "./build-lesson.ts";
 import { AMP_SLOT, freshOrder, grip, isMachine, loadChip, moveTo, tidyOrder, type MachineId } from "./pedalboard.ts";
 
 const KEY = "q-amp";
@@ -71,7 +76,7 @@ const Saved = obj({
   /** The amp on the three.js stage (1) or the flat page (0). */
   stage: oneOf([0, 1], 1),
   /** Each pedal's parts the player swapped: pedal id → socket → choice (circuits.ts `Swaps`). */
-  swaps: or(rec(rec(str(12), 40), 10), {}),
+  swaps: or(rec(rec(str(12), 40), 32), {}),
   /** The mic on the cab: 0 the centre cap to 10 the cone's edge, and 0 on axis to 10 side on. */
   micAt: num(0, 10, 3),
   micAngle: num(0, 10, 0),
@@ -90,7 +95,7 @@ type State = Omit<ReturnType<typeof Saved>, "cables" | "order" | "lit"> & { cabl
 function loadState(): State {
   const fresh: State = {
     amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
-    drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, stage: 1, swaps: {}, micAt: 3, micAngle: 0, cc: 11,
+    drive: { ...DEFAULT_DRIVE }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, stage: 1, swaps: {}, micAt: 3, micAngle: 0, cc: 11,
     loop: freshLoop(),
     cables: [...STAGE.cables],
     order: freshOrder(), lit: [],
@@ -105,7 +110,9 @@ function loadState(): State {
       };
     }
   } catch { /* private window or bad JSON: start fresh */ }
-  return fresh;
+  // Q Builder may have kept knobs and swaps here before Q Amp was ever opened.
+  const parts = readParts();
+  return { ...fresh, drive: parts.drive, swaps: parts.swaps };
 }
 const S = loadState();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } };
@@ -180,6 +187,33 @@ function send() {
   save();
   chainIds = board().ids;
   threads?.send(patched(settings()));
+  sendScope();
+}
+
+// ---- the scope on a pedal's net: its volts back from the audio thread, the way it sends meters ----
+/** Where the scope sits (a pedal tile and a net on its board, or a control its LFO or envelope moves), or nowhere. */
+let probe: { pedal: string; net: string } | null = null;
+/** The newest of its volts, newest last, and how far they swung since it was put there. */
+const probed = new Float32Array(SCOPE_SAMPLES);
+let probeSwing = { hi: 0, lo: 0, samples: 0 };
+/** The scope's link in the rig: the pedal's while it plays, nowhere once it is off. */
+function sendScope() {
+  const at = probe ? linksAt(probe.pedal) : null;
+  threads?.scope(probe && at !== null ? { link: at, net: probe.net } : null);
+}
+/** Whether pedal `id` playing now has `net` on its board, or a control by that name. */
+function hasNet(id: string, net: string): boolean {
+  const slot = board().chain[chainIds.indexOf(id)];
+  const link = slot && "pedal" in slot ? boardLinks([slot]).links[0] : undefined;
+  return !!link && (nodeNumbers(link.net).has(net) || !!link.mods?.some((m) => m.ctl.toUpperCase() === net.toUpperCase()));
+}
+function takeScope(v: readonly number[] | undefined) {
+  if (!v?.length || !probe) return;
+  const n = Math.min(v.length, SCOPE_SAMPLES);
+  probed.copyWithin(0, n);
+  probed.set(v.slice(v.length - n), SCOPE_SAMPLES - n);
+  const s = probeSwing;
+  for (const x of v) { if (!s.samples || x > s.hi) s.hi = x; if (!s.samples || x < s.lo) s.lo = x; s.samples++; }
 }
 function setCables(cables: Cable[]) {
   S.cables = cables;
@@ -239,6 +273,7 @@ async function start() {
   node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
   threads = new AmpThreads(node, ctx.sampleRate, () => new Worker(new URL("./part-worker.ts", import.meta.url), { type: "module" }), (m) => {
     meter = m;
+    takeScope(m.scope);
     watchLoad(meter);
   });
   out = new GainNode(ctx, { gain: sound.audible ? dbToGain(S.level) : 0 });
@@ -631,13 +666,15 @@ ui.devices.hidden = S.source !== "guitar";
 const glowOf = (swing: number) => Math.min(1, Math.log10(1 + swing) / Math.log10(151));
 let db = new Float32Array(8192).fill(-Infinity), wave = new Float32Array(16384);
 let push = 0;
+let lessonTick = 0;
 function frame() {
+  if (++lessonTick % 10 === 0) lessonCard.frame(); // a few times a second: the steps read the knobs, the board and the cables
   if (analyser) {
     if (db.length !== analyser.frequencyBinCount) { db = new Float32Array(analyser.frequencyBinCount); wave = new Float32Array(analyser.fftSize); }
     analyser.getFloatFrequencyData(db);
     analyser.getFloatTimeDomainData(wave);
   }
-  const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000 };
+  const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000, net: probe && probeSwing.samples ? { volts: probed, label: `${probe.pedal} · ${probe.net}` } : undefined };
   for (const s of ui.screens) s.draw(fr);
   // A tube glows with its stage's swing (log scale, 150 V is full); power tubes with the output.
   const offset = linksAt(AMP_SLOT) ?? 0, tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
@@ -671,8 +708,36 @@ function frame() {
     el.classList.toggle("warn", (v ?? 0) > 0.3);
   }
   requestAnimationFrame(frame);
+
+// A part swapped or a knob turned on Q Builder (another tab) is on this amp's pedals too, as it plays.
+onParts((p) => {
+  S.swaps = p.swaps;
+  Object.assign(S.drive, p.drive);
+  for (const e of ui.pedalEls) e.knob.set(S.drive[e.id] ?? 5);
+  send();
+  showBoard();
+});
 }
 requestAnimationFrame(frame);
+
+/** Q Amps' lesson (lesson.ts) and Q Builder's (build-lesson.ts), read from the page's state as it stands, one on at a
+ *  time; the cap button in the corner lists them, and ?lesson=amp or ?lesson=build starts one. */
+const ampLesson = new PageLesson(AMP_LESSON, () => ({
+  gain: (S.knobs[S.amp] ?? ampOf(S.amp).knobs).gain, lit: S.lit, drive: S.drive, tape: loopOf().tape.on === 1, order: S.order, pedalsHeard: sound.pedals,
+}));
+/** The parts Q Drive's D1 and D2 have held while Q Builder's lesson is on: its last step asks for both ends. */
+const tried = new Set<string>();
+const buildLesson = new PageLesson(BUILD_LESSON, () => {
+  const swaps = S.swaps.drive ?? {};
+  if (S.pedal === "drive") tried.add(clipperNow(swaps));
+  return { pedal: S.pedal, lit: S.lit, board: S.board === 1, drive: S.drive.drive ?? 5, swaps, tried: [...tried] };
+}, () => tried.clear());
+const lessons = oneAtATime([ampLesson, buildLesson]);
+const lessonCard = mountLessonCard(document.body, lessons, { float: true, offer: lessons.list.map((l) => ({ title: l.def.title, start: () => lessons.start(l.def.id) })) });
+{
+  const asked = lessons.asked(location.search);
+  if (asked) { lessons.start(asked); lessonCard.frame(); }
+}
 
 // Ask the page instead of screenshotting it (scripts/probe.ts).
 Object.assign(window, {
@@ -684,11 +749,30 @@ Object.assign(window, {
       slots: S.order.map((id) => { const i = chainIds.indexOf(id); return { id, on: i >= 0, load: i < 0 ? null : meter.slots?.[i] ?? null }; }), midi: { cc: S.cc, inputs: midiInputs },
       stage: { on: S.stage === 1 && !!stage3d, webgl, ...stage3d?.state() },
       patch: { cables: S.cables, chains: compiled.chains, problems: compiled.problems, audible: sound.audible, pedals: sound.pedals },
+      scope: probe && { ...probe, ...probeSwing },
     }),
+    /**
+     * The Scope screen on a net of a playing pedal's board (`"fuzz", "D3"`'s node name) or a control its LFO or
+     * envelope moves (`"GATE"`), as you play; null for the output again. False when that pedal isn't playing or has no such net.
+     */
+    scope: (pedal: string | null, net = "") => {
+      if (pedal !== null && !hasNet(pedal, net)) return false;
+      probe = pedal === null ? null : { pedal, net };
+      probeSwing = { hi: 0, lo: 0, samples: 0 };
+      probed.fill(0);
+      sendScope();
+      return true;
+    },
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
     bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
     start,
     setAmp,
+    /** The page's lessons: "amp" (Q Amps', lesson.ts) or "build" (Q Builder's, build-lesson.ts) starts one, null leaves it; then the lesson as it stands. */
+    lesson: (id?: string | null) => {
+      if (id === null) lessons.leave(); else if (id) lessons.start(id);
+      lessonCard.frame();
+      return { lesson: lessons.state(), finished: { amp: ampLesson.finished, build: buildLesson.finished } };
+    },
     /** Cut the chain onto worker threads before these links ([] for one thread); the page does this itself when over budget. */
     split: (cuts: number[]) => threads?.split(cuts),
     /** Pull out the cable in a jack, e.g. unplug("head", "speaker"). */

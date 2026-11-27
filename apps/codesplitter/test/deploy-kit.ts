@@ -2,14 +2,11 @@
 // the fetch stub. Split across two files so bun test --parallel can run them side by side; each
 // file gets its own copy of this module.
 import { afterAll, beforeAll, setDefaultTimeout } from "bun:test";
-import { join } from "node:path";
 import { local as boot, type Call } from "../src/local.ts";
 import { DeployRunner } from "../src/deploy-runner.ts";
 import { review } from "../src/deploy-review.ts";
 import { type ContainerApi } from "../src/sandbox.ts";
 import { gated, gateExports } from "./fake-gate.ts";
-// @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
-import { state } from "../deploy-sandbox/server.mjs";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -107,6 +104,9 @@ export function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
   return { seen, make };
 }
 
+/** The runners' alarms that are queued or running: what settle() waits on. */
+const alarms = new Set<Promise<void>>();
+
 /** A DeployRunner per repo with in-memory storage; its alarm fires on the next tick. */
 export function runnerNamespace(env: any, make: () => ContainerApi, budgetMs?: number) {
   const objects = new Map<string, DeployRunner>();
@@ -124,7 +124,12 @@ export function runnerNamespace(env: any, make: () => ContainerApi, budgetMs?: n
             list: async (o: { prefix: string }) => new Map([...data].filter(([k]) => k.startsWith(o.prefix))) as any,
             delete: async (k: string) => data.delete(k),
             // A later one is the test's to fire, with alarm().
-            setAlarm: async (at: number) => { if (at <= Date.now() + 1000) setTimeout(() => void obj.alarm(), 0); },
+            setAlarm: async (at: number) => {
+              if (at > Date.now() + 1000) return;
+              const p: Promise<void> = new Promise((r) => setTimeout(r, 0)).then(() => obj.alarm())
+                .then(() => {}, (e) => { console.error(e); }).finally(() => alarms.delete(p));
+              alarms.add(p);
+            },
           },
         };
         const obj = new DeployRunner(ctx, env, budgetMs);
@@ -168,12 +173,15 @@ export async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: 
 export const K = "/api/repos/ryan-quinn/lab/deploy/key", D = "/api/repos/ryan-quinn/lab/deploy";
 // A run leaves "running" in the history only once finish() logs it, after the container is destroyed,
 // so a settled run has been torn down. Giving up says so, rather than failing a later expect on a half-done run (#287).
+// It waits on the runners' alarms draining, however long a busy machine takes over them (#4762); the 15s
+// only counts while no alarm is queued or running, for a deploy that was never started.
 export const settle = async (call: Call, n = 1) => {
   let d: any;
-  for (const end = performance.now() + 15_000; performance.now() < end;) {
+  for (let end = performance.now() + 15_000; performance.now() < end;) {
     d = await (await call("ryan-quinn", D)).json();
     if (d.history.length >= n && d.history.every((h: any) => h.status !== "running")) return d;
+    if (alarms.size) { await Promise.all(alarms); end = performance.now() + 15_000; continue; }
     await Bun.sleep(10);
   }
-  throw new Error(`deploys still running after 15s: ${JSON.stringify(d.history.map((h: any) => h.status))}`);
+  throw new Error(`no deploy queued or running for 15s, and the history is ${JSON.stringify(d.history.map((h: any) => h.status))}`);
 };

@@ -18,7 +18,7 @@ const go = (here: Here, at: string, to: Here) => {
 test("character, lobby, the jam room, the gear room, Q Amp and the desk, and back into the same room", () => {
   // the lobby's door back to your character goes to eqosys's Me tab, and every page is a page the app builds
   expect(go("jam", "/jam.html", "character")).toBe(`${EQOSYS}/?tab=account`);
-  for (const p of ["jam.html", "studio.html", "amp.html", "speakers.html", "index.html"]) expect(existsSync(join(import.meta.dir, "..", p))).toBe(true);
+  for (const p of ["jam.html", "studio.html", "amp.html", "builder.html", "speakers.html", "index.html"]) expect(existsSync(join(import.meta.dir, "..", p))).toBe(true);
 
   // in the lobby, the doors carry no room
   expect(go("jam", "/jam.html", "gear")).toBe(`${ORIGIN}/studio.html`);

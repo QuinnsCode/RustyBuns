@@ -30,6 +30,7 @@ type App = {
   boot?: boolean;       // borg tier 1: build the dev host and boot it on the local twins (scripts/boot.ts)
   bootOn?: string[];    // build the release binary on these targets' own runners and boot it (boot.ts --bin), when the app changes
   with?: string[];      // other apps whose code this one runs: a change to them tests this one too
+  slow?: { when: RegExp; run: string }; // a longer check its first lane runs after the tests, only when a PR changes a file `when` matches or this row
 };
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
@@ -69,7 +70,7 @@ export const APPS: Record<string, App> = {
   "cron-swanson":      { test: "bun test test", drop: false },
   "hemyviz":           { test: "bun test test", drop: false },
   "test-swarm":        { test: "bun test test", drop: false },
-  "codesplitter":     { test: "bun test --parallel test", boot: true },
+  "codesplitter":     { test: "bun test --parallel test", boot: true, slow: { when: /^apps\/codesplitter\/(src\/client\.html$|src\/features\/|scripts\/tour-smoke\.ts$)/, run: "bun scripts/tour-smoke.ts" } },
   "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
   "hono-example":      { test: "bun test test", boot: true },
@@ -202,7 +203,28 @@ export function reachedApps(app: string, root = join(import.meta.dir, "..")): st
 // its code reaches (reachedApps).
 export const sparseDirs = (app: string, root?: string) =>
   [...new Set([app, ...(APPS[app]!.with ?? []), ...reachedApps(app, root)])].map((n) => `/${appDir(n, root)}/`).join("\n");
+// A doc in an app that the app's code names in a quoted path ("../docs/RULES.md", join(APP, "REFERENCE.md")) may be
+// read by a test, so changing it runs the app's suite. Any other .md there is prose: a PR that only edits those runs
+// none of it (#5952). A doc read by a name the code builds at run time slips by here; the hourly ring still runs it.
+const codeText = new Map<string, string>();
+export function docRead(file: string, root = join(import.meta.dir, "..")): boolean {
+  const app = appOf(file);
+  if (!app || !/\.md$/i.test(file)) return true;
+  const key = `${root}\0${app}`, dir = appDir(app, root);
+  if (!codeText.has(key)) {
+    const parts: string[] = [];
+    for (const f of new Bun.Glob("**/*.{ts,tsx,js,jsx,mjs,cjs}").scanSync({ cwd: join(root, dir) }))
+      if (!f.includes("node_modules/")) parts.push(readFileSync(join(root, dir, f), "utf8"));
+    codeText.set(key, parts.join("\n"));
+  }
+  const name = file.split("/").pop()!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`["'\`/]${name}["'\`]`).test(codeText.get(key)!);
+}
 export const sharedCode = (f: string) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f) && !/\.md$/i.test(f);
+// The apps whose tests a changed file can break: the app whose folder it is in, and playground for a package's
+// package.json. playground's shelf.json is built from each package.json (its description and shelf field) and its apps
+// test checks the two match, so a stale shelf used to merge green and turn the hourly main run red (#5899).
+export const appsFor = (f: string) => [appOf(f), /^packages\/[^/]+\/package\.json$/.test(f) ? "playground" : undefined].filter((a): a is string => !!a);
 // A PR that changes the drop pipeline (drop.ts, scripts/mac/, the workflow, this file's machinery) dry-runs one app per
 // build path, not every app: every app was up to about 70 jobs a push, 26 of them macOS drop jobs, and in the week to
 // 2026-11-21 that was two thirds of the runner time of apps.yml and typecheck.yml put together (notes/CI_STALL_2026-11-21.md, #4136).
@@ -216,6 +238,10 @@ export function dropSample(apps: Record<string, App>): string[] {
 }
 
 const out = (k: string, v: unknown) => console.log(`${k}=${JSON.stringify(v)}`);
+/** The app's slow check, if this PR changed what it covers (a file `slow.when` matches, or the app's own row); else "". */
+export const slowRun = (a: App, changed: string[], rowChanged = false): string =>
+  a.slow && (rowChanged || changed.some((f) => a.slow!.when.test(f))) ? a.slow.run : "";
+
 const changedFiles = async (base: string) => (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
 
 // Editing one app's row in APPS should only rerun that app. Returns the apps whose rows changed,
@@ -271,7 +297,7 @@ if (cmd === "drop") {
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
   const shared = rows === "all" || changed.includes(".github/workflows/apps.yml");
   const deps = changed.some(sharedCode) || (changed.includes("package.json") && await rootDepsChanged(arg));
-  const touched = new Set([...changed.map(appOf).filter(Boolean), ...(rows === "all" ? [] : rows)]);
+  const touched = new Set([...changed.filter((f) => docRead(f)).flatMap(appsFor), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const files = new Map(await Promise.all(names.map(async (n) => [n, APPS[n]!.test ? await weighed(n, APPS[n]!.test!) : []] as const)));
   const small = names.filter((n) => isSmall(APPS[n]!, files.get(n)!));
@@ -281,17 +307,17 @@ if (cmd === "drop") {
     const order = [...g].sort((a, b) => Number(!touched.has(a)) - Number(!touched.has(b)));
     const tests = await Promise.all(order.map(async (n) => `${appDir(n)} '${(await shardedTests(n, APPS[n]!.test!, 1, own))[0]}'`));
     return {
-      app: g.join("+"), dir: ".", up: "", boot: false, prep: "", cargo: "", shard: "", filters: filters(g),
+      app: g.join("+"), dir: ".", up: "", boot: false, slow: "", prep: "", cargo: "", shard: "", filters: filters(g),
       sparse: [...new Set(g.flatMap((n) => sparseDirs(n).split("\n")))].join("\n"), test: `bun scripts/ci-group.ts ${tests.join(" ")}`,
     };
   }));
   const alone = names.filter((n) => !grouped.some((g) => g.app.split("+").includes(n)));
   const include = (await Promise.all(alone.map(async (app) => {
-    const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app), sparse: sparseDirs(app), filters: filters([app]) };
+    const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, slow: slowRun(a, changed, rows !== "all" && rows.has(app)), prep: a.prep ?? "", cargo: cargo(app), sparse: sparseDirs(app), filters: filters([app]) };
     const lanes = a.test ? await shardedTests(app, a.test, a.shards ?? LANES, own) : [];
     if (lanes.length < 2) return [{ ...row, test: lanes[0] ?? a.test ?? "", shard: "" }];
-    // Boot runs once, with the first lane.
-    return lanes.map((test, i, all) => ({ ...row, boot: row.boot && i === 0, test, shard: `${i + 1}/${all.length}` }));
+    // Boot and the slow check run once, with the first lane.
+    return lanes.map((test, i, all) => ({ ...row, boot: row.boot && i === 0, slow: i === 0 ? row.slow : "", test, shard: `${i + 1}/${all.length}` }));
   }))).flat().concat(grouped);
   out("apps", { include });
   out("any", names.length > 0);

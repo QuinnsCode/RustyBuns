@@ -47,6 +47,8 @@ ${leaf("::after")}{content:"";position:absolute;inset:8px;z-index:-1;pointer-eve
 .eq-btn:hover{background:var(--paper-hi)}
 .eq-btn.primary,.rb-spaces-tabs .eq-btn.on{border-color:#3e0b08;background:radial-gradient(120% 90% at 30% 20%,#b8433a,var(--blood) 55%,#4a0f0a);color:var(--paper-hi);text-shadow:0 1px 0 #00000066;box-shadow:inset 0 1px 0 #ffffff40,inset 0 -2px 3px #00000059,0 2px 3px #28140666}
 .rb-report>.eq-btn{box-shadow:0 6px 12px -6px #281406bf}.rb-report>.eq-btn svg{color:var(--blood)}
+@media (max-width:600px){.rb-report>.eq-btn{padding:0;min-height:36px;min-width:36px}}
+.rb-report[style*="--eq-shift"]>.eq-btn{filter:none;border-color:var(--ink-b);background:#f1e5c680;box-shadow:1px 2px 0 -.5px var(--ink-line);border-radius:255px 14px 225px 14px/14px 225px 14px 255px}.rb-report[style*="--eq-shift"]>.eq-btn::before,.rb-report[style*="--eq-shift"]>.eq-btn::after{content:none}
 .rb-lobby-code{border:0;border-bottom:1.5px solid var(--blood);border-radius:0;background:none;color:var(--blood)}
 .eq-coach{top:104px}.eq-coach b{font-size:19px}.eq-coach p{font-family:var(--f-book)}`,
 };

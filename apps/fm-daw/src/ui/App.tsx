@@ -20,6 +20,7 @@ import { PluginPump, bounceInserts, bouncePlugins, effectChoices, pluginChoices,
 const playing = (s: PluginShown | undefined) => !!s && !s.starting && s.error === null;
 import { InsertPanel, PluginPanel, TrackSound } from "./PluginPanel.tsx";
 import { AddMenu, MidiLand } from "./AddMenu.tsx";
+import { SongStrip } from "./SongStrip.tsx";
 import { useImports } from "./import.ts";
 import { withValue, type TrackPlugin } from "../plugin-track.ts";
 import { pageRack, type PageAudio } from "./wam.ts";
@@ -63,6 +64,10 @@ import { Band } from "../studio/band.ts";
 import { FarSound, PluginOut } from "../studio/plugin-line.ts";
 import { webOpus, type MakeEncoder } from "../studio/opus.ts";
 import { DESK_MS, LISTENS, type Listen } from "../clock.ts";
+import { BEAT_LESSON, beatAt, beatRows } from "../beat-lesson.ts";
+import { FINE, toggle } from "../steps.ts";
+import { mountLessonCard } from "../studio/lesson-card.ts";
+import { askedFor, PageLesson } from "../studio/page-lesson.ts";
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
@@ -476,7 +481,7 @@ export function App() {
         view: viewRef.current,
         audio: audioRef.current?.ctx.state ?? null, playing: live.current.transportOn, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(), sides: sides(),
         line: Object.fromEntries(linePeaks.current),
-        bars: proj.current.bars, bpm: proj.current.bpm, recording: live.current.recording, armed: armedRef.current,
+        bars: proj.current.bars, song: proj.current.song ?? null, bpm: proj.current.bpm, recording: live.current.recording, armed: armedRef.current,
         tracks: proj.current.tracks.map((tr, i) => {
           const shown = (p: TrackPlugin, s: PluginShown | undefined) => ({ name: p.name, path: p.path, web: !!p.web, starting: s?.starting ?? true, error: s?.error ?? null, site: s?.site ?? null, sliders: (s?.params ?? []).map((q) => ({ name: q.name, value: q.value })) });
           return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], notes: tr.notes.length, take: clipsOf(tr)[0] ? { beat: clipsOf(tr)[0].beat, seconds: clipsOf(tr)[0].frames / TAKE_RATE } : null, clips: clipsOf(tr), plays: tr.voiceless ? "none" : tr.plugin ? shown(tr.plugin, pump.current?.state.get(i)) : "fm", insert: tr.insert ? shown(tr.insert, fxPump.current?.state.get(i)) : null };
@@ -488,6 +493,12 @@ export function App() {
       plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
       insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
+      // song mode's chain (patterns 0 to 7, A to H), as the Song strip sets it; null leaves song mode
+      // QDAW's lesson (beat-lesson.ts): "beat" starts it, null leaves it; then the lesson as it stands
+      chain: (chain: number[] | null) => commit({ t: "song", chain }),
+      lesson: (id?: string | null) => { if (id === null) lesson.leave(); else if (id === BEAT_LESSON.id) lesson.start(); lessonCard.current?.frame(); return { lesson: lesson.state(), finished: lesson.finished }; },
+      // a drum step clicked on the grid, as DrumGrid's cells do (steps.ts toggle): track, 16th
+      step: (track: number, s: number) => { const t = proj.current.tracks[track]; if (t) commit({ t: "notes", track, notes: toggle(t, s, FINE) }); },
       pan: (track: number, v: number) => commit({ t: "param", track, i: P.PAN, v }),
       // a track's Shape (its EQ bands), as the desk's Shape panel sets it
       shape: (track: number, bands: EqDoc) => commit({ t: "eq", track, bands }),
@@ -517,6 +528,21 @@ export function App() {
       },
     } });
   });
+
+  // QDAW's lesson (beat-lesson.ts), read from the groove as it stands; the cap button at the bottom left, ?lesson=beat
+  // or fmdaw.lesson("beat") starts it. Starting it empties the kick, snare and hat rows (one undo puts them back).
+  const commitNow = useRef(commit);
+  commitNow.current = commit;
+  const [lesson] = useState(() => new PageLesson(BEAT_LESSON, () => beatAt(proj.current, live.current.transportOn), () => {
+    for (const track of beatRows(proj.current)) commitNow.current({ t: "notes", track, notes: [] }, { group: "lesson" });
+  }));
+  const lessonCard = useRef<ReturnType<typeof mountLessonCard> | null>(null);
+  useEffect(() => {
+    const card = lessonCard.current ??= mountLessonCard(document.body, lesson, { float: true, done: "Done. That's your beat: keep it, or put a bass line over it", offer: { title: BEAT_LESSON.title, start: () => lesson.start() } });
+    if (askedFor(location.search, BEAT_LESSON.id) && !lesson.on && !lesson.finished) { lesson.start(); card.frame(); }
+    const tick = setInterval(() => card.frame(), 250);
+    return () => clearInterval(tick);
+  }, []);
 
   // ---- world ----
   const [attempt, setAttempt] = useState(0);
@@ -979,7 +1005,7 @@ export function App() {
             <input type="range" min={0} max={100} value={Math.round(project.squash * 100)}
               onChange={(e) => commit({ t: "global", squash: Number(e.currentTarget.value) / 100 }, { group: "squash" })} />
           </label>
-          <div className="field"><span className="silk">Bars</span>
+          {!project.song && <div className="field"><span className="silk">Bars</span>
             <div className="seg">
               {!(BAR_CHOICES as readonly number[]).includes(project.bars) && <button className="on">{project.bars}</button>}
               {BAR_CHOICES.map((b) => (
@@ -987,7 +1013,8 @@ export function App() {
                   title={b < project.bars ? "Notes past the new end are removed (undo brings them back)" : undefined}>{b}</button>
               ))}
             </div>
-          </div>
+          </div>}
+          <SongStrip song={project.song} bars={project.bars} onChain={(chain) => commit({ t: "song", chain })} />
         </div>
 
         <div className="out">
@@ -1139,13 +1166,13 @@ export function App() {
             onLanes={(lanes) => commit({ t: "auto", track: selected, lanes })} />
 
           {t.plugin ? (<>
-            <PluginPanel track={t} color={color} shown={plugins.get(selected)} head={t.plugin.web ? <>{trackSound}{insertPick}</> : trackSound}
+            <PluginPanel track={t} color={color} shown={plugins.get(selected)} duck={{ names: project.tracks.map((x) => x.name), self: selected }} head={t.plugin.web ? <>{trackSound}{insertPick}</> : trackSound}
               onValue={(id, v) => { if (t.plugin) commit({ t: "plugin", track: selected, plugin: withValue(t.plugin, id, v) }, { group: `plug:${selected}:${id}` }); }}
               onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
               onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
               onTrust={() => pump.current?.trust(selected, proj.current)} />
             {t.plugin.web && insertPanel}</>
-          ) : <><PatchEditor track={t} color={color} head={<>{trackSound}{insertPick}</>}
+          ) : <><PatchEditor track={t} color={color} duck={{ names: project.tracks.map((x) => x.name), self: selected }} head={<>{trackSound}{insertPick}</>}
             onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
             onRandom={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: randomPatch(x.kind, x.params) } : x)) } })}

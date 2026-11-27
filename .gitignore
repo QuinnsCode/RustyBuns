@@ -34,3 +34,7 @@ __pycache__/
 
 apps/agent-office/sandbox/box.json
 .probe-base/
+
+# steer-embed, the text model binary for bun run steer (#6200)
+scripts/steer-embed/target
+steer-docs.json

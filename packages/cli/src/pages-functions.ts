@@ -23,7 +23,7 @@ const exportsOf = (src: string) =>
 
 type Seg = { kind: "static" | "param" | "rest"; v: string };
 export type PagesRoute = { file: string; path: string; segs: Seg[]; methods: string[] };
-export type PagesMiddleware = { file: string; prefix: string[] };
+export type PagesMiddleware = { file: string; prefix: Seg[] };
 
 const seg = (s: string): Seg => {
   const rest = /^\[\[(\w+)\]\]$/.exec(s), param = /^\[(\w+)\]$/.exec(s);
@@ -50,8 +50,10 @@ export function pagesRoutes(fnDir: string): { routes: PagesRoute[]; middleware: 
     const parts = file.replace(/\.\w+$/, "").split("/");
     const name = parts.at(-1)!, dirs = parts.slice(0, -1);
     if (dirs.some((d) => d.startsWith("_") || d === "node_modules")) continue;
+    // every _middleware goes in, whatever its exports look like: the adapter reads them off the module, so a guard
+    // written `export const { onRequest } = ...` or for one method only is never left out
+    if (name === "_middleware") { middleware.push({ file, prefix: dirs.map(seg) }); continue; }
     const methods = exportsOf(readFileSync(join(fnDir, file), "utf8"));
-    if (name === "_middleware") { if (methods.includes("onRequest")) middleware.push({ file, prefix: dirs }); continue; }
     if (name.startsWith("_") || !methods.length) continue;
     const segs = (name === "index" ? dirs : parts).map(seg);
     const path = "/" + segs.map((s) => s.kind === "static" ? s.v : s.kind === "param" ? `:${s.v}` : `:${s.v}*`).join("/");
@@ -107,7 +109,7 @@ export function writePagesWorker(fnDir = "functions", assetsDir?: string, out = 
     `export const table: Table = {`,
     `  routesJson: ${JSON.stringify(rj ? { include: rj.include, exclude: rj.exclude } : undefined)},`,
     `  middleware: [`,
-    ...middleware.map((m) => `    { prefix: ${JSON.stringify(m.prefix)}, fns: [${alias.get(m.file)}.onRequest].flat() },`),
+    ...middleware.map((m) => `    { prefix: ${JSON.stringify(m.prefix)}, mod: ${alias.get(m.file)} },`),
     `  ],`,
     `  routes: [`,
     ...routes.map((r) => `    { path: ${JSON.stringify(r.path)}, segs: ${JSON.stringify(r.segs)}, methods: { ${r.methods.map((m) => `${METHODS[m]}: ${alias.get(r.file)}.${m}`).join(", ")} } },`),

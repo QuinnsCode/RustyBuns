@@ -799,3 +799,54 @@ html .ui-house .gc-sec::after { content: "CLEARED"; position: absolute; right: 1
   font: 900 14px/1 var(--br-stencil); letter-spacing: 0.16em; color: #c2410c; border: 3px double #c2410c; border-radius: 4px; pointer-events: none;
   -webkit-mask: url(/menu/stamp.svg) 0 0 / 150px 50px; mask: url(/menu/stamp.svg) 0 0 / 150px 50px; }
 html .ui-house .gc-sec.shut::after { content: none; }
+
+/* Round 16 (#5117): a white canvas round the manual. The sheets are white paper a little see-through, each taped down
+   at its top corner (tape.svg 0.4 KB), and the scrim behind the manual is a white wash, not grey. (Round 16's range
+   card under the rows moved beside the manual in round 17.) */
+html .gc-dialog.ui-house { background: #fffffcc4; }
+html .ui-house .gc-card { background: var(--br-brackets), url(/menu/coffee.svg) right -60px top 40% / 200px no-repeat local, #fff;
+  background-repeat: no-repeat; }
+html .ui-house .gc-sec { overflow: hidden;
+  background: linear-gradient(#0000 calc(100% - 16px), #efe6cf calc(100% - 13px)), radial-gradient(120% 90% at 50% 40%, #0000 70%, #c9a86014 90%, #a9813a26),
+    url(/menu/slip.svg) 0 4px / 64px, #ffffffd1; }
+html .ui-house .gc-sec::before { content: ""; position: absolute; z-index: 2; top: -4px; right: -18px; width: 84px; height: 26px; pointer-events: none;
+  transform: rotate(31deg); background: url(/menu/tape.svg) center / 100% 100% no-repeat; }
+
+/* Round 17 (#6098): the sheets are drawn paper, and the range card is out from under the rows. Each sheet's edge is a
+   hand-cut outline with foxing under the ink (sheet.svg 0.9 KB as a border-image, so the cut repeats down any height)
+   instead of a ruled CSS frame, folded once across (a crease in two gradients) and clipped at its top by a steel paper
+   clip (clip.svg again). Key caps are chip tiles: a thick inked side, a lighter lip and an orange index notch on top.
+   The range card (rangecard.svg 2.2 KB, replacing range.svg) is a folded card pinned beside the manual where the
+   screen has room for it, never behind a row; on narrow screens it stays in the file. */
+html .ui-house .gc-sec { border: 10px solid #0000; border-bottom: 0; border-image: url(/menu/sheet.svg) 10 / 10px round; box-shadow: none;
+  background: linear-gradient(#0000 calc(100% - 16px), #efe6cf calc(100% - 13px)),
+    linear-gradient(#0000 calc(48% - 8px), #1414140c 48%, #fff 48% calc(48% + 1.5px), #14141408 calc(48% + 2px), #0000 calc(48% + 9px)),
+    radial-gradient(120% 90% at 50% 40%, #0000 70%, #c9a86014 90%, #a9813a26), url(/menu/slip.svg) 0 4px / 64px, #fffdf6d6;
+  background-clip: padding-box; }
+html .ui-house .gc-sec-h { position: relative; }
+html .ui-house .gc-sec-h::after { content: ""; position: absolute; top: -12px; left: 38%; width: 15px; height: 42px; pointer-events: none;
+  background: url(/menu/clip.svg) center / contain no-repeat; transform: rotate(4deg); filter: drop-shadow(1px 1px 0 #14141466); }
+html .ui-house .gc-key { border: 1.5px solid #141414; border-radius: 7px;
+  background: linear-gradient(#e8590c 0 0) 50% 0 / 16px 3px no-repeat, var(--br-ticks), var(--br-tile);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat;
+  box-shadow: inset 0 1px 0 #fff, inset 0 -3px 0 #e6e0d0, 0 4px 0 #141414, 0 5px 0 #14141426; }
+html .ui-house .gc-key.on { background: linear-gradient(#2a2a27, #141414); }
+@media (min-width: 1040px) and (min-height: 560px) {
+  html .gc-dialog.ui-house::before { content: ""; position: fixed; top: 34vh; right: calc(50% + 268px); width: 220px; height: 270px; pointer-events: none;
+    background: url(/menu/rangecard.svg) center / contain no-repeat; transform: rotate(-4deg); filter: drop-shadow(3px 4px 0 #14141422); }
+  html .gc-dialog.ui-house::after { content: ""; position: fixed; top: calc(34vh - 8px); right: calc(50% + 400px); width: 84px; height: 26px; pointer-events: none;
+    background: url(/menu/tape.svg) center / 100% 100% no-repeat; transform: rotate(-12deg); }
+}
+
+/* Round 18 (#6284): the head and foot bands are white paper like the canvas (grit and the double rules and stamps kept,
+   with a thin kraft strip at the very edge where they meet the card), and where the range card has no room beside
+   the manual it is cut down to a slip (strip.svg 1.7 KB: a small reticle, the RANGE CARD title, a CLASSIFIED stamp)
+   pinned in the manual itself, left of the fold keys above the first sheet, where no text runs. */
+html .ui-house .gc-card { --gr-plate: url(/menu/grit.svg) 0 0 / 180px, linear-gradient(#fffdf8, #f7f4ec); }
+html .ui-house .gc-head { box-shadow: inset 0 5px 0 #e2d4b0, 0 6px 10px -8px #14141455; }
+html .ui-house .gr-foot { box-shadow: inset 0 -5px 0 #e2d4b0; }
+@media not ((min-width: 1040px) and (min-height: 560px)) {
+  html .ui-house .gc-profiles + .gc-fold { align-items: center; }
+  html .ui-house .gc-profiles + .gc-fold::before { content: ""; flex: 0 1 176px; height: 56px; margin-right: auto; pointer-events: none;
+    background: url(/menu/strip.svg) left center / contain no-repeat; transform: rotate(-2deg); filter: drop-shadow(2px 3px 0 #14141422); }
+}

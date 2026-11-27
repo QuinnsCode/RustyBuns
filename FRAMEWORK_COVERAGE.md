@@ -138,7 +138,7 @@ About 10 of the apps found aren't runnable apps at all: library packages inside 
 
 ## Elysia
 
-**Run: Oct 25 2026, Elysia 1.4.30, one app by hand: [bedstack/elysia-drizzle-realworld-example](https://github.com/bedstack/elysia-drizzle-realworld-example) as [elysia-conduit](apps/frameworks/elysia-conduit/RUSTYBUNS.md).** No trial-github sweep yet, because `init` doesn't recognise Elysia ([#2274](https://github.com/QuinnsCode/RustyBuns/issues/2274)).
+**Run: Oct 25 2026, Elysia 1.4.30, one app by hand: [bedstack/elysia-drizzle-realworld-example](https://github.com/bedstack/elysia-drizzle-realworld-example) as [elysia-conduit](apps/frameworks/elysia-conduit/RUSTYBUNS.md).** No trial-github sweep yet ([#2285](https://github.com/QuinnsCode/RustyBuns/issues/2285)). `init` used to refuse Elysia ([#2274](https://github.com/QuinnsCode/RustyBuns/issues/2274)); it now reads it as a plain Worker ([`apps/frameworks/elysia-example`](apps/frameworks/elysia-example)).
 
 | | result |
 |---|---|
@@ -211,7 +211,7 @@ This was a single hand run, not a `trial-github.ts` sweep ([#4803](https://githu
 | `pnpm install` | ok (pnpm 11.3.0) |
 | `init` | vite app, pnpm (npm before this run's fix) |
 | `add deploy` | keeps alchemy beta.87 + effect 4.1.4; installs 5 missing packages |
-| `plan --offline` | ok on beta.87, after Rat Stack's own content steps ([#5766](https://github.com/QuinnsCode/RustyBuns/issues/5766)) |
+| `plan --offline` | ok on beta.87, after Rat Stack's own content steps ([#5766](https://github.com/QuinnsCode/RustyBuns/issues/5766)); on a cold clone with no hand steps since #5781 (Nov 26, [#5782](https://github.com/QuinnsCode/RustyBuns/issues/5782)) |
 | `build desktop --dev`, `run desktop` | builds and serves |
 | `smoke apps/web` | stops at install: a workspace member alone ([#5768](https://github.com/QuinnsCode/RustyBuns/issues/5768)) |
 

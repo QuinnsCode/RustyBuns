@@ -1,10 +1,11 @@
 // The Studio tab (studios.ts, VISION.md): each studio the person is in, their role, who else is in, and the shelf, where every app
 // shows its four doors: Play (its site), Keep (the person's own unlocks in it, on its eqosys page), Make (its codeSplitter repo,
-// once linked) and Ship (live, with the stage, version and time its last deploy reported). An owner or admin adds people by email here; with no studio yet, the person can make one.
+// once linked) and Ship (live, with the stage, version and time its last deploy reported). An owner or admin asks people in by email here, and
+// they join once they say yes to the invite at the top of their own Studio tab (#6232); with no studio yet, the person can make one.
 // A studio's own game (listings.ts) also has its form by the Ship door, for its owners and admins: save, send to review, pull. Its
 // players' reports (reports.ts) sit under it, for everyone in the studio. A new game starts from the form under the shelf; New game
 // (and the Make door of a game with no repo) makes its code in codeSplitter from the starter game (apps/starter-game, #4053).
-import { KINDS, ROLES, type Role, type Studio as Shelf } from "../studios.ts";
+import { KINDS, ROLES, type Invite, type Role, type Studio as Shelf } from "../studios.ts";
 import type { Draft, State } from "../listings.ts";
 import { GENRES, ourApp } from "../apps.ts";
 import { btn } from "./Glass.tsx";
@@ -20,6 +21,7 @@ export const STUDIO_CSS = `
 .home .pill.on{color:var(--onacc);background:var(--acc);border-color:transparent}
 .home .people{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 .8rem}
 .home .people>span{display:inline-flex;align-items:baseline;gap:.4rem;max-width:100%;padding:.3rem .65rem;border-radius:12px;border:1px solid var(--rim)}
+.home .people>span.asked{border-style:dashed}
 .home .people b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.home .people span span{font-size:.72rem;color:var(--mut)}
 .home .shelf{display:grid;gap:.35rem}
 .home .shelf>div{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;padding:.5rem 0;border-top:1px solid var(--rim)}
@@ -134,7 +136,7 @@ function CompanySignIn({ s, origin }: { s: Shelf; origin: string }) {
         <button className={btn(true)} type="submit">{c ? "Save" : "Connect"}</button>
         {c && <button className={btn()} type="submit" name="off" value="1" formNoValidate>Take it off</button>}
       </form>
-      {/* Domain proof (sso.ts proveDomain): a proved domain links coworkers' existing accounts, and no other studio can claim it. */}
+      {/* Domain proof (sso.ts proveDomain): company sign-in starts once the domain is proved, and no other studio can claim it. */}
       {c && (c.proved ? (
         <form method="post" action="/do/studio-sso" aria-label={`Who must use ${s.name}'s company sign-in`}>
           <p className="mut">{c.domain} is proved: coworkers who already have an account here are linked at their first company sign-in.</p>
@@ -144,7 +146,7 @@ function CompanySignIn({ s, origin }: { s: Shelf; origin: string }) {
         </form>
       ) : (
         <form method="post" action="/do/studio-sso" aria-label={`Prove ${s.name} owns ${c.domain}`}>
-          <p className="mut">Prove {c.domain} is yours: add this TXT record to it, then check. Until then, coworkers who already have an account here sign in the usual way.</p>
+          <p className="mut">Prove {c.domain} is yours: add this TXT record to it, then check. Company sign-in starts once it's proved.</p>
           <code>{proofOf(s.id)}</code>
           <input type="hidden" name="studio" value={s.id} />
           <button className={btn()} type="submit" name="prove" value="1">Check the record</button>
@@ -153,11 +155,22 @@ function CompanySignIn({ s, origin }: { s: Shelf; origin: string }) {
   );
 }
 
-export function Studios({ studios, unlocks, origin = "" }: { studios: Shelf[]; unlocks: Unlocks; origin?: string }) {
+export function Studios({ studios, invites = [], unlocks, origin = "" }: { studios: Shelf[]; invites?: Invite[]; unlocks: Unlocks; origin?: string }) {
   return (
     <>
       <h2>Studios</h2>
-      {studios.length === 0 && <p className="card mut">You aren't in a studio yet. A studio is the account that makes apps: just you, a team or a business.</p>}
+      {invites.map((i) => (
+        <section key={i.studio} className="card studio" aria-label={`Invite to ${i.name}`}>
+          <header><b>{i.name}</b><span className="pill">{i.kind}</span><span className="pill on">asks you: {ROLE_WORD[i.role]}</span></header>
+          <p className="mut">{i.by || "Its owner"} asked you to join. Nobody there sees you until you say yes.</p>
+          <form method="post" action="/do/studio-join" aria-label={`Answer ${i.name}'s invite`}>
+            <input type="hidden" name="studio" value={i.studio} />
+            <button className={btn(true)} type="submit" name="answer" value="yes">Join</button>
+            <button className={btn()} type="submit" name="answer" value="no">No thanks</button>
+          </form>
+        </section>
+      ))}
+      {studios.length === 0 && invites.length === 0 && <p className="card mut">You aren't in a studio yet. A studio is the account that makes apps: just you, a team or a business.</p>}
       {studios.map((s) => (
         <section key={s.id} className="card studio" aria-label={s.name}>
           <header><b>{s.name}</b><span className="pill">{s.kind}</span><span className="pill on">you: {ROLE_WORD[s.role]}</span></header>
@@ -167,6 +180,9 @@ export function Studios({ studios, unlocks, origin = "" }: { studios: Shelf[]; u
                 <form method="post" action="/do/studio-remove"><input type="hidden" name="studio" value={s.id} /><input type="hidden" name="email" value={p.email} />
                   <button type="submit" title={`Take ${p.name || p.email} out`} aria-label={`Take ${p.name || p.email} out of ${s.name}`}><UserMinus /></button></form>
               )}</span>)}
+            {(s.pending ?? []).map((p) => <span key={p.email} className="asked" title={`${p.email}: invited, not in yet`}><b>{p.email}</b><span>invited {ROLE_WORD[p.role]}</span>
+              <form method="post" action="/do/studio-remove"><input type="hidden" name="studio" value={s.id} /><input type="hidden" name="email" value={p.email} />
+                <button type="submit" title={`Take back the invite to ${p.email}`} aria-label={`Take back the invite to ${p.email}`}><UserMinus /></button></form></span>)}
           </div>
           <div className="shelf" aria-label="Shelf">
             {s.apps.length === 0 ? <span className="mut">No apps on the shelf yet.</span> : s.apps.map((a) => (
@@ -192,11 +208,11 @@ export function Studios({ studios, unlocks, origin = "" }: { studios: Shelf[]; u
           )}
           {s.role === "owner" && <CompanySignIn s={s} origin={origin} />}
           {runs(s) && (
-            <form method="post" action="/do/studio-add" aria-label={`Add someone to ${s.name}`}>
+            <form method="post" action="/do/studio-add" aria-label={`Invite someone to ${s.name}`}>
               <input type="hidden" name="studio" value={s.id} />
               <input name="email" type="email" placeholder="their email" required />
               <select name="role" defaultValue="maker">{ROLES.filter((r) => r !== "owner" || s.role === "owner").map((r) => <option key={r} value={r}>{ROLE_WORD[r]}</option>)}</select>
-              <button className={btn(true)} type="submit">Add</button>
+              <button className={btn(true)} type="submit">Invite</button>
             </form>
           )}
         </section>

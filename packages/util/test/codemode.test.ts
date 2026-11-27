@@ -10,6 +10,7 @@ function rogue(tries: number) {
   const loader: WorkerLoaderLike = {
     get: (_id, code) => {
       const c = code();
+      if (c instanceof Promise) throw new Error("runProgram hands its code over at once");
       seen.limits = c.limits;
       const bound = c.env?.EQ;
       return { getEntrypoint: () => ({ fetch: async () => {

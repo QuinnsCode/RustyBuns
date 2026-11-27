@@ -304,6 +304,9 @@ export function generateAlchemy(c: RustyBunsConfig, guests: readonly BoxGuest[] 
     // No main: assets-only, and Cloudflare's asset layer answers every request.
     if (w.builtMain ?? w.main) wb.push(`  main: ${JSON.stringify(w.builtMain ?? w.main)},`);
     if (w.builtMain) wb.push(`  bundle: false,  // vite already produced a runtime-ready ESM bundle`);
+    // worker.connect: a deploy ships main as it is and a Spectrum app calls its connect(). Under rustybuns dev
+    // (RB_CONNECT_DEV set) the dev entry goes in front, and the HTTP port is pinned for dev's TCP bridge to reach.
+    if (w.connect) wb.push(`  ...(process.env.RB_CONNECT_DEV ? { main: process.env.RB_CONNECT_DEV, dev: { host: "127.0.0.1", port: Number(process.env.RB_CONNECT_DEV_PORT), strictPort: true } } : {}),  // worker.connect: tcp ${w.connect.port} in dev`);
     // Alchemy's default module rules with the source maps added: given rules, it uses only those.
     if (w.builtMain && w.sourceMaps) wb.push(`  rules: [{ globs: ["**/*.js", "**/*.mjs"] }, { globs: ["**/*.wasm"] }, { globs: ["**/*.txt", "**/*.html", "**/*.sql"] }, { globs: ["**/*.bin"] }, { globs: ["**/*.map"] }],  // worker.sourceMaps`);
     if (w.assets) {

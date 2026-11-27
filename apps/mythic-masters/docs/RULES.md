@@ -71,7 +71,7 @@ From the code: src/journey.ts PICKS, PARTY_FIRST, PARTY_MAX, OWN_MAX, call, rest
 
 - Each region's trail has 12 sections. A keeper stands on the stone of each one. Beat it or bind it and the next section opens. You cannot skip a stone.
 - The keeper of section 12 is the region's boss, in its lair.
-- Levels rise along the trail. The boss is 8 levels over the first keeper, and each region starts 8 levels over the one before it by number.
+- Levels rise along the trail. The boss is 8 levels over the first keeper, and each region starts 8 levels over the one before it on the road (1, 2, 3, 5, 4, 6, 7, 8), at the level of that region's boss.
 
 From the code: src/journey.ts SECTIONS, baseLevel, sectionLevel, clearSection.
 

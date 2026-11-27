@@ -21,6 +21,8 @@ export const STUDIO_NAME = str(60, { min: 1 });
 export const OWNED = 3;
 /** The most people a studio has, and so its space (a person's own space stops at SPACE_MEMBERS, space.ts): a studio's whole team in one place. */
 export const STUDIO_MEMBERS = 5000;
+/** Invites a studio may have waiting for a yes at once (#6232): a team's first day, not a mailing list. */
+export const PENDING = 50;
 
 /** The super admin's studio: a fixed id, so making it twice is a no-op. */
 export const HOUSE = { id: "qntbr", name: "QNTBR", kind: "business" as Kind };
@@ -33,10 +35,15 @@ export interface ShelfApp {
   state?: State; note?: string; draft?: Draft; reports?: Received[];
 }
 export interface StudioPerson { name: string; email: string; role: Role }
+/** An invite a studio is waiting on, as its owners and admins see it. */
+export interface Pending { email: string; role: Role }
+/** An invite waiting for this person's yes: the studio, the role it offers, and who asked. */
+export interface Invite { studio: string; name: string; kind: Kind; role: Role; by: string }
 /** A studio's company sign-in (sso.ts) as the Studio tab shows it: never the secret, only whether one is sealed. */
 export interface SsoShown { issuer: string; clientId: string; domain: string; role: Role; secret: boolean; proved: boolean; only: boolean }
-/** `space` is the id of the studio's own Qollab space (space.ts), once its owner or admin has made it; `sso` its company sign-in, shown to its owner. */
-export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; space: string | null; people: StudioPerson[]; apps: ShelfApp[]; sso?: SsoShown }
+/** `space` is the id of the studio's own Qollab space (space.ts), once its owner or admin has made it; `sso` its company sign-in, shown to its owner;
+ * `pending` the invites waiting for a yes, shown to its owners and admins. */
+export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; space: string | null; people: StudioPerson[]; pending?: Pending[]; apps: ShelfApp[]; sso?: SsoShown }
 
 const shelfApp = async (conf: Env, id: string, repo: string | null, shipped: Shipped | null, theirs: Listing[]): Promise<ShelfApp> => {
   const l = theirs.find((x) => x.id === id), a: QApp | undefined = ourApp(id) ?? l;
@@ -58,12 +65,13 @@ export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
   ).bind(userId).all<{ id: string; name: string; kind: Kind; role: Role; members: number; space: string | null }>();
   if (!mine.length) return [];
   const ids = mine.map((s) => s.id), marks = ids.map(() => "?").join(", ");
-  const [{ results: apps }, { results: people }, { results: sso }] = await Promise.all([
+  const [{ results: apps }, { results: people }, { results: sso }, { results: pending }] = await Promise.all([
     conf.DB.prepare(`SELECT app, studio_id, repo FROM studio_apps WHERE studio_id IN (${marks}) ORDER BY app`).bind(...ids).all<{ app: string; studio_id: string; repo: string | null }>(),
     conf.DB.prepare(`SELECT m.studio_id, u.name, u.email, m.role FROM studio_members m JOIN "user" u ON u.id = m.user_id WHERE m.studio_id IN (${marks})
       ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name`).bind(...ids).all<StudioPerson & { studio_id: string }>(),
     conf.DB.prepare(`SELECT studio_id, issuer, client_id, secret IS NOT NULL AS sealed, domain, role, proved_at IS NOT NULL AS proved, only_sso AS only FROM studio_sso WHERE studio_id IN (${marks})`).bind(...ids)
       .all<{ studio_id: string; issuer: string; client_id: string; sealed: number; domain: string; role: Role; proved: number; only: number }>(),
+    conf.DB.prepare(`SELECT studio_id, email, role FROM studio_invites WHERE studio_id IN (${marks}) ORDER BY at, rowid`).bind(...ids).all<Pending & { studio_id: string }>(),
   ]);
   const [shipped, theirs] = await Promise.all([lastDeploys(conf, apps.map((a) => a.app)), Promise.all(ids.map((studio) => listings(conf, { studio }))).then((l) => l.flat())]);
   const ssoShown = (s: { id: string; role: Role }) => {
@@ -72,6 +80,7 @@ export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
   };
   return Promise.all(mine.map(async (s) => ({ ...s, ...ssoShown(s),
     people: people.filter((p) => p.studio_id === s.id).map(({ name, email, role }) => ({ name, email, role })),
+    pending: s.role === "owner" || s.role === "admin" ? pending.filter((p) => p.studio_id === s.id).map(({ email, role }) => ({ email, role })) : [],
     apps: await Promise.all(apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(conf, a.app, a.repo, shipped.get(a.app) ?? null, theirs))) })));
 }
 
@@ -92,19 +101,67 @@ export async function makeStudio(conf: Env, owner: string, name: string, kind: K
 export const roleIn = (conf: Pick<Env, "DB">, studio: string, who: string) =>
   conf.DB.prepare("SELECT role FROM studio_members WHERE studio_id = ? AND user_id = ?").bind(studio, who).first<Role>("role");
 
-/** Puts someone in a studio by email (an owner or admin asks; only an owner makes another owner). */
+/**
+ * Asks someone into a studio by email, or changes a member's role (an owner or admin asks; only an owner makes another owner).
+ * Someone not in it yet gets an invite to say yes to on their Studio tab (`answerInvite`), not a seat (#6232): until then they
+ * aren't a coworker, and the answer is the same whether or not the email has an account, so asking finds out nothing about it.
+ */
 export async function addMember(conf: Pick<Env, "DB">, studio: string, by: string, email: string, role: Role, now = Date.now()): Promise<Made> {
   const mine = await roleIn(conf, studio, by);
   if (mine !== "owner" && mine !== "admin") return { ok: false, status: 403, error: "only a studio's owner or admin adds people" };
   if (role === "owner" && mine !== "owner") return { ok: false, status: 403, error: "only an owner makes another owner" };
-  const u = await conf.DB.prepare(`SELECT id FROM "user" WHERE lower(email) = lower(?)`).bind(email.trim()).first<string>("id");
-  if (!u) return { ok: false, status: 404, error: "nobody has signed up with that email" };
-  // A new member counts against the cap; changing someone's role doesn't.
-  if (!await roleIn(conf, studio, u) && ((await conf.DB.prepare("SELECT COUNT(*) AS n FROM studio_members WHERE studio_id = ?").bind(studio).first<number>("n")) ?? 0) >= STUDIO_MEMBERS)
-    return { ok: false, status: 409, error: `that studio is full (${STUDIO_MEMBERS} people)` };
-  await conf.DB.prepare("INSERT INTO studio_members (studio_id, user_id, role, at) VALUES (?, ?, ?, ?) ON CONFLICT (studio_id, user_id) DO UPDATE SET role = excluded.role")
-    .bind(studio, u, role, now).run();
+  const to = email.trim().toLowerCase();
+  const u = await conf.DB.prepare(`SELECT id FROM "user" WHERE lower(email) = ?`).bind(to).first<string>("id");
+  if (!u || !await roleIn(conf, studio, u)) {
+    // Asking again changes the role it offers; a new one counts against PENDING.
+    const asked = await conf.DB.prepare(`INSERT INTO studio_invites (studio_id, email, role, asked_by, at) SELECT ?1, ?2, ?3, ?4, ?5
+      WHERE EXISTS (SELECT 1 FROM studio_invites WHERE studio_id = ?1 AND email = ?2) OR (SELECT COUNT(*) FROM studio_invites WHERE studio_id = ?1) < ?6
+      ON CONFLICT (studio_id, email) DO UPDATE SET role = excluded.role, asked_by = excluded.asked_by, at = excluded.at RETURNING email`)
+      .bind(studio, to, role, by, now, PENDING).first<string>("email");
+    return asked ? { ok: true, id: studio } : { ok: false, status: 409, error: `that studio has ${PENDING} invites waiting already` };
+  }
+  // An owner's role is only an owner's to change, and the last owner keeps it: checked in the write, so two changes can't race past it.
+  const put = await conf.DB.prepare(`INSERT INTO studio_members (studio_id, user_id, role, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (studio_id, user_id) DO UPDATE SET role = excluded.role
+    WHERE studio_members.role <> 'owner' OR (?5 = 'owner' AND (excluded.role = 'owner'
+      OR EXISTS (SELECT 1 FROM studio_members o WHERE o.studio_id = ?1 AND o.role = 'owner' AND o.user_id <> ?2))) RETURNING user_id`)
+    .bind(studio, u, role, now, mine).first<string>("user_id");
+  if (put) return { ok: true, id: studio };
+  return mine === "owner" ? { ok: false, status: 409, error: "a studio keeps at least one owner" } : { ok: false, status: 403, error: "only an owner changes another owner's role" };
+}
+
+/** The invites waiting for this person's yes, oldest first. */
+export async function invitesOf(conf: Pick<Env, "DB">, userId: string): Promise<Invite[]> {
+  const { results } = await conf.DB.prepare(`SELECT s.id AS studio, s.name, s.kind, i.role, coalesce(substr(b.name, 1, 100), '') AS "by" FROM studio_invites i
+    JOIN "user" u ON u.id = ? AND lower(u.email) = i.email JOIN studios s ON s.id = i.studio_id LEFT JOIN "user" b ON b.id = i.asked_by ORDER BY i.at`).bind(userId).all<Invite>();
+  return results;
+}
+
+/**
+ * Says yes or no to an invite. Yes seats them with the role it offers, by the same caps as making a studio: the studio's STUDIO_MEMBERS,
+ * and OWNED for an owner's seat. Either way the invite goes.
+ */
+export async function answerInvite(conf: Pick<Env, "DB">, studio: string, userId: string, yes: boolean, now = Date.now()): Promise<Made> {
+  const mine = `studio_id = ?1 AND email = (SELECT lower(email) FROM "user" WHERE id = ?2)`;
+  const role = await conf.DB.prepare(`SELECT role FROM studio_invites WHERE ${mine}`).bind(studio, userId).first<Role>("role");
+  if (!role) return { ok: false, status: 404, error: "no invite to that studio waits for you" };
+  const drop = conf.DB.prepare(`DELETE FROM studio_invites WHERE ${mine}`).bind(studio, userId);
+  if (!yes) { await drop.run(); return { ok: true, id: studio }; }
+  if (!await roleIn(conf, studio, userId)) {
+    if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM studio_members WHERE studio_id = ?").bind(studio).first<number>("n")) ?? 0) >= STUDIO_MEMBERS)
+      return { ok: false, status: 409, error: `that studio is full (${STUDIO_MEMBERS} people)` };
+    if (role === "owner" && ((await conf.DB.prepare("SELECT COUNT(*) AS n FROM studio_members WHERE user_id = ? AND role = 'owner'").bind(userId).first<number>("n")) ?? 0) >= OWNED)
+      return { ok: false, status: 409, error: `you own ${OWNED} studios already` };
+  }
+  await conf.DB.batch([conf.DB.prepare("INSERT INTO studio_members (studio_id, user_id, role, at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING").bind(studio, userId, role, now), drop]);
   return { ok: true, id: studio };
+}
+
+/** Takes back an invite still waiting (its studio's owner or admin asks). */
+export async function cancelInvite(conf: Pick<Env, "DB">, studio: string, by: string, email: string): Promise<Made> {
+  const mine = await roleIn(conf, studio, by);
+  if (mine !== "owner" && mine !== "admin") return { ok: false, status: 403, error: "only a studio's owner or admin takes people out" };
+  const gone = await conf.DB.prepare("DELETE FROM studio_invites WHERE studio_id = ? AND email = ? RETURNING email").bind(studio, email.trim().toLowerCase()).first<string>("email");
+  return gone ? { ok: true, id: studio } : { ok: false, status: 404, error: "nobody in that studio has that email" };
 }
 
 /**
@@ -119,12 +176,15 @@ export async function removeMember(conf: Pick<Env, "DB">, studio: string, by: st
   const out = await conf.DB.prepare(`DELETE FROM studio_members WHERE studio_id = ?1 AND user_id = ?2
     AND (role <> 'owner' OR EXISTS (SELECT 1 FROM studio_members o WHERE o.studio_id = ?1 AND o.role = 'owner' AND o.user_id <> ?2)) RETURNING user_id`)
     .bind(studio, who).first<string>("user_id");
-  return out ? { ok: true, id: studio } : { ok: false, status: 409, error: "a studio keeps at least one owner" };
+  if (!out) return { ok: false, status: 409, error: "a studio keeps at least one owner" };
+  // A guest row they had in the studio's space would keep them in it after the seat is gone.
+  await conf.DB.prepare("DELETE FROM space_members WHERE space_id IN (SELECT id FROM spaces WHERE studio_id = ?) AND user_id = ?").bind(studio, who).run();
+  return { ok: true, id: studio };
 }
 
 /** Everyone who shares a studio with this person (not them), at most `max`: they see each other online without a friend request (hub.ts). */
 export async function coworkersOf(conf: Pick<Env, "DB">, userId: string, max = 200): Promise<{ id: string; name: string }[]> {
-  const { results } = await conf.DB.prepare(`SELECT DISTINCT u.id, u.name FROM studio_members a JOIN studio_members b ON b.studio_id = a.studio_id
+  const { results } = await conf.DB.prepare(`SELECT DISTINCT u.id, substr(u.name, 1, 100) AS name FROM studio_members a JOIN studio_members b ON b.studio_id = a.studio_id
     JOIN "user" u ON u.id = b.user_id WHERE a.user_id = ?1 AND b.user_id <> ?1 ORDER BY u.name LIMIT ?2`).bind(userId, max).all<{ id: string; name: string }>();
   return results;
 }
@@ -149,6 +209,8 @@ export const SOLE_OWNED = `SELECT studio_id FROM studio_members m WHERE m.user_i
 /** Deleting an account: a studio it owned alone goes with it (apps freed, members out, its space with it); in the rest it just leaves. */
 export function studioErase(conf: Env, userId: string) {
   return [
+    // Invites they asked, or that wait for them, go; so do those of a studio that goes with them (below).
+    conf.DB.prepare(`DELETE FROM studio_invites WHERE asked_by = ?1 OR email = (SELECT lower(email) FROM "user" WHERE id = ?1)`).bind(userId),
     // Its games are pulled (their saves go in 30 days, listings.ts); the ids stay taken.
     conf.DB.prepare(`UPDATE listings SET state = 'pulled', at = ?2 WHERE state <> 'pulled' AND studio_id IN (${SOLE_OWNED})`).bind(userId, Date.now()),
     conf.DB.prepare(`DELETE FROM studio_apps WHERE studio_id IN (${SOLE_OWNED})`).bind(userId),
@@ -156,6 +218,7 @@ export function studioErase(conf: Env, userId: string) {
     conf.DB.prepare(`DELETE FROM studio_members WHERE studio_id NOT IN (SELECT id FROM studios)`),
     conf.DB.prepare(`DELETE FROM spaces WHERE studio_id IS NOT NULL AND studio_id NOT IN (SELECT id FROM studios)`),
     conf.DB.prepare(`DELETE FROM studio_sso WHERE studio_id NOT IN (SELECT id FROM studios)`),
+    conf.DB.prepare(`DELETE FROM studio_invites WHERE studio_id NOT IN (SELECT id FROM studios)`),
     conf.DB.prepare("DELETE FROM studio_members WHERE user_id = ?").bind(userId),
   ];
 }

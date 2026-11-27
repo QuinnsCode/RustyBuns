@@ -98,6 +98,7 @@ export const formatReaper = (r: ReaperStats): string =>
   `swap: ${r.swap ? `${r.swap.pct}% (${(r.swap.usedMb / 1024).toFixed(1)} of ${(r.swap.totalMb / 1024).toFixed(1)} GB)${r.hold !== null && r.swap.pct > r.hold ? `, over ${r.hold}%: hires wait` : ""}` : "none, or not read yet"}` +
   ` · reaper: ended ${r.reaped} leftover process${r.reaped === 1 ? "" : "es"} since the office started` +
   (r.woken ? `, woke ${r.woken} left stopped` : "") +
+  r.runaways.map((l) => `\n  runaway: ${l}`).join("") +
   (r.lastReaped.length ? `\n  last: ${r.lastReaped.join("\n  last: ")}` : "");
 
 const files = (list: SavedFile[]) => list.map((f) => `  ${f.id}  ${f.at}  ${(f.bytes / 1e6).toFixed(1)} MB  ${f.file}`);

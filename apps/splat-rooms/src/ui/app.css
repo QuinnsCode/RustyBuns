@@ -45,7 +45,7 @@ html, body, #root { height: 100%; margin: 0; background: var(--bg) !important; c
 h1 { font: 600 1.9rem/1 var(--silk); margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.03em; }
 h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.04em; }
 .dim { color: var(--dim); } .small { font-size: .82rem; }
-.warn { color: var(--warn); font-size: .88rem; padding-left: 9px; border-left: 3px solid var(--red); }
+.warn { color: var(--warn); font-size: .88rem; padding: 5px 9px; border: 1px solid rgb(212 64 44 / 0.6); border-radius: 4px; }
 
 .rooms, .kinds, .insts { list-style: none; margin: 8px 0 0; padding: 0; }
 .room { display: grid; gap: 2px; width: 100%; text-align: left; padding: 10px 16px; margin-bottom: 6px;
@@ -165,20 +165,22 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
 .title { font: 600 clamp(2.8rem, 9vw, 4.4rem)/.9 var(--silk); margin: 0; text-transform: uppercase; letter-spacing: .02em;
   text-shadow: 0 0 26px rgb(92 214 239 / 0.35); }
 .menu-nav { display: grid; gap: 8px; margin: 8px 0 6px; }
-.big { padding: 11px 16px; font-size: 1.2rem; text-align: left; color: var(--ink); border-left: 3px solid var(--edge-hi); }
+.big { padding: 11px 16px; font-size: 1.2rem; text-align: left; color: var(--ink); }
 .big small { display: block; margin-top: 1px; font: 400 .78rem var(--body); letter-spacing: 0; text-transform: none; color: var(--dim); }
-.big:not(.go) { border-left-color: rgb(154 90 54 / 0.75); outline: 1px solid rgb(239 228 201 / 0.07); outline-offset: -4px;
+.big:not(.go) { border-color: var(--edge-hi); outline: 1px solid rgb(239 228 201 / 0.07); outline-offset: -4px;
   background: var(--wear), linear-gradient(180deg, rgb(255 255 255 / 0.045), transparent 45%), var(--glass);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 -1px 0 rgb(0 0 0 / 0.6); }
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 -1px 0 rgb(0 0 0 / 0.6), inset 0 0 18px -10px rgb(92 214 239 / 0.5); }
 .big:hover:not(:disabled) { border-color: var(--accent); box-shadow: var(--glow); }
 .big.go { outline: 1px solid rgb(4 18 24 / 0.25); outline-offset: -4px; }
 .mini:not(.is-on) { border-bottom-color: rgb(154 90 54 / 0.6); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05); }
 .big.go { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 .big.go small { color: rgb(4 18 24 / 0.72); }
 
-/* The agent card: an ID strip with the red edge. */
-.agent { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; align-items: baseline; padding: 10px 12px; border-radius: 6px;
-  background: linear-gradient(120deg, #0f1a22, #0a1015); border: 1px solid var(--edge); border-left: 4px solid var(--red); }
+/* The agent card: an ID strip in a hairline, with a red-and-cream tab on its top edge (no left stripe). */
+.agent { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; align-items: baseline; padding: 10px 12px; border-radius: 6px;
+  background: linear-gradient(120deg, #0f1a22, #0a1015); border: 1px solid var(--edge-hi);
+  outline: 1px solid rgb(239 228 201 / 0.06); outline-offset: -4px; box-shadow: inset 0 0 18px -10px rgb(212 64 44 / 0.55); }
+.agent::before { content: ""; position: absolute; left: 12px; top: -1px; width: 34px; height: 3px; background: var(--red); box-shadow: 38px 0 0 -1px var(--cream); }
 .agent-k { font: .66rem var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
 .agent b { font: 600 1.05rem/1.1 var(--silk); letter-spacing: .03em; }
 .uplink { display: flex; gap: 8px; align-items: center; margin: 4px 0 0; font: .74rem var(--mono); letter-spacing: .06em; color: var(--dim); }
@@ -237,7 +239,7 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
 .panel > .band:first-child { margin: -20px -20px 4px; width: calc(100% + 40px); }
 .panel.alert { border-color: var(--red); box-shadow: 0 0 0 1px rgb(212 64 44 / 0.3), 0 0 24px -8px rgb(212 64 44 / 0.6); }
 .panel h2 { font-size: 1.8rem; margin: 0; }
-.panel .big { text-align: center; border-left-width: 1px; }
+.panel .big { text-align: center; }
 .panel p { margin: 0; }
 .watch-panel { width: min(340px, 100%); }
 .watch { display: block; margin: -6px auto 0; max-width: 100%; height: auto; filter: drop-shadow(0 12px 18px #000); }
@@ -393,5 +395,20 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
   :root { --rivet: #8a8276 0 1.5px, #18140f 1.8px 3px, transparent 3.4px; }
 }
 .game-hud.bezel, .game-foot.bezel, .hud.bezel { padding-left: 24px; padding-right: 24px; }
+/* The survey's tool strip: controls never wrap; a phone gets the short hint. */
+.hud .chk, .hud .mini { white-space: nowrap; }
+.hud-hint-short { display: none; }
+@media (max-width: 520px) {
+  .hud { right: 12px; gap: 10px; }
+  .hud-hint { display: none; }
+  .hud-hint-short { display: inline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+}
+/* The manifest: a stamped hairline between rows and a small red serial tick before each kind. */
+.kind { border-top-color: rgb(239 228 201 / 0.07); }
+.kind > span:first-child::before { content: ""; display: inline-block; width: 7px; height: 1px; margin: 0 8px 0 0; vertical-align: middle; background: var(--red); box-shadow: 0 3px 0 rgb(212 64 44 / 0.45); }
+/* The menu's uplink stays one line: the long part gives way first. */
+.uplink { white-space: nowrap; min-width: 0; }
+.uplink > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 420px) { .uplink { font-size: .66rem; letter-spacing: .03em; } }
 /* The Room browser's side rails: the same worn steel as the plates, bolted at the corners. */
 .rail { background-image: var(--rivets), var(--wear); }

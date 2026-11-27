@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "vite";
-import { launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, waitFor, type Tab } from "../../../scripts/chrome.ts";
 import { Design, PRINT_COPY_PX, PrintPlan } from "../src/api.ts";
 import { pictureSize } from "../src/print-render.ts";
 import { designKey } from "../src/layout.ts";
@@ -29,6 +29,8 @@ afterAll(() => { chrome?.stop(); app?.stop(); rmSync(dir, { recursive: true, for
 const HAT = `document.querySelector("qview-3d")`;
 const CANVAS = `${HAT}.shadowRoot.querySelector("canvas")`;
 
+/** Asks `f` until it gives something, for the waits that work between looks (the mouse hunting the picture) or ask
+ *  the server; a wait that only looks at the page is `waitFor`. */
 async function until<T>(what: string, f: () => Promise<T | null | undefined | false>, ms = 30_000): Promise<T> {
   const end = Date.now() + ms;
   for (;;) {
@@ -59,7 +61,7 @@ async function findPicture(tab: Tab) {
 test("a shopper puts a picture on the cap, drags it, nudges it, and saves it", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   await load(chrome.cdp, tab, `${app.url}/`, 500);
-  await until("the widget ready", () => tab.eval<boolean>(`!!${HAT}.design`));
+  await waitFor(tab, "the widget ready", `!!${HAT}.design`);
 
   // A picture made on the spot, as a phone photo would arrive: a PNG blob.
   await tab.eval(`(async () => {
@@ -67,7 +69,8 @@ test("a shopper puts a picture on the cap, drags it, nudges it, and saves it", a
     g.fillStyle = "#ff5a1f"; g.fillRect(0, 0, 256, 256); g.fillStyle = "#fff"; g.fillRect(64, 64, 128, 128);
     await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" }));
   })()`);
-  const start = await until("a picture on the cap", () => layer(tab));
+  await waitFor(tab, "a picture on the cap", `!!${HAT}.design?.layers[0]`);
+  const start = (await layer(tab))!;
 
   // The camera swings to the front first; then hover finds the picture and the mouse drags it.
   const spot = await until("the picture under the mouse", () => findPicture(tab));
@@ -98,7 +101,7 @@ test("a shopper puts a picture on the cap, drags it, nudges it, and saves it", a
 test("the hat, the shirt and the hoodie each go in the cart with their design id", async () => {
   const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
   await load(chrome.cdp, tab, `${app.url}/`, 500);
-  await until("the widget ready", () => tab.eval<boolean>(`!!${HAT}.design`));
+  await waitFor(tab, "the widget ready", `!!${HAT}.design`);
   const picks = [
     { product: "field-cap", model: "cap", zones: ["front"] },
     { product: "crew-tee", model: "tee", zones: ["front", "back", "left-sleeve"] },
@@ -106,14 +109,15 @@ test("the hat, the shirt and the hoodie each go in the cart with their design id
   ];
   for (const [n, p] of picks.entries()) {
     await tab.eval(`document.querySelector('[data-product="${p.product}"]').click()`);
-    await until(`the ${p.model}`, () => tab.eval<boolean>(`${HAT}.model === "${p.model}" && !!${HAT}.design`));
+    await waitFor(tab, `the ${p.model}`, `${HAT}.model === "${p.model}" && !!${HAT}.design`);
     await tab.eval(`(async () => {
       const c = new OffscreenCanvas(128, 128), g = c.getContext("2d");
       g.fillStyle = "#1d4ed8"; g.fillRect(0, 0, 128, 128);
       for (const z of ${JSON.stringify(p.zones)}) await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" }), z);
     })()`);
     await tab.eval(`document.getElementById("buy").click()`);
-    const line = await until(`${p.product} in the cart`, () => tab.eval<Record<string, string> | null>(`window.demoCart?.[${n}] ?? null`));
+    await waitFor(tab, `${p.product} in the cart`, `!!window.demoCart?.[${n}]`);
+    const line = await tab.eval<Record<string, string>>(`window.demoCart[${n}]`);
     expect(line).toMatchObject({ product: p.product, qty: "1", design: await tab.eval<string>(`${HAT}.value`) });
     expect(line["design-url"]).toEndWith(`/r/${designKey("demo", line.design!)}`);
     const stored = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", line.design!)))?.text()) ?? "null"));
@@ -133,12 +137,13 @@ test("the iframe tells the page round it what the widget does", async () => {
   try {
     const tab = await openTab(chrome.cdp, { w: 800, h: 600 });
     await load(chrome.cdp, tab, `http://127.0.0.1:${shop.port}/`, 500);
-    await until("qview:ready from the frame", () => tab.eval<boolean>(`window.heard.some((m) => m.type === "qview:ready")`));
+    await waitFor(tab, "qview:ready from the frame", `window.heard.some((m) => m.type === "qview:ready")`);
     // A page that started listening late asks, and hears it again.
     await tab.eval(`window.heard.length = 0; document.querySelector("iframe").contentWindow.postMessage({ source: "qview3d", type: "ready" }, "*")`);
-    await until("qview:ready when asked", () => tab.eval<boolean>(`window.heard.some((m) => m.type === "qview:ready" && m.detail.design.model === "tee")`), 10_000);
+    await waitFor(tab, "qview:ready when asked", `window.heard.some((m) => m.type === "qview:ready" && m.detail.design.model === "tee")`, 10_000);
     await tab.eval(`document.querySelector("iframe").contentWindow.postMessage({ source: "qview3d", type: "snapshot" }, "*")`);
-    const shot = await until("a snapshot from the frame", () => tab.eval<{ from: string; size: number } | null>(`(() => { const m = window.heard.find((m) => m.type === "qview:snapshot"); return m ? { from: m.from, size: m.detail.blob.size, model: m.detail.design.model } : null; })()`));
+    await waitFor(tab, "a snapshot from the frame", `window.heard.some((m) => m.type === "qview:snapshot")`);
+    const shot = await tab.eval<{ from: string; size: number }>(`(() => { const m = window.heard.find((m) => m.type === "qview:snapshot"); return { from: m.from, size: m.detail.blob.size, model: m.detail.design.model }; })()`);
     expect(shot).toMatchObject({ from: new URL(app.url).origin, model: "tee" });
     expect(shot.size).toBeGreaterThan(1000);
     await tab.close();
@@ -158,8 +163,9 @@ test("a product's print zones and starting place shape what the shopper gets", a
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   await load(chrome.cdp, tab, `${app.url}/`, 500);
   await tab.eval(`${HAT}.removeAttribute("model"); ${HAT}.setAttribute("product", "front-back-tee")`);
-  await until("the tee", () => tab.eval<boolean>(`${HAT}.model === "tee" && !!${HAT}.design`));
-  const zones = await until("its zone buttons", () => tab.eval<string>(`[...${HAT}.shadowRoot.querySelectorAll("[data-zone]")].map((b) => b.dataset.zone).join(",")`));
+  await waitFor(tab, "the tee", `${HAT}.model === "tee" && !!${HAT}.design`);
+  await waitFor(tab, "its zone buttons", `!!${HAT}.shadowRoot.querySelector("[data-zone]")`);
+  const zones = await tab.eval<string>(`[...${HAT}.shadowRoot.querySelectorAll("[data-zone]")].map((b) => b.dataset.zone).join(",")`);
   expect(zones).toBe("front,back");
   await tab.eval(`(async () => { const c = new OffscreenCanvas(64, 64); c.getContext("2d").fillRect(0, 0, 64, 64); await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" })); })()`);
   expect(await layer(tab)).toMatchObject({ u: 0.5, v: 0.7, scale: 0.3 });
@@ -175,7 +181,7 @@ test("a shopper puts photos and a line of text on one shirt front, restacks them
   const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
   await load(chrome.cdp, tab, `${app.url}/`, 500);
   await tab.eval(`document.querySelector('[data-product="crew-tee"]').click()`);
-  await until("the tee", () => tab.eval<boolean>(`${HAT}.model === "tee" && !!${HAT}.design`));
+  await waitFor(tab, "the tee", `${HAT}.model === "tee" && !!${HAT}.design`);
   const UI = (sel: string) => `${HAT}.shadowRoot.querySelector(${JSON.stringify(sel)})`;
   await tab.eval(`(async () => {
     for (const [colour, u] of [["#1d4ed8", 0.35], ["#16a34a", 0.65]]) {
@@ -187,10 +193,9 @@ test("a shopper puts photos and a line of text on one shirt front, restacks them
   })()`);
   // The Add text button puts a line on and hands the shopper its words to type over.
   await tab.eval(`${UI('[title="Add text"]')}.click()`);
-  await until("the text box focused", () => tab.eval<boolean>(`${HAT}.shadowRoot.activeElement === ${UI(".editor input")}`));
+  await waitFor(tab, "the text box focused", `${HAT}.shadowRoot.activeElement === ${UI(".editor input")}`);
   await tab.call("Input.insertText", { text: "Fern & Co" });
-  const lines = (d: string) => tab.eval<{ text?: { value: string }; u: number }[]>(`${HAT}.design.layers.map((l) => ({ text: l.text, u: l.u }))`).then((ls) => (ls.some((l) => l.text?.value === d) ? ls : null));
-  await until("the new words on the shirt", () => lines("Fern & Co"));
+  await waitFor(tab, "the new words on the shirt", `${HAT}.design.layers.some((l) => l.text?.value === "Fern & Co")`);
   await tab.eval(`${HAT}.place({ v: 0.25, scale: 0.6 })`);
 
   // Three chips, bottom first; pick the blue photo and bring it forward once, past the green one.
@@ -223,7 +228,7 @@ test("a 24 MP photo on a shirt front gets its print file made on the server", as
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   await load(chrome.cdp, tab, `${app.url}/`, 500);
   await tab.eval(`document.querySelector('[data-product="crew-tee"]').click()`);
-  await until("the tee", () => tab.eval<boolean>(`${HAT}.model === "tee" && !!${HAT}.design`));
+  await waitFor(tab, "the tee", `${HAT}.model === "tee" && !!${HAT}.design`);
   await tab.eval(`(async () => {
     const c = new OffscreenCanvas(6000, 4000), g = c.getContext("2d");
     const grad = g.createLinearGradient(0, 0, 6000, 4000);
@@ -231,7 +236,7 @@ test("a 24 MP photo on a shirt front gets its print file made on the server", as
     g.fillStyle = grad; g.fillRect(0, 0, 6000, 4000);
     await ${HAT}.addImage(await c.convertToBlob({ type: "image/jpeg", quality: 0.9 }));
   })()`);
-  await until("a picture on the shirt", () => layer(tab));
+  await waitFor(tab, "a picture on the shirt", `!!${HAT}.design?.layers[0]`);
   const saved = await tab.eval<{ id: string }>(`${HAT}.save().then((s) => ({ id: s.id }))`);
   const l = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", saved.id)))?.text()) ?? "null"))!.layers[0]!;
   const size = async (key: string) => pictureSize(new Uint8Array(await new Response((await app.bindings.BUCKET.get(key))!.body).arrayBuffer()));
@@ -259,7 +264,7 @@ test("two pictures on a shop's own model each show on it", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   await load(chrome.cdp, tab, `${app.url}/`, 500);
   await tab.eval(`${HAT}.removeAttribute("model"); ${HAT}.setAttribute("product", ${JSON.stringify(started.id)})`);
-  await until("the shop's model", () => tab.eval<boolean>(`${HAT}.model === "custom"`));
+  await waitFor(tab, "the shop's model", `${HAT}.model === "custom"`);
   await tab.eval(`(async () => {
     for (const fill of ["#1d4ed8", "#b91c1c"]) {
       const c = new OffscreenCanvas(64, 64); c.getContext("2d").fillStyle = fill; c.getContext("2d").fillRect(0, 0, 64, 64);
@@ -268,7 +273,7 @@ test("two pictures on a shop's own model each show on it", async () => {
   })()`);
   // What the shopper sees: a decal on the model for each picture, not only the first.
   const decals = `${HAT}.viewer.surface.group.children.filter((o) => o.isMesh && o.material?.polygonOffset).length`;
-  expect(await until("both decals", async () => (await tab.eval<number>(decals)) === 2 && 2)).toBe(2);
+  await waitFor(tab, "both decals", `${decals} === 2`, 30_000, decals);
   expect(tab.noise).toEqual([]);
   await tab.close();
 });

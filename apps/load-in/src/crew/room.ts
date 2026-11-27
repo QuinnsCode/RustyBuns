@@ -89,7 +89,9 @@ export type Wire = Of<typeof Wire>;
 export const Thrown = obj({ key, n: int(1, 1e9), on: bool() });
 export type Thrown = Of<typeof Thrown>;
 
-const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, 500), cables: arr(Wire, 100), switches: arr(Thrown, 500),
+/** The most a view carries: past it every page drops the whole message, so the room takes no new key beyond it. */
+const KEPT = { placed: 500, cables: 100, switches: 500 };
+const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, KEPT.placed), cables: arr(Wire, KEPT.cables), switches: arr(Thrown, KEPT.switches),
   /** Who is on the decks (their id and name), the decks as last set, and the room's clock now (ms). */
   dj: nul(str(200)), djName: str(200, { min: 0 }), decks: opt(Spun), clock: num(0, 1e15) });
 const RefusedMsg = obj({ t: oneOf(["refused"]), key, why: str(200) });
@@ -166,6 +168,7 @@ export class Crew {
     if (!ids?.includes(id)) return false;
     for (const h of ids) { const m = this.mates.get(h); if (m) { m.holding = null; m.carry = undefined; } }
     this.hands.delete(d.key);
+    if (!this.placed.has(d.key) && this.placed.size >= KEPT.placed) return false;
     const n = (this.placed.get(d.key)?.n ?? 0) + 1;
     this.placed.set(d.key, { key: d.key, n, x: d.x, y: d.y, z: d.z, rot: d.rot });
     return true;
@@ -174,6 +177,7 @@ export class Crew {
   /** Move one end of a cable: not out of a friend's hand, and not into a jack another end already fills. */
   end(id: string, m: EndMsg): { ok: true } | { ok: false; why: string } {
     if (!this.mates.has(id)) return { ok: false, why: "not in the crew" };
+    if (!this.wires.has(m.key) && this.wires.size >= KEPT.cables) return { ok: false, why: "no room for another cable" };
     const w = this.wires.get(m.key) ?? { key: m.key, n: 0, a: { at: "case" }, b: { at: "case" }, twists: 0 };
     const cur = w[m.end];
     if (cur.at === "hand" && cur.hand !== id) return { ok: false, why: `${this.mates.get(cur.hand ?? "")?.name ?? "someone"} has that end` };
@@ -206,7 +210,7 @@ export class Crew {
 
   /** Throw a switch: the last hand on it wins. */
   throw(id: string, m: SwitchMsg) {
-    if (!this.mates.has(id)) return;
+    if (!this.mates.has(id) || (!this.switches.has(m.key) && this.switches.size >= KEPT.switches)) return;
     this.switches.set(m.key, { key: m.key, n: (this.switches.get(m.key)?.n ?? 0) + 1, on: m.on });
   }
 

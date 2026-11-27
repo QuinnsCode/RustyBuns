@@ -2,7 +2,7 @@
 // and they hand blocks on through rings in a SharedArrayBuffer. Each hand-over is one block late (128 samples,
 // 2.7 ms at 48 kHz), so with every part inside its budget the sound is the one-thread rig's, a block later per
 // hop. No DOM and no Bun here: the worklet (worklet.ts), the workers (part-worker.ts) and the tests run it.
-import { FULL_SCALE, applySettings, type Live } from "./live.ts";
+import { FULL_SCALE, Scoped, applySettings, type Live } from "./live.ts";
 import type { ToAmp } from "./messages.ts";
 
 /** Samples in a block: the audio thread's render quantum, the only size a split plays. */
@@ -64,6 +64,8 @@ export class Head {
   bypass = false;
   version = 0;
   cuts: number[] = [];
+  /** The scope, if it is on a link this thread plays. */
+  readonly scope = new Scoped();
   /** Blocks the last part's frame didn't come back in time (each played as silence). */
   late = 0;
   private pending: Extract<ToAmp, { t: "set" }> | null = null;
@@ -106,6 +108,7 @@ export class Head {
     }
     const rig = this.bypass ? null : this.live?.rig;
     if (!rig) return false;
+    this.scope.keep(rig, this.split ? this.cuts : [], 0);
     if (!this.split) { rig.process(input, output, n, outputR); return true; }
     const silence = () => { output.fill(0, 0, n); outputR?.fill(0, 0, n); };
     if (n !== BLOCK) { silence(); this.late++; return true; }
@@ -133,6 +136,9 @@ export class PartRunner {
   private next = 0;
   private tap = new Float64Array(WIDTH);
   private out = new Float64Array(WIDTH);
+  private cuts: number[] = [];
+  /** The scope, if it is on a link this part plays. */
+  readonly scope = new Scoped();
   stopped = false;
   /** This thread's busy milliseconds and blocks since the last report. */
   busyMs = 0;
@@ -170,10 +176,12 @@ export class PartRunner {
         const m = await this.settings(got.version);
         for (const v of this.versions.keys()) if (v < got.version) this.versions.delete(v);
         this.live = applySettings(m.settings, this.live, this.sampleRate, { cuts: m.cuts ?? [], index: this.index, inRest: got.rest });
+        this.cuts = m.cuts ?? [];
         this.version = got.version;
       }
       const rig = this.live?.rig;
       if (!rig) { this.next = f + 1; continue; }
+      this.scope.keep(rig, this.cuts, this.index);
       rig.inRest = got.rest;
       const last = this.index === this.rings.length - 1;
       // The last part hands back both sides, left then right; the others their oversampled volts.

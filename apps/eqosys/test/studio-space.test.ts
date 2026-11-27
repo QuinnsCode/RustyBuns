@@ -8,6 +8,7 @@ import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
 import { Hub, type HubState } from "../src/qollab/hub.ts";
 import { Space } from "../src/qollab/space.ts";
+import { joinStudio } from "../src/sso.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -24,11 +25,16 @@ async function signUp(name: string) {
   const a = await asks("park-hide-seek", PARK);
   const up = await call("/do/signup", { form: { ...a.form, name, email: `${name.toLowerCase()}@example.com`, password: PASSWORD } });
   const who = await (await call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(up.to), verifier: a.verifier } })).res.json() as { user: { id: string }; token: string };
-  return { id: who.user.id, token: who.token, cookie: up.cookie };
+  return { id: who.user.id, token: who.token, cookie: up.cookie, email: `${name.toLowerCase()}@example.com` };
 }
 const run = async (name: string, args: unknown, who: { cookie?: string; token?: string }) => {
   const { res } = await call(`/api/tools/${name}`, { json: args, ...(who.cookie ? { cookie: who.cookie } : {}), ...(who.token ? { bearer: who.token } : {}) });
   return { status: res.status, body: await res.json() as { result?: { id?: string }; error?: string } };
+};
+/** Asked in by the studio's owner, and saying yes on their own Studio tab. */
+const join = async (studio: string, by: { cookie: string }, who: { cookie: string; email: string }, role: string) => {
+  expect((await run("eq_studio_add", { studio, email: who.email, role }, { cookie: by.cookie })).status).toBe(200);
+  expect((await run("eq_studio_join", { studio, yes: true }, { cookie: who.cookie })).status).toBe(200);
 };
 const hubState = async (token: string) => (await (await call("/api/hub", { json: { op: "state" }, bearer: token, origin: PARK })).res.json()) as HubState;
 const until = async (f: () => unknown) => { const end = Date.now() + 10_000; while (!await f()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(10); } };
@@ -51,8 +57,8 @@ function member(token: string) {
 test("a studio's space: the studio's members are in, its admins run it, a new role at once, long messages, coworker presence, out with the studio", async () => {
   const ada = await signUp("Ada"), bo = await signUp("Bo"), cy = await signUp("Cy");
   const studio = (await run("eq_studio_make", { name: "Acme", kind: "team" }, { token: ada.token })).body.result!.id!;
-  for (const [email, role] of [["bo@example.com", "maker"], ["cy@example.com", "admin"]] as const)
-    expect((await run("eq_studio_add", { studio, email, role }, { cookie: ada.cookie })).status).toBe(200);
+  await join(studio, ada, bo, "maker");
+  await join(studio, ada, cy, "admin");
 
   // A maker can't make it; the owner can, once. Its invite is for those who run it to hand to guests (the test below).
   const a = member(ada.token), b = member(bo.token), c = member(cy.token);
@@ -141,13 +147,51 @@ test("a guest in a studio's space: in by its invite, only #general, no powers, l
   // A guest who joins the studio sits there as the studio's from then on, and leaving the studio takes them out of the space.
   const fresh = (await a.c.mine())!.find((s) => s.id === made.id)!.invite!;
   expect(await g.c.join(fresh)).not.toBeNull();
-  expect((await run("eq_studio_add", { studio, email: "gus@example.com", role: "maker" }, { cookie: ann.cookie })).status).toBe(200);
+  await join(studio, ann, gus, "maker");
   g.open(made.id);
   await until(() => g.role() === "member" && g.channels().join() === "general,plans");
   expect((await run("eq_studio_remove", { studio, email: "gus@example.com" }, { cookie: ann.cookie })).status).toBe(200);
   await until(() => g.gone() === "removed from the studio");
   expect(await g.c.mine()).toEqual([]);
   // One of the studio's own joining by the invite gets no guest row.
-  expect(await a.c.join(fresh)).toEqual({ id: made.id, name: "Bolt" });
+  const now = (await a.c.mine())!.find((s) => s.id === made.id)!.invite!;
+  expect(await a.c.join(now)).toEqual({ id: made.id, name: "Bolt" });
   a.c.close();
+});
+
+test("out of the studio leaves no way back into its space: not the invite held, a private channel, or having made it", async () => {
+  const dee = await signUp("Dee"), ed = await signUp("Ed"), fay = await signUp("Fay");
+  const studio = (await run("eq_studio_make", { name: "Crate", kind: "team" }, { token: dee.token })).body.result!.id!;
+  await join(studio, dee, ed, "admin");
+  await join(studio, dee, fay, "maker");
+  // Ed, an admin, makes the space.
+  const d = member(dee.token), e = member(ed.token), f = member(fay.token);
+  const made = (await e.c.makeForStudio(studio, "Crate"))!;
+  const invite = async () => (await d.c.mine())!.find((s) => s.id === made.id)!.invite!;
+  const held = (await e.c.mine())![0]!.invite!;
+  d.open(made.id);
+  await until(() => d.runs());
+  d.c.privateChannel("pay");
+  await until(() => d.channels().includes("pay"));
+  d.c.allow("pay", fay.id);
+
+  for (const email of ["ed@example.com", "fay@example.com"]) expect((await run("eq_studio_remove", { studio, email }, { cookie: dee.cookie })).status).toBe(200);
+  expect(await e.c.join(held)).toBeNull();
+
+  // Back as guests, by an invite handed to them since: no private channel, and a kick takes out even the one who made the space.
+  expect(await f.c.join(await invite())).not.toBeNull();
+  f.open(made.id);
+  await until(() => f.role() === "guest" && f.channels().length > 0);
+  expect(f.channels()).toEqual(["general"]);
+  expect(await e.c.join(await invite())).not.toBeNull();
+  e.open(made.id);
+  await until(() => e.role() === "guest");
+  d.c.kick(ed.id);
+  await until(() => e.gone() === "removed from the space");
+  expect(await e.c.mine()).toEqual([]);
+
+  // A guest whose company sign-in seats them in the studio keeps no guest row behind the seat.
+  await joinStudio(conf, { studio, role: "maker", sub: "x", email: "fay@example.com", name: "Fay", ask: null }, fay.id);
+  expect(await conf.DB.prepare("SELECT 1 AS y FROM space_members WHERE space_id = ? AND user_id = ?").bind(made.id, fay.id).first("y")).toBeNull();
+  d.c.close(); f.c.close();
 });

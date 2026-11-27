@@ -6,7 +6,8 @@
 //     we know, that repo's worktrees folder exists, and no worktree in it is <name> (or a parent of it, for a session
 //     started in a subfolder). Anything that doesn't parse stays. The office runs it on start and after each send-home.
 //  2. Bun's cache, ~/.bun/install/cache, which keeps every version ever downloaded. `pruneBunCache` keeps what any
-//     bun.lock in a live checkout or worktree names and removes other `name@version@@@N` folders. Manual, dry run first.
+//     bun.lock in a live checkout or worktree names and removes other `name@version@@@N` folders. `office:sweep` dry-runs
+//     it, and the floor runs it about once a day (`pruneBunDaily`, #6183), never while a `bun install` runs.
 //  3. node_modules and build output (`dist`, `target`, `.wrangler/tmp`, only where git ignores them) in worktrees no
 //     worker sits at (kept on send-home because git sees work main lacks). A seated worker may be serving its `dist`, so
 //     the rule needs the office's list of who sits where: the office runs it after each send-home, with the workers it
@@ -16,15 +17,19 @@
 //  5. Worktree folders a send-home left half deleted: no `.git`, not in `git worktree list`, an hour old (`sweepHalfGone`,
 //     #5657). What still runs in one ends first. Every floor sweep runs it. And listed worktrees nobody sits at whose
 //     only changes are files deleted by a cut-off remove (`sweepHalfRemoved`, #5913), when the sweep knows who sits where.
+//     Ones whose only changes are untracked files go too, after those files are pushed to rescue/<name> (`sweepUntracked`, #5946).
+//  6. node_modules and build output in Claude Code's own worktrees, `<repo>/.claude/worktrees` (`sweepClaudeTrees`,
+//     #6181): no process in them and nothing changed for a day. `office:sweep` only, and only lists it unless named.
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
-import { existsSync, realpathSync, statfsSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statfsSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { lstat, readdir, readFile, readlink, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { arr, check, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { poolModules } from "./install.ts";
-import { endIn } from "./reaper.ts";
+import { endIn, pidsIn, processes, type Proc } from "./reaper.ts";
+import { changes, type Entry, rescue, rescueRefs, saveCommit } from "../../../scripts/worktree-sweep.ts";
 
 export const WORKTREES = path.join(".agent-office", "worktrees");
 const GB = 1024 ** 3;
@@ -62,6 +67,32 @@ export function deadScratch(names: string[], repos: Repo[]): string[] {
   });
 }
 
+/**
+ * The scratch folders (by name) of worktrees still on disk that no worker sits at (`live`: the absolute paths in use).
+ * A worker sent home with work main lacks keeps its worktree, and its scratch stayed with it (#4798: a 2.9 GB log in
+ * one). A name some seated worktree could own (`nibble-1-apps` may be `nibble-1`'s subfolder) stays.
+ */
+export function keptScratch(names: string[], repos: Repo[], live: string[]): string[] {
+  const seated = new Set(live.map((p) => path.resolve(p)));
+  return names.filter((name) => {
+    let matched = false;
+    for (const r of repos) {
+      const prefix = `${slug(path.join(r.dir, WORKTREES))}-`;
+      if (!name.startsWith(prefix) || !r.trees) continue;
+      const rest = name.slice(prefix.length);
+      for (const t of r.trees) {
+        if (rest !== slug(t) && !rest.startsWith(`${slug(t)}-`)) continue;
+        if (seated.has(path.resolve(r.dir, WORKTREES, t))) return false;
+        matched = true;
+      }
+    }
+    return matched;
+  });
+}
+
+/** A kept worktree's scratch folder goes once nothing in it has changed for this long (a landed worker at rest may be steered again). */
+export const SCRATCH_IDLE_MIN = 24 * 60;
+
 async function treesOf(dir: string): Promise<string[] | undefined> {
   try { return await readdir(path.join(dir, WORKTREES)); } catch { return undefined; }
 }
@@ -88,8 +119,11 @@ export interface Swept {
   bytes: number;
 }
 
-/** Removes (`go`) or lists the scratch folders of `repos`' worktrees that are gone. Never throws. */
-export async function sweepScratch(repoDirs: string[], go: boolean, base = scratchBase()): Promise<Swept> {
+/**
+ * Removes (`go`) or lists the scratch folders of `repos`' worktrees that are gone, and with `live` (the worktree paths in
+ * use) those of worktrees kept on disk that nobody sits at, once idle `SCRATCH_IDLE_MIN`. Never throws.
+ */
+export async function sweepScratch(repoDirs: string[], go: boolean, base = scratchBase(), live?: string[], idleMin = SCRATCH_IDLE_MIN): Promise<Swept> {
   let names: string[];
   try { names = await readdir(base); } catch { return { paths: [], bytes: 0 }; }
   const repos = await Promise.all(repoDirs.map(async (dir) => ({ dir, trees: await treesOf(dir) })));
@@ -98,6 +132,15 @@ export async function sweepScratch(repoDirs: string[], go: boolean, base = scrat
     const p = path.join(base, name);
     try { if ((await lstat(p)).isDirectory()) paths.push(p); } catch {}
   }
+  const kept: string[] = [];
+  for (const name of live ? keptScratch(names, repos, live) : []) {
+    const p = path.join(base, name);
+    try { if (!(await lstat(p)).isDirectory()) continue; } catch { continue; }
+    // anything written in it lately (a log still growing, a session at rest) keeps it
+    if (await run(["find", p, "-mmin", `-${idleMin}`, "-print", "-quit"])) continue;
+    paths.push(p);
+    kept.push(p);
+  }
   const sizes = await duKb(paths);
   let bytes = 0;
   for (const p of paths) {
@@ -105,7 +148,7 @@ export async function sweepScratch(repoDirs: string[], go: boolean, base = scrat
       // look again just before: a worker hired since the listing may have made this worktree
       const name = path.basename(p);
       const again = await Promise.all(repoDirs.map(async (dir) => ({ dir, trees: await treesOf(dir) })));
-      if (!deadScratch([name], again).length) continue;
+      if (!(kept.includes(p) ? keptScratch([name], again, live ?? []) : deadScratch([name], again)).length) continue;
       try { await rm(p, { recursive: true, force: true }); } catch { continue; }
     }
     bytes += (sizes.get(p) ?? 0) * 1024;
@@ -168,6 +211,43 @@ export async function sweepBuilt(repo: string, live: string[], go: boolean, now 
   return { paths, bytes };
 }
 
+/** Where Claude Code's own worktrees (EnterWorktree) sit in a repo; the office never seats a worker there. */
+export const CLAUDE_TREES = path.join(".claude", "worktrees");
+
+/**
+ * When a Claude Code worktree last changed, as far as git and the files say: its last commit, its index (a checkout or
+ * add writes it), and each file it changed or added that git doesn't ignore. Ignored output (node_modules) doesn't count.
+ */
+async function lastTouched(tree: string): Promise<number> {
+  const commit = Number(await run(["git", "-C", tree, "log", "-1", "--format=%ct"])) * 1000 || 0;
+  const index = await run(["git", "-C", tree, "rev-parse", "--path-format=absolute", "--git-path", "index"]);
+  const changed = (await run(["git", "-C", tree, "ls-files", "-m", "-o", "--exclude-standard"])).split("\n").filter(Boolean);
+  const times = await Promise.all([index, ...changed.map((f) => path.join(tree, f))].filter(Boolean).map(async (p) => { try { return (await lstat(p)).mtimeMs; } catch { return 0; } }));
+  return Math.max(commit, ...times);
+}
+
+/**
+ * Removes (`go`) or lists the `node_modules` and git-ignored build output (the `sweepBuilt` rule) of Claude Code's own
+ * worktrees under `<repo>/.claude/worktrees` (#6181: 831 node_modules in 45 of them, 59 GB counted). Nothing says
+ * whether a session still runs in one, so a tree is skipped while any process's cwd is in it (`procs`, the reaper's
+ * list) or while anything in it changed in the last day. Code and the worktree itself always stay. Never throws.
+ */
+export async function sweepClaudeTrees(repo: string, go: boolean, procs: Proc[] = processes(), now = Date.now()): Promise<Swept & { skipped: number }> {
+  let names: string[];
+  try { names = await readdir(path.join(repo, CLAUDE_TREES)); } catch { return { paths: [], bytes: 0, skipped: 0 }; }
+  const trees = names.map((n) => path.join(repo, CLAUDE_TREES, n)).filter((t) => existsSync(path.join(t, ".git")));
+  // self = -1: the sweep's own shell counts too, so a session sweeping from inside one keeps it
+  const idle = await Promise.all(trees.map(async (t) => !pidsIn(t, procs, -1).length && now - await lastTouched(t) > 86_400_000));
+  const paths = (await Promise.all(trees.filter((_, i) => idle[i]).map((t) => rebuildableIn(t)))).flat();
+  const sizes = await duKb(paths);
+  let bytes = 0;
+  for (const p of paths) {
+    if (go) try { await rm(p, { recursive: true, force: true }); } catch { continue; }
+    bytes += (sizes.get(p) ?? 0) * 1024;
+  }
+  return { paths, bytes, skipped: idle.filter((i) => !i).length };
+}
+
 // 2026-11-23 (#5657): 50 of 172 folders in the office's worktrees were half-deleted, about 400 MB each: no `.git`, and
 // not in `git worktree list`. A send-home cut off part way (git's 60 s `worktree remove` timeout, the office exiting
 // 300 ms after a shutdown, an `rm` racing a process still writing there) left the folder, then `git worktree prune`
@@ -190,6 +270,11 @@ export async function halfGone(repo: string, now = Date.now()): Promise<string[]
       if (!st.isDirectory() || now - st.mtimeMs < 3_600_000) continue; // a hire's checkout makes its folder before git lists it
       if (known.has(dir) || known.has(realpathSync(dir))) continue;
       try { await lstat(path.join(dir, ".git")); continue; } catch {}
+      // a worker hired across repositories sits in a folder of worktrees (<slug>/<repo>): not left over, though git lists
+      // no worktree at the folder itself. A child with a `.git` is another repository's, which this one's list can't name.
+      const inside = [dir + path.sep, realpathSync(dir) + path.sep];
+      if ([...known].some((k) => inside.some((d) => k.startsWith(d)))) continue;
+      if ((await readdir(dir)).some((child) => existsSync(path.join(dir, child, ".git")))) continue;
       out.push(dir);
     } catch {}
   }
@@ -217,7 +302,13 @@ export async function sweepHalfGone(repo: string, go: boolean, end: (dir: string
  * The worktrees of `repo` that git still lists but a cut-off remove left part deleted: not in `live`, an hour old or
  * more, no commit that no remote has, and a `git status` of only unstaged deletions. None when git can't answer.
  */
-export async function halfRemoved(repo: string, live: string[], now = Date.now()): Promise<string[]> {
+export const halfRemoved = (repo: string, live: string[], now = Date.now()) => idleWith(repo, live, now, (l) => l.startsWith(" D "));
+
+/** Like `halfRemoved`, but a `git status` of only untracked files (#5946): what a run left that no `.gitignore` covers. */
+export const untrackedOnly = (repo: string, live: string[], now = Date.now()) => idleWith(repo, live, now, (l) => l.startsWith("?? "));
+
+/** `repo`'s listed worktrees not in `live`, an hour old, nothing unpushed, whose every `git status` line passes `line`. */
+async function idleWith(repo: string, live: string[], now: number, line: (l: string) => boolean): Promise<string[]> {
   const seated = new Set(live.flatMap((p) => { try { return [path.resolve(p), realpathSync(p)]; } catch { return [path.resolve(p)]; } }));
   const out: string[] = [];
   for (const name of (await treesOf(repo)) ?? []) {
@@ -231,7 +322,7 @@ export async function halfRemoved(repo: string, live: string[], now = Date.now()
     // not `run`: its trim would eat the first line's leading space
     const proc = Bun.spawn(["git", "-C", dir, "status", "--porcelain", "-uall"], { stdout: "pipe", stderr: "ignore" });
     const status = (await new Response(proc.stdout).text()).split("\n").filter(Boolean);
-    if ((await proc.exited) !== 0 || !status.length || !status.every((l) => l.startsWith(" D "))) continue;
+    if ((await proc.exited) !== 0 || !status.length || !status.every(line)) continue;
     if (await run(["git", "-C", dir, "rev-list", "--count", "HEAD", "--not", "--remotes"]) !== "0") continue;
     out.push(dir);
   }
@@ -256,25 +347,58 @@ export async function sweepHalfRemoved(repo: string, live: string[], go: boolean
   return { paths: done, bytes };
 }
 
+// #5946: send-home keeps a worktree whose only changes are untracked files a run left (scratch scripts, output no
+// `.gitignore` covers). Those files go to `rescue/<name>` on `remote` the way `scripts/worktree-sweep.ts --rescue` saves
+// them, and only once the push has landed, and the save holds every one of them (none is an env file or deploy state,
+// which are never pushed), is the worktree removed.
+
+/** Pushes `untrackedOnly(repo, live)` worktrees' files to `rescue/<name>`, then removes each one saved. Never throws. */
+export async function sweepUntracked(repo: string, live: string[], end: (dir: string) => Promise<unknown> = endIn, now = Date.now(), remote = "origin"): Promise<Swept> {
+  const paths = await untrackedOnly(repo, live, now);
+  const sizes = await duKb(paths);
+  const done: string[] = [];
+  let bytes = 0;
+  for (const p of paths) {
+    const name = path.basename(p);
+    try {
+      const status = (await run(["git", "-C", p, "status", "--porcelain", "-uall"])).split("\n").filter(Boolean);
+      if ((await changes(p)).length !== status.length) continue; // something in it is never pushed: it stays
+      const save = await saveCommit(p, name);
+      const rescued = (await rescueRefs(p, remote)).get(name);
+      const entry: Entry = { name, path: p, worktree: true, dirty: status.length, unpushed: 0, kb: 0, save, rescued, verdict: rescued === save ? "remove" : "rescue" };
+      if (entry.verdict === "rescue" && (await rescue(repo, [entry], remote)).failed.length) continue;
+      if ((await rescueRefs(p, remote)).get(name) !== save) continue;
+      await end(p);
+    } catch { continue; }
+    const proc = Bun.spawn(["git", "-C", repo, "worktree", "remove", "--force", "--force", p], { stdout: "ignore", stderr: "ignore" });
+    if ((await proc.exited) !== 0) continue;
+    done.push(p);
+    bytes += (sizes.get(p) ?? 0) * 1024;
+  }
+  return { paths: done, bytes };
+}
+
 /**
  * The office's hook: sweep one floor's repo, and say what it freed in one line ('' when nothing). With `live` (the
- * worktree paths workers sit at), also the half-removed worktrees git still lists and the `node_modules` and build
- * output of every other worktree.
+ * worktree paths workers sit at), also the half-removed worktrees git still lists, the ones holding only untracked
+ * files (rescued first), and the `node_modules` and build output of every other worktree.
  */
 export async function sweepFloor(dir: string, live?: string[]): Promise<string> {
   try {
     const h = await sweepHalfGone(dir, true);
     const hr = live ? await sweepHalfRemoved(dir, live, true) : { paths: [], bytes: 0 };
+    const u = live ? await sweepUntracked(dir, live) : { paths: [], bytes: 0 };
     // Claude names the folder from the path as the worker was started, which may or may not have its symlinks resolved
-    const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true);
+    const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true, scratchBase(), live && [...live, ...live.map((p) => { try { return realpathSync(p); } catch { return p; } })]);
     const m = live ? await sweepBuilt(dir, live, true) : { paths: [], bytes: 0 };
     const said = [
       h.paths.length && `${h.paths.length} half-deleted worktree folder${h.paths.length === 1 ? "" : "s"}`,
       hr.paths.length && `${hr.paths.length} half-removed worktree${hr.paths.length === 1 ? "" : "s"}`,
-      r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees`,
+      u.paths.length && `${u.paths.length} worktree${u.paths.length === 1 ? "" : "s"} of only untracked files (saved to rescue/<name>)`,
+      r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone or empty desks`,
       m.paths.length && `${m.paths.length} node_modules and build folder${m.paths.length === 1 ? "" : "s"} in worktrees nobody works in`,
     ].filter(Boolean);
-    return said.length ? `🧹 Swept ${said.join(", ")}, ${gb(h.bytes + hr.bytes + r.bytes + m.bytes)} freed` : "";
+    return said.length ? `🧹 Swept ${said.join(", ")}, ${gb(h.bytes + hr.bytes + u.bytes + r.bytes + m.bytes)} freed` : "";
   } catch { return ""; }
 }
 
@@ -385,6 +509,51 @@ export async function pruneBunCache(roots: string[], go: boolean, cache = path.j
     }
   }
   return { paths, bytes, locks };
+}
+
+// #6183: the cache grew without limit between hand runs (`bun pm cache rm` freed 42 GB on 2026-11-16). The floor's sweep
+// timer prunes it about once a day: it reads every lockfile, too much for each 30-minute round. The cache is one per Mac
+// and shared by every floor, so the prune keeps what any office repo's lockfiles name, and one stamp gates all floors.
+
+/** How often the floor prunes the Bun cache on its own. */
+export const PRUNE_MS = 24 * 3_600_000;
+
+/** Every repo the office has a floor for: `~/agent-office/<owner>/<repo>` with an `.agent-office` folder. */
+export function officeRepos(root = path.join(homedir(), "agent-office")): string[] {
+  const out: string[] = [];
+  try {
+    for (const owner of readdirSync(root, { withFileTypes: true })) {
+      if (!owner.isDirectory()) continue;
+      for (const repo of readdirSync(path.join(root, owner.name), { withFileTypes: true }))
+        if (repo.isDirectory() && existsSync(path.join(root, owner.name, repo.name, ".agent-office"))) out.push(path.join(root, owner.name, repo.name));
+    }
+  } catch {}
+  return out;
+}
+
+/** Whether a day has passed since `stamp` was last touched (or it never was); when it has, touches it at `now`. */
+export function dueDaily(stamp: string, now = Date.now(), everyMs = PRUNE_MS): boolean {
+  try { if (now - statSync(stamp).mtimeMs < everyMs) return false; } catch {}
+  try {
+    writeFileSync(stamp, "");
+    utimesSync(stamp, now / 1000, now / 1000);
+  } catch { return false; }
+  return true;
+}
+
+/** Whether a `bun install` (or `bun add`) runs anywhere on this Mac: a hire's, or a worker's own. */
+export function installRunning(): boolean {
+  try { return Bun.spawnSync(["pgrep", "-f", "bun (install|add|i)( |$)"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0; } catch { return true; }
+}
+
+/**
+ * The floor's daily Bun cache prune over `roots`, and the line saying what it freed ('' when it didn't run or freed
+ * nothing). While an install runs it waits for the next round without using up the day.
+ */
+export async function pruneBunDaily(roots: string[], cache = path.join(homedir(), ".bun", "install", "cache"), now = Date.now(), busy = installRunning): Promise<string> {
+  if (!existsSync(cache) || busy() || !dueDaily(path.join(path.dirname(cache), ".rustybuns-pruned"), now)) return "";
+  const r = await pruneBunCache([...new Set(roots)], true, cache);
+  return r.paths.length ? `🧹 Bun cache: removed ${r.paths.length} version${r.paths.length === 1 ? "" : "s"} no bun.lock names, ${gb(r.bytes)} freed` : "";
 }
 
 // --- other package caches ----------------------------------------------------------------------------------------------
@@ -547,7 +716,9 @@ export function sweepEvery(dir: string, live: () => string[], say: (line: string
   const timer = setInterval(() => {
     if (busy) return;
     busy = true;
-    void sweepFloor(dir, live()).then((line) => line && say(line)).finally(() => { busy = false; });
+    void sweepFloor(dir, live()).then((line) => line && say(line))
+      .then(() => pruneBunDaily([dir, ...officeRepos()])).then((line) => line && say(line))
+      .catch(() => {}).finally(() => { busy = false; });
   }, everyMs);
   timer.unref?.();
   return { stop: () => clearInterval(timer) };

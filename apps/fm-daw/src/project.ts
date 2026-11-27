@@ -16,6 +16,7 @@ import type { StudioDef } from "./studio/room.ts";
 import { RUNG, type Rung } from "./rewind.ts";
 import { DeckPress, DeckSay, MixSay } from "./dj/booth.ts";
 import { SOUND_MAX_FRAMES } from "./clock.ts";
+import { Chain, MAX_CHAIN, Song, relayoutLanes, relayoutNotes, relink, relinkLanes } from "./song.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -65,8 +66,9 @@ export interface TrackDoc {
  * studio: the jam room's studio (src/studio/rooms/), by id; the leader moves the sesh to another, and everyone walks into it. Only there once set.
  * rig: the open-air rig on the sand (@rustybuns/gear systems.ts), the leader's to change; only there once set.
  * master: the room's level, dB (MASTER_MIN to 0), on top of each listener's own; set from the remote (src/remote/), only there below 0. A bounce leaves it out.
+ * song: song mode (src/song.ts), the loop as a chain of patterns, bars × chain slots long; only there when on.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; built?: StudioDef }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; built?: StudioDef; song?: Song }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -98,6 +100,8 @@ export type Op =
   | { t: "studio"; id: string; built?: StudioDef }
   /** The leader brings another open-air rig to the sand (@rustybuns/gear systems.ts): its boxes and their sound, for everyone. */
   | { t: "rig"; id: SystemId }
+  /** Song mode: the patterns each slot plays (the first time, the loop as it is becomes pattern A), or null to leave it (the notes stay). */
+  | { t: "song"; chain: number[] | null }
   | { t: "replace"; project: Project };
 
 /** The room's level at its lowest, dB: silence. */
@@ -194,7 +198,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, built: raw });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, built: raw, song: raw });
 /** A studio's id, as the rooms name them. */
 const STUDIO_ID = (v: unknown) => (typeof v === "string" && /^[a-z0-9-]{1,64}$/.test(v) ? v : bad("a studio id"));
 const studioOf = (v: unknown): { studio?: string } => { const id = check(STUDIO_ID, v); return id ? { studio: id } : {}; };
@@ -208,8 +212,22 @@ export function sanitize(x: unknown): Project | null {
   // older projects had fewer tracks: pad with silent synth tracks (gain 0)
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
-  const fitted = fitTakes(tracks.map((v, ti) => track(v, ti, beats)));
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...builtOf(p.built) };
+  const song = songOf(p.song, bars).song;
+  const out: Project = { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitTakes(tracks.map((v, ti) => track(v, ti, beats))), ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...builtOf(p.built), ...songOf(p.song, bars) };
+  return song ? laidOut(out, song, song) : out;
+}
+
+/** song only when it fits the loop exactly. */
+const songOf = (v: unknown, bars: number): { song?: Song } => { const s = check(Song, v); return s && s.bars * s.chain.length === bars ? { song: s } : {}; };
+
+/**
+ * Every track's notes and automation lanes, and Shape's moves, each pattern as chain `was` held it, laid out along
+ * `song` (what falls past the end goes). With `was` the same song, every slot plays its pattern again.
+ */
+function laidOut(p: Project, was: Song, song: Song): Project {
+  const beats = song.bars * song.chain.length * BEATS_PER_BAR, { eqAuto, ...rest } = p;
+  const tracks = p.tracks.map((t) => ({ ...t, notes: relayoutNotes(t.notes, was, song, BEATS_PER_BAR), ...(t.auto ? { auto: sanitizeLanes(relayoutLanes(t.auto, was, song, BEATS_PER_BAR), beats) } : {}) }));
+  return { ...rest, tracks, ...eqAutoOf(sanitizeEqAuto(relayoutLanes(eqAuto ?? [], was, song, BEATS_PER_BAR), beats, p.eq)) };
 }
 
 /** desk only when something on it was moved, so a groove nobody mixed players in reads as it did. */
@@ -332,6 +350,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2), space: maybe(DeskEdit.space) }),
   obj({ t: tag("studio"), id: STUDIO_ID, built: opt(Studio) }),
   obj({ t: tag("rig"), id: oneOf(SYSTEM_IDS) }),
+  obj({ t: tag("song"), chain: nul(Chain) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -375,6 +394,12 @@ export type Live =
    * stopped (`on` false). `name` is what's on, for the room to read.
    */
   | { t: "pa"; on: boolean; name?: string }
+  /**
+   * The setup lesson they're in at the gear wall (src/studio/lessons.ts), for the room's class card (src/studio/class.ts,
+   * #6087): which one (null: none), each step's words and whether it's done, what's in the way of the next one, and the
+   * lessons they've finished in this room.
+   */
+  | { t: "lesson"; id: string | null; steps: { job: string; done: boolean }[]; why?: string; finished: string[] }
   /** What's on one of their DJ decks, for the booth (src/dj/booth.ts); a press on someone else's deck, for its player; or where their mixer's controls sit. */
   | DeckSay | DeckPress | MixSay
   /**
@@ -386,7 +411,8 @@ export type Live =
 const MIDI = int(0, 127);
 /** A beat on the shared clock: the leader's time 0 is beat 0, so it is big, never negative. */
 const STAMP = num(0, 1e13);
-const SOUND_CHARS = Math.ceil((SOUND_MAX_FRAMES * 2 * 4) / 3);
+const LESSON_ID = str(24, { re: /^[a-z]+$/ });
+const SOUND_CHARS =Math.ceil((SOUND_MAX_FRAMES * 2 * 4) / 3);
 const LIVE: Guard<Exclude<Live, DeckSay | DeckPress | MixSay>>[] = [
   obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8), b: opt(STAMP) }),
   obj({ t: tag("off"), track: TRACK, midi: MIDI, b: opt(STAMP) }),
@@ -399,13 +425,14 @@ const LIVE: Guard<Exclude<Live, DeckSay | DeckPress | MixSay>>[] = [
   obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)), mic: opt(bool()) }),
   obj({ t: tag("plugin"), track: TRACK, name: nul(str(500)) }),
   obj({ t: tag("pa"), on: bool(), name: opt(str(120, { min: 0 })) }),
+  obj({ t: tag("lesson"), id: nul(LESSON_ID), steps: arr(obj({ job: str(200), done: bool() }), 16, { min: 0 }), why: opt(str(300)), finished: arr(LESSON_ID, 16, { min: 0 }) }),
   obj({ t: tag("sound"), track: int(-1, TRACKS - 1), b: STAMP, c: opt(oneOf(["opus"])), data: str(SOUND_CHARS, { min: 4, re: /^[A-Za-z0-9_-]+$/ }) }),
 ];
 const LIVE_EVENT = (v: unknown): Live => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? check(DeckSay, v) ?? check(DeckPress, v) ?? check(MixSay, v) ?? bad("a live event");
 
 /** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
 export const lettingGo = (e: Live) =>
-  e.t === "off" || (e.t === "guitar" && e.track === null) || (e.t === "plugin" && e.name === null) || (e.t === "pa" && !e.on) || e.t === "cursor" || e.t === "body" || e.t === "wear" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
+  e.t === "off" || (e.t === "guitar" && e.track === null) || (e.t === "plugin" && e.name === null) || (e.t === "pa" && !e.on) || e.t === "cursor" || e.t === "body" || e.t === "wear" || e.t === "lesson" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
 
 /**
  * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the
@@ -465,10 +492,20 @@ export function apply(p: Project, op: Op): Project {
         return { ...t, params };
       });
     }
-    case "notes":
-      return withTrack(p, op.track, (t) => ({ ...t, notes: sanitizeNotes(op.notes, loopBeats(p)) }));
-    case "auto":
-      return withTrack(p, op.track, (t) => ({ ...t, auto: sanitizeLanes(op.lanes, loopBeats(p)) }));
+    case "notes": {
+      const song = p.song;
+      return withTrack(p, op.track, (t) => {
+        const notes = sanitizeNotes(op.notes, loopBeats(p));
+        return { ...t, notes: song ? relink(t.notes, notes, song, BEATS_PER_BAR) : notes };
+      });
+    }
+    case "auto": {
+      const song = p.song, beats = loopBeats(p);
+      return withTrack(p, op.track, (t) => {
+        const auto = sanitizeLanes(op.lanes, beats);
+        return { ...t, auto: song ? sanitizeLanes(relinkLanes(t.auto ?? [], auto, song, BEATS_PER_BAR), beats) : auto };
+      });
+    }
     case "track":
       return withTrack(p, op.track, (t) => ({
         ...t,
@@ -477,7 +514,8 @@ export function apply(p: Project, op: Op): Project {
         ...(op.name !== undefined ? { name: op.name.slice(0, 24) } : {}),
       }));
     case "global": {
-      const bars = op.bars ?? p.bars;
+      // in song mode the chain sets the loop's length
+      const bars = p.song ? p.bars : op.bars ?? p.bars;
       const next: Project = {
         ...p,
         bpm: num(40, 240, p.bpm)(op.bpm),
@@ -496,9 +534,10 @@ export function apply(p: Project, op: Op): Project {
       const { eqAuto, ...rest } = p;
       return { ...rest, eq, ...eqAutoOf(sanitizeEqAuto(eqAuto, loopBeats(p), eq)) };
     }
-    case "eqAuto":
-      const { eqAuto: _, ...rest } = p;
-      return { ...rest, ...eqAutoOf(sanitizeEqAuto(op.lanes, loopBeats(p), p.eq)) };
+    case "eqAuto": {
+      const { eqAuto: was, ...rest } = p, beats = loopBeats(p), lanes = sanitizeEqAuto(op.lanes, beats, p.eq);
+      return { ...rest, ...eqAutoOf(p.song ? sanitizeEqAuto(relinkLanes(was ?? [], lanes, p.song, BEATS_PER_BAR), beats, p.eq) : lanes) };
+    }
     case "eqPhase": {
       const { eqLinear: _, ...rest } = p;
       return { ...rest, ...linearOf(op.linear) };
@@ -547,6 +586,15 @@ export function apply(p: Project, op: Op): Project {
       if (!next) return p;
       const { studio: _, rig: __, built: ___, ...rest } = next;
       return { ...rest, ...studioOf(p.studio), ...rigOf(p.rig), ...builtOf(p.built) };
+    }
+    case "song": {
+      if (!op.chain) { const { song: _, ...rest } = p; return rest; }
+      const was = p.song ?? { bars: p.bars, chain: [0] }, song: Song = { bars: was.bars, chain: op.chain.slice(0, MAX_CHAIN) };
+      const bars = song.bars * song.chain.length;
+      if (bars > MAX_BARS || !song.chain.length) return p;
+      // each pattern as the old chain had it, laid out along the new one
+      const next = laidOut({ ...p, bars, song }, was, song);
+      return { ...next, tracks: fitTakes(next.tracks, bars * BEATS_PER_BAR) };
     }
     default:
       return p;

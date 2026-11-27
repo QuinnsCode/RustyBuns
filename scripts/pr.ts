@@ -14,6 +14,8 @@
 // a new head starts a fresh run (`gh pr update-branch <n> --rebase`).
 // A head that is the after workflow's merge of main (scripts/after.ts, committed as `rustybuns-after`) gets no run at
 // all while after.yml pushes with its own token (#5733): it says so and that any push of your own starts CI.
+// A red `apps` run on a worker's PR (office/<name>) costs that worker trust on the builder's dial (#5605, `learn` in ci-tier.ts).
+import { classify, learn } from "./ci-tier.ts";
 import { arr, bool, check, num, obj, oneOf, opt, str, type Of } from "../packages/util/src/guard.ts";
 
 const text = (max: number) => opt(str(max, { min: 0 }));
@@ -75,11 +77,18 @@ export const settled = (pr: Pr, now = Date.now(), runs: Runs = []) => {
 /** How long ago the head commit was made, in seconds. */
 const headAge = (pr: Pr, now: number) => { const t = pr.commits.at(-1)?.committedDate; return t ? (now - Date.parse(t)) / 1000 : 0; };
 /** No typecheck or apps check in the PR's rollup. */
-const unattached = (pr: Pr) => !pr.statusCheckRollup.some((c) => CI.test(c.workflowName ?? "") || CI.test(c.name ?? ""));
+const unattached = (pr: Pr) => noCi(pr.statusCheckRollup);
 /** The GitHub miss (#2828): the head is minutes old, neither the typecheck nor the apps workflow attached a check, and Actions has no run of either on the head SHA (a queued one is a wait, not a miss). */
 export const MISS_AFTER = 120;
-export const missedRun = (pr: Pr, now = Date.now(), runs: Runs = []) =>
-  pr.state === "OPEN" && headAge(pr, now) > MISS_AFTER && unattached(pr) && headRuns(runs) === "none";
+export const missedRun = (pr: Pr, now = Date.now(), runs: Runs = [], after = MISS_AFTER) =>
+  pr.state === "OPEN" && headAge(pr, now) > after && unattached(pr) && headRuns(runs) === "none";
+/** How long a head may go with no typecheck or apps check before Mervin's board marks it and tells its worker (#5838). */
+export const STALL_AFTER = 600;
+/** The board's plain-words line for a head with no checks: no rollup check names CI and no run on it, past STALL_AFTER; null otherwise. */
+export const stallOf = (pr: Pr, now = Date.now(), runs: Runs = []) => !missedRun(pr, now, runs, STALL_AFTER) ? null
+  : botHead(pr) ? "after-bot push, no checks will come: push one commit" : "GitHub miss (#2828): rebase onto origin/main and push --force-with-lease";
+/** No typecheck or apps check in a rollup of named checks (the board's `gh pr list` rows). */
+export const noCi = (rollup: { name?: string; workflowName?: string }[]) => !rollup.some((c) => CI.test(c.workflowName ?? "") || CI.test(c.name ?? ""));
 /** The after workflow's git name (after.yml): its merge-main pushes start no checks while it pushes with the workflow's own token (#5733). */
 export const AFTER_BOT = "rustybuns-after";
 /** The head commit is the after workflow's merge of main. */
@@ -125,6 +134,18 @@ export function trimLog(log: string, keep = 40): string[] {
   return lines.length > keep ? [`… ${lines.length - keep} earlier lines`, ...tail] : tail;
 }
 
+/** A worker's red GitHub `apps` run, for the trust dial: who (office/<name>), its Actions run and when it ended. Not a worker's branch, or no red apps job (a cancelled one is a newer push, not a red): nothing. */
+export function appsRed(pr: Pr): { who: string; run: string; at: number } | undefined {
+  const who = /^office\/(.+)$/.exec(pr.headRefName)?.[1];
+  if (!who) return undefined;
+  const all = outcomes(pr);
+  const i = all.findIndex((o, j) => o.outcome === "fail" && pr.statusCheckRollup[j]?.workflowName === "apps" && pr.statusCheckRollup[j]?.conclusion !== "CANCELLED");
+  const run = i >= 0 && all[i]!.url ? jobOf(all[i]!.url!)?.run : undefined;
+  if (!run) return undefined;
+  const end = Date.parse(pr.statusCheckRollup[i]!.completedAt ?? "");
+  return { who, run, at: Number.isFinite(end) ? end : Date.now() };
+}
+
 const sh = async (...cmd: string[]) => { const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" }); const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]); return { code: await p.exited, out, err }; };
 
 /** The head SHA's workflow runs on Actions (empty when gh can't say). */
@@ -162,6 +183,12 @@ if (import.meta.main) {
   // GitHub hasn't started the checks: the test swarm (apps/test-swarm) can run them on our own Macs instead.
   if (pr.state === "OPEN" && unattached(pr) && process.env.SWARM_URL) console.log("  GitHub is slow: `bun run builder queue` from the PR's branch sends its suites to the test swarm");
   for (const o of outcomes(pr).filter((o) => o.outcome === "fail")) { const log = await failedLog(o.url); if (log.length) console.log(`--- ${o.name}\n${log.join("\n")}`); }
+  const red = appsRed(pr);
+  if (red) {
+    const diff = await sh("gh", "pr", "diff", String(n), "--name-only");
+    const tier = classify(diff.code ? [] : diff.out.split("\n").filter(Boolean));
+    if (!diff.code && (await learn({ ...red, tier, passed: false }).catch(() => false))) console.log(`  trust dial: ${red.who}'s next tier ${tier} builder run is the whole suite (red apps run ${red.run})`);
+  }
   if (wait && !settled(pr, Date.now(), runs)) console.log(`  still running after ${minutes} min`);
   process.exit(outcomes(pr).some((o) => o.outcome === "fail") || stuck(pr, Date.now(), runs).length ? 1 : 0);
 }
