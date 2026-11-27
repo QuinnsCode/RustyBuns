@@ -1,6 +1,7 @@
-// The piano roll's edits, as plain arithmetic on notes: draw, move, stretch either end, cut. A note's start and
+// The piano roll's edits, as plain arithmetic on notes: draw, erase, trim either end, move. A note's start and
 // length are any number of beats; `snap` (beats, or null for free) only says where an edit may land. No DOM: the
-// roll (src/ui/PianoRoll.tsx) calls these from its pointer and key handlers, and a test tries them.
+// roll (src/ui/PianoRoll.tsx) calls these from its pointer and key handlers and from its desk_* commands, and a
+// test tries them.
 import type { Note } from "./project.ts";
 
 /** The shortest note the project keeps (sanitizeNotes). */
@@ -13,15 +14,15 @@ const fit = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
 export const snapBeat = (b: number, snap: number | null) => tidy(snap ? Math.round(b / snap) * snap : b);
 
 /**
- * A note drawn from beat `a` to beat `b` (either way round) in a window `span` beats long. On the grid it fills
- * the cells the drag crossed, one at least. Free, it is exactly the drag; a press with no drag is `dflt` long.
+ * The pencil's note, drawn from beat `a` to beat `b` (either way round) in a window `span` beats long. On the grid
+ * only its start lands on a line (the one at or before the press); its end is exactly where the pointer let go. A
+ * press with no drag is `dflt` long.
  */
 export function drawNote(a: number, b: number, m: number, snap: number | null, span: number, dflt: number, v = 0.8): Note {
-  let lo = fit(Math.min(a, b), 0, span), hi = fit(Math.max(a, b), 0, span);
-  if (snap) { lo = Math.floor(lo / snap + 1e-9) * snap; hi = Math.max(Math.ceil(hi / snap - 1e-9) * snap, lo + snap); }
-  else if (hi - lo < MIN_LEN) hi = lo + dflt;
-  const s = fit(lo, 0, Math.max(span - MIN_LEN, 0));
-  return { s: tidy(s), l: tidy(fit(hi - s, MIN_LEN, Math.max(span - s, MIN_LEN))), m: fit(Math.round(m), 0, 127), v };
+  const lo = fit(Math.min(a, b), 0, span), hi = fit(Math.max(a, b), 0, span);
+  const s = fit(snap ? Math.floor(lo / snap + 1e-9) * snap : lo, 0, Math.max(span - MIN_LEN, 0));
+  const l = hi - lo < MIN_LEN ? dflt : hi - s;
+  return { s: tidy(s), l: tidy(fit(l, MIN_LEN, Math.max(span - s, MIN_LEN))), m: fit(Math.round(m), 0, 127), v };
 }
 
 /**
@@ -32,32 +33,21 @@ export function moveNote(n: Note, beats: number, semis: number, snap: number | n
   return { ...n, s: fit(snapBeat(n.s + beats, snap), Math.min(n.s, 0), Math.max(tidy(span - MIN_LEN), 0)), m: fit(Math.round(n.m + semis), 0, 127) };
 }
 
-/** The note ending on beat `end` (its start stays). */
-export function stretchEnd(n: Note, end: number, snap: number | null): Note {
-  let e = snapBeat(end, snap);
-  // on the grid a note can't be squeezed to nothing: it stops one line after its start
-  if (snap && e <= n.s + 1e-9) e = snapBeat(Math.floor(n.s / snap + 1e-9) * snap + snap, null);
-  return { ...n, l: tidy(Math.max(e - n.s, MIN_LEN)) };
+/**
+ * The note sounding from beat `start` to beat `end`: the edit popover's two thumbs. Both stay in the window (a start
+ * already before it may stay there; an end already past it may stay there), and the end stays at least MIN_LEN after
+ * the start: when they meet, the thumb that `moved` is the one that stops.
+ */
+export function trimNote(n: Note, start: number, end: number, span: number, moved: "start" | "end" = "end"): Note {
+  const lo = Math.min(n.s, 0), hi = Math.max(span, n.s + n.l);
+  let s = fit(start, lo, hi - MIN_LEN), e = fit(end, lo + MIN_LEN, hi);
+  if (e - s < MIN_LEN) { if (moved === "start") s = e - MIN_LEN; else e = s + MIN_LEN; }
+  return { ...n, s: tidy(s), l: tidy(e - s) };
 }
 
-/** The note starting on beat `start` (its end stays where it sounds now). */
-export function stretchStart(n: Note, start: number, snap: number | null): Note {
-  const end = n.s + n.l;
-  let s = Math.max(snapBeat(start, snap), 0);
-  if (snap && s >= end - 1e-9) s = Math.max(Math.ceil(end / snap - 1e-9) * snap - snap, 0);
-  s = Math.min(s, end - MIN_LEN);
-  return { ...n, s: tidy(s), l: tidy(end - s) };
-}
-
-/** The note cut in two at beat `at`, or just the note when the cut misses it or would leave a sliver. */
-export function cutNote(n: Note, at: number): Note[] {
-  if (!(at >= n.s + MIN_LEN && at <= n.s + n.l - MIN_LEN)) return [n];
-  const c = tidy(at);
-  return [{ ...n, l: tidy(c - n.s) }, { ...n, s: c, l: tidy(n.s + n.l - c) }];
-}
-
-/** Every note in `notes` that beat `at` crosses, cut there (a cut down the whole roll). */
-export const cutAll = (notes: Note[], at: number) => notes.flatMap((n) => cutNote(n, at));
+/** `notes` with the one at `k` swapped for `now` (none, to take it off), or as they were when there is no `k`. */
+export const editNotes = (notes: readonly Note[], k: number, now: Note[]): Note[] =>
+  k >= 0 && k < notes.length ? [...notes.slice(0, k), ...now, ...notes.slice(k + 1)] : [...notes];
 
 /** Where note `n` is in `notes` now (the list may have changed under a drag), or -1. */
 export const findNote = (notes: readonly Note[], n: Note) => notes.findIndex((x) => x.s === n.s && x.m === n.m && x.l === n.l && x.v === n.v);

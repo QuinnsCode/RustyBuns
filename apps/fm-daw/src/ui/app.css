@@ -171,17 +171,26 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .note { position: absolute; padding: 0; border: 1px solid color-mix(in srgb, var(--track) 60%, #000); border-radius: 2px; background: var(--track); cursor: pointer; }
 .note:hover, .note:focus-visible { filter: brightness(1.2); }
 .note:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-.note { cursor: grab; min-width: 3px; touch-action: none; }
-/* the ends that stretch a note (PianoRoll's EDGE) */
-.note::before, .note::after { content: ""; position: absolute; top: 0; bottom: 0; width: min(7px, 33%); cursor: ew-resize; }
-.note::before { left: 0; }
-.note::after { right: 0; }
-.note.held { filter: brightness(1.35); z-index: 1; cursor: grabbing; }
+.note { min-width: 3px; touch-action: none; }
+.note.held { filter: brightness(1.35); z-index: 1; }
 .roll-tools { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
 .roll-tools button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; }
 .roll-snap { margin-left: 4px; white-space: nowrap; }
-.tool-cut .roll-area, .tool-cut .note, .tool-cut .note::before, .tool-cut .note::after { cursor: col-resize; }
-.cut-line { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--ink); pointer-events: none; }
+/* each tool's pointer: the pencil draws on empty space, the others act on notes */
+.tool-pencil .note { cursor: default; }
+.tool-eraser .roll-area, .tool-eraser .note { cursor: not-allowed; }
+.tool-scissors .roll-area { cursor: default; }
+.tool-scissors .note { cursor: pointer; }
+.tool-hand .roll-area { cursor: default; }
+.tool-hand .note { cursor: grab; }
+.tool-hand .note.held { cursor: grabbing; }
+/* the scissors' popover: a third of the window wide, two thumbs for the note's start and end */
+.trim-pop { position: fixed; z-index: 30; box-sizing: border-box; padding: 10px 14px 14px; background: var(--raised); border: 1px solid var(--edge); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
+.trim-head { display: flex; justify-content: space-between; gap: 8px; font-size: .78rem; color: var(--dim); margin-bottom: 12px; white-space: nowrap; overflow: hidden; }
+.trim-track { position: relative; height: 6px; margin: 0 10px; border-radius: 3px; background: var(--edge); }
+.trim-fill { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: var(--track); }
+.trim-thumb { position: absolute; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; padding: 0; border: 2px solid var(--ink); border-radius: 50%; background: var(--track); cursor: ew-resize; touch-action: none; }
+.trim-thumb:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .note.draft { opacity: .6; pointer-events: none; }
 
 /* patch */

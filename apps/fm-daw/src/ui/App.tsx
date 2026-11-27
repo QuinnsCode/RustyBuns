@@ -1210,7 +1210,7 @@ export function App() {
               {(() => {
                 const shown = windowed(t);
                 return <PianoRoll key={selected} track={{ ...t, notes: shown.notes }} color={color} loopBeats={win.span} from={win.from} grid={step}
-                  onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes: shown.back(notes) })}
+                  onNotes={(notes: Note[], group?: string) => commit({ t: "notes", track: selected, notes: shown.back(notes) }, { group })}
                   onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />;
               })()}
               {clipLane}
