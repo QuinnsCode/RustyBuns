@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown } from "../src/sim.ts";
 import { newCables, plug, takeCable, walkWith } from "../src/cables/cables.ts";
-import { begun, idlePrompt, nextStep, towardName } from "../src/next.ts";
+import { begun, idlePrompt, nextStep, towardMark, towardName } from "../src/next.ts";
 import { strike } from "../src/strike.ts";
 import { DIVE_BAR } from "../src/venues/dive-bar.ts";
 
@@ -51,8 +51,20 @@ test("at a venue with doors, L strike waits for the doors to open", () => {
   expect(idlePrompt(w, c, on, { doors: true, open: true })).toBe("L strike and load out");
 });
 
-test("in the dive bar the first job is the speakers in front of you, then the cable case", () => {
+test("in the dive bar the stands go to their tape on the stage, then the speakers onto them, then the cable case", () => {
   const w = newWorld(DIVE_BAR), c = newCables(w), on = new Set<string>(), next = () => nextStep(w, c, on);
+  // The stand nearest the door first, sent to its tape mark (the arrow names the tape), then the other.
+  expect(next()).toEqual({ text: "Take stand R to its tape on the stage: F", key: "stand-r", at: { x: 1.7, z: 2.0 } });
+  for (const [stand, x] of [["stand-r", 1.7], ["stand-l", -1.7]] as const) {
+    const s = w.items.find((i) => i.key === stand)!;
+    walkWith(w, c, s.x - 0.9, s.z);
+    w.you.yaw = -Math.PI / 2;
+    expect(pickUp(w, stand)).toEqual({ ok: true });
+    expect(next()).toEqual({ text: "Set it on its tape on the stage: F", at: { x, z: 2.0 } });
+    expect(towardMark(w, { x, z: 2.0 })).toMatch(new RegExp(`^tape for stand ${stand.slice(-1).toUpperCase()}, \\d+ m$`));
+    Object.assign(s, { x, z: 2.0 });
+    w.held = null;
+  }
   expect(next()).toEqual({ text: "Grab TOP R: F", key: "top-r", to: "stand-r" });
   walkWith(w, c, -0.4, 11.2);
   w.you.yaw = 0;

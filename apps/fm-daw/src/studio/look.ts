@@ -727,6 +727,57 @@ function pools(def: StudioDef, group: THREE.Group, spots: [number, number][]) {
     discs.add(at(disc, x + (lean() - 0.5) * 0.3, 0.012, z + (lean() - 0.5) * 0.3));
   }
   if (discs.children.length) { const merged = flatten(discs); merged.name = "pools"; group.add(merged); }
+  if ((def.materials?.floor ?? "floorboards") !== "carpet") group.add(streaks(spots, h));
+}
+
+/**
+ * Each can mirrored in the lacquered boards (round 18): a glossy floor shows a light as a streak where the light's mirror
+ * image under the floor lines up with the eye, stretched toward whoever looks, longer the lower the look. Baked pools
+ * can't follow the eye, so every streak is placed in its vertex shader from the camera: one quad per can, one draw call.
+ */
+function streaks(spots: [number, number][], h: number) {
+  const pos: number[] = [], can: number[] = [], corner: number[] = [], index: number[] = [], rnd = mulberry32(6348);
+  spots.forEach(([x, z], i) => {
+    const k = 0.75 + rnd() * 0.5;
+    for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { pos.push(x, 0, z); can.push(x, h, z, k); corner.push(u!, v!); }
+    index.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("can", new THREE.Float32BufferAttribute(can, 4));
+  geo.setAttribute("corner", new THREE.Float32BufferAttribute(corner, 2));
+  geo.setIndex(index);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { tint: { value: new THREE.Color(0xffdcb4).multiplyScalar(0.7) } },
+    vertexShader: /* glsl */ `
+      attribute vec4 can; attribute vec2 corner; varying vec2 vUv; varying float vK;
+      void main() {
+        vec3 c = (modelMatrix * vec4(can.xyz, 1.0)).xyz, foot = (modelMatrix * vec4(can.x, 0.0, can.z, 1.0)).xyz;
+        float above = c.y - foot.y, eye = max(cameraPosition.y - foot.y, 0.05);
+        // where the eye's line to the can's mirror image (as far under the floor as the can is over it) meets the floor
+        vec3 hit = cameraPosition + (eye / (eye + above)) * (vec3(c.x, foot.y - above, c.z) - cameraPosition);
+        vec2 to = cameraPosition.xz - hit.xz; float far = length(to); vec2 dir = far > 0.001 ? to / far : vec2(0.0, 1.0);
+        vec2 side = vec2(-dir.y, dir.x);
+        float along = 0.22 + 0.55 * clamp(far / (eye * 4.0), 0.0, 1.0), wide = 0.12 + 0.04 * can.w;
+        // the streak runs mostly toward the eye from the mirror point, a little past it
+        vec2 at = hit.xz + dir * (corner.y * along + along * 0.45) + side * corner.x * wide;
+        vUv = corner; vK = can.w;
+        gl_Position = projectionMatrix * viewMatrix * vec4(at.x, foot.y + 0.014, at.y, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 tint; varying vec2 vUv; varying float vK;
+      void main() {
+        float a = exp(-vUv.x * vUv.x * 5.0) * exp(-pow(abs(vUv.y + 0.35), 1.6) * 3.2) * smoothstep(1.0, 0.7, abs(vUv.y));
+        // a hot core where the mirror point is, the rest a soft sheen
+        a *= 0.55 + 0.45 * exp(-vUv.x * vUv.x * 30.0);
+        gl_FragColor = vec4(tint * vK * a, 1.0);
+      }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -10,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.frustumCulled = false; m.name = "streaks";
+  return m;
 }
 
 let glowFrom: THREE.CanvasTexture | null = null;
@@ -850,7 +901,7 @@ function windows(def: StudioDef, group: THREE.Group) {
   const edgeGlass = new THREE.MeshStandardMaterial({ color: "#5f8f7c", roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55 });
   // black, so it adds only what it reflects; the room's own environment (baked in dress()) and the cans' highlights
   glassFace ??= (() => {
-    const m = new THREE.MeshPhysicalMaterial({ color: "#000", roughness: 0.04, metalness: 0, specularIntensity: 0.3, envMapIntensity: 8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const m = new THREE.MeshPhysicalMaterial({ color: "#000", roughness: 0.04, metalness: 0, specularIntensity: 0.3, envMapIntensity: 12, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     // a can mirrored in the pane came back past the bloom's threshold and, through the camera's blur, as a big halo over
     // the kit (round 13): what each pane adds stops well under the threshold (the panes add up where they overlap)
     m.onBeforeCompile = (s) => { s.fragmentShader = s.fragmentShader.replace("#include <opaque_fragment>", "#include <opaque_fragment>\ngl_FragColor.rgb = min(gl_FragColor.rgb, vec3(0.3));"); };

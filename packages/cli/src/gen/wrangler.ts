@@ -75,11 +75,49 @@ export function previousMigrations(src: string | null): DoMigration[] {
   try { return ((parseWrangler(src).migrations ?? []) as DoMigration[]).filter((m) => typeof m?.tag === "string"); } catch { return []; }
 }
 
+type Worker = NonNullable<RustyBunsConfig["worker"]>;
+type Binding = { binding: string };
+
+/** The wrangler.jsonc keys this file writes, from wrangler's own schema (node_modules/wrangler/config-schema.json). */
+interface WranglerJson {
+  $schema: string;
+  name: string;
+  main?: string;
+  compatibility_date?: string;
+  compatibility_flags?: string[];
+  assets?: { binding?: string; directory: string; run_worker_first?: Worker["runWorkerFirst"]; not_found_handling?: Worker["notFoundHandling"] };
+  images?: Binding;
+  ai?: Binding;
+  browser?: Binding;
+  containers?: object[];
+  d1_databases?: object[];
+  kv_namespaces?: object[];
+  r2_buckets?: object[];
+  artifacts?: object[];
+  send_email?: object[];
+  ratelimits?: object[];
+  vectorize?: object[];
+  hyperdrive?: object[];
+  queues?: { producers?: object[]; consumers?: object[] };
+  workflows?: object[];
+  analytics_engine_datasets?: object[];
+  worker_loaders?: object[];
+  services?: object[];
+  durable_objects?: { bindings?: object[]; code_update_strategy?: object };
+  migrations?: DoMigration[];
+  vars?: Record<string, string>;
+  limits?: { cpu_ms: number };
+  placement?: Worker["placement"];
+  observability?: object;
+  triggers?: { crons: string[] };
+  connect?: { protocol: "tcp"; port: number }[];
+}
+
 /** `previous` is the current wrangler.jsonc, whose migration history is kept. */
 export function generateWrangler(c: RustyBunsConfig, previous: string | null = null): string {
   if (!c.worker) throw new Error("this config has no worker section (desktop-only app); there is no edge stack to generate");
-  // wrangler.jsonc is wrangler's own schema (node_modules/wrangler/config-schema.json), built up key by key here.
-  const w: Record<string, unknown> = {
+  // Built up key by key; the keys come out in the order they are set.
+  const w: WranglerJson = {
     $schema: "node_modules/wrangler/config-schema.json",
     name: workerName(c),
     main: c.worker.main,
@@ -91,8 +129,8 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     w["assets"] = { ...(c.worker.main ? { binding: "ASSETS" } : {}), directory: c.worker.assets, ...(c.worker.runWorkerFirst ? { run_worker_first: c.worker.runWorkerFirst } : {}),
       ...(c.worker.notFoundHandling ? { not_found_handling: c.worker.notFoundHandling } : {}) };
   }
-  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [], ratelimits: unknown[] = [], vectorize: unknown[] = [], hyperdrive: unknown[] = [];
-  const producers: unknown[] = [], consumers: unknown[] = [], workflows: unknown[] = [], analytics: unknown[] = [], loaders: unknown[] = [], services: unknown[] = [];
+  const d1: object[] = [], kv: object[] = [], r2: object[] = [], dos: object[] = [], artifacts: object[] = [], containers: object[] = [], sendEmail: object[] = [], ratelimits: object[] = [], vectorize: object[] = [], hyperdrive: object[] = [];
+  const producers: object[] = [], consumers: object[] = [], workflows: object[] = [], analytics: object[] = [], loaders: object[] = [], services: object[] = [];
   const vars: Record<string, string> = {};
   const sqliteClasses: string[] = [];
   // No database_id / KV id: local dev doesn't need them, and a placeholder makes
