@@ -37,10 +37,11 @@ change or throw away.
 | `page_read` | Each file's path and size, the backdrop, and what the frame said since it last loaded: errors with their file, loads it blocked |
 | `page_read_file` | One file's whole text |
 | `page_write_file` | Set one file (`index.html`, `world.js`, `lib/noise.js`, ...) to this text; `""` takes it away. Its description tells the agent how files load and what the frame allows |
+| `page_edit_file` | Swap the one exact match of `find` in a file for `replace`, so a small change doesn't resend the file. No match, or more than one, is refused with the count |
 | `page_set_backdrop` | A codeSplitter handle whose profile page (their public `page` repo) fills the window behind the world; `""` takes it away |
 | `page_undo`, `page_reset` | Take back the last change, or go back to the starter city |
 
-A write answers with the files (paths and sizes, not their text), or why it couldn't be done. The Undo and Start over
+A write or an edit answers with the files (paths and sizes, not their text), or why it couldn't be done. The Undo and Start over
 buttons do the same as the tools. This browser keeps each room's world for the next visit. **Full screen** (or `?full`
 on the link) puts the dock away.
 
@@ -60,6 +61,38 @@ What keeps it safe, in short:
 - What the world says goes back to the agent, so the prompt and the MCP instructions tell it page text is content,
   never instructions.
 
+### `@world/kit`
+
+A world's module can `import { world, ground, sky } from "@world/kit"` instead of writing the same three.js each
+time (`src/kit.ts`, three.js 0.170.0 from esm.sh). The plot is 100 units square around 0.
+
+| Call | Gives |
+|---|---|
+| `world({ orbit, distance, angle })` | The scene, a camera looking down at an angle, the renderer, resizing and the loop. Returns `{ scene, camera, renderer }` |
+| `ground({ type, color })` | `flat`, `dunes`, `hills` or `grass`. `heightAt(x, z)` reads it |
+| `sky(type)`, `weather(type)` | `day`, `night` (stars and a moon) or `dusk`; `rain`, `snow`, `fog` or `clear` |
+| `water({ y, x, z, width, depth })` | A sheet of water |
+| `trees(n)`, `cactus(n)`, `rocks(n)` | Scattered on the ground, never in water; `{ area, size, color }` |
+| `lights({ sun, fill, color, at })`, `lamp({ x, y, z, color })` | The sun and sky light; a coloured glow |
+| `every(f)`, `THREE` | Run `f(t, dt)` each frame; three.js for anything else |
+| `onPlayer(cb)` | `cb(player, at)` when the page says a visitor is walking the plot (`{ agent_page: true, player: { x, z } \| null }`, 0 to 1). A world reacts to them and never draws them |
+
+`test/fixtures/rain-city.js` is a whole rainy neon city by a river in about 30 lines of it.
+
+### What a world costs in tokens
+
+A fixed "build me a world" session (`test/session.ts`: `page_read`, read the starter's two files, write a small rainy
+city, look, one fix, look) counted with the instructions and tool list once, each call's arguments and each reply, at
+four characters a token (`scripts/mcp-session.ts`, the same session code as codeSplitter's `tool-tokens.ts`):
+
+| | Tool list and instructions | Whole session |
+|---|---|---|
+| Before: three.js by hand, whole files resent | 682 | 4,473 |
+| After: `@world/kit` and `page_edit_file` | 612 | 2,119 |
+
+`test/tokens.test.ts` fails when the session passes the budget in `test/tokens.json`. A change that earns more tokens
+raises it there, in the same PR. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
+
 From a script or the console, the same tools are on `window.__commands`:
 
 ```
@@ -77,7 +110,8 @@ Durable Object per room and no storage, AI or other paid bindings.
   function that changes it. A tool's JSON Schema for the agent comes from the same Schema that checks its call.
 - `src/world.ts`: the sealed frame's document: `index.html` with the world's own scripts and styles put inline, its
   modules' imports of each other through an import map, the policy and the reporter first. `src/starter.ts`: the
-  starter city's two files.
+  starter city's two files. `src/kit.ts`: `@world/kit`'s source, a string the frame's import map carries.
+- `src/answers.ts`: what the tools answer, shared by the page and the tests' stand-in for it (`test/app-kit.ts`).
 - `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP) and the frames between the relay and the page.
 - `src/agent.ts`: the `Agent` service in the page. Its Layer puts the WebMCP tools up (`@rustybuns/util/commands`)
   and keeps a socket to the room's relay while the page is mounted. A call from either becomes a message on a queue
@@ -92,7 +126,8 @@ Durable Object per room and no storage, AI or other paid bindings.
 - `src/edge/worker.ts`: the relay on Cloudflare, one `Room` Durable Object per room. `scripts/dev.ts`: the same relay
   and the page in one Bun server.
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
-  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout.
+  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout. `test/tokens.test.ts`: the token budget.
+  `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in the frame and a kit world running there.
 
 Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit
 (`@effect/ui@a0d7578`). To move it on: `bun add https://pkg.pr.new/Effect-TS/ui/@effect/ui@<commit>` in this folder.

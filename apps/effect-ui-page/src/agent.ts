@@ -9,7 +9,8 @@ import { addCommands, type Command, runCommand } from "@rustybuns/util/commands"
 import { check, field } from "@rustybuns/util/guard";
 import { connectSocket } from "@rustybuns/util/socket";
 import { Context, Effect, Layer, Queue, Schema, Stream } from "effect";
-import { listing, type Page } from "./page.ts";
+import { changed, fileRead, looked } from "./answers.ts";
+import type { Page } from "./page.ts";
 import { decode, type FromPage, inputSchema, READ, READ_FILE, ReadFile, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
 import { SAID_KEY } from "./world.ts";
 
@@ -64,18 +65,14 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   const call = (tool: Tool, args: unknown) => {
     const request = decode(tool, args);
     const id = next++;
-    return new Promise<{ ok: boolean; error?: string; files: ReturnType<typeof listing> }>((done) => {
-      waiting.set(id, (r) => done(r.error === null ? { ok: true, files: listing(r.page) } : { ok: false, error: r.error, files: listing(r.page) }));
+    return new Promise<ReturnType<typeof changed>>((done) => {
+      waiting.set(id, (r) => done(changed(r.error, r.page)));
       Queue.offerUnsafe(queue, { call: id, tool: tool.name, request });
     });
   };
   const off = addCommands([
-    { ...READ, group: "Page", palette: false, execute: () => ({ files: listing(page), ...(page.backdrop ? { backdrop: page.backdrop } : {}), said: said.length ? said : ["nothing: no errors since it loaded"] }) },
-    { ...READ_FILE, group: "Page", palette: false, execute: (args) => {
-      const { path } = Schema.decodeUnknownSync(ReadFile)(args);
-      const text = page.files[path];
-      return text === undefined ? { ok: false, error: `no file "${path}": the files are ${Object.keys(page.files).join(", ") || "none"}` } : { path, text };
-    } },
+    { ...READ, group: "Page", palette: false, execute: () => looked(page, said) },
+    { ...READ_FILE, group: "Page", palette: false, execute: (args) => fileRead(page, Schema.decodeUnknownSync(ReadFile)(args).path) },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
   ]);

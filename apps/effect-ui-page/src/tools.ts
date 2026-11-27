@@ -4,36 +4,37 @@
 import { bool, obj, opt, raw, int, str, type Of } from "@rustybuns/util/guard";
 import type { Hints, InputSchema } from "@rustybuns/util/commands";
 import { Schema } from "effect";
-import { FILE_MAX, FILES_MAX, Path, Reset, SetBackdrop, WORLD_MAX, WriteFile } from "./page.ts";
+import { EditFile, FILE_MAX, FILES_MAX, Path, Reset, SetBackdrop, WORLD_MAX, WriteFile } from "./page.ts";
 import { LIBRARY_HOSTS } from "./world.ts";
 
 export const Undo = Schema.TaggedStruct("Undo", {});
 /** What a call asks the page for: an action on the page, or undo (which needs the page's history). */
-export const Request = Schema.Union([WriteFile, SetBackdrop, Reset, Undo]);
+export const Request = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset, Undo]);
 export type Request = typeof Request.Type;
 
-type Tagged = typeof WriteFile | typeof SetBackdrop | typeof Reset | typeof Undo;
+type Tagged = typeof WriteFile | typeof EditFile | typeof SetBackdrop | typeof Reset | typeof Undo;
 export interface Tool { name: string; title: string; description: string; schema: Tagged; hints?: Hints }
 
 /** How a world is made, told once with the write tool: what the frame opens, how files load, what it may reach. */
 const HOW = [
-  "The world is a few text files that run in a sealed frame filling the person's screen, like a codeSplitter page.",
-  "index.html is what the frame opens. It loads your other files with <script src=\"world.js\"> (type=\"module\" too) and <link rel=\"stylesheet\" href=\"style.css\">; a module imports another of your files as \"./name.js\".",
-  `Libraries load from ${LIBRARY_HOSTS.join(", ")} at a pinned version: import * as THREE from "https://esm.sh/three@0.170.0".`,
-  "The frame is sealed: no fetch or sockets, no cookies or localStorage, no forms. Images, sounds and models are drawn in code or written as data: URLs.",
-  `A file is ${FILE_MAX.toLocaleString("en")} characters at most, the world ${WORLD_MAX.toLocaleString("en")}, ${FILES_MAX} files.`,
+  "The frame opens index.html, which loads your other files by <script src> and <link rel=stylesheet>; modules import each other as \"./name.js\".",
+  `Libraries: pinned versions from ${LIBRARY_HOSTS.map((h) => h.slice("https://".length)).join(", ")}.`,
+  "A module may import \"@world/kit\" (three.js ready-made, plot 100x100 around 0): world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass,color}), sky(day|night|dusk), weather(rain|snow|fog|clear), water({y,x,z,width,depth}), trees(n), cactus(n), rocks(n), lights(), lamp({x,y,z,color}), onPlayer(cb), every(f), heightAt(x,z), THREE.",
+  "Sealed: no fetch, sockets, storage or forms; draw images and sounds in code or data: URLs.",
+  `Limits: ${FILE_MAX / 1000}k characters a file, ${WORLD_MAX / 1000}k and ${FILES_MAX} files a world.`,
 ].join(" ");
 
 export const TOOLS: readonly Tool[] = [
-  { name: "page_write_file", title: "Write a file", schema: WriteFile, description: `Set one file of the world to this whole text, and the frame reloads with it. "" takes the file away. ${HOW} Then call page_read: it says what went wrong in the frame, if anything.` },
-  { name: "page_set_backdrop", title: "Set the backdrop", schema: SetBackdrop, description: "Put a codeSplitter profile page (that handle's public `page` repo) full screen behind the world, seen where the world leaves the background clear: \"quinn\" shows @quinn's. \"\" takes it away." },
-  { name: "page_undo", title: "Undo", schema: Undo, description: "Take back the last change, the agent's or the person's." },
-  { name: "page_reset", title: "Start over", schema: Reset, description: "Put the world back to the starter city. page_undo puts it back.", hints: { destructiveHint: true } },
+  { name: "page_write_file", title: "Write a file", schema: WriteFile, description: `Set a file to this whole text ("" removes it); the frame reloads. For a small change use page_edit_file. ${HOW}` },
+  { name: "page_edit_file", title: "Edit a file", schema: EditFile, description: "Replace the one exact match of `find` in a file with `replace`." },
+  { name: "page_set_backdrop", title: "Set the backdrop", schema: SetBackdrop, description: "Show a codeSplitter handle's profile page behind the world, where the world is clear. \"\" removes it." },
+  { name: "page_undo", title: "Undo", schema: Undo, description: "Take back the last change." },
+  { name: "page_reset", title: "Start over", schema: Reset, description: "Back to the starter city (undoable).", hints: { destructiveHint: true } },
 ];
 
 export const READ = {
   name: "page_read", title: "Look at the world",
-  description: "The world as it stands: each file's path and size, the backdrop (a codeSplitter handle, when set), and what the frame said since it last loaded: errors with their file and line, and loads it blocked. Call it after each write. page_read_file gives a file's text.",
+  description: "Files and sizes, the backdrop, and the frame's errors and blocked loads since it last loaded. Call after changes.",
   inputSchema: { type: "object", properties: {} } satisfies InputSchema,
   annotations: { readOnlyHint: true } satisfies Hints,
 };
@@ -41,8 +42,8 @@ export const READ = {
 export const ReadFile = Schema.Struct({ path: Path });
 export const READ_FILE = {
   name: "page_read_file", title: "Read a file",
-  description: "One file of the world, its whole text. page_read lists them.",
-  inputSchema: { type: "object", properties: { path: { type: "string", description: "A path page_read listed, like index.html or world.js" } }, required: ["path"] } satisfies InputSchema,
+  description: "One file's whole text.",
+  inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } satisfies InputSchema,
   annotations: { readOnlyHint: true } satisfies Hints,
 };
 
