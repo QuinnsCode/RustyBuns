@@ -10,7 +10,7 @@ useBrowser();
 
 test.skipIf(!hasChrome)("Start, then Play the groove: two taps from landing to a playing groove, and the hint only once", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
-  await load(chrome.cdp, tab, vite.url, 0);
+  await load(chrome.cdp, tab, `${vite.url}desk`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
   const until = (what: string, expr: string, ms?: number) => waitFor(tab, what, expr, ms, "window.fmdaw?.state()");
   /** A real click (a user gesture, so the audio may start) on the element `selector` finds. */
@@ -33,7 +33,7 @@ test.skipIf(!hasChrome)("Start, then Play the groove: two taps from landing to a
   expect(await hinting()).toBe(false);
 
   // Back another day: Start goes straight to the desk.
-  await load(chrome.cdp, tab, vite.url, 0);
+  await load(chrome.cdp, tab, `${vite.url}desk`, 0);
   await until("the start card again", `!!window.fmdaw && !!document.querySelector(".gate .play")`);
   await click(".gate .play");
   await until("the sound on again", `fmdaw.state().audio === "running"`);

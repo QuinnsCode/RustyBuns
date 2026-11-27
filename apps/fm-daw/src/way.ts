@@ -14,7 +14,7 @@ export const PLACES: Record<Here, { page: string; label: string; title: string }
   amp: { page: "/amp.html", label: "Q Amp", title: "Qollab Studio: Q Amp, the amp as circuits" },
   builder: { page: "/builder.html", label: "Q Builder", title: "Qollab Studio: Q Builder, a pedal's board to change, scope and remake" },
   speakers: { page: "/speakers.html", label: "Speakers", title: "Qollab Studio: speaker boxes from their build plans, the walls and the sound" },
-  desk: { page: "/", label: "Desk", title: "Qollab Studio: the FM DAW desk" },
+  desk: { page: "/desk", label: "Desk", title: "Qollab Studio: the FM DAW desk" },
   remote: { page: "/remote.html", label: "Remote", title: "Qollab Studio: the remote, one screen for a phone (master faders and the instrument you're at)" },
 };
 const ORDER: Here[] = ["paths", "character", "jam", "gear", "amp", "builder", "speakers", "desk", "remote"];
@@ -28,21 +28,27 @@ export function doors(here: Here, search: string): { to: Here; href: string; lab
   return ORDER.filter((p) => p !== here).map((to) => ({ to, href: to === "character" || to === "paths" ? PLACES[to].page : PLACES[to].page + tail, label: PLACES[to].label, title: PLACES[to].title }));
 }
 
-/** The row's look: under a phone's notch (the safe area), and folded down to the place you're in. */
-const WAY_CSS = `#qs-way{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:50;display:flex;gap:4px;max-width:calc(100vw - 16px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px));overflow-x:auto;scrollbar-width:none;padding:4px;border-radius:999px;background:rgba(21,23,27,.78);font:600 13px/1 system-ui,sans-serif}
-#qs-way>*{white-space:nowrap;padding:7px 12px;border-radius:999px;text-decoration:none;color:#f4f1ea;border:0;background:none;font:inherit;cursor:pointer}
-#qs-way>[aria-current]{background:#0f766e;display:inline-flex;align-items:center;gap:6px}
-#qs-way>[aria-current] svg{display:none}
-#qs-way.folded>:not([aria-current]){display:none}
-#qs-way.folded>[aria-current] svg{display:block}`;
+/** One pill in the top-right corner (under a phone's notch): the place you're in, which drops the other rooms down
+ * under it. Kept small so it sits clear of each page's own header. */
+const WAY_CSS = `#qs-way{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));right:calc(8px + env(safe-area-inset-right,0px));z-index:50;font:600 13px/1 system-ui,sans-serif}
+#qs-way>button{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;padding:8px 12px;border-radius:999px;border:1px solid rgba(244,241,234,.14);background:rgba(21,23,27,.82);color:#f4f1ea;font:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+#qs-way>button:hover,#qs-way>button:focus-visible{background:#0f766e;outline:none}
+#qs-way>button svg{transition:transform .15s}
+#qs-way.open>button{background:#0f766e}
+#qs-way.open>button svg{transform:rotate(180deg)}
+#qs-way>div{position:absolute;top:calc(100% + 6px);right:0;display:none;flex-direction:column;min-width:170px;max-height:calc(100vh - 70px);overflow-y:auto;padding:4px;border-radius:12px;border:1px solid rgba(244,241,234,.14);background:rgba(21,23,27,.96);box-shadow:0 8px 24px rgba(0,0,0,.45)}
+#qs-way.open>div{display:flex}
+#qs-way>div>a{white-space:nowrap;padding:9px 12px;border-radius:8px;text-decoration:none;color:#f4f1ea}
+#qs-way>div>a:hover,#qs-way>div>a:focus-visible{background:#2a2d33;outline:none}`;
 const CHEVRON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
 
-/** Draws the row of doors along the top of the page, once. With `character`, the Character door opens it over the page
- * (the jam room's dialog, #5819) rather than leaving for eqosys. `fold(true)` shrinks it to the place you're in (the
- * jam room does while you play); pressing that opens the row again. */
-export function mountWay(here: Here, o: { character?: () => void } = {}): { fold: (on: boolean) => void } {
+/** Draws the way to the other rooms, once: one pill naming the place you're in, which opens a list of the others
+ * (Paths first). With `character`, the Character door opens it over the page (the jam room's dialog, #5819) rather
+ * than leaving for eqosys. `fold(true)` closes the list (the jam room does once you play). */
+export function mountWay(here: Here, o: { character?: () => void; right?: number; into?: string } = {}): { fold: (on: boolean) => void } {
   const found = document.getElementById("qs-way");
-  const fold = (on: boolean) => { const n = document.getElementById("qs-way"); n?.classList.toggle("folded", on); n?.querySelector("[aria-current]")?.setAttribute("aria-expanded", String(!on)); };
+  const show = (on: boolean) => { const n = document.getElementById("qs-way"); n?.classList.toggle("open", on); n?.querySelector("button")?.setAttribute("aria-expanded", String(on)); };
+  const fold = (on: boolean) => { if (on) show(false); };
   if (found) return { fold };
   const style = document.createElement("style");
   style.textContent = WAY_CSS;
@@ -56,17 +62,34 @@ export function mountWay(here: Here, o: { character?: () => void } = {}): { fold
   current.prepend(PLACES[here].label);
   current.title = "The other rooms";
   current.setAttribute("aria-current", "page");
-  current.addEventListener("click", () => { if (nav.classList.contains("folded")) fold(false); });
-  for (const d of [{ el: current, at: ORDER.indexOf(here) }, ...doors(here, location.search).map((d) => {
+  current.setAttribute("aria-expanded", "false");
+  current.addEventListener("click", (e) => { e.stopPropagation(); show(!nav.classList.contains("open")); });
+  const list = document.createElement("div");
+  for (const d of doors(here, location.search)) {
     const a = document.createElement("a");
     a.href = d.href; a.textContent = d.label; a.title = d.title; a.dataset.to = d.to;
     const open = o.character;
-    if (d.to === "character" && open) { a.title = "Your character"; a.addEventListener("click", (e) => { e.preventDefault(); open(); }); }
-    return { el: a, at: ORDER.indexOf(d.to) };
-  })].sort((a, b) => a.at - b.at)) {
-    nav.append(d.el);
+    if (d.to === "character" && open) { a.title = "Your character"; a.addEventListener("click", (e) => { e.preventDefault(); show(false); open(); }); }
+    list.append(a);
   }
+  nav.append(current, list);
+  // a click anywhere else, or Esc, closes it
+  document.addEventListener("click", (e) => { if (!nav.contains(e.target instanceof Node ? e.target : null)) show(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") show(false); });
+  // clear of a page's own corner button (the jam room's and gear room's cog), or inside its header bar (Q Amp's)
+  if (o.right) nav.style.right = `calc(${o.right}px + env(safe-area-inset-right,0px))`;
   document.body.append(nav);
+  const sel = o.into;
+  if (sel) {
+    const settle = () => {
+      const host = document.querySelector(sel);
+      if (!host) return false;
+      nav.style.cssText = "position:relative;top:auto;right:auto;margin-left:auto";
+      host.append(nav);
+      return true;
+    };
+    if (!settle()) { const watch = new MutationObserver(() => { if (settle()) watch.disconnect(); }); watch.observe(document.body, { childList: true, subtree: true }); }
+  }
   return { fold };
 }
 

@@ -154,7 +154,7 @@ const character = characterDialog({
   },
   wear: (a) => { look = a; wear(); door(); },
 });
-const way = mountWay("jam", { character: () => void character.open() });
+const way = mountWay("jam", { character: () => void character.open(), right: 68 }); // clear of the settings cog
 
 let phase: "menu" | "play" = "menu";
 let ctl: Settings = DEFAULTS;
