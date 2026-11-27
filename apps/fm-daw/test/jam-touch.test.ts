@@ -55,7 +55,12 @@ test.skipIf(!hasChrome)("on a phone: walk with the stick, look with a drag, tap 
     })()`);
     await until(tab, `!!qjam.onScreen(${JSON.stringify(bass.id)})`, "the bass on the screen", 20_000);
     const [bx, by] = (await page<[number, number]>(`qjam.onScreen(${JSON.stringify(bass.id)})`));
-    await tap({ x: bx, y: by });
+    // on a slow phone (or CI's software GL) a long frame lands between the finger down and up: still a tap
+    await touch("touchStart", { x: bx, y: by });
+    await page("void setTimeout(() => { const t = performance.now(); while (performance.now() - t < 600); })");
+    await Bun.sleep(100); // the page is busy now: the finger lifts while it is
+    await touch("touchEnd");
+    await until(tab, `qjam.touch().goal === ${JSON.stringify(bass.id)} || qjam.state().you.seat === ${JSON.stringify(bass.id)}`, "the tap taken", 10_000);
     await until(tab, `qjam.state().you.seat === ${JSON.stringify(bass.id)}`, "sat at the bass", 30_000);
 
     // seated: Stand and the keyboard show, the stick doesn't

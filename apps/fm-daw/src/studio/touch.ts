@@ -22,7 +22,8 @@ export interface TouchHooks {
 /** What to show this frame: in the room or not, seated or not, and the keys to play (null: none here). */
 export interface TouchFrame { play: boolean; seated: boolean; caps: Cap[] | null; held: Iterable<string> }
 
-/** How far (px) a finger may move and how long (ms) it may stay down for its touch to be a tap, not a look. */
+/** How far (px) a finger may move and how long (ms) it may stay down for its touch to be a tap, not a look. Timed by
+ *  the events' own stamps, not by when a handler got to run: a slow frame between the two must not turn a tap into a look. */
 const TAP_PX = 12, TAP_MS = 350;
 /** The stick's reach from its middle, px. */
 const REACH = 46;
@@ -75,7 +76,7 @@ export class TouchControls {
     canvas.addEventListener("pointerdown", (e) => {
       if (e.pointerType !== "touch") return;
       e.preventDefault(); // no mousedown after it (that would ask for the pointer lock)
-      this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, at: performance.now(), far: 0 });
+      this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, at: e.timeStamp, far: 0 });
     });
     canvas.addEventListener("pointermove", (e) => {
       const f = this.fingers.get(e.pointerId);
@@ -88,7 +89,7 @@ export class TouchControls {
       const f = this.fingers.get(e.pointerId);
       if (!f) return;
       this.fingers.delete(e.pointerId);
-      if (e.type === "pointerup" && f.far < TAP_PX && performance.now() - f.at < TAP_MS) hooks.tap(e.clientX, e.clientY);
+      if (e.type === "pointerup" && f.far < TAP_PX && e.timeStamp - f.at < TAP_MS) hooks.tap(e.clientX, e.clientY);
     };
     canvas.addEventListener("pointerup", lift);
     canvas.addEventListener("pointercancel", lift);
