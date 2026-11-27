@@ -56,8 +56,8 @@ export const JETS = {
 };
 const BOOST = JETS.boost;
 const BOOST_TOP = JETS.boostTop;
-const JET_FADE = 0.5; // radians (29 degrees): up a steeper face than the dome's shoulder or a hillside cut's run-up the jets start to bleed off
-const JET_OFF = 0.75; // radians (43 degrees): by here, just short of a wall (WALL), they have let go
+const JET_FADE = 0.8; // radians (46 degrees, a wall: WALL): a gap's kicker curves up to about here and needs every bit of the push to clear, so the jets only start to bleed off past it
+const JET_OFF = 0.9; // radians (52 degrees): by here, up the wall, they have let go
 /** How much of the jets' push is left with the deck `rise` radians up the way it rolls: all of it on a run-up, none up a steep face. */
 const jetsOnFace = (rise: number) => clamp01((JET_OFF - rise) / (JET_OFF - JET_FADE));
 /** How far the ground pokes up through the leading half of the deck (the nose, or the tail riding fakie, and both edges). The deck is the
