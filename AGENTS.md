@@ -178,6 +178,9 @@ Patterns and rulings, with credits: [EFFECT.md](EFFECT.md).
 Grep before writing a helper. If it exists twice, pull it up and delete the copies in the same PR.
 A PR that deletes more than it adds is the goal. codeSplitter's own helpers are in [its AGENTS.md](apps/codesplitter/AGENTS.md).
 
+- Every app with a page has a Cmd+K menu (owner, 2026-11-27): `mountPalette({ button: true })` from `@rustybuns/util/palette`,
+  over the same `addCommands` list its WebMCP tools use, so what an agent can call a person can press. A new app
+  starts with one; the apps still without it are in #6468.
 - `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
   `@rustybuns/util`: import them. A game world's `TokenBucket`, `RoomMintGate` and `originAllowed` are `@rustybuns/util/limits`; its socket type,
   `WebSocketPair`, upgrade, attachment and fan-out are `Sockets` in `@rustybuns/util/room` (no `declare const WebSocketPair`, no `ws: any`);

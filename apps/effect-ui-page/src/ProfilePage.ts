@@ -151,8 +151,12 @@ const ICONS = {
 } as const;
 type Icon = keyof typeof ICONS;
 
-const SIGNS: readonly (readonly [string, Icon, string])[] = [
-  ["Effect UI", "layers", "cyan"], ["WebMCP", "plug", "pink"], ["Cloudflare Artifacts", "box", "amber"], ["Effect", "zap", "violet"],
+/** The four parts, each with what it does for you in a few plain words. */
+const SIGNS: readonly (readonly [string, Icon, string, string])[] = [
+  ["Effect UI", "layers", "cyan", "draws the page"],
+  ["WebMCP", "plug", "pink", "gives your AI the buttons"],
+  ["Cloudflare Artifacts", "box", "amber", "keeps your stuff (soon)"],
+  ["Effect", "zap", "violet", "keeps it all from breaking"],
 ];
 const STEPS: readonly (readonly [Icon, string, string, string, string])[] = [
   ["chat", "amber", "1. You ask", "\"make it about my skateboarding\"", ""],
@@ -172,7 +176,8 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
     h.div.class("l-stage").children(
       h.h1.class("l-word").children("Agent Page"),
       h.p.class("l-line").children("Your AI builds your page. You watch it light up."),
-      h.div.class("l-signs").children(...SIGNS.map(([name, i, c]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), name))),
+      h.p.class("l-what").children("Copy the line below into your AI. It plugs your AI into this page. Then tell it what you want, like \"a page about my band\", and watch it build, live."),
+      h.div.class("l-signs").children(...SIGNS.map(([name, i, c, does]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), h.span(h.b(name), h.small(does))))),
       h.div.class("l-bar").children(
         h.code(claude.text),
         h.button.attr("type", "button").class("l-go").on("click", PageMessage.ClickedCopy({ what: claude.what, text: claude.text }))
@@ -188,6 +193,7 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
         h.i.class("l-blink").attr("aria-hidden", "true"),
         online ? "Your room is open. Waiting for your AI." : "Opening your room…",
         h.button.attr("type", "button").class("l-skip").on("click", PageMessage.ClickedLeaveLanding()).children("Skip to the page"),
+        h.span.class("l-keys").children(h.kbd("Cmd"), h.kbd("K"), " every command"),
       ),
       copied?.startsWith("failed") && h.p.class("l-alt").attr("role", "alert").children("The clipboard said no: select the line and copy it by hand."),
     ),
