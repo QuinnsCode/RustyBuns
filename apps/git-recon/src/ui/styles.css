@@ -850,3 +850,26 @@ html .ui-house .gr-foot { box-shadow: inset 0 -5px 0 #e2d4b0; }
   html .ui-house .gc-profiles + .gc-fold::before { content: ""; flex: 0 1 176px; height: 56px; margin-right: auto; pointer-events: none;
     background: url(/menu/strip.svg) left center / contain no-repeat; transform: rotate(-2deg); filter: drop-shadow(2px 3px 0 #14141422); }
 }
+
+/* Round 19 (#6314): the sheet's body is handled too, clear of the text. A grease thumbprint (thumb.svg 0.8 KB) is
+   pressed in each sheet's foot, left of the sign-off where no row runs, and every other sheet carries a mug's ring
+   (coffee.svg again) off its right edge, under the reset tiles. A key the soldier changed gets a pencilled tick by
+   its name (tick.svg 0.5 KB, shown while its reset is live), and every key cap is thumbed: pale scratches on the lip
+   and ink chipped off its edges (scuff.svg 0.6 KB, stretched to the cap). */
+html .ui-house .gc-sec {
+  background: url(/menu/thumb.svg) left 10px bottom 22px / 40px 51px no-repeat, linear-gradient(#0000 calc(100% - 16px), #efe6cf calc(100% - 13px)),
+    linear-gradient(#0000 calc(48% - 8px), #1414140c 48%, #fff 48% calc(48% + 1.5px), #14141408 calc(48% + 2px), #0000 calc(48% + 9px)),
+    radial-gradient(120% 90% at 50% 40%, #0000 70%, #c9a86014 90%, #a9813a26), url(/menu/slip.svg) 0 4px / 64px, #fffdf6d6;
+  background-clip: padding-box; }
+html .ui-house .gc-sec:nth-of-type(even) {
+  background: url(/menu/thumb.svg) left 10px bottom 22px / 40px 51px no-repeat, url(/menu/coffee.svg) right -70px top 34% / 170px no-repeat,
+    linear-gradient(#0000 calc(100% - 16px), #efe6cf calc(100% - 13px)),
+    linear-gradient(#0000 calc(48% - 8px), #1414140c 48%, #fff 48% calc(48% + 1.5px), #14141408 calc(48% + 2px), #0000 calc(48% + 9px)),
+    radial-gradient(120% 90% at 50% 40%, #0000 70%, #c9a86014 90%, #a9813a26), url(/menu/slip.svg) 0 4px / 64px, #fffdf6d6;
+  background-clip: padding-box; }
+html .ui-house .gc-sec.shut { background-size: 0 0, auto; }
+html .ui-house .gc-key:not(.on) {
+  background: url(/menu/scuff.svg) 0 0 / 100% 100% no-repeat, linear-gradient(#e8590c 0 0) 50% 0 / 16px 3px no-repeat, var(--br-ticks), var(--br-tile);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat; }
+html .ui-house .gc-binds > span:has(+ .gc-key + .gc-icon:not(:disabled))::after { content: ""; position: absolute; right: 0; top: 50%; width: 26px; height: 19px;
+  margin-top: -10px; pointer-events: none; background: url(/menu/tick.svg) center / contain no-repeat; transform: rotate(-6deg); }

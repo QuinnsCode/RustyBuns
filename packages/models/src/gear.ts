@@ -107,15 +107,27 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "satin", "shade", "cavity", "turbo", "pcblue", "pcgrey"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "satin", "facet", "shade", "cavity", "turbo", "pcblue", "pcgrey"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
  * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
- * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint), satin (the Res2 top's own coat: a smooth near-black navy with a satin sheen), shade (that paint down a horn cell, darkened per vertex as the light falls off toward the throat: see `fade`) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured); and the connectors' pcblue and pcgrey (powerCON's blue power-in and grey power-out housings). */
+ * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint), satin (the Res2 top's own coat: a smooth near-black navy with a satin sheen), facet (the Res2's mid horn lining, glossier, each flat face a step lighter or darker by where it faces: see `facets`), shade (that paint down a horn cell, darkened per vertex as the light falls off toward the throat: see `fade`) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured); and the connectors' pcblue and pcgrey (powerCON's blue power-in and grey power-out housings). */
 export type GearLook = Record<GearSlot, THREE.Material>;
+
+/** A ramp from black to white along u, read as the `facet` lining's ambient occlusion at the `uv1` that `facets` writes:
+ * the sky's image light ignores vertex colours' darkness in its sheen, so a face turned away is darkened here too. */
+export const RAMP = (() => {
+  const px = new Uint8Array(256 * 4);
+  for (let i = 0; i < 256; i++) px.fill(i, i * 4, i * 4 + 3), (px[i * 4 + 3] = 255);
+  const t = new THREE.DataTexture(px, 256, 1);
+  t.magFilter = t.minFilter = THREE.LinearFilter;
+  t.channel = 1;
+  t.needsUpdate = true;
+  return t;
+})();
 
 export function gearLook(): GearLook {
   const std = (color: number, roughness: number, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
@@ -126,7 +138,7 @@ export function gearLook(): GearLook {
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0xd9d6cf, 0.5), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
-    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x160a2b, 0.86), satin: std(0x15142a, 0.4), shade: Object.assign(std(0x160a2b, 0.86), { vertexColors: true }), turbo: std(0x0e1422, 0.82),
+    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x160a2b, 0.86), satin: std(0x15142a, 0.4), facet: Object.assign(std(0x7a7e75, 0.5), { vertexColors: true, aoMap: RAMP }), shade: Object.assign(std(0x160a2b, 0.86), { vertexColors: true }), turbo: std(0x0e1422, 0.82),
     pcblue: std(0x1f63c4, 0.42), pcgrey: std(0xa3a8ae, 0.5),
     cavity: new THREE.MeshStandardMaterial({ color: 0x050409, roughness: 1, envMapIntensity: 0.02 }),
   };
@@ -1436,6 +1448,28 @@ function fade(p: Piece, lit: number, dark: number, floor = 0.12, k = 2): Piece {
   return { geo: p.geo, slot: "shade" };
 }
 
+/** A piece in the `facet` lining: each flat face painted a step lighter or darker by how square it faces `key` (the
+ * photo's studio light, high on the left and in front), down to `lo` of the colour for a face turned away, and the
+ * lot falling to `deep` of that toward `dark` (the throat), as the real horn's folds read as pale and dark facets. */
+function facets(p: Piece, key: THREE.Vector3, lit: number, dark: number, lo = 0.72, deep = 0.78): Piece {
+  const geo = p.geo.index ? p.geo.toNonIndexed() : p.geo, pos = geo.getAttribute("position"), col = new Float32Array(pos.count * 3), uv1 = new Float32Array(pos.count * 2).fill(0.5);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), L = key.clone().normalize();
+  for (let i = 0; i + 2 < pos.count; i += 3) {
+    a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
+    const n = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+    if (n.z < 0) n.negate(); // every face here looks out of the mouth
+    const face = lo + (1 - lo) * Math.max(0, n.dot(L)) ** 2;
+    for (let j = 0; j < 3; j++) {
+      const s = clamp((pos.getZ(i + j) - dark) / (lit - dark), 0, 1), v = face * (deep + (1 - deep) * s);
+      col.fill(v, (i + j) * 3, (i + j) * 3 + 3);
+      uv1[(i + j) * 2] = v;
+    }
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geo.setAttribute("uv1", new THREE.BufferAttribute(uv1, 2));
+  return { geo, slot: "facet" };
+}
+
 /** A thin box cut into `rows` along z (so `fade` has vertices to grade across), centred at `at`. */
 function sheet(size: THREE.Vector3Tuple, at: THREE.Vector3Tuple, rows = 12): Piece {
   let geo: THREE.BufferGeometry = new THREE.BoxGeometry(size[0], size[1], size[2], 1, 1, rows).translate(...at);
@@ -1544,14 +1578,16 @@ function res2Pieces(): Record<string, Build> {
   // into long triangles at the mouth and diamonds halfway in
   const bands = [ring8(0, mcy, f - 0.07, mm(186), mm(114), mm(166), mm(110)), ring8(0, mcy, f - 0.14, mm(172), mm(96), mm(108), mm(94))];
   const throat = ring8(0, mcy, zt, tipA, drR, mm(54), drR);
-  mid.pieces.push(ringWalls("horn", [lip, mouth]), ringWalls("horn", [mouth, ...bands, throat]));
+  // the walls in the glossier `facet` lining, each face a step lighter or darker, so the folds read as the photo's do
+  const key = new THREE.Vector3(-0.5, -0.2, 0.85), lit = (q: Piece) => facets(q, key, f - 0.02, zt);
+  mid.pieces.push(ringWalls("horn", [lip, mouth]), lit(ringWalls("horn", [mouth, ...bands, throat])));
   // the throat's back, round the driver: a flat dark face closing the hexagon the walls end on
   mid.pieces.push(frontPlate("grime", throat.map((v) => [v.x, v.y]), [Array.from({ length: 20 }, (_, i) => [Math.cos((i / 20) * Math.PI * 2) * drR, mcy + Math.sin((i / 20) * Math.PI * 2) * drR])], zt + 0.004, 0.006));
 
   // ---- the plug: the axe head across the throat, blunt back on the driver, a ridge forward, pointed at both tips
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, mcy + y, zt + z), pt: THREE.Vector3[] = [];
   for (const s of [-1, 1]) pt.push(V(s * 0.09, 0.032, 0.01), V(s * 0.09, -0.032, 0.01), V(s * 0.09, 0.03, 0.07), V(s * 0.09, -0.03, 0.07), V(s * 0.08, 0, 0.125), V(s * tipA, 0, 0.045), V(s * 0.13, 0.012, 0.03), V(s * 0.13, -0.012, 0.03));
-  plugB.pieces.push({ geo: toCreasedNormals(new ConvexGeometry(pt), 0.2), slot: "horn" });
+  plugB.pieces.push(facets({ geo: toCreasedNormals(new ConvexGeometry(pt), 0.2), slot: "horn" }, key, zt + 0.125, zt, 0.75, 0.9));
 
   // ---- driver: the 8" cone behind the plug, its black roll surround and dark paper cone
   drv.pieces.push(lathe("knob", [[0, drR, drR], [0.006, drR * 0.9, drR * 0.9], [0.003, drR * 0.8, drR * 0.8]], { seg: 24, m: new THREE.Matrix4().makeTranslation(0, mcy, zt) }));

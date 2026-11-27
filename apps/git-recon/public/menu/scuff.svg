@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width="120" height="40" preserveAspectRatio="none">
+  <!-- Wear on a key cap that has been thumbed in the field: pale scratches across the lip, and ink
+       chipped off the edges. -->
+  <g fill="none" stroke="#fff" stroke-linecap="round">
+    <path d="M10 31l13-4M15 35l8-3M94 10l14-5M99 14l9-3M48 6l9 1" stroke-width="1.3"/>
+  </g>
+  <g fill="none" stroke="#14141455" stroke-linecap="round" stroke-width=".8">
+    <path d="M24 26l12-3M88 13l8-2"/>
+  </g>
+  <g fill="#141414" opacity=".7">
+    <path d="M0 5l4 1-1 4-3 0zM39 0h7l-3 3zM116 17l4-2v7zM76 40l3-4 4 4zM0 29l3 1-3 3zM120 33l-3 1 3 2z"/>
+  </g>
+</svg>

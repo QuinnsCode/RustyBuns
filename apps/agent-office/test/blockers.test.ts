@@ -12,7 +12,7 @@ setDefaultTimeout(30_000);
 
 const TEST = "test/room-setup.test.ts › the studio is asked on the first room only";
 
-test("a blocker's fix goes first, the PRs it holds wait, and once it lands they get main merged in", () => {
+test("a blocker's fix goes first, the PRs it holds wait, and once it lands they get main merged in", async () => {
   // #50 is the blocker's issue: the test is red on #11, #12, #13 and #14 (which is also red on typecheck); #20 fixes it.
   const issue = { number: 50, body: `The same test failed on 4 PRs.\n\n${blockerMark({ test: TEST, prs: [11, 12, 13, 14], checks: ["test fm-daw"] })}` };
   const checks: Record<number, string[]> = { 11: ["test fm-daw 2/3"], 12: ["test fm-daw 1/3"], 13: ["test fm-daw 2/3"], 14: ["test fm-daw 2/3", "typecheck"], 15: [], 20: [] };
@@ -74,18 +74,18 @@ test("a blocker's fix goes first, the PRs it holds wait, and once it lands they 
     };
     const git = (...a: string[]) => run(ci, ...a);
 
-    expect(pass(fake, git, { token: true })).toEqual([]); // #50 still open: nothing moves
+    expect(await pass(fake, git, { token: true })).toEqual([]); // #50 still open: nothing moves
 
     ok(dev, "checkout", "-q", "main");
     commit("fix.ts"); // #20 lands
     ok(dev, "push", "-q", "origin", "main");
     closed = [{ ...issue, closedAt: new Date().toISOString() }];
 
-    expect(pass(fake, git, { token: true })).toEqual([11, 12, 13, 14].map((n) => `#${n} merged main in and pushed after blocker #50`));
+    expect(await pass(fake, git, { token: true })).toEqual([11, 12, 13, 14].map((n) => `#${n} merged main in and pushed after blocker #50`));
     for (const n of [11, 12, 13, 14]) expect(ok(origin, "ls-tree", "--name-only", `pr-${n}`).split("\n")).toContain("fix.ts");
     expect(ok(origin, "ls-tree", "--name-only", "pr-15").split("\n")).not.toContain("fix.ts"); // never held
     expect(said.get(11)![0]).toContain(`(${TEST}) is fixed on main`);
     // once each: the next pass (after.yml runs on every push to main) leaves them be
-    expect(pass(fake, git, { token: true })).toEqual([]);
+    expect(await pass(fake, git, { token: true })).toEqual([]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

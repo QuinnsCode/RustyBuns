@@ -89,6 +89,8 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
 - `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
   `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
   When it says an after-bot head has no checks, or a PR's head got none, run `bun run kick <n>` (one empty commit on top, pushed).
+- `bun run steer <issue#>` (or `--text "..."`): a first call on a task before hiring for it: the likely app and files to
+  start in, the kind of job, how its five nearest past tasks went (merged, steers) and the open PRs on those files. Advice only; `--eval` scores it on the last two weeks.
   A lead doesn't hand-roll `git commit --allow-empty && git push origin <branch>` onto another worker's branch: auto mode's
   classifier reads that as pushing someone else's work and turns it away (#5839). If `kick` is turned away too, tell the
   PR's worker to run it (`office-workers tell <name>`), or hand the PR number to the owner; don't look for another way to push.
