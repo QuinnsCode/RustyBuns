@@ -2,7 +2,7 @@
 // like the tunnel; the only colour is the lanes' own (the preset LEDs and tape codes, the VU meter's hot end). Weights,
 // as strings: a screw ~0.4 KB, the dial face ~4 KB, a worn knob ~3 KB, a VU meter ~2.5 KB, the grille and tape-fibre
 // tiles ~0.5 KB each; the Controls rows' hardware (a fader's dished cap ~1.4 KB, its slot ~0.7 KB and worn plate ~0.7 KB, its printed scale ~1.6 KB, the bat-handle toggle ~1.3 KB a side,
-// the brushed plate ~0.5 KB, a read-out's glass ~1 KB, the presets' band window ~0.8 KB, a section latch ~1.1 KB a side). Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
+// the brushed plate ~0.5 KB, a read-out's glass ~1 KB, the presets' band window ~0.8 KB, a section latch ~1.6 KB a side). Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
 import { mulberry32 } from "@rustybuns/util";
 
 const INK = "#e9ecf2";
@@ -177,21 +177,24 @@ const toggle = (on: boolean) => {
 };
 export const toggleOff = toggle(false), toggleOn = toggle(true);
 
-/** A section header's latch, where the web chevron was: a flight-case catch on a small chrome plate. Open (the section
- * shown), the lever hangs down off its hinge and the pilot lamp over it is lit; shut, the lever is folded flat across the
- * keeper and the lamp is dark. ~1.1 KB a side. */
+/** A section header's latch, where the web chevron was: a flight-case catch on a chrome plate, big enough to read at a
+ * glance. Open (the section shown), the lever has dropped off its keeper and hangs straight down, the keeper's hook stands
+ * bare and the pilot lamp at the plate's left is lit cyan with a halo; shut, the lever is folded flat across the keeper
+ * into its hook and the lamp is dark glass. ~1.6 KB a side. */
 const latch = (open: boolean) => {
-  const lamp = open ? "#c8f6ff" : "#22262e";
+  const lamp = open
+    ? `<circle cx="10" cy="15" r="6" fill="#4de3ff" fill-opacity=".22"/><circle cx="10" cy="15" r="3.8" fill="#c8f6ff" stroke="#4de3ff" stroke-width="1.4"/><circle cx="9" cy="13.8" r="1.1" fill="#fff"/>`
+    : `<circle cx="10" cy="15" r="3.8" fill="#1a1d24" stroke="#000"/><circle cx="9" cy="13.8" r="1" fill="#ffffff" fill-opacity=".18"/>`;
   const lever = open
-    ? `<rect x="15.5" y="11" width="7" height="11" rx="2" fill="#000" fill-opacity=".55"/><rect x="15" y="10" width="7" height="11" rx="2" fill="url(#lv)" stroke="#000" stroke-opacity=".7"/><rect x="16.5" y="18" width="4" height="1" fill="#000" fill-opacity=".5"/>`
-    : `<rect x="11" y="13.5" width="15" height="6" rx="2" fill="#000" fill-opacity=".55"/><rect x="10" y="12.5" width="15" height="6" rx="2" fill="url(#lh)" stroke="#000" stroke-opacity=".7"/><rect x="11.5" y="15" width="1" height="1.5" fill="#000" fill-opacity=".5"/>`;
-  return dataUri(`<defs><linearGradient id="pl" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5a606c"/><stop offset=".5" stop-color="#262a32"/><stop offset="1" stop-color="#6a707c"/></linearGradient>
+    ? `<rect x="22.5" y="9" width="8" height="19" rx="2.5" fill="#000" fill-opacity=".55"/><rect x="21.5" y="7.5" width="8" height="19" rx="2.5" fill="url(#lv)" stroke="#000" stroke-opacity=".75"/><rect x="23.5" y="22" width="4" height="1.2" fill="#000" fill-opacity=".5"/>`
+    : `<rect x="23" y="12.5" width="25" height="8" rx="2.5" fill="#000" fill-opacity=".55"/><rect x="22" y="11" width="25" height="8" rx="2.5" fill="url(#lh)" stroke="#000" stroke-opacity=".75"/><rect x="42" y="13" width="1.2" height="4" fill="#000" fill-opacity=".5"/>`;
+  return dataUri(`<defs><linearGradient id="pl" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#6a707c"/><stop offset=".5" stop-color="#2a2e36"/><stop offset="1" stop-color="#727884"/></linearGradient>
     <linearGradient id="lv" x1="0" x2="1"><stop offset="0" stop-color="#f4f6fa"/><stop offset=".5" stop-color="#9aa0ac"/><stop offset="1" stop-color="#3a3e48"/></linearGradient>
     <linearGradient id="lh" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f4f6fa"/><stop offset=".5" stop-color="#9aa0ac"/><stop offset="1" stop-color="#3a3e48"/></linearGradient></defs>
-    <rect x=".5" y=".5" width="35" height="23" rx="3" fill="url(#pl)" stroke="#000"/><rect x="2.5" y="2.5" width="31" height="19" rx="2" fill="#0d0f14" stroke="#000" stroke-opacity=".6"/>
-    <circle cx="5.5" cy="12" r="1.6" fill="#15171d" stroke="#000" stroke-opacity=".6"/><circle cx="30.5" cy="12" r="1.6" fill="#15171d" stroke="#000" stroke-opacity=".6"/>
-    <circle cx="28" cy="6.5" r="1.9" fill="${lamp}"${open ? ` stroke="#4de3ff" stroke-opacity=".45" stroke-width="2.4"` : ""}/>
-    <rect x="13" y="7" width="11" height="4" rx="1" fill="#2a2e36" stroke="#000"/><circle cx="18.5" cy="9" r="1.2" fill="#9aa0ac"/>${lever}`, 36, 24);
+    <rect x=".5" y=".5" width="55" height="29" rx="4" fill="url(#pl)" stroke="#000"/><rect x="2.5" y="2.5" width="51" height="25" rx="3" fill="#0d0f14" stroke="#000" stroke-opacity=".6"/>
+    <line x1="18.5" y1="5" x2="18.5" y2="25" stroke="#000" stroke-opacity=".8"/><line x1="19.5" y1="5" x2="19.5" y2="25" stroke="#fff" stroke-opacity=".08"/>${lamp}
+    <path d="M44 9h5v12h-5" fill="none" stroke="#9aa0ac" stroke-width="2" stroke-linejoin="round"/><path d="M44 9h5v12h-5" fill="none" stroke="#000" stroke-opacity=".5" stroke-width=".6" stroke-linejoin="round"/>
+    <rect x="21" y="5" width="10" height="5" rx="1.2" fill="#2a2e36" stroke="#000"/><circle cx="26" cy="7.5" r="1.4" fill="#9aa0ac"/>${lever}`, 56, 30);
 };
 export const latchOpen = latch(true), latchShut = latch(false);
 
