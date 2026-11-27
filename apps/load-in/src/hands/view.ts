@@ -145,9 +145,9 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
         // On a tall, narrow screen (a phone held upright) the hands come in toward the middle so they stay in view. Not
         // the raised arms: they already reach across the view, and pulled in they cross in the middle (#5157).
         if (!carry && !show && narrow < 1) f.o = [f.o[0] * narrow, f.o[1], f.o[2]];
-        // Out of the way while you look at a piece: down and a touch apart. A hand reaching for the next piece stays on it.
+        // Out of the way while you look at a piece: down and apart, out to the sides so they leave its tape label clear. A hand reaching for the next piece stays on it.
         const drop = low * (1 - s.reachK);
-        if (!carry && !show && what.kind === "rest" && drop > 0.001) f.o = [f.o[0] * (1 + 0.1 * drop), f.o[1] - 0.04 * drop, f.o[2]];
+        if (!carry && !show && what.kind === "rest" && drop > 0.001) f.o = [f.o[0] * (1 + 0.32 * drop), f.o[1] - 0.05 * drop, f.o[2]];
         mPlace.makeBasis(toV(f.x, vA), toV(f.y, vB), toV(f.z, vC)).setPosition(f.o[0], f.o[1], f.o[2]);
         tAt.setFromMatrixPosition(mPlace);
         tTurn.setFromRotationMatrix(mPlace);
