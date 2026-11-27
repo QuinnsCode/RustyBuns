@@ -25,17 +25,23 @@ test.skipIf(!hasChrome)("each lane on the field opens on its own cards, each on 
       expect(door.paths.map((p) => [p.sector, p.id, p.href])).toEqual(SECTORS.flatMap((s) => PATHS.filter((p) => p.sector === s.id).map((p) => [s.id, p.id, p.href])));
       expect(door.lane).toBe(null);
       expect(door.paths.filter((p) => p.shown)).toEqual([]);
-      // the field is the menu: a click on a lane's button opens it, and its panel shows that lane's cards and no others
-      for (const s of SECTORS) {
-        await tab.eval(`document.querySelector('.lane[data-lane="${s.id}"]').click()`);
+      // the field is the menu: a click on a lane's button opens it, the lanes become tabs up top to switch between, and each
+      // shows its own cards and no others, its things on the screen drawn
+      for (const [i, s] of SECTORS.entries()) {
+        await tab.eval(i === 0 ? `document.querySelector('.lane[data-lane="${s.id}"]').click()` : `document.querySelector('#tabs [data-tab="${s.id}"]').click()`);
+        await until(tab, "qdoor.shelf().items.some((t) => t.seen && t.drawn)");
         const opened = await tab.eval<Door>("qdoor.state()");
         expect(opened.lane).toBe(s.id);
         expect(opened.paths.filter((p) => p.shown).map((p) => p.id)).toEqual(PATHS.filter((p) => p.sector === s.id).map((p) => p.id));
         expect(opened.paths.filter((p) => p.shown && !p.oneLine).map((p) => p.name)).toEqual([]);
         expect(opened.overflowX).toBe(false);
       }
-      await tab.eval(`document.querySelector('#lane-panel .close').click()`);
+      await tab.eval(`document.getElementById('field-back').click()`);
       expect((await tab.eval<Door>("qdoor.state()")).lane).toBe(null);
+      // the night's air hides behind the small button in the corner
+      expect(await tab.eval<boolean>(`document.getElementById('air').hidden`)).toBe(true);
+      await tab.eval(`document.getElementById('air-egg').click()`);
+      expect(await tab.eval<boolean>(`document.getElementById('air').hidden`)).toBe(false);
       // the field, as someone moves the humidity slider down and presses the mountain button: the far half of the map darkens each time
       const hero = () => tab.eval<Hero>("qdoor.hero.state()");
       const mild = await hero();

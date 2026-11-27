@@ -17,9 +17,6 @@ const F = { y: -Math.sin(CAM.pitch), z: -Math.cos(CAM.pitch) }, U = { y: Math.co
 /** A lane down the field: one of the door's words, its strip of grass, and the colour its plate and beam take. */
 export interface HeroLane { id: string; word: string; tone: string }
 
-/** The width the open lane's panel takes from the right of the field on a desk (door.html's `.lane-panel`). */
-const PANEL_W = 412;
-
 export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], onLane: (id: string | null) => void = () => {}) {
   const canvas = root.querySelector<HTMLCanvasElement>("canvas")!, g = canvas.getContext("2d")!;
   const temp = root.querySelector<HTMLInputElement>('input[name="temp"]')!, hum = root.querySelector<HTMLInputElement>('input[name="humidity"]')!;
@@ -31,7 +28,7 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
   hum.closest("label")!.insertAdjacentHTML("afterbegin", iconSvg(ICON.droplets, 18));
 
   let air: HeroAir = { ...HERO_START }, map = heroMap(air), back = backSeat(air), draws = 0;
-  let W = 0, H = 0, f = 0, cx = 0, cy = 0, cxNow = NaN;
+  let W = 0, H = 0, f = 0, cx = 0, cy = 0;
   const land = (a: HeroAir) => (a.bank ? banks([BANK]) : () => 0);
 
   // the lanes: the field cut into strips from the back to the stage, a word painted on the grass of each and a button
@@ -93,11 +90,7 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
     const dpr = Math.min(2, devicePixelRatio || 1), r = canvas.getBoundingClientRect();
     if (Math.round(r.width * dpr) !== canvas.width || Math.round(r.height * dpr) !== canvas.height) { canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr); }
     W = r.width; H = r.height; f = Math.min(W * 1.3, H); cy = H * 0.5; // on a tall phone the field comes closer, so its lanes fill the width
-    // the field fills the screen; on a desk it slides left to make room for an open lane's panel
-    const cxGoal = open && W >= 900 ? (W - PANEL_W) / 2 : W / 2;
-    cxNow = Number.isNaN(cxNow) || matchMedia("(prefers-reduced-motion: reduce)").matches ? cxGoal : cxNow + (cxGoal - cxNow) * 0.2;
-    if (Math.abs(cxGoal - cxNow) < 0.5) cxNow = cxGoal; else requestAnimationFrame(() => draw());
-    cx = cxNow;
+    cx = W / 2; // the field fills the screen, and stays lit behind an open lane's shelf
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     const horizon = cy - f * Math.tan(CAM.pitch);
     // the sky at dusk, the sun gone down behind the stage
