@@ -73,7 +73,10 @@ import { badge, dropBadge } from "./badge.ts";
 import { prop, chaseSteps, tickProps } from "./props.ts";
 import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { doorways } from "./doors.ts";
-import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Look, type Quality } from "./look.ts";
+import { dress, loadGraphics, loadQuality, metreUV, runningLook, saveGraphics, surface, useKit, wallSurface, type Look, type Quality } from "./look.ts";
+import { preset, PRESETS, stepWords, type Graphics } from "./graphics.ts";
+import { graphicsCommands, watchPicture } from "./graphics-panel.ts";
+import { mountPalette } from "@rustybuns/util/palette";
 import { gearKit, gearKitLook } from "./gear-kit.ts";
 import { Keys, Kit, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
@@ -437,11 +440,17 @@ if (here) { useKit(gearKit(loadQuality())); buildRoom(); }
 // a real venue round the room (#5933), fetched only when the room has one
 const venue = new VenueSplat(scene, renderer);
 if (here) void venue.show(def.venue);
-const picture = !here ? doorLook(loadQuality()) : def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
+const gfx = loadGraphics();
+const picture = runningLook(!here ? doorLook(loadQuality()) : def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, gfx), renderer, gfx);
+// music first (graphics.ts): the picture steps down while frames run slow or the audio clock falls behind, and back up
+const watch = watchPicture(gfx, () => out?.ctx ?? null, (r, level) => picture.run(r, level));
 // the subs' cones pump on the beat while the band plays
 const pumpSubs = subCones([scene]);
-/** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
-function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
+/** Keep the graphics for next time and load the room again with them: the lights, shadows and post are built once. */
+function setGraphics(g: Graphics) { saveGraphics(g); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
+/** Q, standing: the other of low and high. */
+const setQuality = (q: Quality) => setGraphics(preset(q, gfx.priority));
+const graphicsDeps = { now: () => gfx, set: setGraphics, running: () => picture.state().running ?? { scale: gfx.scale, freezeShadows: false, cap: gfx.cap, level: 0 } };
 
 // ---- people: you, and everyone the live line says is here ----
 interface Drawn { fig: Figure; key: string; avatar: Avatar; x: number; z: number; y: number; yaw: number; speed: number; heading: number }
@@ -452,7 +461,7 @@ const drawnLook = (id: number | "me") => drawn.get(id)?.avatar ?? null;
 let watched: THREE.Vector3 | null = null;
 // step dust off the floor: thick on an open-air room's sand, a faint scuff indoors
 // out of doors, a crowd on the dance floor facing the stacks, dancing to the groove (dancers.ts)
-const dancers = here && def.outdoor ? new Dancers(def, loadQuality() === "low" ? 6 : 12) : null; // fewer on a phone
+const dancers = here && def.outdoor ? new Dancers(def, gfx.crowd) : null; // fewer on a phone (the low preset)
 if (dancers) scene.add(dancers.group);
 const dust = new Dust(scene, def.outdoor ? 1.6 : 0.6, `#${new THREE.Color(def.colors.floor).lerp(new THREE.Color("#d8cbb4"), 0.6).getHexString()}`);
 const palm = new THREE.Vector3();
@@ -568,7 +577,7 @@ async function startAudio() {
       if (recorder.wants(0, myGuitar)) recorder.add(0, myGuitar, m.beat, Float32Array.from(pcm, (v) => v / 32767));
       if (opusOut && !opusOut.broken) opusOut.slice(m.beat, pcm);
       else live(Band.slice(myGuitar, m.beat, pcm, b64url));
-    }, roomBuses); // everything this room plays here goes through one brick wall last, always on (limiter.ts), music or crowd
+    }, roomBuses, gfx.priority === "picture" ? "playback" : "interactive"); // everything this room plays here goes through one brick wall last, always on (limiter.ts), music or crowd; picture first takes a bigger buffer
     // Opus over the World when this browser has WebCodecs (a quarter of PCM's bytes), else PCM
     const opus = await webOpus();
     opusEncoder = opus?.encoder ?? null;
@@ -1031,6 +1040,8 @@ const player: Player = {
   beat: () => (band.synced ? band.beat() : null),
 };
 addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
+addCommands(graphicsCommands(graphicsDeps));
+mountPalette({ button: true, placeholder: "Sit, stand, graphics…" });
 // Tab, seated: the track's lane over the room (lane.tsx), its edits over the sesh as the player's
 lane = mountLane({
   project: () => project, edit: player.edit, may: () => may(player),
@@ -1166,6 +1177,7 @@ settings = mountSettings({
     { name: "Plug in", line: () => myGuitar === null ? "Your instrument" : "Plugged in: press to unplug", act: () => void guitar().then(() => settings?.render()) },
     { name: "Sound", line: () => "Your volume and mic, who's here", act: () => { $("set-sound").hidden = !$("set-sound").hidden; } },
   ],
+  graphics: graphicsDeps,
   onClose: () => menu(),
 });
 $("settings-open").addEventListener("click", () => { $("menu").hidden = true; settings?.open(); });
@@ -1695,9 +1707,11 @@ function frame(now: number) {
   help.frame(phase === "play");
   if (++lessonTick % 6 === 0) { lessonCard.frame(); lessonMark = lessons.state()?.mark ?? null; sayLesson(); classCard.frame(); }   // a few times a second: the steps read the whole patch
   gearScene.mark(lessonMark && markAt(atWall.room, lessonMark), t);   // every frame: it follows a box in your hands
+  watch.frame();
+  const stepped = stepWords(watch.state().level);
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
-  $("heard").textContent = `${netWords(status)}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${walkSet ? ". Walk-through: the planned PA plays a test set, walk the site to hear it" : ""}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}`;
+  $("heard").textContent = `${netWords(status)}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${walkSet ? ". Walk-through: the planned PA plays a test set, walk the site to hear it" : ""}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}${stepped ? `. ${stepped}` : ""}`;
   picture.render(camera);
   requestAnimationFrame(frame);
 }
@@ -1774,8 +1788,10 @@ const harness = {
   played: () => Object.fromEntries([...played].map(([id, p]) => [id, p.keys ? p.keys.down : p.kit?.rings()])),
   /** Play a note at your seat, as a key would (A, S, ... ; the kit's home row), for `ms` milliseconds. */
   play: (code: string, ms = 150) => { const n = keyNote(jam, project, code, octave); if (!n) return null; noteOn(`probe:${code}`, n, 0.8); setTimeout(() => noteOff(`probe:${code}`), ms); return n; },
-  /** The picture quality, kept for next time: the page loads again with it. */
-  quality: (q: Quality) => setQuality(q),
+  /** A graphics preset (low, medium, high, ultra), kept for next time: the page loads again with it. */
+  quality: (q: string) => { const p = PRESETS.find((x) => x === q); if (p) setGraphics(preset(p, gfx.priority)); },
+  /** The look as it runs: its lights, shadows and post, the graphics settings, and how far music first stepped it down. */
+  graphics: () => ({ ...picture.state(), governor: watch.state() }),
   /** Press (down true) or let go of a key: KeyA plays the seat's lowest note; held, W walks and Shift speed walks. */
   key: (code: string, down = true) => { if (down) { keys.add(code); keyDown(code); } else { keys.delete(code); noteOff(`kb:${code}`); } },
   /** Mute a peer for you (on left out: the other way round), the whole room, or (the leader) a peer for everyone. */
