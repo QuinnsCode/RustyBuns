@@ -3,7 +3,7 @@
 // keyboard plays a note and a slide moves to the next, the view stays still while you sit there, and Stand gets you up.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until } from "../../../scripts/chrome.ts";
-import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
+import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 
 setDefaultTimeout(240_000); // a jam room in software GL on CI's runners
 useBrowser("--autoplay-policy=no-user-gesture-required");
@@ -24,7 +24,15 @@ test.skipIf(!hasChrome)("on a phone: walk with the stick, look with a drag, tap 
       for (let i = 1; i <= 6; i++) await touch("touchMove", { x: from.x + ((to.x - from.x) * i) / 6, y: from.y + ((to.y - from.y) * i) / 6 });
       await touch("touchEnd");
     };
-    const tap = async (at: Box) => { await touch("touchStart", at); await touch("touchEnd"); };
+    // stamped 80 ms from down to up: unstamped, the finger stays down for as long as the page takes to answer between the
+    // two sends, which on CI's software GL is past a tap's 350 ms
+    const tap = async (at: Box, between = async () => {}) => {
+      const timestamp = Date.now() / 1000;
+      await tab.call("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...at, id: 1 }], timestamp });
+      await between();
+      await tab.call("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: timestamp + 0.08 });
+    };
+    const drawn = () => page("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
 
     await until(tab, "!!window.qjam && !!window.qjam.state().me.wearing", "the room", 60_000);
     await page("qjam.start()");
@@ -53,14 +61,17 @@ test.skipIf(!hasChrome)("on a phone: walk with the stick, look with a drag, tap 
       qjam.look(Math.atan2(-(s.at[0] - n.x), -(s.at[1] - n.z)), -0.15);
       return s;
     })()`);
+    await drawn(); // the camera is where the walk and the look put it, so the bass is where the tap will find it
     await until(tab, `!!qjam.onScreen(${JSON.stringify(bass.id)})`, "the bass on the screen", 20_000);
     const [bx, by] = (await page<[number, number]>(`qjam.onScreen(${JSON.stringify(bass.id)})`));
     // on a slow phone (or CI's software GL) a long frame lands between the finger down and up: still a tap
-    await touch("touchStart", { x: bx, y: by });
-    await page("void setTimeout(() => { const t = performance.now(); while (performance.now() - t < 600); })");
-    await Bun.sleep(100); // the page is busy now: the finger lifts while it is
-    await touch("touchEnd");
-    await until(tab, `qjam.touch().goal === ${JSON.stringify(bass.id)} || qjam.state().you.seat === ${JSON.stringify(bass.id)}`, "the tap taken", 10_000);
+    await tap({ x: bx, y: by }, async () => {
+      await page("void setTimeout(() => { const t = performance.now(); while (performance.now() - t < 600); })");
+      await Bun.sleep(100); // the page is busy now: the finger lifts while it is
+    });
+    const id = JSON.stringify(bass.id);
+    await waitFor(tab, "the tap taken", `qjam.touch().goal === ${id} || qjam.state().you.seat === ${id}`, 10_000,
+      `({ tapped: [${bx}, ${by}], bass: qjam.onScreen(${id}), touch: qjam.touch(), you: qjam.state().you })`);
     await until(tab, `qjam.state().you.seat === ${JSON.stringify(bass.id)}`, "sat at the bass", 30_000);
 
     // seated: Stand and the keyboard show, the stick doesn't
@@ -79,7 +90,7 @@ test.skipIf(!hasChrome)("on a phone: walk with the stick, look with a drag, tap 
     // the view holds still while you sit at the keys
     const sat = (await me()).yaw;
     await drag({ x: 300, y: 300 }, { x: 150, y: 300 });
-    await page("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
+    await drawn();
     expect((await me()).yaw).toBe(sat);
 
     // Stand gets you up, and the stick is back

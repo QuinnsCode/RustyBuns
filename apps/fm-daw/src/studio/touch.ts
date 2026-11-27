@@ -59,6 +59,8 @@ export class TouchControls {
   private readonly keysEl = document.createElement("div");
   private readonly keyEls = new Map<string, HTMLElement>();
   private shown = "";
+  /** The last finger lifted off the room: how long it was down (ms) and how far it went (px). */
+  private lifted: { ms: number; far: number } | null = null;
   /** Fingers on the room: where each came down, when, and how far it has gone. */
   private readonly fingers = new Map<number, { x: number; y: number; lastX: number; lastY: number; at: number; far: number }>();
   /** Fingers on the keyboard: the key each is on. */
@@ -89,6 +91,7 @@ export class TouchControls {
       const f = this.fingers.get(e.pointerId);
       if (!f) return;
       this.fingers.delete(e.pointerId);
+      this.lifted = { ms: Math.round(e.timeStamp - f.at), far: Math.round(f.far) };
       if (e.type === "pointerup" && f.far < TAP_PX && e.timeStamp - f.at < TAP_MS) hooks.tap(e.clientX, e.clientY);
     };
     canvas.addEventListener("pointerup", lift);
@@ -196,9 +199,9 @@ export class TouchControls {
     this.keysEl.replaceChildren(...els);
   }
 
-  /** For the harness: what shows, the stick, and the keys on the keyboard. */
+  /** For the harness: what shows, the stick, the keys on the keyboard, and the last finger off the room. */
   state() {
     const shows = (el: HTMLElement) => !this.root.hidden && !el.hidden;
-    return { shown: !this.root.hidden, stick: shows(this.stickEl) ? { ...this.stick } : null, stand: shows(this.bar), keys: shows(this.keysEl) ? [...this.keyEls.keys()] : [] };
+    return { shown: !this.root.hidden, stick: shows(this.stickEl) ? { ...this.stick } : null, stand: shows(this.bar), keys: shows(this.keysEl) ? [...this.keyEls.keys()] : [], lifted: this.lifted };
   }
 }
