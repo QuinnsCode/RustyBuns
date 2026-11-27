@@ -655,7 +655,7 @@ function falloff() {
   return ends;
 }
 
-let scallop: THREE.CanvasTexture | null = null, footFloor: THREE.CanvasTexture | null = null;
+let poolTex: THREE.CanvasTexture | null = null, scallop: THREE.CanvasTexture | null = null, footFloor: THREE.CanvasTexture | null = null;
 /**
  * Where each can's light lands (round 16): a downlight near a wall throws a scallop on it, a bright arch whose crown
  * is where the cone first meets the wall, sharpest at that edge and fading down toward the floor, dark above. The
@@ -705,6 +705,28 @@ function pools(def: StudioDef, group: THREE.Group, spots: [number, number][]) {
     foot.rotation.x = -Math.PI / 2; foot.position.set(0, 0.003, 0.06 + 0.225); foot.name = "corner";
     wall.add(foot);
   }
+  // the pool on the floor under each can (round 17): a bright core with a soft edge, a lamp's hot spot where the soft
+  // fill alone reads flat. Just over the rug, so the pool lands on it too; every pool one merged mesh, strength in
+  // vertex colours, each can a little off plumb and its own size
+  poolTex ??= canvasTex(128, (g) => {
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+      const r = Math.hypot(x - 63.5, y - 63.5) / 63.5;
+      const a = r >= 1 ? 0 : 0.55 * Math.exp(-r * r * 9) + 0.45 * (1 - r * r) ** 2.4;
+      g.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`; g.fillRect(x, y, 1, 1);
+    }
+  }, false, 128);
+  poolTex.wrapS = poolTex.wrapT = THREE.ClampToEdgeWrapping;
+  const floorMat = new THREE.MeshBasicMaterial({ vertexColors: true, map: poolTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
+  const discs = new THREE.Group(), lean = mulberry32(6325);
+  for (const [x, z] of spots) {
+    const size = h * (0.6 + lean() * 0.2), geo = new THREE.PlaneGeometry(size, size);
+    const c = tone.clone().multiplyScalar(0.5 + lean() * 0.16);
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(Array.from({ length: geo.getAttribute("position").count }, () => [c.r, c.g, c.b]).flat(), 3));
+    const disc = new THREE.Mesh(geo, floorMat);
+    disc.rotation.x = -Math.PI / 2;
+    discs.add(at(disc, x + (lean() - 0.5) * 0.3, 0.012, z + (lean() - 0.5) * 0.3));
+  }
+  if (discs.children.length) { const merged = flatten(discs); merged.name = "pools"; group.add(merged); }
 }
 
 let glowFrom: THREE.CanvasTexture | null = null;
@@ -1536,9 +1558,10 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     const r = new THREE.Mesh(rim, trim); r.rotation.x = Math.PI / 2; r.position.set(x, h - 0.02, z);
     group.add(c, r);
     if (!lit.has(spot)) { rnd(); rnd(); continue; }
-    // a real can throws a scallop whose edge melts into the wall, each its own: wide and faint (round 12), and no
-    // two aimed quite plumb (a can's gimbal is set by hand), so the scallops land at different heights and leans
-    const l = new THREE.SpotLight(warm.clone().lerp(cool, tint), strength * 0.85, 0, Math.PI * (0.33 + rnd() * 0.06), 0.88 + rnd() * 0.12, 2);
+    // a real can throws a pool with a soft edge, each its own: a 38 to 45 degree cone (round 17; the 60 degree cones
+    // before lit the floor evenly, so the room read flat), and no two aimed quite plumb (a can's gimbal is set by
+    // hand), so the pools and scallops land at different spots and leans
+    const l = new THREE.SpotLight(warm.clone().lerp(cool, tint), strength * 0.85, 0, Math.PI * (0.21 + rnd() * 0.04), 0.6 + rnd() * 0.15, 2);
     l.position.set(x, h - 0.03, z);
     l.target.position.set(x + (aim() - 0.5) * 1.6, 0, z + (aim() - 0.5) * 1.6);
     group.add(l, l.target);
