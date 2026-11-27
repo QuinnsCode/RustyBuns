@@ -57,7 +57,7 @@ import { mountInk } from "./you/ink-view.ts";
 import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
 import { dress, faceLook, type Dressed } from "./faces.ts";
-import { begun, callName, idlePrompt, nextStep, tapeLabel } from "./next.ts";
+import { begun, idlePrompt, nextStep, tapeLabel, towardName } from "./next.ts";
 import { toward } from "./toward.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
@@ -397,7 +397,7 @@ function draw() {
   const arrow = away && ndc ? toward(ndc, away.z > 0) : null;
   $("toward").hidden = !arrow;
   $("toward").classList.toggle("warm", !!next?.to);
-  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = (gear(tgt.gear).speaker && tapeLabel(tgt.key, tgt.gear)) || callName(world, cables, tgt.key); }
+  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = towardName(world, cables, tgt.key); }
   // In view, the outline and the pool, breathing slowly.
   const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 380), seen = !!tgt && !arrow && tgt !== held;
   goal.visible = seen;

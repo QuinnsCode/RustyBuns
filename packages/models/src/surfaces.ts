@@ -81,7 +81,7 @@ export const SURFACES = {
   violet: { dir: "plastic", tile: 0.35, tint: 0x160a2b, roughness: 0.62, metalness: 0, normalScale: 0.9, wear: { chip: 0x8a7656, stipple: 3, scuff: 0.5, matte: 0.74, speck: 1, fleck: 0.8 } },
   /** The Res2 top's own coat: a smooth near-black navy with a satin sheen (as its photo shows it), a fine even
    * texture with no granules, so soft highlights roll along its rounded edges and top, rubbed paler at the edges. */
-  satin: { dir: "plastic", tile: 0.35, tint: 0x15142a, roughness: 0.4, metalness: 0, normalScale: 0.25, wear: { chip: 0x6e6a78, stipple: 0.5, scuff: 0.35, matte: 0.34 } },
+  satin: { dir: "plastic", tile: 0.35, tint: 0x15142a, roughness: 0.32, metalness: 0, normalScale: 0.45, wear: { chip: 0x2c2a44, stipple: 1.0, scuff: 0.45, matte: 0.28 } },
   /** The tri-amp rig's cabinets: TurboBlue, a near-black blue semi-matt textured paint over birch, worn at the edges. */
   turbo: { dir: "plastic", tile: 0.35, tint: 0x0e1422, roughness: 0.82, metalness: 0, normalScale: 0.45, wear: { chip: 0x8a7656, stipple: 0.9, scuff: 0.8, matte: 0.65 } },
 } as const satisfies Record<string, Spec>;
