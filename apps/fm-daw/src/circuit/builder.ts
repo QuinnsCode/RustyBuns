@@ -1,10 +1,11 @@
 // Q Builder's bench, pure: the nets on a pedal's board a scope can sit on, the riff through the pedal with the volts
 // on one of them, and the remake: the board with your parts written into it, as circuit JSON and as tscircuit source
 // (`circuits/<board>.tsx` with your values), retested against the board you played with the same riff.
-// A swap is always a value in the same holes, so the remake keeps the stock board's layout and footprints.
+// A swap is a value in the same holes, so the remake keeps the stock board's layout and footprints; an `Edit` (#6423)
+// changes the circuit itself (a part added, removed, or an end moved to another net), and then the layout has to be routed again.
 // The page is src/builder/main.ts.
 import { Circuit, ModRun, type Mod, type Netlist } from "@rustybuns/gear/circuit";
-import { check, isRecord, obj, oneOf, str } from "@rustybuns/util/guard";
+import { bool, check, isRecord, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { PEDALS, type PedalDef } from "./amps.ts";
 import { BOARDS, CLIPPERS, farads, isClipper, ohms, sockets, swapOptions, type BoardId, type Clipper, type Swaps } from "./circuits.ts";
 import { riff } from "./riff.ts";
@@ -42,11 +43,142 @@ export interface ScopeNet { key: string; node: string; label: string; parts: str
 
 const PortKey = obj({ type: oneOf(["source_port"]), subcircuit_connectivity_map_key: str(400) });
 
-/** Every net on `board` that carries the signal, IN first and OUT last: ground and the supply rails are left out. */
-export function scopeNets(board: BoardId): ScopeNet[] {
-  const json = BOARDS[board], b = readBoard(json);
+// ---- changing the circuit itself ----
+
+/**
+ * A change to the circuit past a part's value (#6423): `add` a resistor, capacitor or diode (`value` in ohms or
+ * farads; a diode is a 1N4148) from net `a` to net `b` (anode to cathode); `remove` a part; or `move` one end of a
+ * part (`pin`: pin1 or pin2, a diode's anode or cathode) to net `to`. Nets are connectivity keys, as a schematic
+ * trace carries them. An edit naming a part or net the board doesn't have does nothing.
+ */
+export const Edit = obj({
+  t: oneOf(["add", "remove", "move"]),
+  part: str(12, { re: /^[A-Z]{1,3}\d{1,3}$/ }),
+  kind: opt(oneOf(["res", "cap", "diode"])),
+  value: opt(num(1e-13, 1e9)),
+  a: opt(str(400)), b: opt(str(400)),
+  pin: opt(oneOf(["pin1", "pin2", "anode", "cathode"])), to: opt(str(400)),
+});
+export type Edit = Of<typeof Edit>;
+export type AddKind = "res" | "cap" | "diode";
+
+const SourcePart = obj({ type: oneOf(["source_component"]), source_component_id: str(200), name: str(80), ftype: str(80) });
+const SourcePort = obj({ type: oneOf(["source_port"]), source_port_id: str(200), source_component_id: str(200), name: str(80), subcircuit_connectivity_map_key: opt(str(400)) });
+const SourceNet = obj({ type: oneOf(["source_net"]), name: str(200), is_ground: opt(bool()), subcircuit_connectivity_map_key: opt(str(400)) });
+const FTYPE: Record<AddKind, string> = { res: "simple_resistor", cap: "simple_capacitor", diode: "simple_diode" };
+const TWO_PIN = new Set(Object.values(FTYPE));
+
+/** `els` without the parts named in `names`: their components, their pins, and the traces that reach those pins. */
+function without(els: unknown[], names: (id: unknown) => boolean): unknown[] {
+  const gone = new Set<unknown>(), gonePorts = new Set<unknown>();
+  for (const e of els) if (isRecord(e) && e.type === "source_component" && names(e)) gone.add(e.source_component_id);
+  for (const e of els) if (isRecord(e) && e.type === "source_port" && gone.has(e.source_component_id)) gonePorts.add(e.source_port_id);
+  if (!gone.size) return els;
+  return els.filter((e) => !(isRecord(e) && (gone.has(e.source_component_id) || gonePorts.has(e.source_port_id)
+    || (Array.isArray(e.connected_source_port_ids) && e.connected_source_port_ids.some((p) => gonePorts.has(p))))));
+}
+
+/** Which of a two-pin part's ports a pin name means: pin1 is the anode, pin2 the cathode. */
+const portIs = (pin: string, port: { name: string; hints: string[] }) =>
+  port.name === pin || port.hints.includes(pin) || (pin === "anode" && port.name === "pin1") || (pin === "cathode" && port.name === "pin2");
+
+/**
+ * `board`'s circuit JSON with `edits` made to it, in order. An added part gets a component and two pins on the nets
+ * it names; a removed one loses its pins and the traces to them (the nets stay, on the pins of the other parts); a
+ * moved end takes the other net's key, and the traces drawn to it go (they were drawn to the old net).
+ */
+export function editedJson(board: BoardId, edits: readonly Edit[] = []): unknown[] {
+  let els: unknown[] = Array.isArray(BOARDS[board]) ? [...BOARDS[board]] : [];
+  if (!edits.length) return els;
+  const keys = () => new Set(els.flatMap((e) => { const p = check(SourcePort, e); return p?.subcircuit_connectivity_map_key ? [p.subcircuit_connectivity_map_key] : []; }));
+  const comp = (name: string) => els.map((e) => check(SourcePart, e)).find((c) => c?.name === name) ?? null;
+  for (const e of edits) {
+    if (e.t === "remove") els = without(els, (c) => isRecord(c) && c.name === e.part);
+    else if (e.t === "add" && e.kind && e.a && e.b && !comp(e.part)) {
+      const have = keys();
+      if (!have.has(e.a) || !have.has(e.b) || (e.kind !== "diode" && !e.value)) continue;
+      const id = `source_component_qb_${e.part}`, value = e.value ?? 0;
+      els.push(
+        { type: "source_component", source_component_id: id, ftype: FTYPE[e.kind], name: e.part,
+          ...(e.kind === "res" ? { resistance: value, display_resistance: `${ohms(value)}Ω` } : e.kind === "cap" ? { capacitance: value, display_capacitance: farads(value) } : {}) },
+        { type: "source_port", source_port_id: `${id}_1`, source_component_id: id, name: "pin1", pin_number: 1, port_hints: ["pin1", "anode", "pos", "left", "1"], subcircuit_connectivity_map_key: e.a },
+        { type: "source_port", source_port_id: `${id}_2`, source_component_id: id, name: "pin2", pin_number: 2, port_hints: ["pin2", "cathode", "neg", "right", "2"], subcircuit_connectivity_map_key: e.b },
+      );
+    } else if (e.t === "move" && e.pin && e.to && keys().has(e.to)) {
+      const c = comp(e.part);
+      if (!c || !TWO_PIN.has(c.ftype)) continue;
+      const pin = e.pin;
+      let moved: unknown = null;
+      els = els.map((x) => {
+        if (!isRecord(x) || x.type !== "source_port" || x.source_component_id !== c.source_component_id || moved) return x;
+        const hints = Array.isArray(x.port_hints) ? x.port_hints.filter((h) => typeof h === "string") : [];
+        if (!portIs(pin, { name: typeof x.name === "string" ? x.name : "", hints })) return x;
+        moved = x.source_port_id;
+        return { ...x, subcircuit_connectivity_map_key: e.to };
+      });
+      els = els.filter((x) => !(isRecord(x) && x.type === "source_trace" && Array.isArray(x.connected_source_port_ids) && x.connected_source_port_ids.includes(moved)));
+    }
+  }
+  return els;
+}
+
+/** A part on a changed board an edit can reach: a resistor, capacitor or diode (pots are knobs), its value and the net each end is on. */
+export interface EditPart { name: string; kind: AddKind; value: string; ends: { pin: "pin1" | "pin2"; key: string }[] }
+
+/** The resistors, capacitors and diodes on `board` with `edits` made, in board order: what can be removed or rewired. */
+export function editParts(board: BoardId, edits: readonly Edit[] = []): EditPart[] {
+  const els = editedJson(board, edits), b = readBoard(els);
+  const ports = els.map((e) => check(SourcePort, e)).filter((p) => p !== null);
+  return els.flatMap((e) => {
+    const c = check(SourcePart, e);
+    const kind = c && (Object.keys(FTYPE) as AddKind[]).find((k) => FTYPE[k] === c.ftype);
+    if (!c || !kind || c.name.startsWith("RV")) return [];
+    const p = b.parts.find((x) => x.name === c.name);
+    const value = p?.kind === "R" ? `${ohms(p.ohms)}Ω` : p?.kind === "C" ? farads(p.farads) : "diode";
+    const ends = (["pin1", "pin2"] as const).map((pin) => ({ pin, key: ports.find((q) => q.source_component_id === c.source_component_id && q.name === pin)?.subcircuit_connectivity_map_key ?? "" }));
+    return [{ name: c.name, kind, value, ends }];
+  });
+}
+
+/** The name the next added part of `kind` takes: the lowest free R, C or D number on the board as changed. */
+export function nextName(board: BoardId, edits: readonly Edit[], kind: AddKind): string {
+  const letter = kind === "res" ? "R" : kind === "cap" ? "C" : "D";
+  const taken = new Set(editedJson(board, edits).flatMap((e) => { const c = check(SourcePart, e); return c ? [c.name] : []; }));
+  let n = 1;
+  while (taken.has(`${letter}${n}`)) n++;
+  return `${letter}${n}`;
+}
+
+/** The nets an added part's ends can go to: every signal net (`scopeNets`) and ground, by connectivity key. */
+export function editNets(board: BoardId, edits: readonly Edit[] = []): { key: string; label: string }[] {
+  const els = editedJson(board, edits);
+  const gnd = els.map((e) => check(SourceNet, e)).find((n) => n?.is_ground && n.subcircuit_connectivity_map_key);
+  return [...scopeNets(board, edits).map((n) => ({ key: n.key, label: n.label })), ...(gnd?.subcircuit_connectivity_map_key ? [{ key: gnd.subcircuit_connectivity_map_key, label: "GND" }] : [])];
+}
+
+/** A part's value as typed: "10k", "4.7u", "100n", "22p", "1M", "470" (ohms or farads, a trailing Ω or F dropped). NaN when it isn't one. */
+export function parseValue(text: string): number {
+  const m = /^\s*(\d+(?:\.\d+)?|\.\d+)\s*([pnuµmkKM]?)\s*(?:Ω|ohms?|F)?\s*$/i.exec(text);
+  if (!m) return NaN;
+  const scale: Record<string, number> = { p: 1e-12, n: 1e-9, u: 1e-6, µ: 1e-6, m: 1e-3, k: 1e3, K: 1e3, M: 1e6, "": 1 };
+  return Number(m[1]) * (scale[m[2]] ?? scale[m[2].toLowerCase()] ?? NaN);
+}
+
+/** The edits in a line: "added C5 100nF from R3 · D3 · D4 · R4 to GND, removed R2, moved D3's cathode to OUT". */
+export function editLine(board: BoardId, edits: readonly Edit[]): string {
+  const labels = new Map<string, string>();
+  for (let i = 0; i <= edits.length; i++) for (const n of editNets(board, edits.slice(0, i))) if (!labels.has(n.key)) labels.set(n.key, n.label);
+  const net = (k: string | undefined) => labels.get(k ?? "") ?? "a net";
+  return edits.map((e) => e.t === "remove" ? `removed ${e.part}`
+    : e.t === "move" ? `moved ${e.part}'s ${e.pin} to ${net(e.to)}`
+    : `added ${e.part} ${e.kind === "diode" ? "diode" : printed(e.kind === "res" ? "res" : "cap", e.value ?? 0)} from ${net(e.a)} to ${net(e.b)}`).join(", ");
+}
+
+/** Every net on `board` (with `edits` made) that carries the signal, IN first and OUT last: ground and the supply rails are left out. */
+export function scopeNets(board: BoardId, edits: readonly Edit[] = []): ScopeNet[] {
+  const json = editedJson(board, edits), b = readBoard(json);
   const keys = new Set<string>();
-  for (const e of Array.isArray(json) ? json : []) { const p = check(PortKey, e); if (p) keys.add(p.subcircuit_connectivity_map_key); }
+  for (const e of json) { const p = check(PortKey, e); if (p) keys.add(p.subcircuit_connectivity_map_key); }
   const out: ScopeNet[] = [];
   for (const key of keys) {
     const node = b.node(key);
@@ -101,8 +233,12 @@ export function restAt(input: Float32Array): number {
   return Math.max(0, Math.min(input.length - WINDOW, at - WINDOW / 4));
 }
 
-/** How a wave on a net swings: its peak volts either way, and the share of its time spent within 10% of a peak (a clipped wave sits there). */
-export function swing(wave: Float32Array): { hi: number; lo: number; flat: number } {
+/**
+ * How a wave on a net swings: its peak volts either way, the share of its time spent within 10% of a peak (a clipped
+ * wave sits there), and its top end: how steep it moves against how big it is (the RMS of its step from one sample to
+ * the next over its own RMS, times 100). A capacitor that rounds the wave's edges brings `top` down.
+ */
+export function swing(wave: Float32Array): { hi: number; lo: number; flat: number; top: number } {
   let hi = 0, lo = 0;
   for (const v of wave) { if (v > hi) hi = v; if (v < lo) lo = v; }
   let flat = 0, loud = 0;
@@ -111,7 +247,9 @@ export function swing(wave: Float32Array): { hi: number; lo: number; flat: numbe
     loud++;
     if ((v > 0 && v > 0.9 * hi) || (v < 0 && v < 0.9 * lo)) flat++;
   }
-  return { hi, lo, flat: loud ? flat / loud : 0 };
+  let sq = 0, dsq = 0;
+  for (let i = 0; i < wave.length; i++) { sq += wave[i] * wave[i]; if (i) dsq += (wave[i] - wave[i - 1]) ** 2; }
+  return { hi, lo, flat: loud ? flat / loud : 0, top: sq > 0 ? 100 * Math.sqrt(dsq / sq) : 0 };
 }
 
 /** What sits in each diode of a clipper the player changed, by part name. */
@@ -132,15 +270,10 @@ const printed = (kind: "res" | "cap", v: number) => (kind === "res" ? ohms(v) : 
  * value, each changed diode its part number (`DIODE_PARTS`), and an emptied clipper socket leaves the board with its
  * pins and traces. Read back (`readBoard`), it plays as the board you swapped parts on.
  */
-export function remakeJson(board: BoardId, swaps: Swaps): unknown[] {
+export function remakeJson(board: BoardId, swaps: Swaps, edits: readonly Edit[] = []): unknown[] {
   const values = swapOptions(board, swaps).values ?? {}, diodes = diodeChoices(board, swaps);
-  const els: unknown[] = Array.isArray(BOARDS[board]) ? BOARDS[board] : [];
-  const gone = new Set<unknown>(), gonePorts = new Set<unknown>();
-  for (const e of els) if (isRecord(e) && e.type === "source_component" && typeof e.name === "string" && diodes.get(e.name) === "none") gone.add(e.source_component_id);
-  for (const e of els) if (isRecord(e) && e.type === "source_port" && gone.has(e.source_component_id)) gonePorts.add(e.source_port_id);
-  const touches = (e: unknown) => isRecord(e) && (gone.has(e.source_component_id) || gonePorts.has(e.source_port_id)
-    || (Array.isArray(e.connected_source_port_ids) && e.connected_source_port_ids.some((p) => gonePorts.has(p))));
-  return els.filter((e) => !touches(e)).map((e) => {
+  const els = without(editedJson(board, edits), (e) => isRecord(e) && typeof e.name === "string" && diodes.get(e.name) === "none");
+  return els.map((e) => {
     if (!isRecord(e) || e.type !== "source_component" || typeof e.name !== "string") return e;
     const v = values[e.name], d = diodes.get(e.name);
     if (v !== undefined && e.ftype === "simple_resistor") return { ...e, resistance: v, display_value: `${printed("res", v)}Ω` };
@@ -151,14 +284,38 @@ export function remakeJson(board: BoardId, swaps: Swaps): unknown[] {
 }
 
 /** What the player changed, in a line: "D3 D4 LED (LED-RED-3MM), R3 4.7k". Empty for the stock board. */
-export function changes(board: BoardId, swaps: Swaps): string {
+export function changes(board: BoardId, swaps: Swaps, edits: readonly Edit[] = []): string {
   const values = swapOptions(board, swaps).values ?? {};
-  return sockets(board).flatMap((s) => {
+  const removed = new Set(edits.filter((e) => e.t === "remove").map((e) => e.part));
+  return [...sockets(board).filter((s) => !s.parts.every((p) => removed.has(p))).flatMap((s) => {
     const v = swaps[s.id];
     if (s.kind === "clipper") return isClipper(v) ? [`${s.parts.join(" ")} ${CLIPPERS[v].label}${CLIPPERS[v].part ? ` (${CLIPPERS[v].part})` : " (left empty)"}`] : [];
     const to = values[s.id];
     return to === undefined || to === (s.kind === "cap" ? s.farads : s.ohms) ? [] : [`${s.id} ${printed(s.kind, to)}`];
-  }).join(", ");
+  }), ...(edits.length ? [editLine(board, edits)] : [])].join(", ");
+}
+
+/** A port's place in tscircuit source: `.R3 > .pin2`, `.U1 > .OUT`. */
+const selector = (part: string, port: string) => `.${part} > .${port}`;
+
+/**
+ * The board's traces written again from `els`' nets: each pin on a named net (IN, GND, OUT, the rails) to `net.NAME`,
+ * and each other net's pins to its first pin. A changed circuit's source can't keep the stock traces, which were
+ * drawn to pins that may have gone or moved.
+ */
+function tracesOf(els: unknown[]): string[] {
+  const names = new Map<string, string>(), named = new Map<string, string>();
+  for (const e of els) { const c = check(SourcePart, e); if (c) names.set(c.source_component_id, c.name); }
+  for (const e of els) { const n = check(SourceNet, e); if (n?.subcircuit_connectivity_map_key) named.set(n.subcircuit_connectivity_map_key, n.name); }
+  const first = new Map<string, string>(), out: string[] = [];
+  for (const e of els) {
+    const p = check(SourcePort, e), part = p && names.get(p.source_component_id), key = p?.subcircuit_connectivity_map_key;
+    if (!p || !part || !key) continue;
+    const at = selector(part, p.name), net = named.get(key), to = net ? `net.${net}` : first.get(key);
+    if (!to) { first.set(key, at); continue; }
+    out.push(`    <trace from="${at}" to="${to}" />`);
+  }
+  return out;
 }
 
 /**
@@ -167,9 +324,30 @@ export function changes(board: BoardId, swaps: Swaps): string {
  * and traces with nothing fitted (`doNotPlace`). Open it in tscircuit to route it again or order it; the layout and
  * footprints are the stock board's.
  */
-export function remakeTsx(board: BoardId, tsx: string, swaps: Swaps, name: string): string {
+export function remakeTsx(board: BoardId, tsx: string, swaps: Swaps, name: string, edits: readonly Edit[] = []): string {
   const values = swapOptions(board, swaps).values ?? {}, diodes = diodeChoices(board, swaps);
-  const lines = tsx.split("\n").map((l) => {
+  const els = editedJson(board, edits);
+  const on = new Set(els.flatMap((e) => { const c = check(SourcePart, e); return c ? [c.name] : []; }));
+  let src = tsx.split("\n");
+  if (edits.length) {
+    // A changed circuit: removed parts go, added ones come in after the last part, and the traces are written again.
+    const isPart = (l: string) => /^\s*<(resistor|capacitor|diode|chip|potentiometer|inductor|transistor)\s/.test(l);
+    const partName = (l: string) => /\sname="([^"]+)"/.exec(l)?.[1];
+    const added = edits.flatMap((e) => (e.t === "add" && e.kind && on.has(e.part) && !src.some((l) => isPart(l) && partName(l) === e.part) ? [e] : []))
+      .filter((e, i, all) => all.findIndex((x) => x.part === e.part) === i)
+      .map((e) => e.kind === "res" ? `    <resistor name="${e.part}" resistance="${printed("res", e.value ?? 0)}" footprint="0603" />`
+        : e.kind === "cap" ? `    <capacitor name="${e.part}" capacitance="${printed("cap", e.value ?? 0)}" footprint="0603" />`
+        : `    <diode name="${e.part}" footprint="sod123" />`);
+    const lastPart = src.findLastIndex(isPart), traces = tracesOf(els);
+    const kept = src.flatMap((l, i) => {
+      if (/^\s*<trace\s/.test(l)) return [];
+      if (isPart(l) && !on.has(partName(l) ?? "")) return [];
+      return i === lastPart ? [l, ...added] : [l];
+    });
+    const close = kept.findLastIndex((l) => /^\s*<\/board>/.test(l));
+    src = close < 0 ? [...kept, ...traces] : [...kept.slice(0, close), ...traces, ...kept.slice(close)];
+  }
+  const lines = src.map((l) => {
     const name = /<(resistor|capacitor|diode)\s+name="([^"]+)"/.exec(l);
     if (!name) return l;
     const [, kind, part] = name, v = values[part], d = diodes.get(part);
@@ -179,8 +357,11 @@ export function remakeTsx(board: BoardId, tsx: string, swaps: Swaps, name: strin
     if (kind === "diode" && d) return l.replace(`name="${part}"`, `name="${part}" manufacturerPartNumber="${CLIPPERS[d].part}"`);
     return l;
   });
-  const what = changes(board, swaps);
-  return [`// Your ${name}, remade in Q Builder${what ? `: ${what}` : ", stock"}. Same holes and footprints as the stock board.`, ...lines].join("\n");
+  const what = changes(board, swaps, edits);
+  const layout = edits.length
+    ? "New parts or wiring: the stock board's layout and Gerbers don't fit this circuit. Route a new layout in tscircuit before you order it."
+    : "Same holes and footprints as the stock board.";
+  return [`// Your ${name}, remade in Q Builder${what ? `: ${what}` : ", stock"}. ${layout}`, ...lines].join("\n");
 }
 
 /** The remake retested: the riff through your board, its remake and the stock board. */
@@ -200,10 +381,10 @@ const rms = (w: Float32Array) => Math.sqrt(w.reduce((s, v) => s + v * v, 0) / Ma
 const db = (r: number) => (r > 0 ? 20 * Math.log10(r) : -Infinity);
 
 /** Plays the same riff through your board (`def` at `drive` with `swaps`), through the remake read back, and through the stock board. */
-export function retest(def: PedalDef & { board: BoardId }, drive: number, swaps: Swaps, input = theRiff()): Retest {
+export function retest(def: PedalDef & { board: BoardId }, drive: number, swaps: Swaps, input = theRiff(), edits: readonly Edit[] = []): Retest {
   const mods = def.mods?.(drive);
-  const yours = play(def.net(drive, swaps), input, undefined, mods), stock = play(def.net(drive), input, undefined, mods);
-  const remade = play(def.net(drive, {}, remakeJson(def.board, swaps)), input, undefined, mods);
+  const yours = play(def.net(drive, swaps, edits.length ? editedJson(def.board, edits) : undefined), input, undefined, mods), stock = play(def.net(drive), input, undefined, mods);
+  const remade = play(def.net(drive, {}, remakeJson(def.board, swaps, edits)), input, undefined, mods);
   let apart = 0;
   for (let i = 0; i < input.length; i++) apart = Math.max(apart, Math.abs(yours.out[i] - remade.out[i]));
   const diff = yours.out.map((v, i) => v - stock.out[i]);

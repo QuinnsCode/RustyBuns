@@ -102,8 +102,11 @@ export function sockets(board: BoardId): Socket[] {
 export const isClipper = (v: string | undefined): v is Clipper => v !== undefined && Object.hasOwn(CLIPPERS, v);
 const isStep = (v: string | undefined): v is (typeof STEPS)[number] => STEPS.some((s) => s === v);
 
-/** The board options a set of swaps comes to. Unknown sockets and choices are ignored. */
-export function swapOptions(board: BoardId, swaps: Swaps = {}): Pick<BoardOptions, "values" | "diodes"> {
+/**
+ * The board options a set of swaps comes to. Unknown sockets and choices are ignored, and so is a swapped part that
+ * isn't on `json` (a changed circuit in Q Builder that took it off).
+ */
+export function swapOptions(board: BoardId, swaps: Swaps = {}, json?: unknown): Pick<BoardOptions, "values" | "diodes"> {
   const values: Record<string, number> = {}, diodes: Record<string, Junction | null> = {};
   for (const s of sockets(board)) {
     const v = swaps[s.id];
@@ -111,12 +114,15 @@ export function swapOptions(board: BoardId, swaps: Swaps = {}): Pick<BoardOption
     if (s.kind === "cap" && isStep(v)) values[s.id] = stepValue(s.farads, Number(v));
     if (s.kind === "res" && isStep(v)) values[s.id] = stepValue(s.ohms, Number(v));
   }
-  return { values, diodes };
+  if (json === undefined || json === BOARDS[board]) return { values, diodes };
+  const on = new Set(readBoard(json).parts.map((p) => p.name));
+  const kept = <T>(r: Record<string, T>) => Object.fromEntries(Object.entries(r).filter(([k]) => on.has(k)));
+  return { values: kept(values), diodes: kept(diodes) };
 }
 
 /** `json` reads another copy of the board in place of `BOARDS[board]`: a remake of it (Q Builder's retest). */
 const pedal = (board: BoardId, pot: number, swaps?: Swaps, o: BoardOptions = {}, json: unknown = BOARDS[board]): Netlist => {
-  const s = swapOptions(board, swaps);
+  const s = swapOptions(board, swaps, json);
   return boardToNetlist(json, { ...o, diodes: s.diodes, values: { ...s.values, RV1: pot } });
 };
 

@@ -93,5 +93,8 @@ export function bench(json: unknown, o: BoardOptions & { name?: string } = {}): 
   return { ok: true, pedal: { gear, knobs, net } };
 }
 
-/** Why one of the app's pedals won't play with the player's parts in it (none: it plays), its knob down, centred and up. */
-export const swapWontPlay = (def: PedalDef, swaps: Swaps): string[] => wontPlay((t) => def.net(t * 10, swaps));
+/**
+ * Why one of the app's pedals won't play with the player's parts in it (none: it plays), its knob down, centred and up.
+ * `json` is a changed copy of its board (Q Builder's added, removed and rewired parts).
+ */
+export const swapWontPlay = (def: PedalDef, swaps: Swaps, json?: unknown): string[] => wontPlay((t) => def.net(t * 10, swaps, json));

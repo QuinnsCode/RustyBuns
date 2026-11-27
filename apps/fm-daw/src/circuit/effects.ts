@@ -12,7 +12,7 @@ import { BOARDS, swapOptions, type EffectBoard, type Swaps } from "./circuits.ts
 const OPAMPS = ["U1", "U2", "U3", "U4", "U5", "U6"];
 const each = (names: string[], ctl: string, hi: number, lo: number) => Object.fromEntries(names.map((n) => [n, { ctl, hi, lo }]));
 const effect = (board: EffectBoard, swaps: Swaps | undefined, json: unknown, o: BoardOptions): Netlist => {
-  const s = swapOptions(board, swaps);
+  const s = swapOptions(board, swaps, json);
   return boardToNetlist(json ?? BOARDS[board], { ...o, diodes: s.diodes, values: { ...s.values, ...o.values } });
 };
 
