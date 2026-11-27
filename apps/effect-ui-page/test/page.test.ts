@@ -7,7 +7,7 @@ import { apply, starter } from "../src/page.ts";
 import { connectLines, CopyText, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
-const props = { room: "testroom0001", origin: "http://localhost", initial: starter };
+const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false };
 const run = <A>(e: Effect.Effect<A, never, import("effect").Scope.Scope>) => Effect.runPromise(Effect.scoped(e));
 
 describe("an agent's tool call", () => {
@@ -79,4 +79,13 @@ test("a copy button copies its agent's line for this room, and says so", () =>
       .expectExact(CopyText)
       .resolve(CopyText, PageMessage.CompletedCopy({ what: "Claude Code" }))
       .expect(HtmlLocator.role("button", { name: "Copied the Claude Code line" })).toExist();
+  })));
+
+test("Full screen puts the dock away and Show dock brings it back", () =>
+  run(Effect.gen(function* () {
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, props);
+    s.click(HtmlLocator.role("button", { name: "Full screen" }))
+      .expect(HtmlLocator.role("button", { name: "Show dock" })).toExist();
+    s.click(HtmlLocator.role("button", { name: "Show dock" }))
+      .expect(HtmlLocator.role("button", { name: "Full screen" })).toExist();
   })));
