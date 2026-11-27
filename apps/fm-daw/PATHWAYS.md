@@ -19,7 +19,7 @@ Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.
 | BUILD | [QDAW](#2-build-qdaw) | A music maker in the browser is a toy, or an install and an account first | bedroom producers | `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | BUILD | [Q Instruments](#4-build-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
 | BUILD | [Q Amps](#6-build-q-amps-and-q-builder) | Amp sims are black boxes: you can't see why a pedal sounds the way it does | guitarists, speaker DIYers | `/amp.html`, Q Amp; `/speakers.html` | Yes: an amp and pedals solved as circuits; speaker boxes from the makers' drawings |
-| BUILD | [Q Builder](#6-build-q-amps-and-q-builder) | A DIY kit is a parts list with no feedback: it hums and you can't tell which part did it | pedal and synth DIYers, EE students | `/amp.html`, B on a pedal (its board and build sheet) | Mostly: change parts, scope a net, remake and retest, see the board drawn from its Gerbers, print it, download the Gerbers or the kit; layout changes still happen in the repo |
+| BUILD | [Q Builder](#6-build-q-amps-and-q-builder) | A DIY kit is a parts list with no feedback: it hums and you can't tell which part did it | pedal and synth DIYers, EE students | `/amp.html`, B on a pedal (its board and build sheet) | Mostly: change parts, add, remove or rewire parts, scope a net, remake and retest, see the board drawn from its Gerbers, print it, download the Gerbers or the kit; a new layout for a changed circuit is still routed in the repo |
 | PLAY | [The Event](#3-play-the-event) | A plan is a drawing until someone stands in it; a far-away crowd gets a flat stream | the band, the client, the crowd | `/jam.html`, the lobby (sign in, make a room) | Yes indoors: invite link, guest list, the room's PA from where you stand |
 
 All of them share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
@@ -205,7 +205,12 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
    module is a real circuit solved as you play ([CIRCUITS.md](CIRCUITS.md), [WALL.md](WALL.md)).
 2. Change it: open the board view, click a part and pick another: a clipper's diodes, a capacitor's or a resistor's
    value (a step up or down, the nearest part you can buy). The bench plays it with the knob down, centred and up
-   first, and turns a change away with the reason if it won't solve. Your parts stay with that pedal.
+   first, and turns a change away with the reason if it won't solve. Your parts stay with that pedal. On
+   `/builder.html`, **Change the circuit** goes past values ([#6423](https://github.com/QuinnsCode/RustyBuns/issues/6423)):
+   add a resistor, capacitor or diode between two nets (From starts on the scope's net), take a part off, or move one
+   of its ends to another net. The same bench check runs first; the scope, Play and the remake follow. A 100nF from
+   the fuzz's clipping diodes to ground takes that net's top end from about 50 to 16. These changes are Q Builder's
+   own (not on Q Amp's pedal yet), and the schematic stays the stock drawing, with the changes listed beside it.
 3. Bring your own board: drop a tscircuit board's circuit JSON on Q Amp's floor; the bench checks it solves, then it is the fourth pedal.
 4. Scope it (`/builder.html`): click a trace on the schematic, or a net in the list, and the scope shows the volts there while
    the riff plays through the circuit (and at its loudest note when nothing plays), with how far it swings and how
@@ -215,8 +220,10 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
    your board, and says whether they match, and how far yours is from the stock board (`src/circuit/builder.ts`).
 5. Build it: Q Builder's Build it card (or B on Q Amp) shows the board from its Gerbers and prints the sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
    number for every part), the front panel and a plain-words build sheet (`src/kit/`). `bom.csv` and `order.csv`
-   carry your parts. A change is always a value in the same holes, so the Gerbers stay the stock board's, and the
-   sheet says so.
+   carry your parts. A swap is a value in the same holes, so the Gerbers stay the stock board's, and the
+   sheet says so. A changed circuit (a part added, removed or rewired) doesn't fit the stock board: Build it says it
+   needs a new layout and holds back the Gerbers and the kit, and the remade `-yours.tsx` has its traces written again
+   from the new nets, to route in tscircuit.
 6. Order it: send the Gerbers to a fab, upload `order.csv` to a parts shop.
 7. Close the loop: record the built board, play the same riff through the sim, compare.
 
@@ -224,8 +231,9 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
 circuit on its own thread, not your guitar through Q Amp's audio thread, and only the clip pedals are on `/builder.html`.
 
 **Missing:**
-- Changing the layout or a footprint (a new part, a bigger cap) happens in the repo (`circuits/<board>.tsx`, then
-  `bun scripts/boards.ts <board>`), not in the app. tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
+- Routing a new layout for a changed circuit (or a new footprint) happens in the repo (`circuits/<board>.tsx` from
+  the remake, then `bun scripts/boards.ts <board>`), not in the app. The schematic doesn't redraw a changed circuit,
+  and Q Amp's pedal plays the stock circuit with your swaps, not Q Builder's added or rewired parts. tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
 - A board dropped on the bench plays and turns its knobs, but has no board view yet, so its parts can't be changed in the app.
 - No board has been built yet, so step 7 has never run. A prototype order is the owner's call, with its price.
 - Selling kits or built boards needs owner decisions first (compliance, the hardware licence, price per board: [ANALOG.md](ANALOG.md#8-from-the-screen-to-your-hands)).

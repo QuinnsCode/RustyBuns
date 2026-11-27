@@ -10,7 +10,7 @@ import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./builder.css";
-import { check, obj, or, rec, str } from "@rustybuns/util/guard";
+import { arr, check, obj, or, rec, str } from "@rustybuns/util/guard";
 import { BoardView, fit, svgOf } from "../amp/board.ts";
 import { mockup, type BoardSide, type Mockup } from "../kit/gerber.ts";
 import { gerbers, kitId, kitZip, sheetOf, type KitFiles } from "../kit/kit.ts";
@@ -19,20 +19,24 @@ import { zip } from "../kit/zip.ts";
 import { h, iconButton } from "../amp/dom.ts";
 import { icon } from "../amp/icons.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
-import { BUILDER_PEDALS, INPUT_VOLTS, SR, WINDOW, builderPedal, changes, isBuilderPedal, remakeJson, remakeTsx, restAt, scopeNets, theRiff, type BuilderPedal, type Retest, type ScopeNet } from "../circuit/builder.ts";
+import { BUILDER_PEDALS, Edit, INPUT_VOLTS, SR, WINDOW, builderPedal, changes, editLine, editNets, editParts, editedJson, isBuilderPedal, nextName, parseValue, remakeJson, remakeTsx, restAt, scopeNets, swing, theRiff, type AddKind, type BuilderPedal, type Retest, type ScopeNet } from "../circuit/builder.ts";
 import type { Swaps } from "../circuit/circuits.ts";
 import { onParts, readParts, writeParts } from "../amp/parts-store.ts";
 import type { BenchReply, Unsent } from "./messages.ts";
 
-/** The page's own: the pedal open and the net the scope sits on, per pedal. The knobs and swaps are Q Amp's. */
+/**
+ * The page's own: the pedal open, the net the scope sits on, and the changes to each pedal's circuit (parts added,
+ * removed, ends moved: `Edit`). The knobs and swaps are Q Amp's.
+ */
 const KEY = "qbuilder:v1";
 const Saved = obj({
   pedal: or(str(12), "fuzz"),
   probe: or(rec(str(400), 16), {}),
+  edits: or(rec(arr(Edit, 64, { drop: true }), 16), {}),
 });
 const S = (() => {
   try { return check(Saved, JSON.parse(localStorage.getItem(KEY) ?? "{}")) ?? check(Saved, {}); } catch { return check(Saved, {}); }
-})() ?? { pedal: "fuzz", probe: {} };
+})() ?? { pedal: "fuzz", probe: {}, edits: {} };
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } };
 
 const TSX = import.meta.glob<string>("../../circuits/*.tsx", { query: "?raw", import: "default" });
@@ -40,7 +44,7 @@ const TSX = import.meta.glob<string>("../../circuits/*.tsx", { query: "?raw", im
 let pedal: BuilderPedal = isBuilderPedal(S.pedal) ? S.pedal : "fuzz";
 let nets: ScopeNet[] = [];
 let probe: ScopeNet | null = null;
-let wave: { out: Float32Array; at: Float32Array; swing: { hi: number; lo: number; flat: number }; misses: number } | null = null;
+let wave: { out: Float32Array; at: Float32Array; swing: ReturnType<typeof swing>; misses: number } | null = null;
 let result: Retest | null = null;
 let busy = 0, retesting = false, why = "";
 let parts = readParts();
@@ -48,6 +52,9 @@ let parts = readParts();
 const def = () => builderPedal(pedal);
 const drive = () => parts.drive[pedal] ?? 5;
 const swaps = (): Swaps => parts.swaps[pedal] ?? {};
+const edits = (): Edit[] => S.edits[pedal] ?? [];
+/** The open board as changed, for the bench; undefined while it is the stock circuit. */
+const json = (e = edits()) => (e.length ? editedJson(def().board, e) : undefined);
 
 // ---- the page ----
 const app = h("main", "qb");
@@ -86,6 +93,31 @@ const remake = h("section", "qb-card", h("div", "qb-card-top", icon("workflow", 
   h("p", "qb-hint", "Writes your parts into the board, then plays the same riff through the remake and your board and compares them."),
   retestBtn, retestOut, files);
 
+// Change the circuit (#6423): add a resistor, capacitor or diode between two nets, take a part off, or move one of
+// its ends to another net. The bench checks it still plays first; the scope, Play and the remake follow.
+const addKind = h("select", "qb-sel");
+for (const [v, t] of [["cap", "Capacitor"], ["res", "Resistor"], ["diode", "Diode"]]) { const o = h("option", "", t); o.value = v; addKind.append(o); }
+addKind.setAttribute("aria-label", "The part to add");
+const addValue = h("input", "qb-val");
+addValue.value = "100n"; addValue.setAttribute("aria-label", "Its value: 10k, 100n, 4.7u"); addValue.placeholder = "100n";
+addKind.addEventListener("change", () => { addValue.disabled = addKind.value === "diode"; addValue.value = addKind.value === "res" ? "10k" : "100n"; });
+const netSelect = (label: string) => { const x = h("select", "qb-sel"); x.setAttribute("aria-label", label); return x; };
+const addFrom = netSelect("From net"), addTo = netSelect("To net");
+const addBtn = iconButton("plus", "Add the part between the two nets", () => {
+  const kind = addKind.value === "res" || addKind.value === "diode" ? addKind.value : "cap";
+  showEditWhy(addPart(kind, addValue.value, addFrom.value, addTo.value));
+});
+const editWhy = h("p", "qb-read");
+const partList = h("div", "qb-parts");
+const editList = h("ol", "qb-edits");
+const undoAll = h("button", "qb-btn", icon("rotate-ccw", 16), "Stock circuit");
+undoAll.type = "button";
+undoAll.addEventListener("click", () => showEditWhy(setEdits([])));
+const circuit = h("section", "qb-card", h("div", "qb-card-top", icon("split", 16), h("span", "qb-card-title", "Change the circuit")),
+  h("p", "qb-hint", "Add a part between two nets (From starts on the scope's net: click a trace), take one off, or move an end. The schematic stays the stock drawing; your changes are listed here."),
+  h("div", "qb-add", addKind, addValue, addFrom, h("span", "qb-dim", "to"), addTo, addBtn), editWhy, editList, undoAll,
+  h("details", "qb-wiring", h("summary", "", "Parts and wiring"), partList));
+
 // Build it: the board as a fab makes it, drawn from the kit's own Gerbers and drill file (../kit/gerber.ts), a print
 // of the schematic, both sides of the board and the parts with your swaps, and the files to order it with.
 let side: BoardSide = "top", kit: KitFiles = {}, made: Mockup | null = null, kitAsk = 0, kitLoad = Promise.resolve();
@@ -112,7 +144,7 @@ const build = h("section", "qb-card", h("div", "qb-card-top", icon("circuit-boar
 const sheetEl = h("section", "qb-print");
 sheetEl.setAttribute("aria-hidden", "true");
 
-app.append(head, h("div", "qb-body", board.el, h("aside", "qb-side", scope, remake, build)));
+app.append(head, h("div", "qb-body", board.el, h("aside", "qb-side", scope, circuit, remake, build)));
 document.body.append(app, sheetEl);
 
 // ---- the bench thread ----
@@ -132,7 +164,7 @@ async function run(): Promise<void> {
   if (!probe) return;
   const mine = ++latest;
   busy++; paint();
-  const r = await ask({ t: "play", pedal, drive: drive(), swaps: swaps(), node: probe.node });
+  const r = await ask({ t: "play", pedal, drive: drive(), swaps: swaps(), edits: edits(), node: probe.node });
   busy--;
   if (mine !== latest) return paint();
   if (r.t === "play") { wave = r; why = r.misses ? `the solver gave up on ${r.misses} samples` : ""; }
@@ -145,12 +177,13 @@ async function run(): Promise<void> {
 function pick(id: BuilderPedal): void {
   pedal = id; S.pedal = id; save();
   parts = readParts();
-  nets = scopeNets(def().board);
+  nets = scopeNets(def().board, edits());
   // First the net a clipper holds down to ground (no op-amp on it), else one with diodes on it, else what comes out.
   const diodes = (n: ScopeNet) => n.parts.some((p) => p.startsWith("D")) && n.node !== "OUT";
   probe = nets.find((n) => n.key === S.probe[id]) ?? nets.find((n) => diodes(n) && !n.parts.some((p) => p.startsWith("U"))) ?? nets.find(diodes) ?? nets.at(-1) ?? null;
-  wave = null; result = null; files.replaceChildren();
+  wave = null; result = null; files.replaceChildren(); showEditWhy("");
   showBoard();
+  paintCircuit();
   void run();
   kitLoad = loadKit();
 }
@@ -167,15 +200,18 @@ function setSide(s: BoardSide): void { side = s; drawMock(); }
 
 function drawMock(): void {
   made = mockup(kit, side);
-  mock.innerHTML = made?.svg ?? "";
-  mock.hidden = !made;
+  const changed = edits().length > 0;
+  mock.innerHTML = changed ? "" : made?.svg ?? "";
+  mock.hidden = !made || changed;
   const name = def().name;
-  mockRead.textContent = made
+  mockRead.textContent = changed
+    ? `Your circuit has new parts or wiring (${editLine(def().board, edits())}), so ${name}'s stock board doesn't fit it: it needs a new layout. Remake it, route the new board in tscircuit, and order that. Print prints the schematic and your changes.`
+    : made
     ? `${made.size[0]} × ${made.size[1]} mm, two layers, ${made.holes} holes, ${made.pads} pads: drawn from the Gerbers you'd send a board house, ${side === "top" ? "parts side up" : "seen from below"}.`
       + (made.unread.length ? ` Not drawn: ${made.unread.join(", ")}.` : "")
     : `${name} has no board files yet, so there's nothing to order. Print still prints its schematic.`;
-  for (const b of sideBtns) { b.setAttribute("aria-pressed", String(b.dataset.side === side)); b.disabled = !made; }
-  gerberBtn.disabled = kitBtn.disabled = !made;
+  for (const b of sideBtns) { b.setAttribute("aria-pressed", String(b.dataset.side === side)); b.disabled = !made || changed; }
+  gerberBtn.disabled = kitBtn.disabled = !made || changed;
 }
 
 function saveFile(name: string, bytes: Uint8Array<ArrayBuffer>): void {
@@ -200,7 +236,7 @@ async function saveKit(): Promise<void> {
 
 /** Fills the print sheet: the pedal, your changes, the schematic, both sides of the board and the parts. Its headings. */
 async function printSheet(): Promise<string[]> {
-  const d = def(), s = sheetOf(d, kit, swaps()), what = changes(d.board, swaps());
+  const d = def(), s = sheetOf(d, kit, swaps()), what = changes(d.board, swaps(), edits()), changed = edits().length > 0;
   const sch = h("div", "qp-art qp-sch");
   sch.innerHTML = await svgOf(d.board, "schematic");
   const sides = (["top", "bottom"] as const).map((x) => {
@@ -220,8 +256,9 @@ async function printSheet(): Promise<string[]> {
   sheetEl.replaceChildren(
     h("header", "qp-head", h("h1", "", d.name), h("p", "", what ? `Your version: ${what}.` : "Stock parts."), h("p", "qp-dim", d.blurb)),
     h("section", "", h("h2", "", "Schematic"), sch),
-    ...(sides.length ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", `${m?.size.join(" × ")} mm, drawn from the files a board house takes: ${gerbers(kit).join(", ")}.`), h("div", "qp-sides", ...sides))] : []),
-    ...(s.lines.length ? [h("section", "", h("h2", "", "Parts"), table)] : []),
+    ...(changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", "Your circuit has new parts or wiring: the stock board doesn't fit it. Route a new layout in tscircuit before ordering. The schematic above is the stock drawing."))] : []),
+    ...(sides.length && !changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", `${m?.size.join(" × ")} mm, drawn from the files a board house takes: ${gerbers(kit).join(", ")}.`), h("div", "qp-sides", ...sides))] : []),
+    ...(s.lines.length && !changed ? [h("section", "", h("h2", "", "Parts"), table)] : []),
     h("p", "qp-dim", `Q Builder · ${new Date().toLocaleDateString("en-CA")}`),
   );
   fit(sch.querySelector("svg"));
@@ -242,6 +279,7 @@ function setProbe(keyOrLabel: string): boolean {
   probe = n; S.probe[pedal] = n.key; save();
   wave = null;
   board.probe(n.key);
+  addFrom.value = n.key;
   paint();
   void run();
   return true;
@@ -251,7 +289,7 @@ function setProbe(keyOrLabel: string): boolean {
 function swap(socket: string | null, choice: string | null): string {
   const mine = socket === null ? {} : { ...swaps() };
   if (socket !== null) { if (choice === null) delete mine[socket]; else mine[socket] = choice; }
-  const no = swapWontPlay(def(), mine);
+  const no = swapWontPlay(def(), mine, json());
   if (no.length) { showBoard(no.join("; ")); return no.join("; "); }
   writeParts(pedal, drive(), mine);
   parts = readParts();
@@ -259,6 +297,72 @@ function swap(socket: string | null, choice: string | null): string {
   showBoard();
   void run();
   return "";
+}
+
+/** The open pedal's circuit changed to `next` (every edit, in order), once the bench finds it still plays. "" when it took, else why not. */
+function setEdits(next: Edit[]): string {
+  let no: string[];
+  try { no = swapWontPlay(def(), swaps(), json(next)); } catch (err) { no = [err instanceof Error ? err.message : String(err)]; }
+  if (no.length) return `won't play, kept your last circuit: ${no.join("; ")}`;
+  S.edits[pedal] = next; save();
+  nets = scopeNets(def().board, next);
+  probe = nets.find((n) => n.key === probe?.key) ?? nets.at(-1) ?? null;
+  wave = null; result = null; files.replaceChildren();
+  showBoard();
+  paintCircuit();
+  drawMock();
+  void run();
+  return "";
+}
+function showEditWhy(why: string): void { editWhy.textContent = why; editWhy.classList.toggle("warn", !!why); }
+
+/** A net by key, label ("OUT", "GND", "R3 · D3 · D4 · R4") or node, among the nets an end can go to. */
+const netKey = (keyOrLabel: string) => {
+  const n = editNets(def().board, edits()), s = nets.find((x) => x.node === keyOrLabel);
+  return n.find((x) => x.key === keyOrLabel || x.label === keyOrLabel || x.key === s?.key)?.key ?? null;
+};
+
+/** Adds a part of `kind` (value as typed, "100n"; a diode has none) from one net to another (anode to cathode). */
+function addPart(kind: AddKind, value: string | number, from: string, to: string): string {
+  const a = netKey(from), b = netKey(to), v = typeof value === "number" ? value : parseValue(value);
+  if (!a || !b) return `no net ${a ? to : from} on this board`;
+  if (a === b) return "both ends on one net: it would do nothing";
+  if (kind !== "diode" && !(v > 0)) return `"${value}" isn't a value: try 10k, 100n or 4.7u`;
+  const part = nextName(def().board, edits(), kind);
+  return setEdits([...edits(), { t: "add", part, kind, a, b, ...(kind === "diode" ? {} : { value: v }) }]);
+}
+const removePart = (part: string) => setEdits([...edits(), { t: "remove", part }]);
+function moveEnd(part: string, pin: string, to: string): string {
+  const key = netKey(to);
+  if (!key) return `no net ${to} on this board`;
+  if (pin !== "pin1" && pin !== "pin2" && pin !== "anode" && pin !== "cathode") return `no ${pin} on ${part}`;
+  return setEdits([...edits(), { t: "move", part, pin, to: key }]);
+}
+
+/** The card's lists: the edits so far (each one can go), and every part's ends as pick lists with a remove button. */
+function paintCircuit(): void {
+  const b = def().board, all = editNets(b, edits()), e = edits();
+  const options = (sel: HTMLSelectElement, pick: string) => {
+    sel.replaceChildren(...all.map((n) => { const o = h("option", "", n.label); o.value = n.key; return o; }));
+    sel.value = all.some((n) => n.key === pick) ? pick : all[0]?.key ?? "";
+  };
+  options(addFrom, probe?.key ?? ""); options(addTo, all.find((n) => n.label === "GND")?.key ?? "");
+  editList.replaceChildren(...e.map((x, i) => {
+    const drop = iconButton("x", "Undo this change", () => showEditWhy(setEdits(e.filter((_, j) => j !== i))));
+    return h("li", "", h("span", "", editLine(b, e.slice(0, i + 1)).split(", ").at(-1) ?? ""), drop);
+  }));
+  undoAll.hidden = !e.length;
+  partList.replaceChildren(...editParts(b, e).map((p) => {
+    const ends = p.ends.map((end) => {
+      const sel = h("select", "qb-sel");
+      sel.setAttribute("aria-label", `${p.name} ${p.kind === "diode" ? (end.pin === "pin1" ? "anode" : "cathode") : end.pin}`);
+      options(sel, end.key);
+      sel.addEventListener("change", () => showEditWhy(moveEnd(p.name, end.pin, sel.value)));
+      return sel;
+    });
+    const drop = iconButton("trash-2", `Take ${p.name} off the board`, () => showEditWhy(removePart(p.name)));
+    return h("div", "qb-part", h("span", "qb-part-name", p.name), h("span", "qb-dim", p.value), ends[0], ends[1], drop);
+  }));
 }
 
 function showBoard(wont = ""): void {
@@ -269,7 +373,7 @@ function showBoard(wont = ""): void {
 
 async function runRetest(): Promise<Retest | null> {
   retesting = true; paint();
-  const r = await ask({ t: "retest", pedal, drive: drive(), swaps: swaps() });
+  const r = await ask({ t: "retest", pedal, drive: drive(), swaps: swaps(), edits: edits() });
   retesting = false;
   result = r.t === "retest" ? r.retest : null;
   if (r.t === "error") why = r.why;
@@ -288,8 +392,8 @@ async function offerFiles(): Promise<void> {
     return a;
   };
   files.replaceChildren(
-    ...(tsx ? [link(`${slug}.tsx`, remakeTsx(b, tsx, swaps(), def().name), "text/plain")] : []),
-    link(`${slug}.circuit.json`, JSON.stringify(remakeJson(b, swaps())), "application/json"),
+    ...(tsx ? [link(`${slug}.tsx`, remakeTsx(b, tsx, swaps(), def().name, edits()), "text/plain")] : []),
+    link(`${slug}.circuit.json`, JSON.stringify(remakeJson(b, swaps(), edits())), "application/json"),
   );
 }
 
@@ -356,7 +460,7 @@ function paint(): void {
   playBtn.disabled = !wave && !src;
   scopeTitle.textContent = probe ? probe.label : "";
   scopeRead.textContent = why || (busy || !wave ? "Running the riff through the board..." :
-    `swings ${volts(wave.swing.hi)} / ${volts(wave.swing.lo)} · within 10% of its peak ${Math.round(wave.swing.flat * 100)}% of the time`);
+    `swings ${volts(wave.swing.hi)} / ${volts(wave.swing.lo)} · within 10% of its peak ${Math.round(wave.swing.flat * 100)}% of the time · top end ${Math.round(wave.swing.top)}`);
   scopeRead.classList.toggle("warn", !!why);
   netList.replaceChildren(...nets.map((n) => {
     const b = h("button", "qb-net", n.label);
@@ -365,7 +469,7 @@ function paint(): void {
     return b;
   }));
   retestBtn.disabled = retesting;
-  const what = changes(def().board, swaps());
+  const what = changes(def().board, swaps(), edits());
   retestOut.textContent = retesting ? "Playing the riff through your board, the remake and the stock board..." : !result ? (what ? `Your parts: ${what}.` : "Stock parts: swap one first to hear a change.")
     : `${result.same ? "The remake plays the riff as your board does" : `The remake is off by up to ${(result.apart * 1000).toFixed(2)} mV`}. `
       + (what ? `Against the stock board: ${result.louder >= 0 ? "+" : ""}${result.louder.toFixed(1)} dB, the waves ${result.differs.toFixed(0)} dB apart.` : "It is the stock board.");
@@ -394,11 +498,12 @@ Object.assign(window, {
   qbuilder: {
     /** The pedal, its knob and parts, the nets, the scope's net and how it swings, and the last retest. */
     state: () => ({
-      pedal, drive: drive(), swaps: swaps(), changes: changes(def().board, swaps()), busy: busy > 0 || retesting, playing: !!src, why,
+      pedal, drive: drive(), swaps: swaps(), edits: edits(), changes: changes(def().board, swaps(), edits()), busy: busy > 0 || retesting, playing: !!src, why,
       nets: nets.map((n) => ({ key: n.key, label: n.label, node: n.node })),
       probe: probe && { key: probe.key, label: probe.label, node: probe.node },
       swing: wave?.swing ?? null, retest: result, files: [...files.querySelectorAll("a")].map((a) => a.download),
-      board: { kit: kitId(def().name), side, made: !!made, size: made?.size ?? null, holes: made?.holes ?? 0, pads: made?.pads ?? 0, unread: made?.unread ?? [] },
+      parts: ((all) => editParts(def().board, edits()).map((p) => ({ name: p.name, value: p.value, ends: p.ends.map((e) => all.find((n) => n.key === e.key)?.label ?? e.key) })))(editNets(def().board, edits())),
+      board: { kit: kitId(def().name), side, made: !!made, fits: !edits().length, size: made?.size ?? null, holes: made?.holes ?? 0, pads: made?.pads ?? 0, unread: made?.unread ?? [] },
     }),
     /** The mockup from the top (parts side) or the bottom. */
     side: (s: string) => { if (s === "top" || s === "bottom") setSide(s); return made ? side : null; },
@@ -410,6 +515,14 @@ Object.assign(window, {
     drive: setDrive,
     /** A socket's part: a clipper (silicon, germanium, led, mosfet, none) or a step ("0.47", "2.2"); null puts the stock part back. "" when it took. */
     swap: (socket: string | null, choice: string | null) => swap(socket, choice),
+    /** Adds a part to the circuit: "res", "cap" or "diode", its value ("100n", or a number in ohms or farads; a diode takes none), from one net to another (key, label or node; "GND"). "" when it took. */
+    add: (kind: string, value: string | number, from: string, to: string) => kind === "res" || kind === "cap" || kind === "diode" ? addPart(kind, value, from, to) : `no part kind ${kind}`,
+    /** Takes a part off the board. "" when it took. */
+    remove: removePart,
+    /** Moves one end of a part (pin1 or pin2, a diode's anode or cathode) to another net. "" when it took. */
+    move: moveEnd,
+    /** Undoes one change by its place in the list (null: back to the stock circuit). "" when it took. */
+    unedit: (i: number | null) => setEdits(i === null ? [] : edits().filter((_, j) => j !== i)),
     /** The scope on a net, by key, label ("OUT", "R3 · D3 · D4 · R4") or node. */
     probe: setProbe,
     retest: runRetest,
