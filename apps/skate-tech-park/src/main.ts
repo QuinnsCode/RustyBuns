@@ -24,7 +24,7 @@ import { Taps } from "./render/feet.ts";
 import { grabPose, lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
 import { Driver, mountAgent } from "./agent.ts";
 import { mountPalette } from "@rustybuns/util/palette";
-import { DT, type Flick, flickTime, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
+import { DT, type Flick, flickTime, IDLE, type Input, kmh, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import { grindLift } from "./grinds.ts";
 import { BOARD } from "./level.ts";import type { ParkLevel } from "./levels/park.ts";
@@ -600,7 +600,7 @@ function frame(now: number) {
   }
   $("score").textContent = String(sim.score);
   $("combo").textContent = comboLine(sim.combo, sim.comboScore);
-  $("speed").textContent = `${Math.round(Math.abs(sim.air ? Math.hypot(sim.vx, sim.vz) : sim.speed) * 3.6)} km/h`;
+  $("speed").textContent = `${kmh(sim)} km/h`;
   if (sim.last !== shownTrick) { shownTrick = sim.last; trickAt = now; }
   const trick = $("trick");
   trick.textContent = shownTrick ? (shownTrick.points ? `${shownTrick.name}  +${shownTrick.points}` : shownTrick.name) : "";
