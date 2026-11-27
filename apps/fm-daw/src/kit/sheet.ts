@@ -3,7 +3,7 @@
 // (room/main.ts), from a module in the sound wall's case (B on it, the same), and from Q Amp's board view (amp/main.ts). Kits are found by folder: whatever `circuits/<kit>/`
 // holds is loaded only when its sheet opens, so a new kit shows up with no change here.
 import "./sheet.css";
-import { check, num, obj, or, rec, str } from "@rustybuns/util/guard";
+import { readParts } from "../amp/parts-store.ts";
 import type { PedalDef } from "../circuit/amps.ts";
 import type { Swaps } from "../circuit/circuits.ts";
 import { BoardView, svgOf, type Side } from "../amp/board.ts";
@@ -24,17 +24,10 @@ export async function kitFiles(kit: string): Promise<KitFiles> {
   return out;
 }
 
-/** Q Amp keeps each pedal's part swaps and Drive in its saved state ("q-amp"): read them, and nothing else, through a guard. */
-const AmpSaved = obj({ swaps: or(rec(rec(str(12), 40), 10), {}), drive: or(rec(num(0, 10), 32), {}) });
-function saved() {
-  try {
-    const raw = localStorage.getItem("q-amp");
-    return (raw && check(AmpSaved, JSON.parse(raw))) || null;
-  } catch { return null; }
-}
-export const savedSwaps = (pedal: string): Swaps => saved()?.swaps[pedal] ?? {};
+/** The pedal's part swaps as Q Amp and Q Builder keep them (../amp/parts-store.ts). */
+export const savedSwaps = (pedal: string): Swaps => readParts().swaps[pedal] ?? {};
 /** The pedal's Drive knob as Q Amp last left it, 0 to 10 (5 if never turned). */
-export const savedDrive = (pedal: string): number => saved()?.drive[pedal] ?? 5;
+export const savedDrive = (pedal: string): number => readParts().drive[pedal] ?? 5;
 
 type Tab = Side | "panel" | "parts" | "files" | "band";
 /** Each tab, and whether a pedal's sheet and a module's have it: a module has its front panel, no tolerance band yet. */

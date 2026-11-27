@@ -115,9 +115,11 @@ test.skipIf(!hasChrome)("Q Phase: the scope on GATE moves with the Rate knob, an
 
     await load(chrome.cdp, amp, `${vite.url}/amp.html`, 0);
     await waitFor(amp, "Q Amp", "!!window.qamp", 60_000);
-    await amp.eval("qamp.pedal('phase')");
-    expect(await page<string>("qbuilder.swap('R1', '2.2')")).toBe("");
+    // Q Amp saving its own store (a footswitch) as the swap is made doesn't undo the swap on either page (#6459)
+    const [why] = await Promise.all([page<string>("qbuilder.swap('R1', '2.2')"), amp.eval("qamp.pedal('phase')")]);
+    expect(why).toBe("");
     await waitFor(amp, "the swap on Q Amp", "qamp.state().swaps.R1 === '2.2'", 10_000);
+    expect(await page<string | undefined>("qbuilder.state().swaps.R1")).toBe("2.2");
     expect(await amp.eval<number>("qamp.state().drive")).toBe(0);
 
     expect(await amp.eval<string[]>("qamp.swap('R1', null)")).toEqual([]);
