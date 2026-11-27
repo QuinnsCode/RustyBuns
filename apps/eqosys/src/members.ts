@@ -3,10 +3,10 @@
 import { HOME, ourApp, type QApp } from "./apps.ts";
 import { appOf, appsOf } from "./listings.ts";
 import { sign, STUDIOS_MAX, type Handoff, type StudioRole } from "@rustybuns/util/token";
-import { hubErase, hubOut } from "./qollab/hub.ts";
+import { hubErase, hubOuts, OUT_BATCH } from "./qollab/hub.ts";
 import { partyOf } from "./qollab/party.ts";
 import { send } from "./qollab/qlave.ts";
-import { SPACES_EVER, SPACES_OF, spaceOf } from "./qollab/space.ts";
+import { SPACES_EVER, spaceOf, spacesOfAny } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
 import { SOLE_OWNED, studioErase } from "./studios.ts";
 import { oauthToken } from "./auth.ts";
@@ -105,17 +105,40 @@ const cut = (conf: Env, userId: string, app: string, now: number) =>
  * Close the sockets `app`'s tokens ("*": every app's) opened for a person: their hub tabs, their party seats, their spaces. A cut stops a token
  * opening a socket (`standing`), and this ends the ones it already had open. Best effort: a world that doesn't answer keeps a socket until it drops.
  */
-export async function closeSockets(conf: Env, userId: string, app: string) {
-  const q = new URLSearchParams({ id: userId, app });
-  const [seats, spaces] = await Promise.all([
-    conf.PARTY ? conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>() : null,
-    conf.SPACE ? conf.DB.prepare(SPACES_OF).bind(userId).all<{ id: string }>() : null,
-  ]);
-  await Promise.allSettled([
-    ...conf.HUB ? [hubOut(conf.HUB, userId, app)] : [],
-    ...conf.PARTY ? (seats?.results ?? []).map((s) => partyOf(conf.PARTY!, s.code).fetch(new Request(`https://party/out?${q}`))) : [],
-    ...conf.SPACE ? (spaces?.results ?? []).map((s) => spaceOf(conf.SPACE!, s.id).fetch(new Request(`https://space/out?${q}`))) : [],
-  ]);
+export const closeSockets = (conf: Env, userId: string, app: string) => closeMany(conf, [userId], app);
+
+/**
+ * closeSockets for many people at once (a company's whole domain, everyone who played a pulled game), OUT_BATCH at a time. Each
+ * batch costs the Worker two reads, one fetch to the first person's hub (which passes the order on to the others' hubs, hub.ts
+ * `hubOuts`, from its own subrequest budget) and one fetch per party or space any of them sits in, so a large domain fits (#6239).
+ */
+export async function closeMany(conf: Env, ids: string[], app: string) {
+  const people = [...new Set(ids)];
+  for (let i = 0; i < people.length; i += OUT_BATCH) {
+    const some = people.slice(i, i + OUT_BATCH), marks = some.map((_, n) => `?${n + 1}`).join(", ");
+    const q = new URLSearchParams([...some.map((id) => ["id", id]), ["app", app]]);
+    const [seats, spaces] = await Promise.all([
+      conf.PARTY ? conf.DB.prepare(`SELECT DISTINCT code FROM party_seats WHERE user_id IN (${marks})`).bind(...some).all<{ code: string }>() : null,
+      conf.SPACE ? conf.DB.prepare(spacesOfAny(some.length)).bind(...some).all<{ id: string }>() : null,
+    ]);
+    await Promise.allSettled([
+      ...conf.HUB ? [hubOuts(conf.HUB, some, app)] : [],
+      ...conf.PARTY ? (seats?.results ?? []).map((s) => partyOf(conf.PARTY!, s.code).fetch(new Request(`https://party/out?${q}`))) : [],
+      ...conf.SPACE ? (spaces?.results ?? []).map((s) => spaceOf(conf.SPACE!, s.id).fetch(new Request(`https://space/out?${q}`))) : [],
+    ]);
+  }
+}
+
+/** A studio's game was pulled: the sockets its tokens opened close, for everyone who ever signed in to it. */
+export async function gamePulled(conf: Env, app: string) {
+  const { results } = await conf.DB.prepare("SELECT user_id FROM links WHERE app = ?").bind(app).all<{ user_id: string }>();
+  await closeMany(conf, results.map((r) => r.user_id), app);
+}
+
+/** Someone is out of a studio: the sockets they opened with its games that only its members may use (a draft, one in review) close. */
+export async function studioLeft(conf: Env, studio: string, userId: string) {
+  const { results } = await conf.DB.prepare("SELECT id FROM listings WHERE studio_id = ? AND state IN ('draft', 'in review')").bind(studio).all<{ id: string }>();
+  for (const l of results) await closeSockets(conf, userId, l.id);
 }
 
 /** Throw a refresh token away (signing out of a native app), and the tokens its app holds for that person with it, and their sockets. Quietly does nothing for one that isn't there. */

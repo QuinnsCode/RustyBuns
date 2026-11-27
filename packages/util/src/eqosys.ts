@@ -673,7 +673,7 @@ export const SpaceDm = obj({ channel: str(24), id: str(200), name: str(200) });
 export type SpaceDm = Of<typeof SpaceDm>;
 /** A line of a space's audit log, for those who run it: a role change, a kick (`everywhere`: from every space they run), a channel deleted, the retention set, an export. */
 export const SpaceAudit = obj({
-  at: int(0, 1e15), act: oneOf(["role", "kick", "everywhere", "drop", "keep", "export"]), by: obj({ id: str(200), name: opt(str(200)) }),
+  at: int(0, 1e15), act: oneOf(["role", "kick", "everywhere", "drop", "keep", "export"]), by: obj({ id: str(200, { min: 0 }), name: opt(str(200)) }),
   who: opt(str(200)), channel: opt(str(24)), to: opt(str(20)),
 });
 export type SpaceAudit = Of<typeof SpaceAudit>;
