@@ -32,6 +32,14 @@ export class Agent extends Context.Service<Agent, {
 /** Where the page is kept between visits, per room: this browser only. */
 export const savedKey = (room: string) => `agent-page:${room}`;
 
+/** Whoever else needs the world as it stands (Agent Galaxy, which shows it and saves it to the server): told after
+ *  each change that lands. */
+const watchers = new Set<(p: Page) => void>();
+let current: Page | null = null;
+export const watchPage = (fn: (p: Page) => void) => { watchers.add(fn); return () => { watchers.delete(fn); }; };
+/** The world as it stands, once the page is mounted. */
+export const currentPage = () => current;
+
 /** The relay's socket for this room, on the server the page came from. */
 const socketUrl = (room: string) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/r/${room}/socket`;
 
@@ -51,6 +59,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   const online = yield* Queue.unbounded<boolean>();
   const waiting = new Map<number, (r: Report) => void>();
   let page = initial, next = 1;
+  current = initial;
   // What the world's frame said since it last loaded (world.ts's reporter): its errors and blocked loads, newest last.
   let said: string[] = [];
   const heard = (e: MessageEvent) => {
@@ -92,6 +101,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     online: Stream.fromQueue(online),
     report: (r) => Effect.sync(() => {
       page = r.page;
+      if (r.error === null && current !== r.page) { current = r.page; for (const w of watchers) w(r.page); }
       try { localStorage.setItem(savedKey(room), JSON.stringify(r.page)); } catch { /* private window: kept for this visit only */ }
       waiting.get(r.call)?.(r);
       waiting.delete(r.call);
