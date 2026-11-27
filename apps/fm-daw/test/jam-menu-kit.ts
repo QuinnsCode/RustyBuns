@@ -1,7 +1,7 @@
 // The jam room's menu (Esc in a room), in headless Chrome over CDP (scripts/chrome.ts): every group in it is a sideways
 // row of cards, as the studios are. With five people in the room, Who's here is one row; a mouse wheel turns it and a
 // real mouse drag slides it back, on a laptop and on a phone either way up, and the page itself never scrolls sideways.
-// The menu uses the screen (nearly its whole width) and sits under the row of rooms, which folds to one pill once you play.
+// The menu uses the screen (nearly its whole width) and sits under the pill that drops the other rooms down.
 // One screen size a file (jam-menu-*.test.ts), so CI's lanes can run them side by side (#5922).
 import { expect, test } from "bun:test";
 import { load, openTab, until } from "../../../scripts/chrome.ts";
@@ -54,13 +54,15 @@ async function rows(tab: Awaited<ReturnType<typeof openTab>>, w: number) {
   expect(await page<number>(`document.getElementById("people").scrollLeft`)).toBeLessThan(wheeled);
   expect(await page<number>("document.documentElement.scrollWidth")).toBe(w);
 
-  // in the room the row of rooms folds to the one you're in; pressing it opens the row again
-  const shown = () => page<number>(`[...document.getElementById("qs-way").children].filter((e) => e.getClientRects().length).length`);
-  // the place you are in and a door to each of the others (Paths first, #5880)
-  const places = Object.keys(PLACES).length;
-  expect(await shown()).toBe(places);
-  await page(`window.qjam.start()`);
-  expect(await shown()).toBe(1);
+  // the way to the other rooms is one pill naming this one; pressing it drops a door to each of the others (Paths
+  // first, #5880), and playing closes it again
+  const shown = () => page<string[]>(`[...document.querySelectorAll("#qs-way a")].filter((e) => e.getClientRects().length).map((a) => a.dataset.to)`);
+  const others = Object.keys(PLACES).length - 1;
+  expect(await shown()).toEqual([]);
   await page(`document.querySelector("#qs-way [aria-current]").click()`);
-  expect(await shown()).toBe(places);
+  const open = await shown();
+  expect(open.length).toBe(others);
+  expect(open[0]).toBe("paths");
+  await page(`window.qjam.start()`);
+  expect(await shown()).toEqual([]);
 }
