@@ -6,7 +6,7 @@ import { Music } from "./audio.ts";
 import { accountChip, achieve, achievements, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { backplate, bandScale, brushed, readoutGlass, faderCap, faderPlate, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
+import { backplate, bandScale, brushed, latchOpen, latchShut, readoutGlass, faderCap, faderPlate, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
@@ -298,6 +298,10 @@ const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
   sheet.style.setProperty("--toggle-on", toggleOn);
   sheet.style.setProperty("--plate", [screwAt("left 5px top 5px", 30), screwAt("right 5px top 5px", 110), screwAt("left 5px bottom 5px", 70), screwAt("right 5px bottom 5px", 150),
     `${brushed} 0 0 / 240px 60px`, "linear-gradient(#1b1e24, #101216)"].join(", "));
+  // Each section's header is its own screwed strip of the same metal, the tape on it and a flight-case latch at its end.
+  sheet.style.setProperty("--head-plate", [screwAt("left 6px center", 20), screwAt("right 6px center", 95), `${brushed} 0 0 / 240px 60px`, "linear-gradient(#20232a, #121419)"].join(", "));
+  sheet.style.setProperty("--latch-open", latchOpen);
+  sheet.style.setProperty("--latch-shut", latchShut);
   LANE_COLOURS.forEach((c, i) => sheet.style.setProperty(`--lane-${i}`, c));
   const strips = [sheet.querySelector<HTMLElement>(".gc-head h2"), ...sheet.querySelectorAll<HTMLElement>(".gc-sec-h > span:not(.gc-chev)")];
   strips.forEach((s, i) => { if (s) taped(s, 40 + i); });
