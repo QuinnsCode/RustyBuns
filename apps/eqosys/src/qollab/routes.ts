@@ -143,9 +143,11 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
       // One of the studio's own is in its space already: no guest row, which would outlast their seat in the studio.
       if (s.studio && await conf.DB.prepare("SELECT 1 AS y FROM studio_members WHERE studio_id = ? AND user_id = ?").bind(s.studio, t.who.id).first("y"))
         return json({ id: s.id, name: s.name }, 200, head);
-      if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?").bind(s.id).first<number>("n")) ?? 0) >= SPACE_MEMBERS)
+      // The count is in the insert, so an invite link opened by many at once can't take the space past SPACE_MEMBERS (#6290).
+      const seated = await conf.DB.prepare(`INSERT INTO space_members (space_id, user_id, at) SELECT ?1, ?2, ?3
+        WHERE (SELECT COUNT(*) FROM space_members WHERE space_id = ?1) < ?4 ON CONFLICT DO NOTHING RETURNING user_id`).bind(s.id, t.who.id, now, SPACE_MEMBERS).first("user_id");
+      if (!seated && !await conf.DB.prepare("SELECT 1 AS y FROM space_members WHERE space_id = ? AND user_id = ?").bind(s.id, t.who.id).first("y"))
         return json({ error: `that space is full (${SPACE_MEMBERS})` }, 409, head);
-      await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(s.id, t.who.id, now).run();
       return json({ id: s.id, name: s.name }, 200, head);
     }
     if (isListing(t.app)) return json({ error: "spaces are made on eqosys or in a Q app, not in a studio's game" }, 403, head);
