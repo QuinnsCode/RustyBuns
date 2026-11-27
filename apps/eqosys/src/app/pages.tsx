@@ -899,7 +899,8 @@ export const Privacy = () => (
     <h2>Deleting it</h2>
     <p>Delete your account from any Q app's settings or at <a href="/delete">eqosys.qntbr.com/delete</a>. Everything above goes at once, every
       Q app that keeps data of its own is told to erase it, and a Sign in with Apple link is revoked at Apple. Your vault goes first, so any
-      copy of your saves left in a backup can never be opened again.</p>
+      copy of your saves left in a backup can never be opened again. Other people's pages forget you too: you leave their friends,
+      coworkers and notifications, and a space's log of who changed what keeps the change but says "a deleted account" for you.</p>
     <h2>If you're in the EU, the EEA, the UK or Switzerland</h2>
     <p>What is in place today: your vault (the key to your saves, and the record of what you agreed to and asked for) is kept in the EU; you can
       download everything we keep and delete it all yourself, any time, without asking anyone; and each thing you agree to is written down

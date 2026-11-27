@@ -708,8 +708,11 @@ function frame() {
     el.classList.toggle("warn", (v ?? 0) > 0.3);
   }
   requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
 
-// A part swapped or a knob turned on Q Builder (another tab) is on this amp's pedals too, as it plays.
+// A part swapped or a knob turned on Q Builder (another tab) is on this amp's pedals too, as it plays: listened for
+// once, at load, so a tab in the background (no frames) still takes the change.
 onParts((p) => {
   S.swaps = p.swaps;
   Object.assign(S.drive, p.drive);
@@ -717,8 +720,6 @@ onParts((p) => {
   send();
   showBoard();
 });
-}
-requestAnimationFrame(frame);
 
 /** Q Amps' lesson (lesson.ts) and Q Builder's (build-lesson.ts), read from the page's state as it stands, one on at a
  *  time; the cap button in the corner lists them, and ?lesson=amp or ?lesson=build starts one. */
