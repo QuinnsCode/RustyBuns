@@ -57,7 +57,8 @@ import { mountInk } from "./you/ink-view.ts";
 import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
 import { dress, faceLook, type Dressed } from "./faces.ts";
-import { begun, idlePrompt, nextStep, tapeLabel, towardName } from "./next.ts";
+import { begun, idlePrompt, nextStep, tapeLabel, towardMark, towardName } from "./next.ts";
+import { marksView } from "./marks-view.ts";
 import { toward } from "./toward.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
@@ -130,6 +131,7 @@ window.addEventListener("keyup", (e) => { if (e.code === "KeyY") showArms = fals
 $("arms").addEventListener("pointerdown", (e) => { e.stopPropagation(); showArms = true; });
 for (const up of ["pointerup", "pointercancel", "pointerleave"]) $("arms").addEventListener(up, () => { showArms = false; });
 const shoes = shoesView(scene);
+const marks = marksView(scene);
 const ink = mountInk($("ink-host"), hands, () => tour.nights, shoes);
 // Solve the grips the game uses while the menu is up, one a tick, so the first grab doesn't hitch.
 [REST, { kind: "flat" } as const, { kind: "roll" } as const, { kind: "plug" } as const, ...[...Object.values(CABLE_RADIUS), ...Object.values(CABLE).map((c) => c.radius)].map((radius) => ({ kind: "cable", radius }) as const)].forEach((w, i) => setTimeout(() => hands.warm([w]), 200 + i * 60));
@@ -325,6 +327,7 @@ function buildItems() {
   touch.venue(world.level.name);
 }
 buildItems();
+marks.build(world);
 const ropes = cableView(scene);
 const mates = crewView(scene);
 
@@ -341,6 +344,7 @@ function load(level: Level) {
   ropes.clear();
   scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup);
   scene.remove(lights); lights = venueLights(world.level); scene.add(lights);
+  marks.build(world);
   sky.intensity = fill(world.level);
   buildItems();
   // A crew is a room on one level: another level is another room with the same code.
@@ -390,14 +394,17 @@ function draw() {
   const reach: [number, number, number] | undefined = tgt && tgt !== held ? [tgt.x, tgt.y + dims(tgt)[1] / 2, tgt.z] : undefined;
   hands.update({ ...holding(), show: showArms, reach, low: handsLow }, world.t, stepSpeed());
   ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
-  marker.visible = !!tgt;
-  if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
+  // With nothing to lift, a tape mark to carry a stand to is what the marker and the arrow point at.
+  const mark = !tgt && next?.at ? next.at : null, bob = Math.sin(performance.now() / 260) * 0.05;
+  marker.visible = !!tgt || !!mark;
+  if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + bob, tgt.z);
+  else if (mark) marker.position.set(mark.x, (world.level.floorAt?.(mark.x, mark.z) ?? 0) + 1.95 + bob, mark.z);
   // Out of view, an arrow on the screen edge says which way to turn for it.
-  const away = tgt ? camera.worldToLocal(marker.position.clone()) : null, ndc = tgt ? marker.position.clone().project(camera) : null;
+  const away = marker.visible ? camera.worldToLocal(marker.position.clone()) : null, ndc = marker.visible ? marker.position.clone().project(camera) : null;
   const arrow = away && ndc ? toward(ndc, away.z > 0) : null;
   $("toward").hidden = !arrow;
-  $("toward").classList.toggle("warm", !!next?.to);
-  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = towardName(world, cables, tgt.key); }
+  $("toward").classList.toggle("warm", !!next?.to || !!next?.at);
+  if (arrow) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = tgt ? towardName(world, cables, tgt.key) : mark ? towardMark(world, mark) : ""; }
   // In view, the outline and the pool, breathing slowly.
   const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 380), seen = !!tgt && !arrow && tgt !== held;
   goal.visible = seen;
@@ -411,8 +418,9 @@ function draw() {
     goalLamp.position.set(tgt.x, tgt.y + h + 0.6, tgt.z + 0.3);
   }
   // Where it goes, lit whether or not it is on screen, so you see the stand as you turn to it.
-  const to = next?.to ? world.items.find((i) => i.key === next.to) : null;
+  const to = next?.to ? world.items.find((i) => i.key === next.to) ?? null : next?.at ?? null;
   const warm = !!to;
+  marks.update(world, pulse);
   marker.material.color.setHex(warm ? WARM : COOL);
   goalLine.color.setHex(warm ? WARM : COOL);
   goalLamp.color.setHex(warm ? 0xffc88a : 0x9fe3ff);
@@ -437,6 +445,8 @@ function draw() {
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
   if (phase === "play") touch.relabel(ar?.pad() ?? {});
+  // A box in your hands fills the middle of the view, its tape label too: the key hint moves down, over the carry line.
+  document.body.classList.toggle("carrying", !!held);
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? dj?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? band?.hint() ?? ar?.hint() ?? hint(at, jack));
   // In a crew room, the mess everyone sees: cables left loose and gear left in the walkways.
   const left = phase === "play" && online?.status === "in" ? cable.mess(world, cables) : [];
