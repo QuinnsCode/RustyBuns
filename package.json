@@ -24,6 +24,7 @@
     "bridge": "bun scripts/bridge.ts",
     "hemyviz": "bun apps/hemyviz/src/main.ts",
     "releases": "bun scripts/releases.ts",
+    "qollab-board": "bun scripts/qollab-board.ts",
     "pushes": "bun scripts/pushes.ts",
     "pr": "bun scripts/pr.ts",
     "steer": "bun scripts/steer.ts",
