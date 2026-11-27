@@ -1,3 +1,4 @@
 dist
 .rustybuns
 model-review.files/
+wrangler.ssh-try.jsonc

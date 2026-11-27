@@ -6,6 +6,8 @@ import { SKIN } from "./eqosys.ts";
  * The Controls sheet as the gadget watch's settings plate: riveted glass with a stamped hairline inside the edge, the
  * red-and-cream hatched trim along its top, a stencilled serial beside the title, and each section an inset panel.
  * A switch's row gives its words the width a slider's track would take, so "Toggle instead of hold" stays on one line.
+ * Each kit tab keeps its small gamepad, keyboard, mouse or phone icon beside its letter. The fold knobs are stencilled FOLD and
+ * OPEN under them, and a switch the game lacks keeps its brass housing, dimmed (no dashed edge).
  * Each section head is stamped: a red-and-cream tab on its top edge and a red serial (SR-CTL · 01, 02...) by a CSS counter.
  */
 const LAB_CSS = `.ui-house .gc-card{box-shadow:var(--glow),0 30px 80px -30px #000;border-top:0;backdrop-filter:blur(8px);position:relative;padding-top:26px;
@@ -31,18 +33,22 @@ font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0
 .ui-house .gc-card input[type=checkbox]::before{content:"OFF";position:absolute;right:4px;top:50%;transform:translateY(-50%);font:800 7px/1 var(--mono);letter-spacing:.04em;color:rgb(147 161 173 / .55)}
 .ui-house .gc-card input[type=checkbox]:checked::before{content:"ON";right:auto;left:5px;color:var(--cream);text-shadow:0 0 4px rgb(239 228 201 / .6)}
 .ui-house .gc-card label:has(>input:checked){box-shadow:inset 0 -1px 0 rgb(92 214 239 / .45)}
-.ui-house .gc-prof{font-size:0;gap:0;flex-direction:column;justify-content:center;line-height:1}.ui-house .gc-prof svg{display:none}
-.ui-house .gc-prof::before{font:600 1.05rem/1 var(--silk);letter-spacing:.1em;text-transform:uppercase}
+.ui-house .gc-prof{font-size:0;display:grid;grid-template-columns:auto auto;justify-content:center;align-items:center;column-gap:5px;row-gap:0;line-height:1}
+.ui-house .gc-prof svg{grid-row:1;grid-column:1;width:14px;height:14px;color:var(--cream);opacity:.6}.ui-house .gc-prof[aria-pressed=true] svg{color:var(--accent);opacity:1}
+.ui-house .gc-prof::before{grid-row:1;grid-column:2;font:600 1.05rem/1 var(--silk);letter-spacing:.1em;text-transform:uppercase}
 .ui-house .gc-prof[data-slot="0"]::before{content:"Kit A"}.ui-house .gc-prof[data-slot="1"]::before{content:"Kit B"}
 .ui-house .gc-prof[data-slot="2"]::before{content:"Kit C"}.ui-house .gc-prof[data-slot="3"]::before{content:"Kit D"}
 .ui-house .gc-profiles{counter-reset:gckit}.ui-house .gc-prof{counter-increment:gckit}
-.ui-house .gc-prof::after{content:"SR-KIT · " counter(gckit,decimal-leading-zero);white-space:nowrap;margin-top:4px;font:800 .5rem/1 var(--mono);letter-spacing:.14em;color:var(--red);opacity:.85}
+.ui-house .gc-prof::after{content:"SR-KIT · " counter(gckit,decimal-leading-zero);grid-row:2;grid-column:1/-1;justify-self:center;white-space:nowrap;margin-top:4px;font:800 .5rem/1 var(--mono);letter-spacing:.14em;color:var(--red);opacity:.85}
 .ui-house .gc-prof[aria-pressed=true]::before{color:var(--accent);text-shadow:0 0 8px rgb(92 214 239 / .5)}
-.ui-house .gc-fold .gc-icon{width:38px;height:38px;border-radius:50%;border-color:var(--oxide);color:#1a1208;
+.ui-house .gc-fold{gap:14px;padding-bottom:12px}.ui-house .gc-fold .gc-icon{position:relative;overflow:visible;width:30px;height:30px;border-radius:50%;border-color:var(--oxide);color:#1a1208;
 background:radial-gradient(circle,#f1dcae 0 30%,#8a6a3c 31% 36%,transparent 37%),repeating-conic-gradient(#d8b77a 0 6deg,#4a3820 6deg 12deg);
 box-shadow:0 0 0 2px rgb(0 0 0 / .6),0 2px 4px #000}
 .ui-house .gc-fold .gc-icon:hover:not(:disabled){background:radial-gradient(circle,#f1dcae 0 30%,#8a6a3c 31% 36%,transparent 37%),repeating-conic-gradient(#e8c98c 0 6deg,#5a4426 6deg 12deg);box-shadow:var(--glow),0 2px 4px #000}
-.ui-house .gc-fold .gc-icon svg{width:14px;height:14px;position:relative}`;
+.ui-house .gc-fold .gc-icon svg{width:12px;height:12px;position:relative}
+.ui-house .gc-fold .gc-icon::after{position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);font:800 .5rem/1 var(--mono);letter-spacing:.16em;color:var(--cream);opacity:.7}
+.ui-house .gc-fold [data-fold=collapse]::after{content:"FOLD"}.ui-house .gc-fold [data-fold=expand]::after{content:"OPEN"}
+.ui-house .gc-card label.gc-off input[type=checkbox]{border-style:solid;border-color:var(--oxide);background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));opacity:.45;filter:saturate(.4)}`;
 
 /** Brass, by the house kit's tokens: a capped fader thumb with a groove, a dark inset slot, and a rocker switch whose block lights cyan when on. */
 const BRASS = "linear-gradient(90deg,#5a4426,#d8b77a 42%,#f1dcae 50%,#8a6a3c 58%,#4a3820)";

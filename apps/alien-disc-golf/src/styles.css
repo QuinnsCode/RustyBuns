@@ -329,6 +329,23 @@ html .ui-house .gc-card input[type=checkbox] { width: 44px; height: 24px; border
 html .ui-house .gc-card input[type=checkbox]::after { width: 16px; height: 16px; border-radius: 3px; background: var(--edge); }
 html .ui-house .gc-card input[type=checkbox]:checked { background: var(--teal-soft); border-color: var(--teal); }
 html .ui-house .gc-card input[type=checkbox]:checked::after { transform: translateX(20px); background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+/* A switch says which way it is in the scanner's mono: a dim OFF beside the unlit knob, a dark ON beside the lit one. */
+html .ui-house .gc-card input[type=checkbox]::before { content: "OFF"; position: absolute; top: 50%; right: 5px; transform: translateY(-50%); font: 700 8px/1 var(--mono); letter-spacing: 0.04em; color: var(--dim); }
+html .ui-house .gc-card input[type=checkbox]:checked::before { content: "ON"; right: auto; left: 6px; color: var(--teal); }
+html .ui-house .gc-card output { font-size: 14px; font-weight: 700; }
+/* The course's art on Controls: the title's disc-in-orbit beside the heading, each section's icon punched through the
+ * card like a hole on the scorecard's strip (lit teal when open), and a faint frond grown up behind Reset. */
+html .ui-house .gc-head h2 { display: flex; align-items: center; gap: 10px; }
+html .ui-house .gc-mark { display: block; flex: none; width: 34px; height: 34px; }
+html .ui-house .gc-mark .orbit-spin { animation-duration: 9s; }
+html .ui-house .gc-sec-h::before { content: none; }
+html .ui-house .gc-sec-h > svg:first-child { box-sizing: content-box; width: 14px; height: 14px; padding: 5px; border-radius: 50%; opacity: 1; color: var(--teal);
+  background: #040a12; box-shadow: inset 0 1px 2px #000, 0 0 0 1.5px var(--teal), 0 0 8px rgba(94, 230, 200, 0.45); }
+html .ui-house .gc-sec.shut .gc-sec-h > svg:first-child { color: var(--dim); box-shadow: inset 0 1px 2px #000, 0 0 0 1px var(--edge); }
+html .ui-house .gc-card { background: var(--flora-faint) right 10px bottom 8px / 260px auto no-repeat, var(--panel-art-solid); }
+html .ui-house .gc-reset { position: relative; font: 700 12px var(--mono); text-transform: uppercase; letter-spacing: 0.14em; color: var(--amber);
+  background: repeating-linear-gradient(135deg, rgba(255, 179, 71, 0.07) 0 6px, transparent 6px 12px), rgba(3, 8, 16, 0.35); border: 1px dashed rgba(255, 179, 71, 0.55); }
+html .ui-house .gc-reset:hover { background: rgba(255, 179, 71, 0.12); border-style: solid; }
 @media (max-width: 520px) {
   /* On a phone the card keeps a margin and all four corners, like the panel under it. */
   html .gc-dialog.ui-house { padding: 8px; font-size: 14px; }

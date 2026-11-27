@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-30 -38 60 76" width="60" height="76">
+  <!-- A grease thumbprint pressed on the sheet in the field: broken whorl ridges, heavier on one side. -->
+  <g fill="none" stroke="#141414" stroke-linecap="round" stroke-dasharray="22 3 40 4 18 2" transform="rotate(-16)">
+    <ellipse cy="-6" rx="4" ry="6" stroke-width="1.4" opacity=".5"/>
+    <ellipse cy="-4" rx="8" ry="11" stroke-width="1.5" opacity=".45"/>
+    <ellipse cy="-2" rx="12" ry="16" stroke-width="1.6" opacity=".4"/>
+    <ellipse rx="16" ry="21" stroke-width="1.6" opacity=".34"/>
+    <ellipse rx="20" ry="26" stroke-width="1.5" opacity=".28"/>
+    <ellipse rx="24" ry="31" stroke-width="1.4" opacity=".2"/>
+    <path d="M-27 10C-28 26-12 36 2 35" stroke-width="1.3" opacity=".16"/>
+  </g>
+</svg>

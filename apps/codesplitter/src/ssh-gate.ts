@@ -1,20 +1,22 @@
-// codeSplitter over ssh://, the spike (#5500): a TCP client reaches this Worker's `connect()` handler, the Worker pipes
-// the bytes to a Durable Object, and the DO pipes them into its container, where `sshd` and `git-serve.sh` bridge
-// git to the repo's smart-HTTP remote (Artifacts), so the container keeps no repos (#5505).
-// Run it with `bun ssh/try.ts` from apps/codesplitter. The findings are in ssh/README.md.
+// git over ssh:// (#5500, #6195): a TCP client reaches codeSplitter's `connect()` (worker.ts's default export, port
+// 8788 locally, a Spectrum app on the edge), which pipes the bytes to the SshGate Durable Object, which pipes them into
+// its container, where `sshd` and `git-serve.sh` (ssh/) bridge git to the repo's smart-HTTP remote (Artifacts), so the
+// container keeps no repos (#5505). Bound only with CODESPLITTER_SSH=1. `bun ssh/try.ts` proves it; ssh/README.md has the findings.
 //
 // The Worker sees only encrypted SSH bytes, so it can't tell which repo a connection asks for. It sends every
-// connection to one DO (`GATE`) and its container. The repo path is read inside the container (`git-serve.sh`).
+// connection to one DO and its container. The repo path is read inside the container (`git-serve.sh`).
 //
 // Keys (#5504): sshd asks whose each offered key is (`authorized-keys.sh`, its AuthorizedKeysCommand). That request
-// is plain HTTP to 192.0.2.1, which the DO routes to `KeyLookup` below; it asks codeSplitter's GET /api/ssh/key,
-// reads the reply through the guard codeSplitter answers with, and writes the authorized_keys line.
+// is plain HTTP to 192.0.2.1, which the DO routes to `KeyLookup` below; it asks GET /api/ssh/key in this Worker,
+// reads the reply through the guard that route answers with, and writes the authorized_keys line.
 
 import { check } from "@rustybuns/util/guard";
-import { SshKeyOwner } from "../src/ssh-key.ts";
+import type { Env } from "./env.ts";
+import { SshKeyOwner } from "./ssh-key.ts";
+import { sshKeyRoutes } from "./ssh-keys.ts";
 
 /** The bits of a `cloudflare:sockets` socket this file uses. */
-interface Socket {
+export interface Socket {
   readonly readable: ReadableStream<Uint8Array>;
   readonly writable: WritableStream<Uint8Array>;
   readonly opened: Promise<{ remoteAddress?: string; localAddress?: string }>;
@@ -27,14 +29,8 @@ interface ContainerApi {
   interceptOutboundHttp(addr: string, binding: unknown): Promise<void>;
   getTcpPort(port: number): { connect(address: string, opts?: SocketOptions): Socket };
 }
-interface Env {
-  GATE: { getByName(name: string): { connect(address: string, opts?: SocketOptions): Socket } };
-  /** codeSplitter's origin, whose GET /api/ssh/key says whose a key is (#5504). */
-  CODESPLITTER_URL: string;
-  /** Where git-serve.sh asks for a repo's smart-HTTP remote and a token for the user (#5505), and the secret it shows. */
-  LOOKUP_URL: string;
-  GATE_SECRET: string;
-}
+/** The SSH_GATE binding: the one gate object, dialled like a socket. */
+export interface SshGateNamespace { getByName(name: string): { connect(address: string, opts?: SocketOptions): Socket } }
 
 const SSHD = 2222;
 // allowHalfOpen: git closes its side of the pipe when it has sent everything, then still reads the reply.
@@ -75,15 +71,22 @@ async function dialSshd(container: ContainerApi): Promise<{ up: Socket; banner: 
 /** Where authorized-keys.sh asks: a documentation address (RFC 5737) nothing routes to, caught by the DO. */
 const KEYS_ADDR = "192.0.2.1:80";
 
+/** GET /api/ssh/key for this fingerprint: this Worker's own route, or SSH_KEYS_URL's when set (ssh/try.ts's stand-in). */
+function askKey(env: Env, fp: string): Promise<Response> {
+  const path = `/api/ssh/key?fingerprint=${encodeURIComponent(fp)}`;
+  if (env.SSH_KEYS_URL) return fetch(`${env.SSH_KEYS_URL}${path}`);
+  const url = new URL(path, "https://codesplitter.internal");
+  return sshKeyRoutes(new Request(url), env, ["api", "ssh", "key"], url, null).then((r) => r ?? new Response("", { status: 404 }));
+}
+
 /**
  * The authorized_keys line for the key with this fingerprint, or a 404 when nobody added it. The key and the user
- * come back from codeSplitter through SshKeyOwner's guard, which takes only a handle and `type base64`, so neither
- * can break out of the line or the forced command.
+ * come back through SshKeyOwner's guard, which takes only a handle and `type base64`, so neither can break out of
+ * the line or the forced command.
  */
 export const KeyLookup = {
   async fetch(req: Request, env: Env): Promise<Response> {
-    const fp = new URL(req.url).searchParams.get("fingerprint") ?? "";
-    const res = await fetch(`${env.CODESPLITTER_URL}/api/ssh/key?fingerprint=${encodeURIComponent(fp)}`);
+    const res = await askKey(env, new URL(req.url).searchParams.get("fingerprint") ?? "");
     if (res.status === 404 || res.status === 400) return new Response("", { status: 404 });
     const owner = res.ok ? check(SshKeyOwner, await res.json().catch(() => null)) : null;
     if (!owner) return new Response(`codeSplitter's key lookup answered ${res.status}\n`, { status: 502 });
@@ -99,10 +102,12 @@ export class SshGate {
   async connect(socket: Socket): Promise<void> {
     const container = this.ctx.container;
     if (!container) throw new Error("SshGate has no container");
-    // The internet is on so git-serve.sh can reach the lookup and the repo's HTTP remote (#5505). A Worker binding back
-    // instead would keep the container off the internet; that waits on rustybuns carrying this app (see README).
-    const { LOOKUP_URL, GATE_SECRET } = this.env;
     if (!container.running) {
+      const GATE_SECRET = this.env.SSH_GATE_SECRET;
+      if (!GATE_SECRET) throw new Error("SshGate needs SSH_GATE_SECRET, the bearer git-serve.sh shows GET /api/ssh/remote");
+      // git-serve.sh asks for each repo's remote and a token here (ssh-remote.ts). The internet is on so it can reach
+      // that and the repo's HTTP remote (#5505); the site's own origin unless SSH_LOOKUP_URL says otherwise (try.ts).
+      const LOOKUP_URL = this.env.SSH_LOOKUP_URL ?? `${this.env.BETTER_AUTH_URL ?? ""}/api/ssh/remote`;
       // sshd's key lookups go to KEYS_ADDR, which only KeyLookup answers. Set before start, like egress.ts.
       const lookup = this.ctx.exports?.KeyLookup?.({ props: {} });
       if (!lookup) throw new Error("SshGate needs ctx.exports.KeyLookup to look keys up");
@@ -117,15 +122,10 @@ export class SshGate {
   }
 }
 
-export default {
-  async connect(socket: Socket, env: Env): Promise<void> {
-    const { remoteAddress } = await socket.opened;
-    console.log(`ssh in from ${remoteAddress ?? "?"}`);
-    const gate = env.GATE.getByName("git").connect(`gate:${SSHD}`, OPTS);
-    await gate.opened;
-    await splice(socket, gate);
-  },
-  fetch(): Response {
-    return new Response("codeSplitter ssh spike: git over ssh:// on the connect port, nothing on HTTP\n");
-  },
-};
+/** worker.ts's `connect()`: every inbound TCP connection goes to the one gate, or is closed when there is none. */
+export async function sshConnect(socket: Socket, env: Env): Promise<void> {
+  if (!env.SSH_GATE) { await socket.close(); return; }
+  const gate = env.SSH_GATE.getByName("git").connect(`gate:${SSHD}`, OPTS);
+  await gate.opened;
+  await splice(socket, gate);
+}
