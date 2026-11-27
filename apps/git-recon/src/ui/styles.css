@@ -927,3 +927,30 @@ html .ui-house .gc-binds > .gc-key:has(+ .gc-icon:not(:disabled)):not(.on) { bor
   box-shadow: inset 0 0 0 1px #e8590c, 0 1px 0 #b8440666; }
 html .ui-house .gc-binds > span:has(+ .gc-key + .gc-icon:not(:disabled))::after { width: 34px; height: 25px; margin-top: -13px; }
 html .ui-house .gc-binds > .gc-key[name^="bind-gun"]:has(+ .gc-icon:not(:disabled))::after { top: 1px; right: 2px; width: 20px; height: 15px; }
+
+/* Round 22 (#6374): a changed gun slot keeps its full chip. Its reset stamp no longer takes a column beside it (which
+   made slot 03 narrower than the rest and broke the grid); the stamp is pressed into the chip's own bottom-right corner,
+   tied to its chip by an anchor (one name per slot, since the button sits after the chip in the shared panel). The
+   pencilled tick stays top right, clear of the slot number. A browser without anchor positioning keeps round 21's layout. */
+@supports (anchor-name: --a) {
+  html .ui-house .gc-binds { position: relative; }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] { grid-column: span 3; }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:not(:disabled) { position: absolute; z-index: 1; right: anchor(right);
+    bottom: anchor(bottom); width: 22px; height: 22px; margin: 0 3px 4px 0; border-radius: 4px 0 6px 0;
+    background: linear-gradient(135deg, #0000 50%, #fff3ea 50%); }
+  html .ui-house .gc-binds > .gc-key[name^="bind-gun"] + .gc-icon:not(:disabled)::before { inset: 4px 2px 2px 4px; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun1"] { anchor-name: --gun1; } html .ui-house .gc-binds > .gc-key[name="bind-gun1"] + .gc-icon { position-anchor: --gun1; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun2"] { anchor-name: --gun2; } html .ui-house .gc-binds > .gc-key[name="bind-gun2"] + .gc-icon { position-anchor: --gun2; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun3"] { anchor-name: --gun3; } html .ui-house .gc-binds > .gc-key[name="bind-gun3"] + .gc-icon { position-anchor: --gun3; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun4"] { anchor-name: --gun4; } html .ui-house .gc-binds > .gc-key[name="bind-gun4"] + .gc-icon { position-anchor: --gun4; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun5"] { anchor-name: --gun5; } html .ui-house .gc-binds > .gc-key[name="bind-gun5"] + .gc-icon { position-anchor: --gun5; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun6"] { anchor-name: --gun6; } html .ui-house .gc-binds > .gc-key[name="bind-gun6"] + .gc-icon { position-anchor: --gun6; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun7"] { anchor-name: --gun7; } html .ui-house .gc-binds > .gc-key[name="bind-gun7"] + .gc-icon { position-anchor: --gun7; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun8"] { anchor-name: --gun8; } html .ui-house .gc-binds > .gc-key[name="bind-gun8"] + .gc-icon { position-anchor: --gun8; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun9"] { anchor-name: --gun9; } html .ui-house .gc-binds > .gc-key[name="bind-gun9"] + .gc-icon { position-anchor: --gun9; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun10"] { anchor-name: --gun10; } html .ui-house .gc-binds > .gc-key[name="bind-gun10"] + .gc-icon { position-anchor: --gun10; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun11"] { anchor-name: --gun11; } html .ui-house .gc-binds > .gc-key[name="bind-gun11"] + .gc-icon { position-anchor: --gun11; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun12"] { anchor-name: --gun12; } html .ui-house .gc-binds > .gc-key[name="bind-gun12"] + .gc-icon { position-anchor: --gun12; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun13"] { anchor-name: --gun13; } html .ui-house .gc-binds > .gc-key[name="bind-gun13"] + .gc-icon { position-anchor: --gun13; }
+  html .ui-house .gc-binds > .gc-key[name="bind-gun14"] { anchor-name: --gun14; } html .ui-house .gc-binds > .gc-key[name="bind-gun14"] + .gc-icon { position-anchor: --gun14; }
+}
