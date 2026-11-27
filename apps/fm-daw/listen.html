@@ -17,6 +17,13 @@ h1 { margin: 0; font: 600 38px/1.05 "Barlow Condensed", sans-serif; overflow-wra
 ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 li { background: #17191d; border-radius: 10px; padding: 8px 12px; overflow-wrap: anywhere; }
 li span { color: #9aa0aa; font-variant-numeric: tabular-nums; margin-right: 6px; }
+/* the light look (the pick in the room pill, src/ui/theme.ts) */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="light"] body { background: #e4e6e9; color: #17191c; }
+:root[data-theme="light"] small, :root[data-theme="light"] #status, :root[data-theme="light"] li span { color: #555c66; }
+:root[data-theme="light"] #status.live { color: #c2361c; }
+:root[data-theme="light"] #play[aria-pressed="true"] { background: #cfd3d8; color: #17191c; }
+:root[data-theme="light"] li { background: #f4f5f6; }
 </style>
 </head><body>
 <main>

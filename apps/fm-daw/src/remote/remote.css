@@ -47,3 +47,7 @@ input[type=range]:disabled { opacity: .4; }
 .strip .name { --track: var(--accent); width: 104px; flex: none; justify-content: start; padding: 0 10px; border-left: 6px solid var(--track); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: left; line-height: 56px; }
 .strip.mine .name { background: var(--track); color: var(--bg); }
 .strip.muted input { opacity: .45; }
+
+/* the light look (the pick in the room pill, theme.ts) */
+:root[data-theme="light"] { --bg: #e4e6e9; --soft: #f4f5f6; --line: #b4b9bf; --ink: #17191c; --dim: #555c66; --accent: #d4432a; color-scheme: light; }
+:root[data-theme="light"] .dot.online { background: #158a4f; }

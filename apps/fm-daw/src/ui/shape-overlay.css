@@ -11,6 +11,12 @@
   width: min(960px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
   color: var(--ink); font: 14px/1.45 var(--body); box-shadow: 0 16px 48px #000a; border-radius: 6px;
 }
+/* the light look (the pick in the room pill, theme.ts): the desk's light tokens (app.css) */
+:root[data-theme="light"] .shape-overlay {
+  --bg: #c9ccd0; --panel: #dcdfe2; --raised: #eceef0; --edge: #b4b9bf; --ink: #17191c; --dim: #555c66;
+  --hot: #d42a1c; --ok: #158a4f; --warn: #a86f00; --cell: #c8ccd1;
+  color-scheme: light; box-shadow: 0 16px 48px #0004;
+}
 .shape-overlay *, .shape-overlay *::before, .shape-overlay *::after { box-sizing: border-box; }
 .shape-overlay button, .shape-overlay input, .shape-overlay select { font: inherit; color: inherit; }
 .shape-overlay button { cursor: pointer; }

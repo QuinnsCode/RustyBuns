@@ -78,7 +78,6 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./app.css";
-import { ThemePick } from "./ThemePick.tsx";
 import COPY from "../../content/first-screen.json";
 
 const UNDO_LIMIT = 100;
@@ -1005,7 +1004,6 @@ export function App() {
           <h1>FM DAW</h1>
           <span className="dim">12 tracks · FM or analog · Rust or TS</span>
         </div>
-        <ThemePick />
 
         <label className="field"><span className="silk">Song</span>
           <select value="" onChange={(e) => { const s = SONGS[Number(e.currentTarget.value)]; if (s) commit({ t: "replace", project: s.make() }); }}>
