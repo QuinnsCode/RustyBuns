@@ -62,8 +62,8 @@ export function pagesWorker(table: Table) {
         return own ? handlers(m.mod, request.method).map((fn) => ({ fn, params: { ...params, ...own } })) : [];
       });
       chain.push({ fn: handler ?? ((c: { request: Request }) => assets(c.request)), params });
-      // Pages types `data` as Record<string, unknown> itself, and this file imports nothing, so it stays.
-      const data: Record<string, unknown> = {};
+      // One bag per request that the handlers share; they set and read its fields, this file never does.
+      const data = {};
       const run = (i: number, req: Request): Promise<Response> => Promise.resolve(chain[i]!.fn({
         request: req, env, params: chain[i]!.params, data, functionPath,
         waitUntil: (p: Promise<unknown>) => ctx.waitUntil(p),
