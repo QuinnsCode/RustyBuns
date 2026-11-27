@@ -11,6 +11,7 @@ import { Agent, Call, type Request } from "./agent.ts";
 import { apply, backdropUrl, Page } from "./page.ts";
 import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
+import { listTools } from "./tools.ts";
 import { worldDoc } from "./world.ts";
 import { READY } from "./worlds.ts";
 
@@ -82,7 +83,7 @@ const HISTORY = 20, LOG = 8;
 type Asked = Request | { readonly _tag: "Load"; readonly files: Page["files"] };
 
 /** One request on the Model: the next Model and the error to report, if it couldn't be done. */
-function step(m: Model, r: Asked): { model: Model; error: string | null } {
+export function step<M extends Pick<Model, "page" | "past">>(m: M, r: Asked): { model: M; error: string | null } {
   if (r._tag === "Undo") {
     const [page, ...past] = m.past;
     return page ? { model: { ...m, page, past }, error: null } : { model: m, error: "nothing to undo" };
@@ -157,7 +158,7 @@ type Show =
   | { kind: "shelf"; items: readonly string[] };
 const PIECES: readonly { c: string; tag: string; title: string; says: string; show: Show; soon?: boolean }[] = [
   { c: "pink", tag: "WebMCP · MCP", title: "The tools",
-    says: "Your AI gets six tools and uses them for you. There is nothing here for you to press.",
+    says: `Your AI gets ${listTools().length} tools and uses them for you. There is nothing here for you to press.`,
     show: { kind: "data", rows: [["write", "puts a file in your world"], ["read", "reads a file back"], ["look", "checks for errors"], ["undo", "takes a change back"], ["reset", "starts over"], ["backdrop", "puts a page behind it"]] } },
   { c: "green", tag: "Sandbox", title: "The sealed frame",
     says: "The code your AI writes runs in a locked box. It can't use the network, read cookies or reach your computer.",

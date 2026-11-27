@@ -28,10 +28,11 @@ export type Page = typeof Page.Type;
 
 // What an agent (or a person, for undo and reset) can do to the world. Each case is one tool's arguments.
 export const WriteFile = Schema.TaggedStruct("WriteFile", { path: Path, text: Text });
+export const EditFile = Schema.TaggedStruct("EditFile", { path: Path, find: Text.check(Schema.isMinLength(1)), replace: Text });
 export const SetBackdrop = Schema.TaggedStruct("SetBackdrop", { codesplitter: Handle });
 export const Reset = Schema.TaggedStruct("Reset", {});
 
-export const Action = Schema.Union([WriteFile, SetBackdrop, Reset]);
+export const Action = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset]);
 export type Action = typeof Action.Type;
 
 export const starter: Page = { files: STARTER_FILES };
@@ -43,6 +44,13 @@ export const listing = (page: Page) => Object.entries(page.files)
 
 const size = (files: Page["files"]) => Object.values(files).reduce((n, t) => n + t.length, 0);
 
+/** Where `find` begins in `text`, every time, overlapping ones too: an edit needs exactly one place. */
+const places = (text: string, find: string) => {
+  const at: number[] = [];
+  for (let i = text.indexOf(find); i !== -1; i = text.indexOf(find, i + 1)) at.push(i);
+  return at;
+};
+
 /** The world after one action, or why it can't be done (too many files, too much text). */
 export function apply(page: Page, a: Action): { page: Page } | { error: string } {
   switch (a._tag) {
@@ -53,6 +61,15 @@ export function apply(page: Page, a: Action): { page: Page } | { error: string }
       if (Object.keys(files).length > FILES_MAX) return { error: `a world is ${FILES_MAX} files at most: write "" to a file to take it away` };
       if (size(files) > WORLD_MAX) return { error: `a world is ${WORLD_MAX.toLocaleString("en")} characters at most, and this write makes it ${size(files).toLocaleString("en")}` };
       return { page: { ...page, files } };
+    }
+    case "EditFile": {
+      const text = page.files[a.path];
+      if (text === undefined) return { error: `no file "${a.path}" to edit` };
+      const [at, ...more] = places(text, a.find);
+      if (at === undefined || more.length) return { error: `\`find\` matches ${at === undefined ? 0 : more.length + 1} places in ${a.path}: it must match exactly 1` };
+      const next = text.slice(0, at) + a.replace + text.slice(at + a.find.length);
+      if (next.length > FILE_MAX) return { error: `a file is ${FILE_MAX.toLocaleString("en")} characters at most, and this edit makes it ${next.length.toLocaleString("en")}` };
+      return apply(page, { _tag: "WriteFile", path: a.path, text: next });
     }
     case "SetBackdrop": {
       const { backdrop: _, ...rest } = page;
