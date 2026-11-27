@@ -10,10 +10,11 @@ import { listCommands, runCommand } from "@rustybuns/util/commands";
 import { startCommands } from "../src/app/commands.client.ts";
 import { APPS } from "../src/apps.ts";
 import { ACHIEVEMENTS } from "../src/achievements.ts";
-import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
+import { asks, boot, codeIn, limiter, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
-const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), LOADER: workerLoader(mkdtempSync(join(tmpdir(), "eq-loader-"))) as never });
+const programs = limiter();
+const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), EXEC_LIMIT: programs, LOADER: workerLoader(mkdtempSync(join(tmpdir(), "eq-loader-"))) as never });
 
 async function signUp(name: string, email = `${name.toLowerCase()}@example.com`) {
   const a = await asks("park-hide-seek", PARK);
@@ -126,4 +127,17 @@ test("a program can't reach what its caller can't, a typo or a bad call fails wi
   expect(await exec("try { await tools.eq_apps({ genre: 'Nonsense' }); } catch (e) { return 'caught ' + String(e.message).slice(0, 3); }")).toMatchObject({ ok: true, result: "caught 400" });
   expect(await exec("throw new Error('boom')")).toMatchObject({ ok: false, error: "boom" });
   expect((await run("eq_execute", {}, page(ada))).status).toBe(400);
+});
+
+test("each account runs only so many programs a minute, from its page or its app's token; another account still can", async () => {
+  const cy = await signUp("Cy"), dee = await signUp("Dee");
+  programs.cap = 2;
+  try {
+    expect((await run("eq_execute", { code: "return 1" }, page(cy))).status).toBe(200);
+    expect((await run("eq_execute", { code: "return 2" }, app(cy))).status).toBe(200);
+    const over = await run("eq_execute", { code: "return 3" }, page(cy));
+    expect(over.status).toBe(429);
+    expect(over.body.error).toContain("wait a minute");
+    expect((await run("eq_execute", { code: "return 1" }, page(dee))).status).toBe(200);
+  } finally { programs.cap = Infinity; }
 });
