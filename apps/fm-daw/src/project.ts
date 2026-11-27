@@ -119,10 +119,13 @@ const BARS = int(1, MAX_BARS);
 const okBars = (b: unknown): b is number => check(BARS, b) !== null;
 export const loopBeats = (p: Project) => p.bars * BEATS_PER_BAR;
 
+/** The order a track keeps its notes in: by start, then by key. */
+export const byStart = (a: Note, b: Note) => a.s - b.s || a.m - b.m;
+
 /** Notes past the loop's end are dropped; the rest of a note is made to fit. */
 export function sanitizeNotes(x: unknown, beats: number): Note[] {
   const note = obj({ s: num(0, beats - 1e-6), l: num(1 / 64, beats, 0.25), m: int(0, 127, 60), v: num(0, 1, 0.8) });
-  return arr(note, MAX_NOTES, { drop: true })(x).sort((a, b) => a.s - b.s || a.m - b.m);
+  return arr(note, MAX_NOTES, { drop: true })(x).sort(byStart);
 }
 
 /** Which lanes a list may hold, how each value fits, and how many. */
