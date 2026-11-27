@@ -38,9 +38,15 @@
 // in the same way, so its checks rerun on the fix, and a `<!-- after:unblocked #N -->` comment so it happens once.
 // Issues closed more than UNBLOCK_DAYS ago are left alone. Merging then goes on in each PR's `Merge after` order as it
 // goes green, as before.
+//
+// Each PR's step is an Effect, and a failure is answered by what it was. A gh call GitHub hiccuped on (a 5xx, a
+// rate limit, a timeout) is tried twice more, backing off. A push turned away because the branch moved on (someone
+// pushed while it merged) is left for the next pass. Anything else is an `::error::` line, and the run ends red so
+// it shows. Whatever happens, a merge the step left half done is aborted, so the next PR starts on a clean checkout.
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { Data, Effect, Schedule } from "../packages/cli/src/lifecycle.ts";
 import { arr, bool, check, int, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 import { type Allowance, type Finding, allowance, lint } from "./lint.ts";
@@ -95,7 +101,17 @@ const flagMark = (sha: string) => `<!-- after:unchecked ${sha} -->`;
  * on a file Mervin left cards in; without it (no binary) those go to a person as before. `unused`: run on
  * the files settled, before the push; each line it gives back (`` `path`: why ``) stops the push for a person.
  */
-export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; lineMerge?: LineMerge | null; mergiraf?: Mergiraf | null; unused?: ((files: string[]) => string[]) | null }
+export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; lineMerge?: LineMerge | null; mergiraf?: Mergiraf | null; unused?: ((files: string[]) => string[]) | null; retryMs?: number }
+
+/** A gh call that failed. `transient`: GitHub hiccuped (a 5xx, a rate limit, a timeout, a dropped connection), worth a retry. */
+export class GhFailed extends Data.TaggedError("GhFailed")<{ message: string; transient: boolean }> {}
+/** A step that failed for good: a git command, Mervin or the lint throwing. The PR gets an `::error::` line. */
+export class Failed extends Data.TaggedError("Failed")<{ message: string }> {}
+/** A push turned away because the branch moved on: someone pushed while the pass worked. The next pass looks again. */
+export class Moved extends Data.TaggedError("Moved")<{ message: string }> {}
+const TRANSIENT = /HTTP (?:5\d\d|429)|rate limit|timed out|timeout|connection (?:reset|refused)|ECONNRESET|unexpected EOF|TLS handshake|could not resolve host/i;
+const REJECTED = /\[rejected\]|non-fast-forward|fetch first|stale info/;
+const errText = (e: unknown) => e instanceof Error ? e.message : String(e);
 
 /**
  * A clean line merge can still leave a function with no callers (both sides moved its one call; #6015, #6017), which
@@ -111,36 +127,47 @@ export function newUnused(all: Finding[], allowed: Allowance, files: string[]): 
 }
 
 /** A `Merged main in after` PR whose head is still the bot's: has it CI, and if not, start it (token) or flag it once (no token). Null when the head is someone else's. */
-function ciCheck(gh: Gh, git: Git, pr: AfterPr, o: Required<PassOpts>): string | null {
-  const h = gh.head(pr.number), last = h.commits.at(-1);
+const ciCheck = (gh: Gh, git: Git, pr: AfterPr, o: Required<PassOpts>) => Effect.gen(function* () {
+  const call = io(o.retryMs), must = gitStep(git);
+  const h = yield* call(() => gh.head(pr.number)), last = h.commits.at(-1);
   if (!last || !last.authors.some((a) => a.name === AFTER_BOT)) return null;
   const sha = h.headRefOid, short = sha.slice(0, 7), tag = `#${pr.number} head ${short}`;
-  if (headRuns(gh.runs(sha)) !== "none") return `${tag} has CI`;
+  if (headRuns(yield* call(() => gh.runs(sha))) !== "none") return `${tag} has CI`;
   const age = Math.round((o.now - Date.parse(last.committedDate)) / 1000);
   if (age < o.checkAfter) return `${tag} has no CI run yet (${Math.round(age / 60)} min old)`;
   const mins = Math.round(age / 60);
   // A token push of our own empty commit that still got no run: pushing again won't help, so say so.
   if (o.token && last.messageHeadline !== KICK_MESSAGE) {
     if (o.dry) return `${tag} has no CI after ${mins} min: would start CI`;
-    const got = git("fetch", "-q", "origin", pr.headRefName);
-    if (got.code !== 0) throw new Error(`git fetch: ${got.out.trim()}`);
-    const at = git("rev-parse", `origin/${pr.headRefName}`).out.trim();
+    yield* must("fetch", "-q", "origin", pr.headRefName);
+    const at = (yield* must("rev-parse", `origin/${pr.headRefName}`)).trim();
     if (at !== sha) return `${tag} moved on (${at.slice(0, 7)}): someone else pushed`;
-    const made = git("commit-tree", `${sha}^{tree}`, "-p", sha, "-m", KICK_MESSAGE);
-    if (made.code !== 0) throw new Error(`git commit-tree: ${made.out.trim()}`);
-    const kick = made.out.trim(), pushed = git("push", "-q", "origin", `${kick}:refs/heads/${pr.headRefName}`);
-    if (pushed.code !== 0) throw new Error(`git push: ${pushed.out.trim()}`);
+    const kick = (yield* must("commit-tree", `${sha}^{tree}`, "-p", sha, "-m", KICK_MESSAGE)).trim();
+    yield* must("push", "-q", "origin", `${kick}:refs/heads/${pr.headRefName}`);
     return `${tag} had no CI after ${mins} min: started CI (pushed ${kick.slice(0, 7)})`;
   }
   const warn = `::warning::#${pr.number} head ${short} (the after workflow's merge of main) has had no typecheck or apps run for ${mins} min`;
   if (h.comments.some((c) => c.body.includes(flagMark(sha)))) return `${tag} has no CI after ${mins} min: already flagged\n${warn}`;
   if (o.dry) return `${tag} has no CI after ${mins} min: would flag it`;
-  gh.comment(pr.number, `${flagMark(sha)}\nNo typecheck or apps run started on ${short}, the after workflow's merge of main: a push made with the workflow's own token starts no checks (#5733). One push of your own starts them: \`bun run kick ${pr.number}\`, or\n\n\`\`\`\ngit fetch origin && git checkout -B ${pr.headRefName} origin/${pr.headRefName} && git commit --allow-empty -m "Start CI" && git push origin ${pr.headRefName}\n\`\`\``);
+  yield* call(() => gh.comment(pr.number, `${flagMark(sha)}\nNo typecheck or apps run started on ${short}, the after workflow's merge of main: a push made with the workflow's own token starts no checks (#5733). One push of your own starts them: \`bun run kick ${pr.number}\`, or\n\n\`\`\`\ngit fetch origin && git checkout -B ${pr.headRefName} origin/${pr.headRefName} && git commit --allow-empty -m "Start CI" && git push origin ${pr.headRefName}\n\`\`\``));
   return `${tag} has no CI after ${mins} min: flagged\n${warn}`;
-}
+});
 
 /** Runs git in the checkout: exit code and output. */
 export type Git = (...args: string[]) => { code: number; out: string };
+
+/** One gh call as an Effect: a GitHub hiccup is tried twice more, backing off from `ms`; anything else fails for good. */
+const io = (ms: number) => <A>(f: () => A) =>
+  Effect.try({ try: f, catch: (e) => e instanceof GhFailed ? e : new GhFailed({ message: errText(e), transient: false }) })
+    .pipe(Effect.retry({ times: 2, schedule: Schedule.exponential(ms), while: (e) => e.transient }));
+
+/** One git command as an Effect: its output, or a push turned away as Moved, or any other failure as Failed. */
+const gitStep = (git: Git) => (...a: string[]): Effect.Effect<string, Failed | Moved> => {
+  const r = git(...a);
+  if (r.code === 0) return Effect.succeed(r.out);
+  const message = `git ${a.join(" ")}: ${r.out.trim()}`;
+  return Effect.fail(a[0] === "push" && REJECTED.test(r.out) ? new Moved({ message }) : new Failed({ message }));
+};
 
 /** The labels a Claude Code watch or the cloud PR Steward puts on a PR it holds. */
 export const WATCHED = /^claude-(?:pr-steward|ship)-/;
@@ -174,100 +201,112 @@ type Settled = { f: string; text: string; by: string } | { f: string; text: null
 /** The file a card line (`` `path`: why ``) is about. */
 const fileOf = (line: string) => line.slice(1, line.indexOf("`", 1));
 
-/** One pass over the open PRs; answers one line per PR it looked at. `token`: pushes run CI (AFTER_TOKEN is set). */
+/**
+ * One pass over the open PRs; answers one line per PR it looked at. `token`: pushes run CI (AFTER_TOKEN is set).
+ * A PR whose step failed for good gets an `::error::` line, and the next PR goes on from a clean checkout. It rejects
+ * only when the open PRs can't be read at all.
+ */
 export async function pass(gh: Gh, git: Git, opts: PassOpts = {}): Promise<string[]> {
-  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, lineMerge: null, mergiraf: null, unused: null, ...opts }, { dry, token } = o;
+  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, lineMerge: null, mergiraf: null, unused: null, retryMs: 2000, ...opts }, { dry, token } = o;
   const out: string[] = [];
-  const must = (...a: string[]) => {
-    const r = git(...a);
-    if (r.code !== 0) throw new Error(`git ${a.join(" ")}: ${r.out.trim()}`);
-    return r.out;
-  };
-  const prs = gh.open();
-  for (const pr of prs) {
-    const after = blockers(pr.body), merged = !after.length && MERGED_LINE.test(pr.body);
-    if (!after.length && !merged) continue;
-    const held = pr.labels.find((l) => WATCHED.test(l.name));
-    if (held) { if (!merged) out.push(`#${pr.number} skipped: a Claude watch holds it (${held.name}) and merges main in itself`); continue; }
-    if (pr.isCrossRepository) { if (!merged) out.push(`#${pr.number} skipped: a fork's branch can't be pushed to`); continue; }
-    if (merged) {
-      try { const line = ciCheck(gh, git, pr, o); if (line) out.push(line); }
-      catch (e) { out.push(`#${pr.number} CI check failed: ${e instanceof Error ? e.message : String(e)}`); }
-      continue;
-    }
-    const waiting = after.filter((n) => gh.state(n) === "OPEN");
-    if (waiting.length) { out.push(`#${pr.number} waits on ${waiting.map((n) => `#${n}`).join(", ")}`); continue; }
-    if (dry) { out.push(`#${pr.number} would merge main in`); continue; }
-    const named = after.map((n) => `#${n}`).join(", ");
-    try {
-      const { conflicts: files, settled } = await mergeMain(pr, named);
-      if (!files.length) {
-        gh.setBody(pr.number, marked(pr.body, "Merged main in after"));
-        pushed(pr, settled, settled ? " (settled its conflicts)" : "");
-      } else {
-        gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch, not even through Mervin's line merge and Mergiraf. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`);
-        gh.setBody(pr.number, marked(pr.body, "Main conflicts after"));
-        out.push(`#${pr.number} conflicts with main in ${files.map(fileOf).join(", ")}: commented`);
-      }
-    } catch (e) { out.push(`#${pr.number} failed: ${e instanceof Error ? e.message : String(e)}`); }
-  }
+  const call = io(o.retryMs), must = gitStep(git);
+  /** One PR's step, its failure turned into its line: a moved branch waits for the next pass, the rest is an error. */
+  const settle = (n: number, what: string, step: Effect.Effect<string | null, GhFailed | Failed | Moved>) => step.pipe(
+    Effect.catchTag("Moved", (e) => Effect.succeed(`#${n} moved on while the pass pushed, so the next pass looks again: ${e.message}`)),
+    Effect.catch((e) => Effect.succeed(`::error::#${n} ${what}: ${e.message}`)),
+    Effect.map((line) => void (line && out.push(line))),
+  );
 
-  // A blocker's fix landed (its issue closed): the PRs it held get main merged in, so their checks rerun on the fix.
-  const open = new Map(prs.map((p) => [p.number, p]));
-  for (const issue of gh.closedBlockers()) {
-    if (o.now - Date.parse(issue.closedAt) > UNBLOCK_DAYS * 86_400_000) continue;
-    const b = blockerOf(issue);
-    for (const n of b?.prs ?? []) {
-      const pr = open.get(n);
-      if (!pr) continue;
+  return Effect.runPromise(Effect.gen(function* () {
+    const prs = yield* call(() => gh.open());
+    for (const pr of prs) {
+      const after = blockers(pr.body), merged = !after.length && MERGED_LINE.test(pr.body);
+      if (!after.length && !merged) continue;
       const held = pr.labels.find((l) => WATCHED.test(l.name));
-      if (held) { out.push(`#${n} skipped: a Claude watch holds it (${held.name}) and merges main in itself`); continue; }
-      if (pr.isCrossRepository) continue;
-      try {
-        if (gh.head(n).comments.some((c) => c.body.includes(unblockMark(issue.number)))) continue;
-        if (dry) { out.push(`#${n} would merge main in: blocker #${issue.number} is fixed`); continue; }
-        const { conflicts: files, settled } = await mergeMain(pr, `the fix for #${issue.number}`);
-        if (!files.length) pushed(pr, `${unblockMark(issue.number)}\nThe test that held this PR red (${b!.test}) is fixed on main (#${issue.number} closed), so main is merged in and its checks rerun on the fix.${settled ? `\n\n${settled}` : ""}`, ` after blocker #${issue.number}`);
-        else {
-          gh.comment(pr.number, `${unblockMark(issue.number)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue.number}), but main no longer merges clean into this branch, not even through Mervin's line merge and Mergiraf. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push.`);
-          out.push(`#${n} conflicts with main in ${files.map(fileOf).join(", ")} after blocker #${issue.number}: commented`);
-        }
-      } catch (e) { out.push(`#${n} failed: ${e instanceof Error ? e.message : String(e)}`); }
+      if (held) { if (!merged) out.push(`#${pr.number} skipped: a Claude watch holds it (${held.name}) and merges main in itself`); continue; }
+      if (pr.isCrossRepository) { if (!merged) out.push(`#${pr.number} skipped: a fork's branch can't be pushed to`); continue; }
+      yield* merged ? settle(pr.number, "CI check failed", ciCheck(gh, git, pr, o)) : settle(pr.number, "failed", landed(pr, after));
     }
-  }
-  return out;
 
+    // A blocker's fix landed (its issue closed): the PRs it held get main merged in, so their checks rerun on the fix.
+    const open = new Map(prs.map((p) => [p.number, p]));
+    const closed = yield* call(() => gh.closedBlockers()).pipe(
+      Effect.catch((e) => Effect.sync(() => (out.push(`::error::the closed blocker issues didn't load: ${e.message}`), []))),
+    );
+    for (const issue of closed) {
+      if (o.now - Date.parse(issue.closedAt) > UNBLOCK_DAYS * 86_400_000) continue;
+      const b = blockerOf(issue);
+      for (const n of b?.prs ?? []) {
+        const pr = open.get(n);
+        if (!pr) continue;
+        const held = pr.labels.find((l) => WATCHED.test(l.name));
+        if (held) { out.push(`#${n} skipped: a Claude watch holds it (${held.name}) and merges main in itself`); continue; }
+        if (pr.isCrossRepository) continue;
+        yield* settle(n, "failed", unblocked(pr, issue.number, b!.test));
+      }
+    }
+    return out;
+  }));
+
+  /** A `Merge after` PR: wait while what it names is open, then merge main in. */
+  function landed(pr: AfterPr, after: number[]) {
+    return Effect.gen(function* () {
+      const waiting: number[] = [];
+      for (const n of after) if ((yield* call(() => gh.state(n))) === "OPEN") waiting.push(n);
+      if (waiting.length) return `#${pr.number} waits on ${waiting.map((n) => `#${n}`).join(", ")}`;
+      if (dry) return `#${pr.number} would merge main in`;
+      const named = after.map((n) => `#${n}`).join(", ");
+      const { conflicts: files, settled } = yield* mergeMain(pr, named);
+      if (!files.length) {
+        yield* call(() => gh.setBody(pr.number, marked(pr.body, "Merged main in after")));
+        return yield* pushed(pr, settled, settled ? " (settled its conflicts)" : "");
+      }
+      yield* call(() => gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch, not even through Mervin's line merge and Mergiraf. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`));
+      yield* call(() => gh.setBody(pr.number, marked(pr.body, "Main conflicts after")));
+      return `#${pr.number} conflicts with main in ${files.map(fileOf).join(", ")}: commented`;
+    });
+  }
+  /** A PR a fixed blocker held red: main merged in once (its comment's mark says it was), so its checks rerun on the fix. */
+  function unblocked(pr: AfterPr, issue: number, test: string) {
+    return Effect.gen(function* () {
+      const n = pr.number;
+      if ((yield* call(() => gh.head(n))).comments.some((c) => c.body.includes(unblockMark(issue)))) return null;
+      if (dry) return `#${n} would merge main in: blocker #${issue} is fixed`;
+      const { conflicts: files, settled } = yield* mergeMain(pr, `the fix for #${issue}`);
+      if (!files.length) return yield* pushed(pr, `${unblockMark(issue)}\nThe test that held this PR red (${test}) is fixed on main (#${issue} closed), so main is merged in and its checks rerun on the fix.${settled ? `\n\n${settled}` : ""}`, ` after blocker #${issue}`);
+      yield* call(() => gh.comment(n, `${unblockMark(issue)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue}), but main no longer merges clean into this branch, not even through Mervin's line merge and Mergiraf. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push.`));
+      return `#${n} conflicts with main in ${files.map(fileOf).join(", ")} after blocker #${issue}: commented`;
+    });
+  }
   /**
    * Merges main into the PR's branch and pushes. `conflicts`: the files a person must choose in (nothing pushed).
    * Otherwise pushed, and `settled` names each conflicted file `settle` resolved and how (one line each, for the comment).
+   * However it ends (pushed, a card, a failed step), a merge it left in progress is aborted.
    */
-  async function mergeMain(pr: AfterPr, why: string): Promise<{ conflicts: string[]; settled: string }> {
-    must("fetch", "-q", "origin", "main", pr.headRefName);
-    must("checkout", "-q", "-B", `after-${pr.number}`, `origin/${pr.headRefName}`);
-    if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${why} landed)`, "origin/main").code === 0) {
-      must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
-      return { conflicts: [], settled: "" };
-    }
-    const files = must("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
-    const done: Settled[] = [];
-    for (const f of files) done.push(await mervin(f));
-    if (done.some((d) => d.text === null)) {
-      git("merge", "--abort");
-      return { conflicts: done.map((d) => d.text === null ? `\`${d.f}\`: ${d.why}` : `\`${d.f}\`: Mervin settled it`), settled: "" };
-    }
-    const root = must("rev-parse", "--show-toplevel").trim();
-    for (const { f, text } of done) { writeFileSync(join(root, f), text!); must("add", "--", f); }
-    const code = files.filter((f) => /\.[cm]?[jt]sx?$/.test(f));
-    let unused: string[];
-    try { unused = o.unused && code.length ? o.unused(code) : []; }
-    catch (e) { git("merge", "--abort"); throw e; }
-    if (unused.length) {
-      git("merge", "--abort");
-      return { conflicts: unused, settled: "" };
-    }
-    must("commit", "-q", "--no-edit");
-    must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
-    return { conflicts: [], settled: `git's merge of main conflicted, and Mervin settled every file:\n\n${done.map((d) => `- \`${d.f}\`: ${d.text === null ? "" : d.by}`).join("\n")}` };
+  function mergeMain(pr: AfterPr, why: string) {
+    return Effect.gen(function* () {
+      yield* must("fetch", "-q", "origin", "main", pr.headRefName);
+      yield* must("checkout", "-q", "-B", `after-${pr.number}`, `origin/${pr.headRefName}`);
+      if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${why} landed)`, "origin/main").code === 0) {
+        yield* must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
+        return { conflicts: [], settled: "" };
+      }
+      const files = (yield* must("diff", "--name-only", "--diff-filter=U")).split("\n").filter(Boolean);
+      const done: Settled[] = [];
+      for (const f of files) done.push(yield* Effect.tryPromise({ try: () => mervin(f), catch: (e) => new Failed({ message: `settling ${f}: ${errText(e)}` }) }));
+      if (done.some((d) => d.text === null)) return { conflicts: done.map((d) => d.text === null ? `\`${d.f}\`: ${d.why}` : `\`${d.f}\`: Mervin settled it`), settled: "" };
+      const root = (yield* must("rev-parse", "--show-toplevel")).trim();
+      for (const { f, text } of done) {
+        yield* Effect.try({ try: () => writeFileSync(join(root, f), text!), catch: (e) => new Failed({ message: `writing ${f}: ${errText(e)}` }) });
+        yield* must("add", "--", f);
+      }
+      const code = files.filter((f) => /\.[cm]?[jt]sx?$/.test(f));
+      const unused = yield* Effect.try({ try: () => o.unused && code.length ? o.unused(code) : [], catch: (e) => new Failed({ message: `lint: ${errText(e)}` }) });
+      if (unused.length) return { conflicts: unused, settled: "" };
+      yield* must("commit", "-q", "--no-edit");
+      yield* must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
+      return { conflicts: [], settled: `git's merge of main conflicted, and Mervin settled every file:\n\n${done.map((d) => `- \`${d.f}\`: ${d.text === null ? "" : d.by}`).join("\n")}` };
+    }).pipe(Effect.ensuring(Effect.sync(() => void git("merge", "--abort"))));
   }
   /** One conflicted file through Mervin's line merge, then Mergiraf, from the index's three stages (1 base, 2 the branch, 3 main). */
   async function mervin(f: string): Promise<Settled> {
@@ -288,13 +327,15 @@ export async function pass(gh: Gh, git: Git, opts: PassOpts = {}): Promise<strin
   }
   /** Says a push happened: with the token its checks run; without, one comment with the fix (and `note`, if any). */
   function pushed(pr: AfterPr, note: string, tail = "") {
-    if (token) {
-      if (note) gh.comment(pr.number, note);
-      out.push(`#${pr.number} merged main in and pushed${tail}`);
-      return;
-    }
-    gh.comment(pr.number, `${note ? `${note}\n\n` : ""}${NO_CHECKS}\n\n${flagMark(must("rev-parse", "HEAD").trim())}`);
-    out.push(`::warning::#${pr.number} merged main in and pushed${tail}, but the push starts no checks without AFTER_TOKEN (#5733): commented`);
+    return Effect.gen(function* () {
+      if (token) {
+        if (note) yield* call(() => gh.comment(pr.number, note));
+        return `#${pr.number} merged main in and pushed${tail}`;
+      }
+      const head = (yield* must("rev-parse", "HEAD")).trim();
+      yield* call(() => gh.comment(pr.number, `${note ? `${note}\n\n` : ""}${NO_CHECKS}\n\n${flagMark(head)}`));
+      return `::warning::#${pr.number} merged main in and pushed${tail}, but the push starts no checks without AFTER_TOKEN (#5733): commented`;
+    });
   }
 }
 
@@ -304,7 +345,7 @@ export const sh = (cmd: string[], stdin?: string) => {
 };
 const ghRun = (args: string[], stdin?: string) => {
   const r = sh(["gh", ...args], stdin);
-  if (r.code !== 0) throw new Error(`gh ${args.join(" ")}: ${r.out.trim()}`);
+  if (r.code !== 0) throw new GhFailed({ message: `gh ${args.join(" ")}: ${r.out.trim()}`, transient: TRANSIENT.test(r.out) });
   return r.out;
 };
 
@@ -357,7 +398,10 @@ if (import.meta.main) {
   // Without the token the push already commented, and there is nothing more a pass could do.
   if (!opts.dry && opts.token && lines.some((l) => / merged main in and pushed/.test(l))) {
     await Bun.sleep(FOLLOW_UP * 1000);
-    const again = (await pass(ghCli, git, { ...opts, checkAfter: FOLLOW_UP })).filter((l) => / head [0-9a-f]{7} /.test(l));
+    const again = (await pass(ghCli, git, { ...opts, checkAfter: FOLLOW_UP })).filter((l) => / head [0-9a-f]{7} |^::error::/.test(l));
     if (again.length) console.log(`follow-up check:\n${again.join("\n")}`);
+    lines.push(...again);
   }
+  // A PR whose step failed is named above with its error; the run ends red so it is seen, not buried in a green log.
+  if (lines.some((l) => l.startsWith("::error::"))) process.exitCode = 1;
 }

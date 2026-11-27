@@ -31,8 +31,9 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       # Mervin's line merge (apps/codesplitter/scripts/shadow.ts) imports @rustybuns/util: without the install it
-      # can't load and every conflict goes to a person. The root and codeSplitter's workspace are all after.ts needs.
-      - run: bun install --frozen-lockfile --filter rustybuns --filter ./apps/codesplitter
+      # can't load and every conflict goes to a person. after.ts itself imports `effect` through packages/cli
+      # (lifecycle.ts), which is installed under packages/cli only. The root, codeSplitter and the CLI are all it needs.
+      - run: bun install --frozen-lockfile --filter rustybuns --filter ./apps/codesplitter --filter ./packages/cli
       # Mergiraf, Mervin's second opinion on a file he leaves cards in (#6152). Best effort: without it those files go
       # to a person, as before.
       - continue-on-error: true
