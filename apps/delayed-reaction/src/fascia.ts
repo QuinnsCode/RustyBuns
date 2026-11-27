@@ -2,7 +2,7 @@
 // like the tunnel; the only colour is the lanes' own (the preset LEDs and tape codes, the VU meter's hot end). Weights,
 // as strings: a screw ~0.4 KB, the dial face ~4 KB, a worn knob ~3 KB, a VU meter ~2.5 KB, the grille and tape-fibre
 // tiles ~0.5 KB each; the Controls rows' hardware (a fader's printed scale ~1.6 KB, the bat-handle toggle ~1.3 KB a side,
-// the brushed plate ~0.5 KB). Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
+// the brushed plate ~0.5 KB, a read-out's glass ~1 KB, the presets' band window ~0.8 KB). Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
 import { mulberry32 } from "@rustybuns/util";
 
 const INK = "#e9ecf2";
@@ -28,14 +28,14 @@ export function tuningScale() {
   for (let b = LO; b <= HI; b += 2) {
     const big = b % 10 === 0;
     ticks += `<line x1="${x(b)}" x2="${x(b)}" y1="${big ? 15 : 19}" y2="27" stroke="${INK}" stroke-opacity="${big ? 0.9 : 0.38}" stroke-width="${big ? 1.2 : 0.8}"/>`;
-    if (big) ticks += `<text x="${x(b)}" y="10" text-anchor="middle" fill="${INK}" fill-opacity=".75" font-size="7.5" font-family="${MONO}">${b}</text>`;
+    if (big) ticks += `<text x="${x(b)}" y="10" text-anchor="middle" fill="${INK}" fill-opacity=".8" font-size="10.5" font-family="${MONO}">${b}</text>`;
   }
   for (let i = -6; i <= 6; i++) grid += `<line x1="150" y1="20" x2="${150 + i * 38}" y2="44" stroke="${INK}" stroke-opacity=".06"/>`;
   for (const y of [24, 29, 36]) grid += `<line x1="0" x2="${w}" y1="${y}" y2="${y}" stroke="${INK}" stroke-opacity=".05"/>`;
   return svg(w, 44, `<defs><radialGradient id="glow" cx="50%" cy="65%" r="60%"><stop offset="0" stop-color="#cfe6ff" stop-opacity=".16"/><stop offset="1" stop-color="#cfe6ff" stop-opacity="0"/></radialGradient></defs>
     <rect x="0" y="0" width="${w}" height="44" fill="url(#glow)"/>${grid}${ticks}
     <line x1="10" x2="${w - 10}" y1="27" y2="27" stroke="${INK}" stroke-opacity=".55" stroke-width=".8"/>
-    <text x="${w - 10}" y="39" text-anchor="end" fill="${INK}" fill-opacity=".45" font-size="6.5" letter-spacing="1" font-family="${MONO}">BPM</text>
+    <text x="${w - 10}" y="39" text-anchor="end" fill="${INK}" fill-opacity=".55" font-size="8.5" letter-spacing="1" font-family="${MONO}">BPM</text>
     <g class="needle"><line x1="0" x2="0" y1="13" y2="34" stroke="#f4f8ff" stroke-width="1.6"/><line x1="0" x2="0" y1="13" y2="34" stroke="#cfe6ff" stroke-opacity=".35" stroke-width="6"/></g>`, "scale");
 }
 /** Where the needle stands for a tempo, as a share of the scale's width (the CSS turns it into a translate). */
@@ -90,9 +90,10 @@ export function vuMeter(label = "VU") {
   const cx = 60, cy = 64, r = 46, at = (v: number) => (-50 + v * 100) * Math.PI / 180;
   const pt = (v: number, rr: number) => [f(cx + Math.sin(at(v)) * rr), f(cy - Math.cos(at(v)) * rr)] as const;
   let marks = "";
-  for (const [text, v] of [["-20", 0], ["-10", 0.3], ["-5", 0.5], ["-3", 0.62], ["0", 0.8], ["+3", 1]] as const) {
-    const hot = v >= 0.8, c = hot ? LANE_COLOURS[0] : INK, [x1, y1] = pt(v, r - 6), [x2, y2] = pt(v, r), [tx, ty] = pt(v, r + 7);
-    marks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.2"/><text x="${tx}" y="${ty}" text-anchor="middle" font-size="7" fill="${c}" fill-opacity=".85" font-family="${MONO}">${text}</text>`;
+  // -5 and -3 keep their ticks but not their numbers, so the others print big enough to read on a phone.
+  for (const [text, v] of [["-20", 0], ["-10", 0.3], ["", 0.5], ["", 0.62], ["0", 0.8], ["+3", 1]] as const) {
+    const hot = v >= 0.8, c = hot ? LANE_COLOURS[0] : INK, [x1, y1] = pt(v, r - 6), [x2, y2] = pt(v, r), [tx, ty] = pt(v, r + 8);
+    marks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.2"/><text x="${tx}" y="${ty}" text-anchor="middle" font-size="9.5" fill="${c}" fill-opacity=".9" font-family="${MONO}">${text}</text>`;
   }
   const [ax, ay] = pt(0, r), [bx, by] = pt(0.8, r), [hx, hy] = pt(1, r);
   return svg(120, 76, `<defs><radialGradient id="vuf" cx="50%" cy="85%" r="80%"><stop offset="0" stop-color="#cfe6ff" stop-opacity=".18"/><stop offset="1" stop-color="#cfe6ff" stop-opacity="0"/></radialGradient></defs>
@@ -100,8 +101,8 @@ export function vuMeter(label = "VU") {
     <path d="M ${ax} ${ay} A ${r} ${r} 0 0 1 ${bx} ${by}" fill="none" stroke="${INK}" stroke-opacity=".6" stroke-width="1"/>
     <path d="M ${bx} ${by} A ${r} ${r} 0 0 1 ${hx} ${hy}" fill="none" stroke="${LANE_COLOURS[0]}" stroke-width="2.5"/>${marks}
     <g class="vu-needle"><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - r + 2}" stroke="#f4f8ff" stroke-width="1.4" stroke-linecap="round"/></g>
-    <rect x="${cx - 22}" y="${cy - 2}" width="44" height="12" fill="#0b0d12"/><circle cx="${cx}" cy="${cy}" r="4" fill="#16191f" stroke="${INK}" stroke-opacity=".4"/>
-    <text x="${cx}" y="${cy + 9}" text-anchor="middle" font-size="6.5" letter-spacing="1" fill="${INK}" fill-opacity=".55" font-family="${MONO}">${label}</text>`, "vu");
+    <rect x="${cx - 24}" y="${cy - 2}" width="48" height="13" fill="#0b0d12"/><circle cx="${cx}" cy="${cy}" r="4" fill="#16191f" stroke="${INK}" stroke-opacity=".4"/>
+    <text x="${cx}" y="${cy + 10}" text-anchor="middle" font-size="8.5" letter-spacing="1" fill="${INK}" fill-opacity=".65" font-family="${MONO}">${label}</text>`, "vu");
 }
 /** The needle's angle for a level, for the CSS rotate about the meter's pivot. */
 export const vuTurn = (level: number) => `${f(-50 + Math.min(1, Math.max(0, level)) * 100)}deg`;
@@ -165,5 +166,27 @@ export const toggleOff = toggle(false), toggleOn = toggle(true);
 
 /** Brushed black metal for the plate under each section's rows: fine horizontal streaks of noise. ~0.5 KB, tiled. */
 export const brushed = dataUri(`<filter id="b"><feTurbulence type="fractalNoise" baseFrequency=".004 1.4" numOctaves="2" seed="9" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .45 -.2"/></filter><rect width="240" height="60" filter="url(#b)"/>`, 240, 60);
+/** A fader's read-out as a lit window set in the plate: a chrome bezel, smoked glass with fine scan lines, and a glare across
+ * its top. Drawn to stretch (no aspect kept), so one tile fits every read-out's width. ~1 KB. */
+export const readoutGlass = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 30" preserveAspectRatio="none">
+  <defs><linearGradient id="bz" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#6a707c"/><stop offset=".5" stop-color="#2a2d35"/><stop offset="1" stop-color="#8a909c"/></linearGradient>
+  <linearGradient id="gl" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".14"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <pattern id="sl" width="2" height="2" patternUnits="userSpaceOnUse"><rect width="2" height="1" fill="#000" fill-opacity=".35"/></pattern></defs>
+  <rect x=".5" y=".5" width="79" height="29" rx="4" fill="url(#bz)" stroke="#000"/>
+  <rect x="3" y="3" width="74" height="24" rx="2" fill="#03060a" stroke="#000"/><rect x="3" y="3" width="74" height="24" rx="2" fill="#4de3ff" fill-opacity=".06"/>
+  <rect x="3" y="3" width="74" height="24" rx="2" fill="url(#sl)"/><path d="M 4 4 H 76 V 10 Q 40 14 4 10 Z" fill="url(#gl)"/></svg>`)}")`;
+
+/** The preset keys' band window: a strip of glass over the row of keys, a long printed tick over each key and short ones
+ * between, like a radio's band selector. The lit pointer is CSS, so it slides to the key in use. No viewBox, so the ticks are
+ * shares of the row and keep their size at any width. ~0.8 KB. */
+export const bandScale = (() => {
+  let ticks = "";
+  for (let i = 0; i <= 16; i++) {
+    const at = `${((i / 16) * 100).toFixed(2)}%`, key = i % 4 === 2;
+    ticks += `<line x1="${at}" x2="${at}" y1="${key ? 1 : 6}" y2="11" stroke="${INK}" stroke-opacity="${key ? 0.85 : 0.3}" stroke-width="1"/>`;
+  }
+  return `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" overflow="visible">${ticks}<line x1="0" x2="100%" y1="11.5" y2="11.5" stroke="${INK}" stroke-opacity=".45"/></svg>`)}")`;
+})();
+
 /** A small screw as a background layer, for the section plates' corners. */
 export const screwAt = (pos: string, turn: number) => `${dataUri(screwBody(turn, "s"), 16, 16)} ${pos} / 9px 9px no-repeat`;
