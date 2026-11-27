@@ -27,9 +27,13 @@ export default defineConfig({
     MAX_ROOMS: { type: "var", value: "50" },
     MAX_SESHES: { type: "var", value: "2000" },
     ROOM_SEATS: { type: "var", value: "16" },
-    // Listeners one live set takes at once (src/listen.ts).
-    LISTEN_EARS: { type: "var", value: "200" },
-    // Reads the sign-up list (GET /signups with "Authorization: Bearer <token>"). Missing, nobody can.
+    // A free live set's limits (src/listen.ts, src/lobby.ts): listeners at once, hours one set runs, and set-hours a
+    // month for each DJ key and each address. Past one, the DJ (or listener) gets the paid waitlist.
+    LISTEN_EARS: { type: "var", value: "16" },
+    LISTEN_SET_HOURS: { type: "var", value: "4" },
+    FREE_SET_HOURS: { type: "var", value: "16" },
+    // Reads the sign-up lists and the live sets' usage (GET /signups, /signups?list=paid, /usage with
+    // "Authorization: Bearer <token>"). Missing, nobody can.
     SIGNUPS_TOKEN: { type: "secret", op: "op://fm-daw/signups/password", optional: true },
     // Cloudflare Realtime's TURN key, so two players behind strict networks still hear each other's guitar (GET /ice,
     // src/worker.ts). Billed per GB relayed. Missing, a guitar call gets STUN alone.

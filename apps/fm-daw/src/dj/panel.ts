@@ -24,6 +24,7 @@ import { mountMixer } from "./mixer-panel.ts";
 import { DeckIo, LINE_CHANNELS, type Device } from "./io.ts";
 import { saveTake, SetRecorder, stamp, type OnAir, type Take } from "./record.ts";
 import { canGoLive, LiveSet, type LiveState } from "./live.ts";
+import { waitlistCard } from "./waitlist.ts";
 import { DEMOS, demoTrack } from "./demo.ts";
 import { bars, overTone, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
 import { ACTION_LABEL, ACTIONS, actionOf, bindKey, deckAction, DEFAULT_PREFS, FAST_TIMES, keyName, keysOf, loadPrefs, NUDGE_MS, savePrefs, TONE_LUT, TONE_STEPS, type Action, type Prefs } from "./prefs.ts";
@@ -256,6 +257,9 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   liveLink.value = live.link;
   const liveCopy = button(ICON.copy, "Copy the link", "dj-live-copy");
   const liveSays = el("p", { class: "dj-live-says" });
+  // a free limit that refused or ended the set: which one, and the paid waitlist (waitlist.ts)
+  const liveCard = el("div", { class: "dj-live-card" });
+  let cardFor: string | null = null;
   let liveTick: ReturnType<typeof setInterval> | null = null;
   const drawLive = () => {
     const s = live.state();
@@ -265,6 +269,9 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     liveGo.classList.toggle("on", s.on);
     liveName.disabled = s.on;
     liveSays.textContent = s.on ? `Live ${stamp(s.seconds)}: ${s.ears} listening` : "Off: nothing is sent until you go live.";
+    const l = s.on ? null : live.limit, key = l ? `${l.why}:${l.n}` : null;
+    if (key !== cardFor) { cardFor = key; liveCard.replaceChildren(...(l ? [waitlistCard(l.why, l.n)] : [])); }
+    if (l && liveBox.hidden) { liveBox.hidden = false; liveB.classList.add("open"); }
   };
   const liveNow = () => { const m = decks.mixer; live.tick([onAir(0), onAir(1)], m.xfader, m.curve); drawLive(); };
   live.onChange = (why) => {
@@ -278,6 +285,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     if (!canGoLive()) { flash("Going live needs Chrome, Edge or Firefox"); return false; }
     void o.ctx.resume();
     const ok = await live.start(decks.stream, name.trim().slice(0, 80) || "QDJs set");
+    if (!ok && live.limit) { drawLive(); return false; }
     if (!ok) { flash("Couldn't reach the listen link: it needs the decks online, not the desktop app"); return false; }
     liveNow();
     liveTick = setInterval(liveNow, 250);
@@ -291,7 +299,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   linkRow.append(liveLink, liveCopy);
   const goRow = el("div", { class: "dj-prefs-row" });
   goRow.append(liveName, liveGo);
-  liveBox.append(el("h3", {}, "Listen link"), goRow, linkRow, liveSays,
+  liveBox.append(el("h3", {}, "Listen link"), goRow, linkRow, liveSays, liveCard,
     el("p", {}, "Anyone with the link hears the master live, a few seconds behind, with the track list. YouTube decks play in YouTube's own player, so they aren't in the stream. The link stays yours: it is the same next time."));
   drawLive();
   // the sound card: the master out to any output (a virtual cable into a streaming app), a line in on 1 or 4

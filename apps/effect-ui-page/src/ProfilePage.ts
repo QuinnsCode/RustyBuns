@@ -151,13 +151,61 @@ const ICONS = {
 } as const;
 type Icon = keyof typeof ICONS;
 
-/** The four parts, each with what it does for you in a few plain words. */
-const SIGNS: readonly (readonly [string, Icon, string, string])[] = [
-  ["Effect UI", "layers", "cyan", "draws the page"],
-  ["WebMCP", "plug", "pink", "gives your AI the buttons"],
-  ["Cloudflare Artifacts", "box", "amber", "keeps your stuff (soon)"],
-  ["Effect", "zap", "violet", "keeps it all from breaking"],
+const SIGNS: readonly (readonly [string, Icon, string])[] = [
+  ["Effect UI", "layers", "cyan"], ["WebMCP", "plug", "pink"], ["Cloudflare Artifacts", "box", "amber"], ["Effect", "zap", "violet"],
 ];
+
+/** How it's built, for whoever scrolls past the landing: one card per piece, its words and a small picture of the idea. */
+type Show =
+  | { kind: "keys"; items: readonly string[] }
+  | { kind: "door"; rows: readonly (readonly [boolean, string, string])[] }
+  | { kind: "flow"; items: readonly (readonly [string, string])[]; loop?: boolean }
+  | { kind: "data"; rows: readonly (readonly [string, string])[] }
+  | { kind: "shelf"; items: readonly string[] };
+const PIECES: readonly { c: string; tag: string; title: string; says: string; show: Show; soon?: boolean }[] = [
+  { c: "pink", tag: "WebMCP · MCP", title: "The buttons",
+    says: "A TV remote for your page. Your AI presses the buttons.",
+    show: { kind: "keys", items: ["Set the name", "Pick colors", "Add a card", "Edit a card", "Move a card", "Remove a card", "Set the backdrop", "Undo", "Start over", "Read the page"] } },
+  { c: "violet", tag: "Effect · Schema", title: "The bouncer",
+    says: "Bad presses bounce, and your AI is told why.",
+    show: { kind: "door", rows: [[true, 'accent: "#ff3d8b"', "let in"], [false, 'accent: "red"', "bounced: a color looks like #rrggbb"], [false, 'url: "javascript:…"', "bounced: a link starts with https://"]] } },
+  { c: "cyan", tag: "Effect UI", title: "The screen",
+    says: "One loop for you and your AI, so you stay in sync.",
+    show: { kind: "flow", loop: true, items: [["Your page", ""], ["A press arrives", ""], ["Work out what's next", ""], ["Redraw", ""]] } },
+  { c: "amber", tag: "Your page is a list", title: "No code, just a list",
+    says: "Your AI only changes this list. It can't break anything.",
+    show: { kind: "data", rows: [["name", '"Night Rider"'], ["tagline", '"Skating the city after dark."'], ["colors", "accent #ff3d8b · paper #0a0918 · ink #e9ecf8"], ["font", "mono"], ["cards", "About · My boards · Spots I skate"]] } },
+  { c: "green", tag: "Cloudflare", title: "Your room",
+    says: "The secret link is the key. Share it only with AIs you trust.",
+    show: { kind: "flow", items: [["Your AI", ""], ["Your room", "Cloudflare Worker"], ["Your page", "this tab"]] } },
+  { c: "amber", tag: "Cloudflare Artifacts · coming", title: "Your stuff, kept", soon: true,
+    says: "Soon: your page opens anywhere, with a 3D you.",
+    show: { kind: "shelf", items: ["your page", "your 3D character", "your pictures"] } },
+];
+
+const showView = Def.fragment((h, s: Show) => {
+  switch (s.kind) {
+    case "keys": return h.div.class("l-show", "l-keycaps").children(...s.items.map((k) => h.span.key(k).children(k)));
+    case "door": return h.div.class("l-show", "l-door").children(...s.rows.map(([ok, code, said]) => h.div.key(code).class(ok ? "in" : "out").children(h.code(code), h.b(said))));
+    case "flow": return h.div.class("l-show", "l-flow").children(
+      ...s.items.flatMap(([name, small], i) => [i > 0 && h.i.key(`a${i}`).attr("aria-hidden", "true"), h.span.key(name).children(name, small && h.small(small))]),
+      s.loop === true && h.i.class("back").key("back").attr("aria-hidden", "true"));
+    case "data": return h.pre.class("l-show", "l-data").children(h.code(s.rows.map(([k, v]) => `${k.padEnd(9)}${v}`).join("\n")));
+    case "shelf": return h.div.class("l-show", "l-shelf").children(...s.items.map((k) => h.span.key(k).children(k)));
+  }
+});
+
+const deepView = Def.fragment((h) => h.section.class("l-deep").attrs({ id: "how", "aria-label": "How it's built" }).children(
+  h.header.class("l-deep-head").children(
+    h.p.class("l-eyebrow").children("For the curious"),
+    h.h2("How it's built"),
+    h.p("You say ", h.q("make it about my skateboarding"), ". Then:"),
+  ),
+  ...PIECES.map((p) => h.article.class("l-piece", `c-${p.c}`, p.soon === true && "soon").key(p.title).children(
+    h.div.class("l-tell").children(h.span.class("l-ptag").children(p.tag), h.h3(p.title), h.p(p.says)),
+    showView(h, p.show),
+  )),
+));
 const STEPS: readonly (readonly [Icon, string, string, string, string])[] = [
   ["chat", "amber", "1. You ask", "\"make it about my skateboarding\"", ""],
   ["bot", "violet", "2. Your AI thinks", "Claude, Codex, any AI", ""],
@@ -171,13 +219,12 @@ const icon = Def.fragment((h, name: Icon) => h.i.class("l-i").attrs({ "aria-hidd
 
 const landingView = Def.fragment((h, room: string, origin: string, online: boolean, copied: string | null) => {
   const claude = connectLines(origin, room)[0]!;
-  return h.section.class("landing").attr("aria-label", "Agent Page").children(
+  return h.div.class("l-wrap").children(h.section.class("landing").attr("aria-label", "Agent Page").children(
     h.div.class("l-sign").attr("aria-hidden", "true").children("エージェント"),
     h.div.class("l-stage").children(
       h.h1.class("l-word").children("Agent Page"),
       h.p.class("l-line").children("Your AI builds your page. You watch it light up."),
-      h.p.class("l-what").children("Copy the line below into your AI. It plugs your AI into this page. Then tell it what you want, like \"a page about my band\", and watch it build, live."),
-      h.div.class("l-signs").children(...SIGNS.map(([name, i, c, does]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), h.span(h.b(name), h.small(does))))),
+      h.div.class("l-signs").children(...SIGNS.map(([name, i, c]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), name))),
       h.div.class("l-bar").children(
         h.code(claude.text),
         h.button.attr("type", "button").class("l-go").on("click", PageMessage.ClickedCopy({ what: claude.what, text: claude.text }))
@@ -203,9 +250,10 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
         h.div.class("l-wire").attr("aria-hidden", "true").children(h.i.class("l-spark")),
         ...STEPS.map(([i, c, title, says, tag]) => h.div.class("l-step", `c-${c}`).key(title).children(
           h.div.class("l-dot").children(icon(h, i)), h.b(title), h.span(says), tag && h.span.class("l-tag").children(tag)))),
-      h.p.class("l-say").children("Your AI can only press ", h.em("this page's"), " buttons. It can't touch anything else on your computer."),
+      h.p.class("l-say").children("Your AI can only press ", h.em("this page's"), " buttons. It can't touch anything else on your computer. ",
+        h.a.class("l-more").attr("href", "#how").children("How does that work?")),
     ),
-  );
+  ), deepView(h));
 });
 
 const initials =(name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";

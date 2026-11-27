@@ -27,23 +27,31 @@ const stored = (): unknown => {
   try { return parse(localStorage.getItem(PARTS_KEY)) ?? parse(localStorage.getItem(OLD_KEY)) ?? {}; } catch { return {}; }
 };
 
-/** The knobs and swaps as they stand (`raw` from a `storage` event, else read now). */
-export function readParts(raw?: string | null): Parts {
-  const p = check(Parts, raw === undefined ? stored() : parse(raw) ?? {}) ?? { drive: {}, swaps: {} };
-  return { drive: { ...DEFAULT_DRIVE, ...p.drive }, swaps: p.swaps };
-}
-
 /** JSON with every object's keys in order, so two copies of the same parts read the same. */
 const sorted = (v: unknown): string => JSON.stringify(v, (_, x: unknown) =>
   x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x);
-const same = (a: Parts, b: Parts) => sorted(a) === sorted(b);
 
-/** Every pedal's knobs and swaps, written only if they differ from what is kept, so a page's save of the same
- *  values never lands on top of another page's newer change. */
+/** The knobs and swaps this page last read or wrote, as `sorted` JSON (a copy: a page edits what it was handed in
+ *  place). A save that hasn't moved off them has nothing of its own to keep. */
+let seen: string | null = null;
+
+/** The knobs and swaps as they stand (`raw` from a `storage` event, else read now). */
+export function readParts(raw?: string | null): Parts {
+  const p = check(Parts, raw === undefined ? stored() : parse(raw) ?? {}) ?? { drive: {}, swaps: {} };
+  const parts = { drive: { ...DEFAULT_DRIVE, ...p.drive }, swaps: p.swaps };
+  seen = sorted(parts);
+  return parts;
+}
+
+/** Every pedal's knobs and swaps, written only if this page changed them since it last read or wrote them. A save of
+ *  the page's old copy (a Q Amp footswitch just after Q Builder's swap, before its `storage` event lands) then never
+ *  undoes the other page's newer change (#6459). */
 export function keepParts(p: Parts): void {
   try {
-    if (same(readParts(), { drive: { ...DEFAULT_DRIVE, ...p.drive }, swaps: p.swaps })) return;
+    const mine = sorted({ drive: { ...DEFAULT_DRIVE, ...p.drive }, swaps: p.swaps });
+    if (mine === (seen ?? sorted(readParts()))) return;
     localStorage.setItem(PARTS_KEY, JSON.stringify({ drive: p.drive, swaps: p.swaps }));
+    seen = mine;
   } catch { /* private window or full: not kept, fine */ }
 }
 
