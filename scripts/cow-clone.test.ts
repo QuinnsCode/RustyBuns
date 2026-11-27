@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fillWorktree } from "../live/clone.ts";
+import { fillWorktree } from "./cow-clone.ts";
 
 test("a new worktree takes the floor checkout's files, and git writes the ones it has edited or lacks", () => {
   const repo = mkdtempSync(path.join(tmpdir(), "rb-clone-"));
