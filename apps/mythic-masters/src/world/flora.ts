@@ -66,7 +66,10 @@ const STREAMSIDE = 14;
 export const streamside = (waterAt: (x: number, z: number) => number, x: number, z: number) =>
   [0, 1, 2, 3].some((i) => waterAt(x + Math.cos(i * Math.PI / 2) * STREAMSIDE, z + Math.sin(i * Math.PI / 2) * STREAMSIDE) > 0);
 /** Trees that grow crooked, leaning a little off true (the radians at most, each way). */
-const CROOKED: Partial<Record<Kind, number>> = { "pitch-pine": 0.2 };
+const CROOKED: Partial<Record<Kind, number>> = { "pitch-pine": 0.3 };
+/** How wide a kind stands for its height, beside the usual spread: a pitch pine on poor sand is squat and spreading, not a
+ * pole with a tuft on top, and an Atlantic white cedar is a narrow dark spire, not a round crown. */
+const GIRTH: Partial<Record<Kind, number>> = { "pitch-pine": 1.4, "white-cedar": 0.55 };
 /** Share of the trees along a stream that are its bank kind: the Pine Barrens' streams run through cedar swamp. */
 const SWAMP = 0.75;
 const CAP = 3200;      // instances a kind can show at once, near
@@ -106,7 +109,7 @@ const CULL_MOVE = 2, CULL_TURN = Math.cos((1.5 * Math.PI) / 180), CULL_MARGIN = 
 export type Plant = [kind: Kind, share: number, min: number, max: number];
 const B = (density: number, ...kinds: Plant[]) => ({ density, kinds });
 export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
-  "pine-barrens": B(0.78, ["pitch-pine", 0.41, 3, 10], ["white-cedar", 0.1, 9, 15], ["blueberry", 0.2, 1, 2], ["sword-fern", 0.08, 0.6, 1.1], ["pitcher-plant", 0.04, 0.3, 0.6], ["snag", 0.08, 3, 8], ["flower", 0.04, 0.3, 0.6], ["mushroom", 0.03, 0.12, 0.3], ["log", 0.04, 2.5, 5], ["reed", 0.02, 1.2, 2]),
+  "pine-barrens": B(0.78, ["pitch-pine", 0.41, 3, 8], ["white-cedar", 0.1, 9, 15], ["blueberry", 0.2, 1, 2], ["sword-fern", 0.08, 0.6, 1.1], ["pitcher-plant", 0.04, 0.3, 0.6], ["snag", 0.08, 3, 8], ["flower", 0.04, 0.3, 0.6], ["mushroom", 0.03, 0.12, 0.3], ["log", 0.04, 2.5, 5], ["reed", 0.02, 1.2, 2]),
   forest: B(0.7, ["hemlock", 0.2, 12, 22], ["sugar-maple", 0.2, 12, 20], ["paper-birch", 0.12, 9, 16], ["rhododendron", 0.14, 2, 4], ["oak", 0.05, 8, 15], ["sword-fern", 0.12, 0.6, 1.2], ["stump", 0.02, 0.4, 0.8], ["rock", 0.05, 0.5, 1.6], ["mushroom", 0.05, 0.12, 0.35], ["log", 0.05, 3, 6]),
   rainforest: B(0.85, ["red-cedar", 0.26, 22, 40], ["bigleaf-maple", 0.14, 14, 22], ["sword-fern", 0.37, 0.8, 2], ["skunk-cabbage", 0.05, 0.5, 1], ["stump", 0.03, 0.5, 1], ["rock", 0.03, 0.6, 1.8], ["mushroom", 0.06, 0.15, 0.4], ["log", 0.06, 4, 9]),
   lake: B(0.5, ["white-pine", 0.22, 14, 26], ["tamarack", 0.12, 9, 15], ["red-osier", 0.16, 1.5, 2.6], ["cattail", 0.12, 1.6, 2.6], ["paper-birch", 0.08, 9, 15], ["flower", 0.12, 0.3, 0.6], ["rock", 0.1, 0.5, 1.6], ["reed", 0.06, 1.4, 2.4]),
@@ -509,7 +512,7 @@ export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, r
       if ((y > TREELINE && TALL.has(kind)) || (slope > 0.6 && kind !== "rock")) { if (hash(gx, gz, 6) > 0.3) continue; kind = "rock"; lo = 0.5; hi = 2; }
       const far = f.lo.has(kind) && Math.hypot(x - cx, z - cz) > budget.lod, m = far ? f.lo.get(kind) : f.meshes.get(kind), key = far ? `${kind}-lo` : kind, n = counts.get(key) ?? 0;
       if (!m || n >= CAP) continue;
-      const size = lo + (hi - lo) * hash(gx, gz, 5), girth = kind === "rock" ? 1.2 + hash(gx, gz, 7) : TALL.has(kind) ? 0.85 + 0.3 * hash(gx, gz, 7) : kind === "log" ? 0.6 : 1.1;
+      const size = lo + (hi - lo) * hash(gx, gz, 5), girth = kind === "rock" ? 1.2 + hash(gx, gz, 7) : TALL.has(kind) ? (0.85 + 0.3 * hash(gx, gz, 7)) * (GIRTH[kind] ?? 1) : kind === "log" ? 0.6 : 1.1;
       o.position.set(x, y - (kind === "rock" ? size * 0.25 : 0.05), z);
       // A tree stands up; a rock, a log and a tuft lie with the ground.
       const lean = CROOKED[kind] ?? 0;
@@ -579,7 +582,7 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
       if (y - waterAt(x, z) < 0.3 || y > TREELINE || slopeAt(yAt, x, z, y, 6) > 0.6) continue;
       const mats = j.mats.get(kind), n = counts.get(kind) ?? 0;
       if (!mats || n >= FAR_CAP) continue;
-      const size = lo + (hi - lo) * hash(gx, gz, 25), girth = 0.9 + 0.3 * hash(gx, gz, 26);
+      const size = lo + (hi - lo) * hash(gx, gz, 25), girth = (0.9 + 0.3 * hash(gx, gz, 26)) * (GIRTH[kind] ?? 1);
       o.position.set(x, y - 0.3, z); o.rotation.set(0, hash(gx, gz, 27) * Math.PI, 0); o.scale.set(size * girth, size, size * girth);
       o.updateMatrix();
       o.matrix.toArray(mats, n * 16);
