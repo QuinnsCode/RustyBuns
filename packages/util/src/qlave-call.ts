@@ -1,5 +1,5 @@
 // Copied from Qlave (QuinnsCode/clave, src/sdk/qlaveCall.ts) for @rustybuns/util/voice; fix it there first, then here.
-// The one change: frames off the socket are `Signal`, every field looked at before use, instead of `any`.
+// The one change: each kind of frame off the socket goes through its own guard before use, instead of `any`.
 //
 // Headless Qlave call engine. No React, no DOM beyond WebRTC + WebSocket.
 // The /s/:code page, the widget and any other app (eqosys games, qbear3) drive
@@ -14,6 +14,8 @@
 // it has no such track). The answerer attaches its tracks to those transceivers,
 // so mute / screen share are replaceTrack calls with no renegotiation. ICE
 // restarts use perfect negotiation (polite = lower peer id) to survive glare.
+
+import { arr, bool, check, field, int, maybe, obj, oneOf, opt, or, rec, str, type Of } from "./guard.ts";
 
 export type CallState = "idle" | "connecting" | "joined" | "reconnecting" | "left" | "error";
 
@@ -46,34 +48,36 @@ export interface SignalingHandle {
   send(data: string): void;
 }
 
-/** A frame off the signaling socket: its `type`, and fields nothing has checked yet. */
-export type Signal = { type: string } & Record<string, unknown>;
-
-const strOf = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
-/** A string-to-string map, keeping only the string values. */
-const namesOf = (v: unknown): Record<string, string> => {
-  const out: Record<string, string> = {};
-  if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (typeof x === "string") out[k] = x;
-  return out;
-};
-const iceOf = (v: unknown): RTCIceServer[] =>
-  Array.isArray(v) ? v.filter((x): x is RTCIceServer => !!x && typeof x === "object" && "urls" in x && (typeof x.urls === "string" || Array.isArray(x.urls))) : [];
-const descriptionOf = (v: unknown): RTCSessionDescriptionInit | null =>
-  v && typeof v === "object" && "type" in v && (v.type === "offer" || v.type === "answer" || v.type === "pranswer" || v.type === "rollback")
-    ? { type: v.type, ...("sdp" in v && typeof v.sdp === "string" ? { sdp: v.sdp } : {}) }
-    : null;
-const candidateOf = (v: unknown): RTCIceCandidateInit | null => {
-  if (!v || typeof v !== "object" || !("candidate" in v) || typeof v.candidate !== "string") return null;
-  const mid = "sdpMid" in v && typeof v.sdpMid === "string" ? v.sdpMid : null;
-  const line = "sdpMLineIndex" in v && typeof v.sdpMLineIndex === "number" ? v.sdpMLineIndex : null;
-  const frag = "usernameFragment" in v && typeof v.usernameFragment === "string" ? v.usernameFragment : null;
-  return { candidate: v.candidate, sdpMid: mid, sdpMLineIndex: line, usernameFragment: frag };
-};
-/** A frame as a Signal, or null when it isn't an object with a string `type`. */
-function signalOf(raw: unknown): Signal | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("type" in raw) || typeof raw.type !== "string") return null;
-  return { ...raw, type: raw.type };
-}
+// Each kind of frame the call reads has its own guard; a kind it does not know goes on as it came.
+const Id = str(200, { min: 1 });
+const IceServer = obj({
+  urls: (v: unknown): string | string[] => (typeof v === "string" ? str(2000)(v) : arr(str(2000), 20)(v)),
+  username: opt(str(500)),
+  credential: opt(str(500)),
+});
+const Description = obj({ type: oneOf(["offer", "answer", "pranswer", "rollback"]), sdp: opt(str(500_000, { min: 0 })) });
+const Candidate = obj({
+  candidate: str(5000, { min: 0 }),
+  sdpMid: maybe(str(200, { min: 0 })),
+  sdpMLineIndex: maybe(int(0, 1000)),
+  usernameFragment: maybe(str(500, { min: 0 })),
+});
+/** The room taking us in: who is already there, their names and eqosys ids, and maybe the ICE servers to use. */
+const Joined = obj({
+  peers: or(arr(Id, 10_000, { drop: true }), []),
+  peerNames: maybe(rec(str(200, { min: 0 }))),
+  peerSubs: maybe(rec(str(200, { min: 0 }))),
+  iceServers: or(arr(IceServer, 20, { drop: true }), []),
+});
+const PeerJoined = obj({ peerId: Id, name: maybe(str(200)), sub: maybe(str(200)) });
+const PeerLeft = obj({ peerId: Id });
+/** An offer or answer from one peer, or one of its ICE candidates. */
+const Sdp = obj({ type: oneOf(["offer", "answer"]), from: Id, sdp: Description });
+const IceCandidate = obj({ type: oneOf(["ice-candidate"]), from: Id, candidate: Candidate });
+type Negotiation = Of<typeof Sdp> | Of<typeof IceCandidate>;
+const MuteState = obj({ from: Id, audioMuted: or(bool(), false), videoMuted: or(bool(), false) });
+/** A server error: its message, if it gave one. */
+const ServerError = obj({ message: maybe(str(500, { min: 0 })) });
 
 interface PeerEntry {
   pc: RTCPeerConnection;
@@ -169,7 +173,7 @@ export class QlaveCall extends EventTarget {
   }
 
   /** Send an app/plugin message (e.g. captions) through the room. */
-  send(msg: Record<string, unknown>): void {
+  send<M extends { readonly type: string }>(msg: M): void {
     this.socket.send(JSON.stringify(msg));
   }
 
@@ -208,8 +212,8 @@ export class QlaveCall extends EventTarget {
     ws.onmessage = (e) => {
       let raw: unknown;
       try { raw = JSON.parse(typeof e.data === "string" ? e.data : ""); } catch { return; }
-      const msg = signalOf(raw);
-      if (msg) this.onSignal(msg);
+      const type = field(raw, "type");
+      if (typeof type === "string") this.onSignal(type, raw);
     };
     ws.onclose = (e) => {
       if (this.ws !== ws) return;
@@ -247,81 +251,84 @@ export class QlaveCall extends EventTarget {
 
   // ── Signal handling ────────────────────────────────────────────────────────
 
-  private onSignal(msg: Signal): void {
-    const peerId = strOf(msg.peerId), from = strOf(msg.from);
-    switch (msg.type) {
+  /** One frame off the socket: its `type`, and the frame as it came, read through that kind's guard. */
+  private onSignal(type: string, raw: unknown): void {
+    switch (type) {
       case "joined": {
+        const room = check(Joined, raw);
+        if (!room) return;
         const rejoin = this.everJoined;
         this.everJoined = true;
         // After a signaling reconnect, others saw us leave and tore down; start clean.
         if (rejoin) for (const id of [...this.peers.keys()]) this.dropPeer(id);
         // The room may hand out ICE servers (voice rooms do), before any peer connection exists.
-        const ice = iceOf(msg.iceServers);
-        if (ice.length) this.iceServers = ice;
-        const names = namesOf(msg.peerNames);
-        const subs = namesOf(msg.peerSubs);
-        for (const pid of Array.isArray(msg.peers) ? msg.peers : []) {
-          if (typeof pid !== "string" || pid === this.peerId) continue;
-          this.ensurePeer(pid, names[pid] ?? "Guest", true, subs[pid]);
+        if (room.iceServers.length) this.iceServers = room.iceServers;
+        for (const pid of room.peers) {
+          if (pid === this.peerId) continue;
+          this.ensurePeer(pid, room.peerNames?.[pid] ?? "Guest", true, room.peerSubs?.[pid]);
         }
         this.setState("joined");
         this.announceMute();
-        this.dispatchEvent(new CustomEvent("joined", { detail: { peerId: this.peerId, room: msg } }));
+        // Apps read their own fields off the room (voice: self, serverMuted, resume), so it goes on whole.
+        this.dispatchEvent(new CustomEvent("joined", { detail: { peerId: this.peerId, room: raw } }));
         return;
       }
       case "peer-joined": {
-        if (!peerId || peerId === this.peerId) return;
+        const m = check(PeerJoined, raw);
+        if (!m || m.peerId === this.peerId) return;
         // A peer that rejoins after a blip gets a fresh connection from its side.
-        if (this.peers.has(peerId)) this.dropPeer(peerId);
-        this.ensurePeer(peerId, strOf(msg.name) ?? "Guest", false, strOf(msg.sub));
+        if (this.peers.has(m.peerId)) this.dropPeer(m.peerId);
+        this.ensurePeer(m.peerId, m.name ?? "Guest", false, m.sub);
         this.announceMute();
         return;
       }
-      case "peer-left":
-        if (peerId) this.dropPeer(peerId);
+      case "peer-left": {
+        const m = check(PeerLeft, raw);
+        if (m) this.dropPeer(m.peerId);
         return;
+      }
       case "offer":
       case "answer":
       case "ice-candidate": {
-        if (!from) return;
-        const entry = this.peers.get(from) ?? this.ensurePeer(from, "Guest", false);
+        const m: Negotiation | null = type === "ice-candidate" ? check(IceCandidate, raw) : check(Sdp, raw);
+        if (!m) return;
+        const entry = this.peers.get(m.from) ?? this.ensurePeer(m.from, "Guest", false);
         // Serialize per peer: a candidate must never race the description it belongs to.
-        entry.queue = entry.queue.then(() => this.handleNegotiation(entry, msg)).catch(err => {
-          console.warn("[qlave] negotiation error", msg.type, err);
+        entry.queue = entry.queue.then(() => this.handleNegotiation(entry, m)).catch(err => {
+          console.warn("[qlave] negotiation error", type, err);
         });
         return;
       }
       case "mute-state": {
-        const entry = from && this.peers.get(from);
-        if (!entry) return;
-        entry.info = { ...entry.info, audioMuted: !!msg.audioMuted, videoMuted: !!msg.videoMuted };
+        const m = check(MuteState, raw);
+        const entry = m && this.peers.get(m.from);
+        if (!m || !entry) return;
+        entry.info = { ...entry.info, audioMuted: m.audioMuted, videoMuted: m.videoMuted };
         this.emitPeer("peer-updated", entry);
         return;
       }
       case "error":
-        console.warn("[qlave] server:", msg.message);
-        this.dispatchEvent(new CustomEvent("server-error", { detail: msg }));
+        console.warn("[qlave] server:", check(ServerError, raw)?.message);
+        this.dispatchEvent(new CustomEvent("server-error", { detail: raw }));
         return;
       default:
-        // captions and anything else apps put on the wire
-        this.dispatchEvent(new CustomEvent("message", { detail: msg }));
+        // captions and anything else apps put on the wire, as it came
+        this.dispatchEvent(new CustomEvent("message", { detail: raw }));
     }
   }
 
-  private async handleNegotiation(entry: PeerEntry, msg: Signal): Promise<void> {
+  private async handleNegotiation(entry: PeerEntry, msg: Negotiation): Promise<void> {
     const { pc } = entry;
     if (pc.signalingState === "closed") return;
 
     if (msg.type === "ice-candidate") {
-      const candidate = candidateOf(msg.candidate);
-      if (!candidate) return;
-      try { await pc.addIceCandidate(candidate); }
+      const { candidate, sdpMid, sdpMLineIndex, usernameFragment } = msg.candidate;
+      try { await pc.addIceCandidate({ candidate, sdpMid: sdpMid ?? null, sdpMLineIndex: sdpMLineIndex ?? null, usernameFragment: usernameFragment ?? null }); }
       catch (e) { if (!entry.ignoreOffer) throw e; }
       return;
     }
 
-    const description = descriptionOf(msg.sdp);
-    if (!description) return;
+    const description: RTCSessionDescriptionInit = msg.sdp.sdp === undefined ? { type: msg.sdp.type } : { type: msg.sdp.type, sdp: msg.sdp.sdp };
     const collision = description.type === "offer" && (entry.makingOffer || pc.signalingState !== "stable");
     entry.ignoreOffer = !entry.polite && collision;
     if (entry.ignoreOffer) return;

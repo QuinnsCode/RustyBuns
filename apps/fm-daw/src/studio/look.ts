@@ -392,6 +392,11 @@ function hang(def: StudioDef, group: THREE.Group): Record<Side, [number, number]
       wall.add(flatten(joints));
     }
     const panels = (def.panels ?? []).filter((p) => p.wall === side);
+    // round 16: what stands off a wall shades it, the cans being overhead: a soft dark rim round each panel, deepest
+    // under it and reaching further the prouder it stands, so a panel sits on the wall instead of floating in front
+    const behind = new THREE.Group();
+    const drop = (x: number, y: number, wide: number, tall: number, proud: number) =>
+      behind.add(at(new THREE.Mesh(new THREE.PlaneGeometry(wide + 0.12 + proud * 2.4, tall + 0.1 + proud * 3), dropMat()), x, y - proud * 1.1, 0.0625));
     let along = -s.len / 2 + 0.6; // panels fill the wall from its left end in, a gap between each kind
     for (const p of panels) {
       if (p.material === "curtain") {
@@ -412,7 +417,11 @@ function hang(def: StudioDef, group: THREE.Group): Record<Side, [number, number]
         const rows = n * 0.7 > room && h > 3 ? 2 : 1, cols = Math.ceil(n / rows), cell = Math.min(0.7, room / cols);
         const geo = metreUV(new RoundedBoxGeometry(0.6, 1.2, 0.1, 3, 0.025)), mat = surface("panel");
         const row = new THREE.Group();
-        for (let i = 0; i < n; i++) row.add(at(new THREE.Mesh(geo, mat), along + 0.3 + (i % cols) * cell, rows === 1 ? 1.5 : 0.95 + Math.floor(i / cols) * 1.3, 0.11));
+        for (let i = 0; i < n; i++) {
+          const x = along + 0.3 + (i % cols) * cell, y = rows === 1 ? 1.5 : 0.95 + Math.floor(i / cols) * 1.3;
+          row.add(at(new THREE.Mesh(geo, mat), x, y, 0.11));
+          drop(x, y, 0.6, 1.2, 0.1);
+        }
         wall.add(flatten(row));
         taken[side].push([along, along + cols * cell]);
         along += cols * cell + 0.5;
@@ -433,12 +442,29 @@ function hang(def: StudioDef, group: THREE.Group): Record<Side, [number, number]
           m.position.set(along + 0.3 + c * cell, 1.45 + (r - (rows - 1) / 2) * 0.64, foam ? 0.06 : 0.085);
           wall.add(m);
         }
+        // one rim round the whole block: the squares butt, so only its outside edge shades the wall
+        drop(along + 0.3 + ((cols - 1) * cell) / 2, 1.45, (cols - 1) * cell + 0.58, (rows - 1) * 0.64 + 0.58, foam ? 0.06 : 0.05);
         taken[side].push([along, along + cols * cell]);
         along += cols * cell + 0.5;
       }
     }
+    if (behind.children.length) wall.add(flatten(behind));
   }
   return taken;
+}
+
+let soft: THREE.CanvasTexture | null = null, dropShade: THREE.MeshBasicMaterial | null = null;
+/** A panel's shade on its wall (hang()): clear at the plane's edges, full under the panel's middle, eased between. */
+function dropMat() {
+  soft ??= canvasTex(64, (g) => {
+    const ease = (t: number) => { const k = Math.min(1, Math.max(0, t)); return k * k * (3 - 2 * k); };
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const u = Math.min(x, 63 - x) / 20, v = Math.min(y, 63 - y) / 20;
+      g.fillStyle = `rgba(0,0,0,${(ease(u) * ease(v)).toFixed(3)})`; g.fillRect(x, y, 1, 1);
+    }
+  }, false);
+  soft.wrapS = soft.wrapT = THREE.ClampToEdgeWrapping;
+  return (dropShade ??= shade(soft, 0.68));
 }
 
 // ---- light that stays put, baked once: where things meet the floor, and the room's own reflections ----
@@ -627,6 +653,58 @@ function falloff() {
   }, false);
   ends.wrapS = ends.wrapT = THREE.ClampToEdgeWrapping;
   return ends;
+}
+
+let scallop: THREE.CanvasTexture | null = null, footFloor: THREE.CanvasTexture | null = null;
+/**
+ * Where each can's light lands (round 16): a downlight near a wall throws a scallop on it, a bright arch whose crown
+ * is where the cone first meets the wall, sharpest at that edge and fading down toward the floor, dark above. The
+ * spotlights alone, wide and soft, lit every wall one flat grey. Baked: an additive warm arch on the outside wall behind
+ * each can within 1.8 m of it, none on glass. And the floor darkens along every wall's foot, where the wall shades it.
+ */
+function pools(def: StudioDef, group: THREE.Group, spots: [number, number][]) {
+  // u across the arch, v up the wall: the crown at v 0.8, the edge falling as a hyperbola does toward its sides
+  scallop ??= canvasTex(64, (g) => {
+    const step = (a: number, b: number, t: number) => { const k = Math.min(1, Math.max(0, (t - a) / (b - a))); return k * k * (3 - 2 * k); };
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 64; x++) {
+      const u = (x / 63 - 0.5) * 2, v = 1 - y / 127, edge = 0.8 - 0.62 * u * u;
+      const under = edge - v, lit = step(0.05, -0.04, -under), body = 0.3 + 0.7 * Math.exp(-Math.max(0, under) * 3.2);
+      const a = lit * body * Math.exp(-u * u * 1.4) * step(0, 0.25, v);
+      g.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`; g.fillRect(x, y, 1, 1);
+    }
+  }, false, 128);
+  scallop.wrapS = scallop.wrapT = THREE.ClampToEdgeWrapping;
+  const { h } = def.size, rnd = mulberry32(6265), p = new THREE.Vector3();
+  const tone = new THREE.Color(0xffd9ae);
+  footFloor ??= canvasTex(8, (g) => {
+    for (let y = 0; y < 64; y++) { const t = y / 63; g.fillStyle = `rgba(0,0,0,${((1 - t) ** 2.2).toFixed(3)})`; g.fillRect(0, y, 8, 1); }
+  }, false, 64);
+  footFloor.wrapS = footFloor.wrapT = THREE.ClampToEdgeWrapping;
+  const band = shade(footFloor, 0.55);
+  const archMat = new THREE.MeshBasicMaterial({ vertexColors: true, map: scallop, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
+  for (const side of ["front", "back", "left", "right"] as const) {
+    if ((def.materials?.walls[side] ?? "drywall") === "glass") continue;
+    const s = sideOf(def, side), wall = new THREE.Group();
+    wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn; group.add(wall); wall.updateMatrixWorld(true);
+    const arches = new THREE.Group();
+    for (const [x, z] of spots) {
+      wall.worldToLocal(p.set(x, 0, z));
+      const off = p.z - 0.06; // how far the can hangs off this wall
+      if (off < 0.2 || off > 1.8 || Math.abs(p.x) > s.len / 2 - 0.3) continue;
+      // nearer the wall: a narrower, brighter arch whose crown sits higher
+      const k = 1 - (off - 0.2) / 1.6, wide = 1.2 + off * 1.3, tall = h * (0.78 + 0.12 * k);
+      // each arch's own strength in its vertex colours, so a wall's arches merge into one draw call
+      const geo = new THREE.PlaneGeometry(wide, tall), c = tone.clone().multiplyScalar((0.22 + 0.22 * k) * (0.8 + rnd() * 0.4));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(Array.from({ length: geo.getAttribute("position").count }, () => [c.r, c.g, c.b]).flat(), 3));
+      arches.add(at(new THREE.Mesh(geo, archMat), p.x, tall / 2, 0.0612));
+    }
+    if (arches.children.length) { const merged = flatten(arches); merged.name = "pools"; wall.add(merged); }
+    // the floor along the wall's foot: the wall stands between it and half the room's light. Laid flat, the plane's
+    // top edge (the canvas's dark top) turns toward the wall
+    const foot = new THREE.Mesh(new THREE.PlaneGeometry(s.len, 0.45), band);
+    foot.rotation.x = -Math.PI / 2; foot.position.set(0, 0.003, 0.06 + 0.225); foot.name = "corner";
+    wall.add(foot);
+  }
 }
 
 let glowFrom: THREE.CanvasTexture | null = null;
@@ -1435,11 +1513,13 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   lived(def, group);
   used(def, group, taken);
   strewn(def, group);
-  scene.add(new THREE.HemisphereLight(0xf4efe8, 0x4a3a2e, 0.42)); // the bounce that reaches the tops of the walls
+  // the bounce that reaches the tops of the walls; fainter since round 16, so the scallops and shade read over it
+  scene.add(new THREE.HemisphereLight(0xf4efe8, 0x4a3a2e, 0.32));
 
   // downlights in the ceiling (cans()), each a warm spot with a soft edge; on high the ones nearest the middle throw shadows
   const { w, d, h } = def.size, spots = cans(w, d);
-  const can = new THREE.CylinderGeometry(0.09, 0.09, 0.02, 20), rim = new THREE.TorusGeometry(0.095, 0.012, 6, 24);
+  pools(def, group, spots);
+  const can =new THREE.CylinderGeometry(0.09, 0.09, 0.02, 20), rim = new THREE.TorusGeometry(0.095, 0.012, 6, 24);
   const bulb = new THREE.MeshStandardMaterial({ color: "#000", emissive: "#ffe6c4", emissiveIntensity: 6 }), trim = surface("metal", "#d9d6d0");
   const lights: THREE.SpotLight[] = [];
   const per = (w * d) / spots.length, power = 16 * per * Math.max(1, h / 3.4); // candela, so a big room's few lights still light it
