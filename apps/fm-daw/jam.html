@@ -45,6 +45,7 @@
       <div class="entry-who">
         <h2 id="room-title"></h2>
         <p class="entry-here"><span id="here-faces" class="faces" aria-hidden="true"></span><span id="here-line"></span></p>
+        <form id="code-gate" class="entry-code" hidden><label id="code-why" for="room-code">This room has a password.</label><input id="room-code" type="password" minlength="4" maxlength="32" autocomplete="off" placeholder="Password" enterkeyhint="go"></form>
       </div>
       <div class="entry-go">
         <button id="settings-open" type="button" class="ghost square" aria-label="Settings" title="Settings"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="lbl">Settings</span></button>
@@ -81,7 +82,9 @@
         <div class="set-col"><h4>Studio</h4><div id="set-studios" class="set-list" aria-label="Studio"></div></div>
         <div id="set-speakers" class="set-col"><h4>Speakers</h4><div id="set-rigs" class="set-list" aria-label="Speakers"></div>
           <h5>Tops sit on</h5><div id="set-tops" class="set-chip-row" aria-label="Tops sit on"></div></div>
-        <div class="set-col set-wide"><h4>Who can come in</h4><div id="set-doors" class="set-chip-row" aria-label="Who can come in"></div></div>
+        <div class="set-col set-wide"><h4>Who can come in</h4>
+          <div class="set-chip-row" aria-label="Who can come in"><button id="set-open" type="button" class="set-chip">Anyone with the link</button><button id="set-lock" type="button" class="set-chip">Password</button></div>
+          <form id="set-code-form" class="set-code" hidden><input id="set-code" type="text" minlength="4" maxlength="32" autocomplete="off" placeholder="A password, 4 to 32 characters" aria-label="Room password"><button type="submit" class="set-chip">Set password</button></form></div>
       </div>
     </div>
     <div id="set-you" class="set-body" hidden>

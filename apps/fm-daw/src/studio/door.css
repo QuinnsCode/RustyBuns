@@ -177,3 +177,11 @@
   #settings .set-shot svg { height: 110px; }
   #settings h3, #settings .set-sample .h { font-size: 28px; }
 }
+/* the room's password, asked on the entry panel only when the room has one (main.ts gated), and set in Settings */
+#menu .entry-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 4px 0 0; }
+#menu .entry-code[hidden] { display: none; }
+#menu .entry-code label { color: #cfcbc4; font-size: 15px; }
+#menu .entry-code input { flex: 1 1 220px; max-width: 360px; height: 48px; font: 400 17px var(--qs-body), sans-serif; border-radius: 12px; padding: 0 14px; }
+#settings .set-code { display: flex; flex-wrap: wrap; gap: 8px; }
+#settings .set-code[hidden] { display: none; }
+#settings .set-code input { flex: 1 1 220px; max-width: 360px; height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 12px; background: #23262c; color: var(--ink); border: 1px solid #3a3e45; font: 400 15px var(--qs-body), sans-serif; }

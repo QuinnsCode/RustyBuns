@@ -65,11 +65,11 @@ export interface TrackDoc {
  * desk: the players' channels and the aux 2 return on the sesh's desk (src/desk.ts); only there once one was moved.
  * studio: the jam room's studio (src/studio/rooms/), by id; the leader moves the sesh to another, and everyone walks into it. Only there once set.
  * rig: the open-air rig on the sand (@rustybuns/gear systems.ts), the leader's to change; only there once set.
- * tops: what the rig's tops sit on (the subs, a pole over the subs, their own stands); door: who can come in. The owner's, set once in Settings; only there once set.
+ * tops: what the rig's tops sit on (the subs, a pole over the subs, their own stands): the event's (Stage Builder, #6053), which the owner edits in the jam room's Settings; only there once set.
  * master: the room's level, dB (MASTER_MIN to 0), on top of each listener's own; set from the remote (src/remote/), only there below 0. A bounce leaves it out.
  * song: song mode (src/song.ts), the loop as a chain of patterns, bars × chain slots long; only there when on.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; tops?: Tops; door?: Door; built?: StudioDef; song?: Song }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; tops?: Tops; built?: StudioDef; song?: Song }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -101,8 +101,8 @@ export type Op =
   | { t: "studio"; id: string; built?: StudioDef }
   /** The leader brings another open-air rig to the sand (@rustybuns/gear systems.ts): its boxes and their sound, for everyone. */
   | { t: "rig"; id: SystemId }
-  /** The owner sets the gathering's setup in Settings: what the tops sit on, who can come in. */
-  | { t: "setup"; tops?: Tops; door?: Door }
+  /** The owner changes the gathering's setup in Settings: what the tops sit on. */
+  | { t: "setup"; tops: Tops }
   /** Song mode: the patterns each slot plays (the first time, the loop as it is becomes pattern A), or null to leave it (the notes stay). */
   | { t: "song"; chain: number[] | null }
   | { t: "replace"; project: Project };
@@ -110,9 +110,6 @@ export type Op =
 /** What a rig's tops sit on: the subs, a pole over the subs, or their own stands. */
 export const TOPS = ["subs", "pole", "stands"] as const;
 export type Tops = (typeof TOPS)[number];
-/** Who can come in: anyone with the link, the owner's eqosys friends, or only the guest list. */
-export const DOORS = ["link", "friends", "list"] as const;
-export type Door = (typeof DOORS)[number];
 
 /** The room's level at its lowest, dB: silence. */
 export const MASTER_MIN = -60;
@@ -208,13 +205,13 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, tops: raw, door: raw, built: raw, song: raw });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, tops: raw, built: raw, song: raw });
 /** A studio's id, as the rooms name them. */
 const STUDIO_ID = (v: unknown) => (typeof v === "string" && /^[a-z0-9-]{1,64}$/.test(v) ? v : bad("a studio id"));
 const studioOf = (v: unknown): { studio?: string } => { const id = check(STUDIO_ID, v); return id ? { studio: id } : {}; };
 const builtOf = (v: unknown): { built?: StudioDef } => { const b = check(Studio, v); return b ? { built: b } : {}; };
 const rigOf = (v: unknown): { rig?: SystemId } => { const id = check(oneOf(SYSTEM_IDS), v); return id ? { rig: id } : {}; };
-const setupOf = (v: { tops?: unknown; door?: unknown }): { tops?: Tops; door?: Door } => { const t = check(oneOf(TOPS), v.tops), d = check(oneOf(DOORS), v.door); return { ...(t ? { tops: t } : {}), ...(d ? { door: d } : {}) }; };
+const setupOf = (v: { tops?: unknown }): { tops?: Tops } => { const t = check(oneOf(TOPS), v.tops); return t ? { tops: t } : {}; };
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -361,7 +358,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2), space: maybe(DeskEdit.space) }),
   obj({ t: tag("studio"), id: STUDIO_ID, built: opt(Studio) }),
   obj({ t: tag("rig"), id: oneOf(SYSTEM_IDS) }),
-  obj({ t: tag("setup"), tops: opt(oneOf(TOPS)), door: opt(oneOf(DOORS)) }),
+  obj({ t: tag("setup"), tops: oneOf(TOPS) }),
   obj({ t: tag("song"), chain: nul(Chain) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
@@ -592,15 +589,13 @@ export function apply(p: Project, op: Op): Project {
     }
     case "rig":
       return op.id === p.rig ? p : { ...p, rig: op.id };
-    case "setup": {
-      const next = { ...p, ...setupOf({ tops: op.tops ?? p.tops, door: op.door ?? p.door }) };
-      return next.tops === p.tops && next.door === p.door ? p : next;
-    }
+    case "setup":
+      return op.tops === p.tops ? p : { ...p, tops: op.tops };
     case "replace": {
       // an undo or a loaded groove keeps the room where the leader put it: moving it is the leader's alone
       const next = sanitize(op.project);
       if (!next) return p;
-      const { studio: _, rig: __, built: ___, tops: _t, door: _d, ...rest } = next;
+      const { studio: _, rig: __, built: ___, tops: _t, ...rest } = next;
       return { ...rest, ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...builtOf(p.built) };
     }
     case "song": {

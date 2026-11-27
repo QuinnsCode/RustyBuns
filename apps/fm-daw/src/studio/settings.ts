@@ -1,10 +1,12 @@
-// The jam room's Settings (#6420): the only place a gathering's setup changes. Two tabs. The gathering is the owner's
-// alone (a guest never sees it): the picked studio on a third of the width, then Studio and Speakers as plain text
-// lists in their own scroll boxes (a gamepad walks them), what the tops sit on, and who can come in; a change goes on
-// the sesh, so it reaches everyone in the room. You is everyone's: the font (this viewer only, kept in this browser),
-// and Character, Controls, Plug in and Sound, which the entry panel's old buttons did.
+// The jam room's Settings (#6420). The setup is the event's, decided when it was made (the Stage Builder's build for the
+// studio, speakers and tops, #6053; the room's password), and with no event the desert gathering: nobody picks it at the
+// door. Two tabs. The gathering is where the owner edits it (a guest never sees it): the picked studio on a third of the
+// width, then Studio and Speakers as plain text lists in their own scroll boxes (a gamepad walks them), what the tops sit
+// on, and who can come in (anyone with the link, or with the room's password); a change goes on the sesh, so it reaches
+// everyone in the room. You is everyone's: the font (this viewer only, kept in this browser), and Character, Controls,
+// Plug in and Sound, which the entry panel's old buttons did.
 import { SYSTEM_IDS, SYSTEMS, type SystemId } from "@rustybuns/gear";
-import { DOORS, TOPS, type Door, type Tops } from "../project.ts";
+import { TOPS, type Tops } from "../project.ts";
 import type { Studio } from "./door.ts";
 import { shot } from "./picker.ts";
 
@@ -26,7 +28,8 @@ export function wearFont(font: string, keep = true) {
 
 export const TOPS_WORDS: Record<Tops, string> = { subs: "The subs", pole: "A pole over the subs", stands: "Their own stands" };
 const TOPS_CHIP: Record<Tops, string> = { subs: "tops on the subs", pole: "tops on poles", stands: "tops on stands" };
-export const DOOR_WORDS: Record<Door, string> = { link: "Anyone with the link", friends: "My friends", list: "Guest list only" };
+/** The shortest and longest password the World takes for a room (world.ts setLock). */
+export const CODE_MIN = 4, CODE_MAX = 32;
 /** One short line per rig, no spec sheet. */
 const RIG_LINES: Record<SystemId, string> = {
   "dance-stack": "Punchy, forward, throws far", synergy: "Flat, coherent, very low", sculpted: "Deep floor, sweet open top",
@@ -48,7 +51,7 @@ const STUDIO_LINES: Record<string, string> = {
 export const studioLine = (s: Pick<Studio, "id" | "about">) => STUDIO_LINES[s.id] ?? s.about.split(/[.:;]/)[0]?.trim() ?? "";
 
 /** The gathering as it stands: the sesh's choices, with what the room shows when the owner hasn't picked yet. */
-export interface Setup { studio: string; rig: SystemId | null; tops: Tops; door: Door }
+export interface Setup { studio: string; rig: SystemId | null; tops: Tops; locked: boolean }
 export type Tab = "room" | "you";
 export interface SettingsDeps {
   /** May this viewer change the gathering (the owner, or alone in an offline room)? */
@@ -57,7 +60,9 @@ export interface SettingsDeps {
   studios(): Studio[];
   pickStudio(id: string): void;
   pickRig(id: SystemId): void;
-  pickSetup(s: { tops?: Tops; door?: Door }): void;
+  pickTops(t: Tops): void;
+  /** Lock the room with this password, or open it to anyone with the link (""). */
+  setPassword(code: string): void;
   /** Also yours: what each row does, and its line (Plug in says Unplug once plugged). */
   mine: { name: string; line(): string; act(): void }[];
   onClose(): void;
@@ -109,13 +114,15 @@ export function mountSettings(d: SettingsDeps) {
     const outdoor = !!here?.def.outdoor;
     $("set-chip-rig").hidden = !outdoor || !s.rig;
     $("set-chip-rig").textContent = s.rig ? `${SYSTEMS[s.rig].name}, ${TOPS_CHIP[s.tops]}` : "";
-    $("set-chip-door").textContent = DOOR_WORDS[s.door];
+    $("set-chip-door").textContent = s.locked ? "Password to come in" : "Anyone with the link";
     fill($("set-studios"), list.map((x) => row(x.name, studioLine(x), x.id === s.studio, () => d.pickStudio(x.id))));
     // speakers stand out of doors only: a room indoors has its own
     $("set-speakers").hidden = !outdoor;
     fill($("set-rigs"), SYSTEM_IDS.map((id) => row(SYSTEMS[id].name, RIG_LINES[id], id === s.rig, () => d.pickRig(id))));
-    fill($("set-tops"), TOPS.map((t) => chip(TOPS_WORDS[t], t === s.tops, () => d.pickSetup({ tops: t }))));
-    fill($("set-doors"), DOORS.map((x) => chip(DOOR_WORDS[x], x === s.door, () => d.pickSetup({ door: x }))));
+    fill($("set-tops"), TOPS.map((t) => chip(TOPS_WORDS[t], t === s.tops, () => d.pickTops(t))));
+    $("set-open").setAttribute("aria-pressed", String(!s.locked));
+    $("set-lock").setAttribute("aria-pressed", String(s.locked));
+    $("set-lock").textContent = s.locked ? "Change password" : "Password";
   }
   function you() {
     $("set-font-name").textContent = font === DEFAULT_FONT ? `${font} (the default)` : font;
@@ -127,6 +134,19 @@ export function mountSettings(d: SettingsDeps) {
   $("tab-room").addEventListener("click", () => { tab = "room"; render(); });
   $("tab-you").addEventListener("click", () => { tab = "you"; render(); });
   $("settings-done").addEventListener("click", close);
+  // who can come in: anyone with the link, or with the room's password (the World's sesh code, world.ts locked)
+  const code = $("set-code");
+  $("set-open").addEventListener("click", () => { d.setPassword(""); $("set-code-form").hidden = true; render(); });
+  $("set-lock").addEventListener("click", () => { $("set-code-form").hidden = false; code.focus(); });
+  $("set-code-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = code instanceof HTMLInputElement ? code.value.trim() : "";
+    if (v.length < CODE_MIN) return;
+    d.setPassword(v);
+    if (code instanceof HTMLInputElement) code.value = "";
+    $("set-code-form").hidden = true;
+    render();
+  });
   return {
     open, close, isOpen, render,
     /** For the harness: which tabs show, the one open, and the picks as they stand. */

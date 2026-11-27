@@ -1,8 +1,9 @@
-// The jam room's way in (#6420), in headless Chrome over CDP (scripts/chrome.ts): the entry panel is the gathering's
-// name, whose it is and who's here, then Settings, Leave, a big Enter and one row of share buttons, and nothing else.
-// Wide along the bottom on a landscape screen, stacked on a phone (Enter on top, Settings and Leave side by side).
-// Settings is where the setup changes: alone in a room with no live line you are its owner, so the gathering tab shows
-// with Desert Gathering picked, and a pick there goes on the sesh; You picks a font for this browser only.
+// The jam room's way in (#6420), in headless Chrome over CDP (scripts/chrome.ts): the entry panel is a gateway, the
+// gathering's name, whose it is and who's here, then Settings, Leave, a big Enter and one row of share buttons, with
+// nothing to choose (and no password field: this room has none). Wide along the bottom on a landscape screen, stacked on
+// a phone (Enter on top, Settings and Leave side by side). A room made with no event is the desert gathering; alone in
+// it with no live line you are its owner, so Settings > The gathering shows it, and an edit there goes on the sesh. You
+// picks a font for this browser only. (The password's door is world.test.ts's: the World holds it.)
 // (A guest's view, no gathering tab, rests on the World refusing their edits: door.test.ts.)
 // One screen size a file (jam-menu-*.test.ts), so CI's lanes can run them side by side (#5922).
 import { expect, test } from "bun:test";
@@ -30,6 +31,7 @@ async function wayIn(tab: Awaited<ReturnType<typeof openTab>>, w: number, h: num
   const shown = await page<string[]>(`[...document.querySelectorAll("#menu button, #menu a")].filter((e) => e.getClientRects().length).map((e) => e.id)`);
   expect(shown.filter((id) => id !== "share").sort()).toEqual(["friends-open", "invite", "lobby", "play", "settings-open"]);
   expect(await page<string>(`document.getElementById("room-title").textContent`)).toBe("way-in");
+  expect(await page<number>(`document.querySelectorAll("#menu input, #menu select").length - document.querySelectorAll("#menu [hidden] input, #menu [hidden] select, #menu input[hidden]").length`)).toBe(0);
   expect(await page<string>(`document.getElementById("here-line").textContent`)).toContain("1 here");
   const panel = await box("menu");
   expect(panel.x).toBeGreaterThanOrEqual(0);
@@ -62,6 +64,8 @@ async function wayIn(tab: Awaited<ReturnType<typeof openTab>>, w: number, h: num
   await page(`([...document.querySelectorAll("#set-tops button")].find((b) => b.textContent === "Their own stands").click(), 1)`);
   expect(await page<string | undefined>(`qjam.settings().setup.tops`)).toBe("stands");
   expect(await page<string[]>(`[...document.querySelectorAll("#set-tops [aria-pressed=true]")].map((b) => b.textContent)`)).toEqual(["Their own stands"]);
+  // who can come in: anyone with the link, until the owner sets a password
+  expect(await page<string | null>(`document.getElementById("set-open").getAttribute("aria-pressed")`)).toBe("true");
 
   // You: the 20 fonts, each in its own; a pick changes this page's headings and is kept
   await page(`(document.getElementById("tab-you").click(), 1)`);

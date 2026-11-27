@@ -21,7 +21,7 @@ import { FOLLOW_MS, invitedWords, LiveParty, partyFollow, partyFrom } from "./pa
 import { getJson } from "@rustybuns/util/http";
 import { invitedBy } from "@rustybuns/util/lobby";
 import { FIRST_STUDIO } from "./door.ts";
-import { doorWords, follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, loadSetup, remember, roomId, saveRecent, saveSetup, studios } from "./door.ts";
+import { doorWords, follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
 import { sideways } from "./picker.ts";
 import { mountSettings } from "./settings.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
@@ -43,7 +43,7 @@ import { b64url } from "@rustybuns/util/bytes";
 import { OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
 import { FarSound } from "./plugin-line.ts";
 import { brickWall, peerCeilingSetting } from "./limiter.ts";
-import { connect, type Net, type NetStatus } from "../ui/net.ts";
+import { connect, savedCode, saveCode, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, blendShot, body, cameraPose, orbitPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
@@ -1142,11 +1142,13 @@ const help = mountHelp({
 });
 settings = mountSettings({
   owner,
-  setup: () => ({ studio: here?.studio ?? pick, rig: def.outdoor ? roomRig(def).id : null, tops: project.tops ?? "subs", door: project.door ?? "link" }),
+  setup: () => ({ studio: here?.studio ?? pick, rig: def.outdoor ? roomRig(def).id : null, tops: project.tops ?? "subs", locked: !!status.locked }),
   studios,
-  pickStudio: (id) => { if (moveStudio(id).ok) saveSetup(id); },
+  pickStudio: (id) => void moveStudio(id),
   pickRig: (id) => { if (owner()) player.edit({ t: "rig", id }); },
-  pickSetup: (s) => { if (owner()) { player.edit({ t: "setup", ...s }); settings?.render(); } },
+  pickTops: (tops) => { if (owner()) { player.edit({ t: "setup", tops }); settings?.render(); } },
+  // the World takes it from the room's maker only, and tells everyone in the new one so their reconnects still work
+  setPassword: (code) => { if (owner()) net?.lock(code); },
   // what the entry panel's old buttons did
   mine: [
     { name: "Character", line: () => "How you look", act: () => void character.open() },
@@ -1183,7 +1185,10 @@ if (here) net = connect({
     if (s.state === "online" && s.peers > status.peers) wear();
     // online again: ask for the sesh's gear, and which hand at the wall is yours
     if (s.state === "online" && status.state !== "online") net?.studio({ t: "drop" });
+    const gateWas = gated();
     status = s;
+    if (gated() !== gateWas) door();
+    settings?.render();
   },
   onChat(m) { if (m.t === "chat") rights.me = m.you; },
   onTakeBytes(m) { if (takes.add(m)) syncTakes(project); },
@@ -1378,6 +1383,11 @@ function door() {
   $("sign-in").textContent = words.button;
   if (here) $("room-title").textContent = here.name || here.room;
   hereLine();
+  // a password field only when the room has one and hasn't let this page in yet
+  const gate = gated();
+  $("code-gate").hidden = !gate;
+  if (gate && here) $("code-why").textContent = status.full === "tries" ? "Too many wrong passwords from here. Wait a minute, then try again."
+    : savedCode(here.room) ? "That isn't the password. Ask whoever made the room." : "This room has a password.";
   roomStudios();
   $("me-name").textContent = name;
   $("me-from").textContent = signedIn() ? (lookFrom === "eqosys" ? "Signed in with eqosys, wearing your eqosys character" : "Signed in with eqosys") : "A guest in this browser";
@@ -1397,14 +1407,13 @@ function door() {
     a.append(t, m); li.append(a); list.append(li);
   }
 }
-// a new room opens in the desert gathering, or in the studio you last picked in a room's Settings (door.ts loadSetup):
-// nobody is asked at the door, and Settings is where the owner changes it
-const doorStudio = loadSetup() ?? FIRST_STUDIO;
+// a room made here, with no event behind it, opens in the desert gathering: nobody is asked at the door. An event's room
+// comes with the setup its Stage Builder build has (page.ts eventLink), and the owner edits either one in Settings.
+const doorStudio = FIRST_STUDIO;
 $("make").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $("room-name"), label = input instanceof HTMLInputElement ? input.value.trim().slice(0, 40) : "";
   const studio = doorStudio;
-  saveSetup(studio);
   const room = roomId(label);
   saveRecent(remember(loadRecent(), { room, name: label, studio, mine: true, at: Date.now() }));
   // the first in with a key is the sesh's maker (its leader), and that's you: you walk in before anyone has the link
@@ -1501,7 +1510,18 @@ $("share").addEventListener("click", () => {
 });
 
 function menu() { decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play" || !!settings?.isOpen(); door(); people(); invites(); if (phase === "menu") void refreshHub(); }
-function play() { if (!here) return; phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
+/** The room has a password and turned this page away for it (world.ts locked): the entry panel asks for it. */
+function gated() { return !!here && status.state === "full" && (status.full === "code" || status.full === "tries"); }
+/** Enter with the password typed: kept in this browser for this room (net.ts saveCode), and the page knocks again with it. */
+function tryCode(): boolean {
+  const input = $("room-code"), v = input instanceof HTMLInputElement ? input.value.trim() : "";
+  if (!here || v.length < 4) { input.focus(); return false; }
+  saveCode(here.room, v);
+  location.reload();
+  return true;
+}
+$("code-gate").addEventListener("submit", (e) => { e.preventDefault(); tryCode(); });
+function play() { if (!here) return; if (gated()) { tryCode(); return; } phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => void character.open());
 mountControls({
@@ -1662,7 +1682,7 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, setup: loadSetup(), look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
+  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
     gear: atWall.state(jam), lanterns: lit.state(jam), venue: venue.state, levels: harness.levels(),

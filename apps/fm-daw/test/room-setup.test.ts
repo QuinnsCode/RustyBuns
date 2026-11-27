@@ -1,15 +1,15 @@
-// Nobody is asked for a studio at the front door (#6420): a new browser's first room opens in the desert gathering, and
-// after an owner picked another in a room's Settings (door.ts saveSetup) their next room opens in that one. Headless
+// Nobody is asked for a studio at the front door (#6420): a room made there, with no event behind it, opens in the
+// desert gathering (an event's room brings its own setup, page.ts eventLink). Headless
 // Chrome over CDP (scripts/chrome.ts). The room itself is never loaded: its navigation is stopped (CDP Fetch) and the
 // link read off it, so the front door stays up.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 
-setDefaultTimeout(60_000); // two front-door loads and a fresh browser on CI's software GL (#5905)
+setDefaultTimeout(60_000); // a front-door load and a fresh browser on CI's software GL (#5905)
 useBrowser();
 
-test.skipIf(!hasChrome)("a new room opens in the desert gathering, or in the studio its owner last picked in Settings", async () => {
+test.skipIf(!hasChrome)("a room made at the front door opens in the desert gathering, with nothing asked", async () => {
   // its own browser context: a fresh browser's storage, not another test's
   const tab = await openTab(chrome.cdp, { w: 1280, h: 720 }, false, true);
   const page = async <T>(expr: string): Promise<T> => tab.eval<T>(`(async () => (${expr}))()`);
@@ -41,10 +41,6 @@ test.skipIf(!hasChrome)("a new room opens in the desert gathering, or in the stu
     // the lobby shows no studio to pick: just the room's name and Make a room
     expect(await page<number>(`document.querySelectorAll("#door-lobby svg, #door-lobby [role=radio]").length`)).toBe(0);
     expect(await make("first jam")).toBe("desert-gathering");
-    // an owner who moved a room to the console room in its Settings makes their next one there
-    await page(`(localStorage.setItem("qollab-studio:setup", "console-room"), 1)`);
-    await frontDoor();
-    expect(await make("second jam")).toBe("console-room");
   } finally {
     if (tab.noise.length) console.log(`room-setup noise:\n  ${tab.noise.slice(0, 30).join("\n  ")}`);
     await tab.close();
