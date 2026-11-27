@@ -33,6 +33,12 @@ jobs:
       # Mervin's line merge (apps/codesplitter/scripts/shadow.ts) imports @rustybuns/util: without the install it
       # can't load and every conflict goes to a person. The root and codeSplitter's workspace are all after.ts needs.
       - run: bun install --frozen-lockfile --filter rustybuns --filter ./apps/codesplitter
+      # Mergiraf, Mervin's second opinion on a file he leaves cards in (#6152). Best effort: without it those files go
+      # to a person, as before.
+      - continue-on-error: true
+        run: |
+          curl -fsSL https://codeberg.org/mergiraf/mergiraf/releases/download/v0.20.0/mergiraf_x86_64-unknown-linux-gnu.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - env:
           GH_TOKEN: ${{ secrets.AFTER_TOKEN || github.token }}
           # Whether the secret is set (never its value): with it, a bot head that got no CI gets an empty commit that starts it;

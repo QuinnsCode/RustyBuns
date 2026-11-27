@@ -162,7 +162,24 @@ spotMark.renderOrder = spotGlow.renderOrder = 1;
 spot.add(spotGlow, spotMark, spotBeam);
 spot.visible = false;
 scene.add(spot);
-const spotLamp = new THREE.PointLight(0xffc88a, 0, 3.4, 1.4);
+const spotLamp = new THREE.PointLight(0xffc88a, 0, 2.8, 1.6);
+// While the piece has a place to go, both ends speak amber: its outline, pool, cone and lamp take the stand's warm
+// colour, and a dashed line of the same tape runs along the floor from the piece to its stand.
+const COOL = 0x4cc9f0, WARM = 0xff8a1e, coolPool = goalPool.material.map, warmPool = poolTexture(WARM);
+const trailTex = trailTexture();
+const trail = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: trailTex, transparent: true, depthWrite: false }));
+trail.renderOrder = 1;
+trail.visible = false;
+scene.add(trail);
+function trailTexture() {
+  const c = document.createElement("canvas");
+  c.width = 64; c.height = 16;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "rgba(245, 120, 20, 0.95)"; g.fillRect(4, 2, 36, 12);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
+}
 /** Empty hands drop out of the way while you look at a piece or the Next one is in view (set a frame late, after the goal). */
 let handsLow = false;
 scene.add(spotLamp);
@@ -181,7 +198,7 @@ function beamTexture() {
   const c = document.createElement("canvas");
   c.width = 4; c.height = 128;
   const g = c.getContext("2d")!, r = g.createLinearGradient(0, 0, 0, 128);
-  r.addColorStop(0, "rgba(255,255,255,0)"); r.addColorStop(0.5, "rgba(255,255,255,0.1)"); r.addColorStop(1, "rgba(255,255,255,0.32)");
+  r.addColorStop(0, "rgba(255,255,255,0)"); r.addColorStop(0.5, "rgba(255,255,255,0.07)"); r.addColorStop(1, "rgba(255,255,255,0.22)");
   g.fillStyle = r; g.fillRect(0, 0, 4, 128);
   return new THREE.CanvasTexture(c);
 }
@@ -364,6 +381,7 @@ function draw() {
   const away = tgt ? camera.worldToLocal(marker.position.clone()) : null, ndc = tgt ? marker.position.clone().project(camera) : null;
   const arrow = away && ndc ? toward(ndc, away.z > 0) : null;
   $("toward").hidden = !arrow;
+  $("toward").classList.toggle("warm", !!next?.to);
   if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = (gear(tgt.gear).speaker && tapeLabel(tgt.key, tgt.gear)) || callName(world, cables, tgt.key); }
   // In view, the outline and the pool, breathing slowly.
   const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 380), seen = !!tgt && !arrow && tgt !== held;
@@ -379,13 +397,28 @@ function draw() {
   }
   // Where it goes, lit whether or not it is on screen, so you see the stand as you turn to it.
   const to = next?.to ? world.items.find((i) => i.key === next.to) : null;
+  const warm = !!to;
+  marker.material.color.setHex(warm ? WARM : COOL);
+  goalLine.color.setHex(warm ? WARM : COOL);
+  goalLamp.color.setHex(warm ? 0xffc88a : 0x9fe3ff);
+  if (goalPool.material.map !== (warm ? warmPool : coolPool)) { goalPool.material.map = warm ? warmPool : coolPool; goalPool.material.needsUpdate = true; }
+  const from = tgt && tgt !== held ? tgt : held ? { x: you.x, z: you.z } : null;
+  trail.visible = !!to && !!from;
+  if (to && from) {
+    const dx = to.x - from.x, dz = to.z - from.z, len = Math.hypot(dx, dz), inset = Math.min(0.45, len / 3), run = Math.max(0, len - inset * 2);
+    trail.position.set(from.x + dx / 2, (world.level.floorAt?.(to.x, to.z) ?? 0) + 0.011, from.z + dz / 2);
+    trail.rotation.y = -Math.atan2(dz, dx);
+    trail.scale.set(run, 1, 0.1);
+    trailTex.repeat.set(run / 0.3, 1);
+    trailTex.offset.x = -performance.now() / 1600;
+  }
   spot.visible = !!to;
-  spotLamp.intensity = to ? 4 + 0.8 * pulse : 0;
+  spotLamp.intensity = to ? 2.4 + 0.5 * pulse : 0;
   if (to) {
     const floor = world.level.floorAt?.(to.x, to.z) ?? 0, top = world.level.outdoor ? floor + 3 : world.level.room.height;
     spot.position.set(to.x, floor, to.z);
     spotMark.position.y = 0.014; spotMark.scale.setScalar(0.55);
-    spotGlow.position.y = 0.013; spotGlow.scale.setScalar(1.1 + 0.06 * pulse);
+    spotGlow.position.y = 0.013; spotGlow.scale.setScalar(0.85 + 0.05 * pulse);
     spotBeam.scale.set(0.42, top - floor, 0.42);
     spotLamp.position.set(to.x, floor + 1.9, to.z + 0.2);
   }
