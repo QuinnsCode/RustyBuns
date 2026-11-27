@@ -25,3 +25,13 @@ test("every Q Amp head plays the same from its boards as from the shared parts",
     expect(diff / peak).toBeLessThan(1e-3);
   }
 });
+
+test("every head stays finite at Eco's 2x oversampling", () => {
+  // The Q Triple's grid went to NaN in the first ~60 samples here, so Eco with it played silence (#6296).
+  const input = riff(SR).subarray(0, SR / 5);
+  for (const h of HEADS) {
+    const run = runRig(headRig(h, { ...h.knobs, noise: 0 }), input, SR, 2);
+    expect({ head: h.name, bad: run.out.findIndex((x) => !Number.isFinite(x)) }).toEqual({ head: h.name, bad: -1 });
+    expect(Math.max(...run.out.map(Math.abs))).toBeGreaterThan(0.01);
+  }
+});
