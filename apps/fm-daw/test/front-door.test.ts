@@ -14,16 +14,27 @@ useBrowser();
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
 const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 60_000);
-interface Door { paths: { id: string; sector: string; name: string; href: string; shown: boolean; oneLine: boolean }[]; lane: string | null; overflowX: boolean }
+interface Chip { at: string; shown: boolean; text: string; left: number; right: number; top: number }
+interface Door { paths: { id: string; sector: string; name: string; href: string; shown: boolean; oneLine: boolean }[]; lane: string | null; overflowX: boolean; account: Chip[] }
+/** The chip at `at`, which must be the only one on the screen. */
+const chipAt = (d: Door, at: string) => { expect(d.account.filter((c) => c.shown).map((c) => c.at)).toEqual([at]); return d.account.find((c) => c.at === at)!; };
 interface Hero { air: { tempC: number; humidity: number; bank: boolean }; map: { near: number; far: number }; back: { dull: number; ms: number }; playing: boolean; draws: number }
 
 test.skipIf(!hasChrome)("each lane on the field scrolls to its shelf and becomes a tab, every card on one line, and the field answers the air and the bank, at phone and desktop sizes", async () => {
   for (const [w, h, mobile] of [[375, 740, true], [1440, 900, false]] as const) {
     const tab = await openTab(chrome.cdp, { w, h }, mobile);
     try {
+      // a local eqosys, so this 127.0.0.1 page may sign in: signed out, the chip says Sign in
       await load(chrome.cdp, tab, `${vite.url}${DOOR.slice(1)}`, 0);
-      await until(tab, "!!window.qdoor");
+      await tab.eval(`localStorage.setItem("qollab-studio.eqosys", "http://127.0.0.1:9")`);
+      await load(chrome.cdp, tab, `${vite.url}${DOOR.slice(1)}`, 0);
+      await until(tab, "!!window.qdoor && qdoor.state().account.some((c) => c.shown && c.text.includes('Sign in'))");
       const door = await tab.eval<Door>("qdoor.state()");
+      // top right over the sky
+      const sky = chipAt(door, "field");
+      expect(sky.text).toContain("Sign in");
+      expect(sky.right).toBeGreaterThan(w - 40);
+      expect(sky.top).toBeLessThan(80);
       expect(door.paths.map((p) => [p.sector, p.id, p.href])).toEqual(SECTORS.flatMap((s) => PATHS.filter((p) => p.sector === s.id).map((p) => [s.id, p.id, p.href])));
       expect(door.lane).toBe(null);
       expect(door.paths.filter((p) => !p.shown || !p.oneLine).map((p) => p.name)).toEqual([]);
@@ -35,6 +46,11 @@ test.skipIf(!hasChrome)("each lane on the field scrolls to its shelf and becomes
         await until(tab, `qdoor.state().lane === ${JSON.stringify(s.id)}`);
         await until(tab, `document.body.classList.contains("scrolled") && qdoor.shelf().items.some((t) => t.seen && t.drawn)`);
         expect(await tab.eval<string | null>(`document.querySelector('#tabs [aria-selected="true"]')?.dataset.tab ?? null`)).toBe(s.id);
+        // the chip has moved to the right end of the tabs
+        const tabsChip = chipAt(await tab.eval<Door>("qdoor.state()"), "tabs");
+        expect(tabsChip.text).toContain("Sign in");
+        expect(tabsChip.right).toBeGreaterThan(w - 40);
+        expect(tabsChip.right).toBeLessThanOrEqual(w);
       }
       await tab.eval(`document.getElementById('field-back').click()`);
       await until(tab, "qdoor.state().lane === null && scrollY < 2");

@@ -18,7 +18,7 @@ export const SECTORS: readonly Sector[] = [
   { id: "play", word: "Play", line: "Take what you built live: a place your friends walk into and hear." },
 ];
 
-export type PathId = "learn" | "planner" | "daw" | "instruments" | "amps" | "builder" | "event";
+export type PathId = "learn" | "planner" | "daw" | "instruments" | "amps" | "builder" | "playground" | "event";
 export interface Path {
   id: PathId;
   /** The word it sits under. */
@@ -31,7 +31,7 @@ export interface Path {
   href: string;
   /** What that first step is, for the card's title and the journey test. */
   first: string;
-  /** Asks you to sign in (with eqosys) before you can start: only the event, which is a room you share. */
+  /** Asks you to sign in (with eqosys) before you can start: only PLAY's two, each a room you share. */
   signIn: boolean;
   /** A Lucide icon's inner SVG (ISC). */
   icon: string;
@@ -40,7 +40,7 @@ export interface Path {
 /** The front door's address, which every page's way back opens. */
 export const DOOR = "/door.html";
 
-// lucide (ISC): graduation-cap, tent, audio-lines, piano, speaker, circuit-board, users
+// lucide (ISC): graduation-cap, tent, audio-lines, piano, speaker, circuit-board, users, ticket
 export const PATHS: readonly Path[] = [
   {
     id: "learn", sector: "learn", name: "Learn the setup", does: "Plug a guitar into an amp, patch a synth, set up a PA, and hear what each cable and knob does.",
@@ -73,9 +73,14 @@ export const PATHS: readonly Path[] = [
     icon: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M11 9h4a2 2 0 0 0 2-2V3"/><circle cx="9" cy="9" r="2"/><path d="M7 21v-4a2 2 0 0 1 2-2h4"/><circle cx="15" cy="15" r="2"/>',
   },
   {
-    id: "event", sector: "play", name: "The Event", does: "Make a room, send the link, and play together through the room's PA.",
+    id: "playground", sector: "play", name: "Playground", does: "Your own sesh: make a room in your studio, send the link, and friends drop in to jam.",
     href: "/jam.html", first: "The jam room's lobby: make a room", signIn: true,
     icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/>',
+  },
+  {
+    id: "event", sector: "play", name: "The Event", does: "The live show: take a planned party live, with its guest list and a listen link for the crowd.",
+    href: "/rooms.html#party", first: "The Event Planner's Party panel: open as event", signIn: true,
+    icon: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>',
   },
 ];
 
@@ -92,7 +97,7 @@ export const CHAIN: readonly { step: string; does: string; path: PathId }[] = [
   { step: "Play it", does: "Plug in and play it through Q Amp, solved as a circuit.", path: "amps" },
   { step: "Record it", does: "Lay the take down in QDAW and loop it.", path: "daw" },
   { step: "Plan the stage", does: "Place the stacks on the field and see who hears what.", path: "planner" },
-  { step: "Play it live", does: "Send the link; your friends walk in and hear it.", path: "event" },
+  { step: "Play it live", does: "Take the planned party live; the crowd walks in and hears it.", path: "event" },
 ];
 
 /** What works end to end today (PATHWAYS.md's table), a line a sector. */
@@ -102,7 +107,8 @@ export const LIVE: readonly { path: PathId; line: string }[] = [
   { path: "daw", line: "A loop at a time: play, record, mix and bounce it to a file." },
   { path: "instruments", line: "Two decks into the room, to a file, or out on a listen link." },
   { path: "amps", line: "An amp and pedals solved as circuits; speaker boxes from the makers' drawings." },
-  { path: "event", line: "An invite link, a guest list, and the room's PA from where you stand." },
+  { path: "playground", line: "An invite link, a guest list, and the room's PA from where you stand." },
+  { path: "event", line: "A planned party live from the Event Planner, on its stacks, with a listen link for the crowd." },
 ];
 
 /** Two short pitches, for crews and for classes, each with its path's icon and door. */

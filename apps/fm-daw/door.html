@@ -55,6 +55,11 @@
   body.scrolled #tabs .tablist button { opacity: 1; }
   #hero .words { opacity: calc(1 - var(--p, 0) * 1.6); transform: translateY(calc(var(--p, 0) * -48px)); }
   body.scrolled #hero .words, body.scrolled #air-egg, body.scrolled .panel { visibility: hidden; }
+  /* the eqosys account chip (#6440): top right over the sky on the field, at the right end of the tabs once you scroll off it */
+  #hero .account { position: absolute; z-index: 3; top: max(18px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); }
+  body.scrolled #hero .account { display: none; }
+  #tabs .account { flex: none; display: none; }
+  body.scrolled #tabs .account { display: block; }
   #field-back { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border-radius: 10px; border: 1px solid transparent; background: none; color: #f4f1ea; font: 600 20px/1 "Barlow Condensed", sans-serif; letter-spacing: .02em; cursor: pointer; white-space: nowrap; }
   #field-back span { color: #ff6b4a; }
   #field-back svg { color: #b9b4aa; }
@@ -98,6 +103,9 @@
   .path:hover .open, .path:focus-visible .open { background: var(--tone); color: #0f1013; }
   @media (max-width: 720px) {
     #tabs #field-back b { display: none; }
+    /* a phone's tabs have room for the chip's button alone: Sign in (or out) as its icon, its word the tooltip */
+    #tabs .account .eq-who, #tabs .account [data-part="badge"]:not(.eq-fold) { display: none; }
+    #tabs .account .eq-btn { font-size: 0; gap: 0; padding: 0; }
     .tablist button { padding: 10px 10px 12px; font-size: calc(17px * var(--sm, 1)); letter-spacing: .08em; }
     .tablist button::after { left: 10px; right: 10px; }
     #lane-view { padding-top: 92px; }
@@ -137,6 +145,7 @@
       <a class="btn build" href="/rooms.html" data-go="build">Start building</a>
     </div>
   </div>
+  <div class="account" data-at="field"></div>
   <button id="air-egg" type="button" aria-expanded="false" aria-controls="air" title="The night's air"></button>
   <div class="panel" id="air" aria-label="The night on the field" hidden>
     <div class="row">
@@ -156,6 +165,7 @@
 <nav id="tabs" aria-label="Lanes">
   <button id="field-back" type="button" title="Back to the field (Esc)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg><b>Qollab <span>Studio</span></b></button>
   <div class="tablist" role="tablist"></div>
+  <div class="account" data-at="tabs"></div>
 </nav>
 <section id="lane-view">
   <nav id="paths" aria-label="Learn, build and play"></nav>
@@ -170,7 +180,7 @@
   <section class="block"><h2>Who it's for</h2>
     <div id="pitches"></div>
   </section>
-  <p class="foot">Only The Event asks you to sign in: it is a room you share with friends. Everything else works signed out, and the Paths button on every page brings you back here.</p>
+  <p class="foot">Only PLAY asks you to sign in: Playground and The Event are rooms you share. Everything else works signed out, and the Paths button on every page brings you back here.</p>
 </main>
 <script type="module" src="/src/front.ts"></script>
 </body></html>

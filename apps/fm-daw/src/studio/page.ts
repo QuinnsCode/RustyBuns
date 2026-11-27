@@ -969,6 +969,8 @@ const harness = {
 window.qrooms = harness;
 if (askedFor(location.search, PLAN_LESSON.id)) lesson.start();
 render();
+// the front door's The Event (#6440) opens on the Party panel, where Open as event takes the plan live
+if (location.hash === "#party") $("party").scrollIntoView({ block: "start" });
 // your account's parties: what it keeps opens here (another device's work); an account with none takes this browser's
 void eq.ready.then(() => sync.pull()).then((got) => {
   if (!got) return;

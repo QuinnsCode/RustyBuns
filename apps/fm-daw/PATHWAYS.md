@@ -8,7 +8,8 @@ like the real one. Three words split it, and every task names the problem it sho
   storylines: the same gear, models and step checker (`packages/gear` `steps.ts`), told as lessons here and as a
   career from the garage to the arena there. A speaker, amp or rig model built in Qollab Studio is one the game uses.
 - **BUILD** is six sectors, each aimed at one real problem.
-- **PLAY** is The Event: what you built, played live for people who walk in.
+- **PLAY** is two cards on the door (#6440): **Playground**, your own sesh that friends drop in on from the link (the jam
+  lobby), and **The Event**, the live show: a planned party taken live with its guest list and a listen link for the crowd.
 
 Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts`). The Door column is where its card lands.
 
@@ -20,7 +21,8 @@ Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.
 | BUILD | [Q Instruments](#4-build-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
 | BUILD | [Q Amps](#6-build-q-amps-and-q-builder) | Amp sims are black boxes: you can't see why a pedal sounds the way it does | guitarists, speaker DIYers | `/amp.html`, Q Amp; `/speakers.html` | Yes: an amp and pedals solved as circuits; speaker boxes from the makers' drawings |
 | BUILD | [Q Builder](#6-build-q-amps-and-q-builder) | A DIY kit is a parts list with no feedback: it hums and you can't tell which part did it | pedal and synth DIYers, EE students | `/amp.html`, B on a pedal (its board and build sheet) | Mostly: change parts, add, remove or rewire parts, scope a net, remake and retest, see the board drawn from its Gerbers, print it, download the Gerbers or the kit; a new layout for a changed circuit is still routed in the repo |
-| PLAY | [The Event](#3-play-the-event) | A plan is a drawing until someone stands in it; a far-away crowd gets a flat stream | the band, the client, the crowd | `/jam.html`, the lobby (sign in, make a room) | Yes indoors: invite link, guest list, the room's PA from where you stand |
+| PLAY | [Playground](#3-play-the-event) | Playing together means a video call, not a place | the band, friends in other cities | `/jam.html`, the lobby (sign in, make a room) | Yes indoors: invite link, guest list, the room's PA from where you stand |
+| PLAY | [The Event](#3-play-the-event) | A plan is a drawing until someone stands in it; a far-away crowd gets a flat stream | the client, the crowd | `/rooms.html#party`, the Event Planner's Party panel (Open as event) | Yes: the plan live on its stacks, its guest list and a listen link |
 
 All of them share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
 move from one sector to the next without starting over: the pedal built in Q Builder is a pedal on Q Amp's floor, the
@@ -249,10 +251,12 @@ The field is the menu: LEARN, BUILD and PLAY are three lanes down the grass, eac
 standing on it (hemyviz's floor names). The field stands behind the whole page, crowded up under the title; under it each lane's shelf follows the last. Scrolling off
 the field slides the lane buttons up into the tabs along the top (`morph` in `src/front-hero.ts`), and the lane whose shelf you are
 reading darkens the others, stands in a beam of light and flies the camera up over it, so the map fills the screen behind the
-cards. A lane button, its strip of grass or a tab scrolls to its shelf (a link to `#learn`, `#build`, `#play` lands there). Each lane's paths
+cards. A lane button, its strip of grass or a tab scrolls to its shelf (a link to `#learn`, `#build`, `#play` lands there). The eqosys account chip (Sign in, or your
+name and Sign out) sits top right over the sky, and at the right end of the tabs once you scroll off the field; it is the jam
+room's own client, so one sign-in is both. Each lane's paths
 stand down the page like a console's memory card screen (`src/front-shelf.ts`): each a thing turning in the dark (the guitar,
 a speaker stack, the desk's own screen from `public/door/daw.jpg`, a turntable, an amp on its cab, the drive's real board from
-`circuits/drive.pcb.svg`, a mic), each swinging a quarter turn each way of its front, the one nearest the middle fastest, scrolling swinging them all, and each glass card sliding
+`circuits/drive.pcb.svg`, a mic for Playground, a stage wedge for The Event), each swinging a quarter turn each way of its front, the one nearest the middle fastest, scrolling swinging them all, and each glass card sliding
 in as it comes onto the screen. One WebGL renderer draws only the things on the screen, at 30 frames a second at most; with
 reduced motion each is drawn once. Beside each thing, a Lucide icon, a short name, a line on what you do there, and Open,
 on that sector's first step ([#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860)). Only The

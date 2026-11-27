@@ -11,13 +11,16 @@ import "./door-fonts.css";
 import { clamp } from "@rustybuns/util";
 import { mountHero } from "./front-hero.ts";
 import { mountShelf, type ShelfItem } from "./front-shelf.ts";
+import { eqosys } from "@rustybuns/util/eqosys";
+import { APP, EQOSYS, SIGN_IN_FROM } from "./account.ts";
+import { SKIN } from "./guest-list.ts";
 import { CHAIN, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type SectorId } from "./paths.ts";
 
 const TONES: Record<SectorId, string> = { learn: "#2dd4bf", build: "#fb923c", play: "#818cf8" };
 /** Each lane's thematic face (door-fonts.css), as the field paints its word on the grass. */
 const FACES: Record<SectorId, string> = { learn: '400 100px "Caveat Brush", cursive', build: '800 100px "Doto", monospace', play: '400 100px "Special Elite", monospace' };
 /** The thing each path stands as on its lane's shelf. */
-const ITEMS: Record<PathId, ShelfItem> = { learn: "guitar", planner: "stack", daw: "screen", instruments: "turntable", amps: "amp", builder: "board", event: "mic" };
+const ITEMS: Record<PathId, ShelfItem> = { learn: "guitar", planner: "stack", daw: "screen", instruments: "turntable", amps: "amp", builder: "board", playground: "mic", event: "wedge" };
 const isSector = (v: string): v is SectorId => SECTORS.some((s) => s.id === v);
 
 const shelf = mountShelf();
@@ -134,6 +137,14 @@ for (const w of PITCHES) {
   pitches.append(a);
 }
 
+// sign in with eqosys, top right on the field and at the end of the tabs: the jam room's own client (studio/page.ts), so
+// one sign-in here is the same session there. Sign in opens eqosys beside the page; both chips redraw on the way back.
+const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
+const chips = [...document.querySelectorAll<HTMLElement>(".account")];
+const drawChips = (note?: string) => { for (const c of chips) eq.accountChip(c, { ...(note ? { note } : {}), onSignIn: () => drawChips(), onSignOut: () => drawChips() }); };
+drawChips();
+void eq.finishSignIn().then((back) => { if (back) drawChips(back.error); }); // back from eqosys with ?code=&state=
+
 declare global { interface Window { qdoor: typeof harness } }
 const harness = {
   /** Each card as drawn: its path, the word it sits under, its name, where it goes, whether its name sits on one line, and the page's overflow. */
@@ -147,6 +158,11 @@ const harness = {
     /** The lane that is open on the field, or null. */
     lane: hero.state().lane,
     overflowX: document.documentElement.scrollWidth > innerWidth,
+    /** The account chips, where each sits (field or tabs), whether it is on the screen, its words, and its box. */
+    account: chips.map((c) => {
+      const r = c.getBoundingClientRect();
+      return { at: c.dataset.at, shown: c.getClientRects().length > 0 && r.width > 0, text: c.textContent?.trim() ?? "", left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top) };
+    }),
   }),
   /** Scrolls to a lane's shelf (learn, build or play), or back up to the field with null, as its button or tab does. */
   lane: (id: SectorId | null) => go(id),
