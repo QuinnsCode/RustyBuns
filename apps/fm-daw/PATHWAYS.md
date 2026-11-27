@@ -238,8 +238,10 @@ grass. The Air and Humidity sliders and the Bank button change the map, and **He
 set by what the field took from each band at the back; they hide behind one small thermometer button in the field's corner,
 an easter egg. Start learning and Start building open `/studio.html` and `/rooms.html`.
 The field is the menu: LEARN, BUILD and PLAY are three lanes down the grass, each with its word painted on the floor and a button
-standing on it (hemyviz's floor names). Opening one (or a link to `#learn`, `#build`, `#play`) darkens the others, stands it in a
-beam of light, and flies the camera up over it so the map fills the screen behind the cards; the lanes become tabs along the top to switch between, and the lane's paths
+standing on it (hemyviz's floor names). The field stands behind the whole page, crowded up under the title; under it each lane's shelf follows the last. Scrolling off
+the field slides the lane buttons up into the tabs along the top (`morph` in `src/front-hero.ts`), and the lane whose shelf you are
+reading darkens the others, stands in a beam of light and flies the camera up over it, so the map fills the screen behind the
+cards. A lane button, its strip of grass or a tab scrolls to its shelf (a link to `#learn`, `#build`, `#play` lands there). Each lane's paths
 stand down the page like a console's memory card screen (`src/front-shelf.ts`): each a thing turning in the dark (the guitar,
 a speaker stack, the desk's own screen from `public/door/daw.jpg`, a turntable, an amp on its cab, the drive's real board from
 `circuits/drive.pcb.svg`, a mic), each swinging a quarter turn each way of its front, the one nearest the middle fastest, scrolling swinging them all, and each glass card sliding
