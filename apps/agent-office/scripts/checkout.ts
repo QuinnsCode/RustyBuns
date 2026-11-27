@@ -66,7 +66,7 @@ export function plainCheckout(js: string) {
 }
 
 // Each hire wrote the whole checkout again (1.2 GB of this repo). The new worktree now clones the floor checkout's files
-// instead (live/clone.ts); a fill that fails takes its worktree and branch with it, as a failed `worktree add` would.
+// instead (scripts/cow-clone.ts); a fill that fails takes its worktree and branch with it, as a failed `worktree add` would.
 
 /** server/worktrees.js: a hire's worktree is added without a checkout, then filled with copy-on-write clones. */
 export function clonedCheckout(js: string) {

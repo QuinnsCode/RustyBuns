@@ -7,9 +7,10 @@
 // terminal agent.
 import { Command, Component, Subscription, UiSchema } from "@effect/ui";
 import { Html } from "@effect/ui/html";
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Queue, Schema, Stream } from "effect";
 import { Agent, Call, type Request, Seen } from "./agent.ts";
 import { apply, backdropUrl, Page } from "./page.ts";
+import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
 import { READ, READ_FILE, TOOLS } from "./tools.ts";
 import { worldDoc } from "./world.ts";
@@ -32,11 +33,18 @@ export const PageMessage = UiSchema.TaggedEnum({
   ClickedExplain: {},
   ClickedCreate: {},
   CreatedWorld: { went: Schema.Literals(["here", "away", "off"]) },
+  ClickedExportGif: {},
+  ChangedGif: { busy: Schema.Boolean, says: Schema.String },
+  CompletedExportGif: {},
 });
 
 /** "Create your world": sign in with eqosys, or open the world this browser keeps (account.ts, loaded only when pressed). */
 export const CreateWorld = Command.make("effect-ui-page/CreateWorld", { args: { room: Schema.String } }, ({ room }) =>
   Effect.promise(() => import("./account.ts").then((a) => a.createWorld(room))).pipe(Effect.map((went) => PageMessage.CreatedWorld({ went }))));
+
+/** Record the world as a GIF (pictures.ts); how it goes comes back as ChangedGif. */
+export const ExportGif = Command.make("effect-ui-page/ExportGif", { args: { room: Schema.String } }, ({ room }) =>
+  Effect.promise(() => exportGif(room)).pipe(Effect.as(PageMessage.CompletedExportGif())));
 
 /** Put text on the clipboard. */
 export const CopyText = Command.make("effect-ui-page/CopyText", { args: { what: Schema.String, text: Schema.String } }, ({ what, text }) =>
@@ -65,6 +73,8 @@ const Model = Schema.Struct({
   online: Schema.Boolean,
   /** What the last copy button put on the clipboard ("failed: ..." when it couldn't). */
   copied: Schema.NullOr(Schema.String),
+  /** Export GIF: running or not, and what it last said. */
+  gif: Schema.Struct({ busy: Schema.Boolean, says: Schema.String }),
   /** The page alone, filling the window: the dock is put away (agents still reach it). */
   full: Schema.Boolean,
   /** The landing: a fresh room shows it until the agent's first change, or until the person skips it. */
@@ -176,6 +186,7 @@ const ICONS = {
   globe: ["M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"],
   info: ["M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z", "M12 16v-4", "M12 8h.01"],
   sparkles: ["M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0Z"],
+  download: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
 } as const;
 type Icon = keyof typeof ICONS;
 
@@ -270,6 +281,10 @@ const cardsView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: str
   noSignIn && h.p.class("l-alt").attr("role", "alert").children("Sign-in isn't reachable from here, so your world stays in this browser: Skip to the page below."),
 ));
 
+/** Export GIF: its own button, which says how far along it is. */
+const exportButton = Def.fragment((h, gif: GifState) => h.button.attr("type", "button").class("export").disabled(gif.busy)
+  .on("click", PageMessage.ClickedExportGif()).children(icon(h, "download"), gif.busy ? gif.says : "Export GIF"));
+
 const landingView = Def.fragment((h, room: string, origin: string, online: boolean, copied: string | null, explain: boolean, noSignIn: boolean, who: string | null) => {
   const claude = connectLines(origin, room)[0]!;
   return h.div.class("l-wrap").children(h.section.class("landing").attr("aria-label", "Agent Page").children(
@@ -314,7 +329,7 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
 });
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, full: $.props.full, landing: $.props.landing,
+  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing,
     explain: false, noSignIn: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
   update: ($, message) => {
     switch (message._tag) {
@@ -337,6 +352,9 @@ export const ProfilePageNoDeps = Def.make({
           case "loaded": return $.evolve({ steps: { ...s, up: s.wrote && s.clean } });
         }
       }
+      case "ClickedExportGif": return $.run(ExportGif.make({ room: $.props.room }));
+      case "ChangedGif": return $.evolve({ gif: { busy: message.busy, says: message.says } });
+      case "CompletedExportGif": return $.model;
     }
     const a = asked(message);
     if (!a) return $.model;
@@ -357,8 +375,11 @@ export const ProfilePageNoDeps = Def.make({
       Stream.changes, Stream.map((online) => PageMessage.ChangedRelay({ online })))),
     Subscription.make("seen", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).seen; })).pipe(
       Stream.map((what) => PageMessage.Saw({ what })))),
+    Subscription.make("gif", Stream.callback<GifState>((queue) => Effect.acquireRelease(
+      Effect.sync(() => watchGif((s) => Queue.offerUnsafe(queue, s))), (off) => Effect.sync(off))).pipe(
+      Stream.map((s) => PageMessage.ChangedGif(s)))),
   ],
-  view: (h, { page, past, log, online, copied, full, landing, explain, noSignIn, steps, status }) => {
+  view: (h, { page, past, log, online, copied, gif, full, landing, explain, noSignIn, steps, status }) => {
     const { room, origin, who } = h.props;
     if (landing) return landingView(h, room, origin, online, copied, explain, noSignIn, who);
     // A button with its own label says it; the short "Copy" ones beside each line name their agent for a screen reader.
@@ -409,7 +430,9 @@ export const ProfilePageNoDeps = Def.make({
         h.div.class("row").children(
           h.button.attr("type", "button").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children("Undo"),
           h.button.attr("type", "button").on("click", PageMessage.ClickedReset()).children("Start over"),
+          exportButton(h, gif),
         ),
+        !gif.busy && gif.says !== "" && h.p.class("muted").attr("role", "status").children(gif.says),
         h.h3("Last calls"),
         log.length === 0
           ? h.p.class("muted").children("Nothing yet.")

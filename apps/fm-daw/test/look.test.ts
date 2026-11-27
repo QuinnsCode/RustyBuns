@@ -1,22 +1,10 @@
-// How a room looks (src/studio/look.ts): the picture quality a visit gets, and where things stand in it.
+// How a room looks (src/studio/look.ts): where things stand in it (the graphics a visit gets: graphics.test.ts).
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { caseSpot, clearWall, freeFloor, pickQuality, practicals, standSpot, surface, useKit, type Quality } from "../src/studio/look.ts";
+import { caseSpot, clearWall, freeFloor, practicals, standSpot, surface, useKit } from "../src/studio/look.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { ROOM_LIST, SCORING_HALL } from "../src/studio/rooms/index.ts";
 import { thingBox } from "../src/studio/room.ts";
-
-test("the link picks the quality, then what this browser chose last, else high unless it's a phone", () => {
-  const cases: [string, string | null, boolean, Quality][] = [
-    ["?quality=low", "high", false, "low"],
-    ["?room=x&quality=high", "low", true, "high"],
-    ["", "low", false, "low"],
-    ["", null, false, "high"],
-    ["", null, true, "low"],
-    ["?quality=ultra", "nonsense", false, "high"],
-  ];
-  for (const [search, stored, phone, want] of cases) expect(pickQuality(search, stored, phone)).toBe(want);
-});
 
 test("gear surfaces come from the photo-texture kit once it's set, and the room's own surfaces stay as they were", () => {
   const asked: string[] = [];

@@ -17,7 +17,7 @@ beforePinned(async () => {
   writeFileSync(file, clonedCheckout(plainCheckout(startFromDefault(slowCheckout(readFileSync(file, "utf8"))))));
   // the office bundles live/sweep.ts next to it as rb-sweep.js
   writeFileSync(path.join(path.dirname(file), "rb-sweep.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/sweep.ts"))};\n`);
-  writeFileSync(path.join(path.dirname(file), "rb-clone.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/clone.ts"))};\n`);
+  writeFileSync(path.join(path.dirname(file), "rb-clone.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../../../scripts/cow-clone.ts"))};\n`);
   mod = await import(file);
 });
 

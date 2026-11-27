@@ -51,7 +51,9 @@ body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #fafafa; col
 .tools code, .log code { font-size: 12px; }
 .log li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border-radius: 8px; background: #fff; }
 .log li.bad { background: #fee2e2; }
-.row { display: flex; gap: 8px; margin-bottom: 20px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+button.export { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+button.export .l-i { filter: none; }
 button { font: inherit; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
 button:disabled { opacity: .5; cursor: default; }
 

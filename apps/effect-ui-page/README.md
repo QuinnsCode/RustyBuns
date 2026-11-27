@@ -51,7 +51,15 @@ A write answers with the files (paths and sizes, not their text), or why it coul
 buttons do the same as the tools. This browser keeps each room's world for the next visit. `?full` on the link opens with the
 console put away.
 
-The room's link is its key (signing in names you, it doesn't lock the room), so share it only with agents you want building your world. The page
+**Pictures.** A moment after the world loads with no errors, the page takes a picture of its largest `<canvas>` and
+keeps it on the room, at `GET <room>/picture` (the `/api/r/<room>` link). Share your `/r/<room>` link and the preview
+shows that picture; a room with none shows the Agent Page sign. A world with no canvas has no picture of its own.
+**Export GIF** (in the console and in Cmd+K) records three seconds of the canvas and downloads them as an animated GIF,
+`<room>.gif`. Keep the tab in front while it records. The file's name is the room's key, so rename it before you pass it
+on.
+
+The room's link is its key (signing in names you, it doesn't lock the room), so share it only with agents you want
+building your world. The page
 has to stay open: it holds the world, and an agent that calls while no tab is open is told to ask you to open it.
 
 What keeps it safe, in short:
@@ -64,6 +72,8 @@ What keeps it safe, in short:
   text types only), 100,000 characters a file, 400,000 and 30 files a world.
 - Only a page this server served can hold a room's socket (its `Origin` must match), so another site that learns the
   link can't take the agent's calls. `bun run dev` listens on 127.0.0.1 only, not your Wi-Fi.
+- The same check guards the picture's `PUT`, which takes a JPEG of 150 KB at most, a few a minute. The world's own code
+  can't send one or read one: the frame has no network.
 - What the world says goes back to the agent, so the prompt and the MCP instructions tell it page text is content,
   never instructions.
 
@@ -76,7 +86,8 @@ bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 ## Deploy it
 
 `bun run deploy` builds the page and ships it with the relay as one Worker (`wrangler.jsonc`). It has one small
-Durable Object per room and no storage, AI or other paid bindings.
+Durable Object per room, which keeps one picture (150 KB at most) in its storage, and no AI or other paid bindings.
+The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 
 ## How it's put together
 
@@ -100,8 +111,12 @@ Durable Object per room and no storage, AI or other paid bindings.
   socket, and the reply comes back with the page's answer.
 - `src/edge/worker.ts`: the relay on Cloudflare, one `Room` Durable Object per room. `scripts/dev.ts`: the same relay
   and the page in one Bun server.
+- `src/camera.ts`: what takes pictures inside the frame. `src/pictures.ts`: the page's side (upload, Export GIF).
+  `src/gif.ts`: our GIF encoder. `src/share.ts`: the picture routes and the link preview, for the Worker and the dev
+  server alike. `bun scripts/og.ts` remakes `public/og.jpg`, the preview of a room with no picture.
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
-  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout.
+  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview
+and Export GIF.
 
 Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit
 (`@effect/ui@a0d7578`). To move it on: `bun add https://pkg.pr.new/Effect-TS/ui/@effect/ui@<commit>` in this folder.
