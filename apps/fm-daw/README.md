@@ -29,7 +29,7 @@ Recorded or imported audio sits as clips in the lane under the grid: drag a clip
 
 **Controls:** Desktop: Space play and stop, the A row plays notes, Z X change octave, R record, 1 to 0 pick a track, - and = zoom the grid out and in, \\ fits the whole loop, Esc stop all sound. Ctrl or Cmd + scroll (or a trackpad pinch) zooms about the pointer, a sideways or Shift scroll slides. · Phone: tap the pads and buttons; pinch the grid or the overview bar above it to zoom.
 
-**Account:** not needed. Sign in with eqosys to jam in a room with friends.
+**Account:** not needed. Sign in with eqosys to jam in a room with friends. Opened a friend's invite link without an account? **Join the room** opens eqosys in a small window beside it: make an account there (a name, an email, a password) and you land back in the same room, signed in.
 
 A small FM groovebox: twelve tracks (five drums and seven synths, each FM or analog), a drum machine (grooves and kits), a reverb and delay called Space with a send on every track, an EQ called Shape on every channel (the master, each track, each player and both returns), automation lanes, a step sequencer and a piano roll, live recording from the computer keyboard or a MIDI keyboard, and quantize. The sound engine is written twice, once in Rust and once in TypeScript, and you can switch between them while the groove plays.
 

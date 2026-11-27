@@ -42,13 +42,31 @@ export function roomId(name: string, rand: () => number = Math.random): string {
   return `${words}-${tail}`;
 }
 
-/** A room's link: the jam room, in this sesh, in this studio, under the name its maker gave it. */
-export function inviteLink(origin: string, room: string, studio = LIVE_ROOM.id, name = ""): string {
+/**
+ * A room's link: the jam room, in this sesh, in this studio, under the name its maker gave it. `from`, who is sending it
+ * (the lobby's `invitedBy` reads it back), lets a friend who opens it signed out read "Ada invited you".
+ */
+export function inviteLink(origin: string, room: string, studio = LIVE_ROOM.id, name = "", from = ""): string {
   const u = new URL("/jam.html", origin);
   u.searchParams.set("room", room);
   u.searchParams.set("studio", studio);
   if (name) u.searchParams.set("name", name.slice(0, 60));
+  if (from) u.searchParams.set("from", from.slice(0, 40));
   return u.href;
+}
+
+/**
+ * What the front door says to someone signed out. On an invite link: who asked them in, that eqosys opens beside the
+ * room (a new account made right there) and that they land back in this room; on the bare door, how rooms work.
+ */
+export function doorWords(here: { room: string; name: string } | null, from: string | null): { invited: string; lead: string; button: string } {
+  if (!here) return { invited: "", lead: "Sign in with eqosys to make a room and jam in it with friends, wearing your own character.", button: "Sign in with eqosys" };
+  const room = here.name || here.room;
+  return {
+    invited: from ? `${from} invited you to ${room}.` : `You're invited to ${room}.`,
+    lead: "Join with your eqosys account. New here? Make one in the window that opens (a name, an email, a password) and you're straight back in this room.",
+    button: "Join the room",
+  };
 }
 
 /** What an invite link (or the address bar) says: the room and its studio, or null on the front door. */
