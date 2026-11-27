@@ -223,6 +223,12 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
       float fr = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 6.0);
       gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.70, 0.73, 0.76), fr * 0.3);`);
   };
+  // The far shore in the lake: the sight's trees flipped about the water's face, darkened and tea-tinted, drawn right
+  // after the lake and before anything else, only where they lie beyond it (GreaterDepth: the lake is the one thing in
+  // the depth buffer yet, so the copy shows on the water and nowhere else). No second render pass, one draw call.
+  lake.depthWrite = true;
+  const mirror = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0x6a5440, depthWrite: false, depthFunc: THREE.GreaterDepth,
+    blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, opacity: 0.78 });
   const root = new THREE.Group();
   root.name = "pines";
   group.add(root);
@@ -243,7 +249,15 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
     const cedars = s.parts.filter((p) => GROVE.has(p.kind));
     const grove = cedars.length ? new THREE.Mesh(mergeGeometries(cedars.map((p) => mergeGeometries(build(p, si * 101 + s.parts.indexOf(p)))!.rotateY(p.yaw).translate(p.x - s.x, 0, p.z - s.z))) ?? new THREE.BufferGeometry(), solid) : null;
     if (grove) { grove.position.set(s.x, 0, s.z); grove.matrixAutoUpdate = false; grove.updateMatrix(); g.add(grove); }
-    return { s, g, parts, grove, cedars, reach: s.id === "fire-tower" ? TOWER_SEEN_R : SEEN_R };
+    const water = parts.find((q) => q.p.kind === "lake");
+    let mirrored: THREE.Mesh | null = null;
+    if (grove && water) {
+      water.m.renderOrder = -0.9;
+      mirrored = new THREE.Mesh(grove.geometry, mirror);
+      mirrored.renderOrder = -0.8; mirrored.scale.y = -1; mirrored.position.set(s.x, 0, s.z); mirrored.matrixAutoUpdate = false; mirrored.updateMatrix();
+      g.add(mirrored);
+    }
+    return { s, g, parts, grove, cedars, water, mirrored, reach: s.id === "fire-tower" ? TOWER_SEEN_R : SEEN_R };
   });
   const disc = new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2);
   const puddles = new THREE.InstancedMesh(disc, new THREE.MeshPhongMaterial({ color: 0x4a2c16, shininess: 90, specular: 0x6a5a48, polygonOffset: true, polygonOffsetFactor: -2 }), PUDDLE_CAP);
@@ -288,6 +302,9 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
         if (v.grove) {
           const y = Math.min(...v.cedars.map((p) => groundY(p.x, p.z))) - 0.1;
           if (v.grove.position.y !== y) { v.grove.position.y = y; v.grove.updateMatrix(); }
+          // the copy hangs from the water's face as far below it as the grove's foot is above it
+          const f = v.water && v.mirrored ? 2 * v.water.m.position.y - y : 0;
+          if (v.mirrored && v.mirrored.position.y !== f) { v.mirrored.position.y = f; v.mirrored.updateMatrix(); }
         }
       }
       let n = 0;
