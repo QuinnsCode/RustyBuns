@@ -9,6 +9,7 @@ import { arr, check, int, num, obj, oneOf, opt, rec, str, type Of } from "@rusty
 import { REGIONS, type Region } from "./regions.ts";
 import { ARCHETYPES, creature, ROSTER, type Creature } from "./roster.ts";
 import { HAND } from "./sections.ts";
+import { road } from "./world/world.ts";
 import { Factions } from "./factions/model.ts";
 import { Released } from "./released.ts";
 import LANDING from "../content/landing.json";
@@ -67,8 +68,12 @@ export function mythicOf(g: Region): Creature {
   return ROSTER.find((c) => c.region === g.n && free(c)) ?? ROSTER.find((c) => c.region >= g.n && free(c)) ?? ROSTER[0]!;
 }
 
-/** The level its sections start at: each region on the route is about eight levels on from the last. */
-export const baseLevel = (n: number) => 2 + (n - 1) * 8;
+let ROAD: number[] | undefined;
+/** Where region n stands on the road (`road` in world.ts: 1, 2, 3, 5, 4, ...), 0 for the first; a region off it by its number. */
+const onRoad = (n: number) => { const i = (ROAD ??= road()).indexOf(n); return i < 0 ? n - 1 : i; };
+/** The level its sections start at: each region along the road starts at the level of the boss before it, eight on
+ * from the last, so the lakes (5th on the road) come before the northwest (4th by number) (#5973). */
+export const baseLevel = (n: number) => 2 + onRoad(n) * 8;
 export const sectionLevel = (n: number, k: number) => (k === SECTIONS - 1 ? baseLevel(n) + 8 : baseLevel(n) + Math.floor(k * 0.6));
 
 export function sections(g: Region): Section[] {

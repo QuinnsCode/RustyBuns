@@ -52,6 +52,8 @@ const esc = (s: string) =>
 function nextRandom<K extends string>(o: Record<K, number>, key: K): number
 function mulberry32(seed: number)
 function stickAxes(dx: number, dy: number, radius: number, dead = 0.18): { x: number; y: number }
+function record<const K extends PropertyKey, V>(keys: readonly K[], f: (k: K, i: number) => V): Record<K, V>
+function fill<T extends object>(keys: { readonly [K in keyof T]: unknown }, f: <K extends keyof T>(k: K) => T[K]): T
 export * from "./sweep.ts"
 export * from "./reel.ts"
 export * from "./motion.ts"

@@ -2,14 +2,11 @@
 // the fetch stub. Split across two files so bun test --parallel can run them side by side; each
 // file gets its own copy of this module.
 import { afterAll, beforeAll, setDefaultTimeout } from "bun:test";
-import { join } from "node:path";
 import { local as boot, type Call } from "../src/local.ts";
 import { DeployRunner } from "../src/deploy-runner.ts";
 import { review } from "../src/deploy-review.ts";
 import { type ContainerApi } from "../src/sandbox.ts";
 import { gated, gateExports } from "./fake-gate.ts";
-// @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
-import { state } from "../deploy-sandbox/server.mjs";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.

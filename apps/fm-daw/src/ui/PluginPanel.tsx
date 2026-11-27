@@ -8,6 +8,7 @@ import { ownCopy, type PluginChoice, type PluginParam, type TrackPlugin } from "
 import type { PluginShown } from "./plugins.ts";
 import { armPlugin, useLearn } from "./learn.ts";
 import { Slider } from "./Slider.tsx";
+import { Duck } from "./PatchEditor.tsx";
 import { P } from "../engine/params.ts";
 import { siteOf } from "./wam.ts";
 
@@ -69,7 +70,7 @@ export function TrackSound(props: { track: TrackDoc; choices: () => Promise<Plug
 }
 
 /** A plugin track's sliders, and how it's doing. */
-export function PluginPanel(props: { track: TrackDoc; color: string; shown: PluginShown | undefined; head: React.ReactNode; onValue(id: number, v: number): void; onParam(i: number, v: number): void; onEditor(): Promise<string | null>; onTrust(): void }) {
+export function PluginPanel(props: { track: TrackDoc; color: string; shown: PluginShown | undefined; head: React.ReactNode; onValue(id: number, v: number): void; onParam(i: number, v: number): void; onEditor(): Promise<string | null>; onTrust(): void; duck?: { names: string[]; self: number } }) {
   const s = props.shown, plug = props.track.plugin;
   const [editorNote, setEditorNote] = useState<string | null>(null);
   return (
@@ -95,6 +96,7 @@ export function PluginPanel(props: { track: TrackDoc; color: string; shown: Plug
         <fieldset className="op">
           <legend><span className="silk">Mix</span></legend>
           <Slider label="Level" index={P.GAIN} value={props.track.params[P.GAIN]} onChange={(v) => props.onParam(P.GAIN, v)} />
+          {props.duck && <Duck p={props.track.params} {...props.duck} onParam={props.onParam} />}
         </fieldset>
       </div>
     </section>

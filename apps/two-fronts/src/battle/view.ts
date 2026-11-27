@@ -6,6 +6,7 @@
 // 1 to 4 order the squad round you (forward, hold, fall back, focus fire where the gun points).
 // Heavy weapons wait out in the open under a beacon. The intro cutscenes play first, once each,
 // and a sting when a Mossback walks in (cutscenes.ts). Comrades talk in bubbles over their heads.
+import { record } from "@rustybuns/util";
 import * as THREE from "three";
 import { autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
@@ -263,7 +264,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   };
   const fallMark = ringMark(0x6dff8a, POST_RADIUS), digMark = ringMark(0xffd27a, POST_RADIUS + 1.5);
   // Where the last order sent the squad.
-  const orderMarks = Object.fromEntries(ORDERS.map((k) => [k, ringMark(ORDER_INFO[k].color, 5)])) as Record<OrderKind, THREE.Group>;
+  const orderMarks = record(ORDERS, (k) => ringMark(ORDER_INFO[k].color, 5));
   // Heavy weapons out on the field: a crate under a beacon you can see from across it.
   const cacheMeshes = b.caches.map((c) => {
     const g = new THREE.Group(), y = ground(c.x, c.z);

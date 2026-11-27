@@ -26,7 +26,7 @@ tour is driven (a person's buttons and the scrub bar, autoplay, an agent's WebMC
 - "Your account and the bill": profiles, queued rate limits, visitors' digs, private GitHub repos (a person's login), cheap big repos, a file as a Durable Object.
 
 It also checks that every feature on the strip (`features/order.txt`) is carried by a step (`feat`) or skipped with a reason in `TOUR_SKIP` (`src/client.html`), and that neither names an id the strip hasn't got. Needs Chrome (`--chrome` for a path); a few minutes. `--only <chapter>` runs one chapter.
-It is not in CI yet: [#5783](https://github.com/QuinnsCode/RustyBuns/issues/5783) runs it on the runner's Chrome.
+CI runs it on a PR that changes `src/client.html`, `src/features/` or the script itself: the first codeSplitter test lane runs it after its tests, in the ubuntu runner's own Chrome (`slow` in codeSplitter's row of `scripts/ci-apps.ts`, [#5783](https://github.com/QuinnsCode/RustyBuns/issues/5783)).
 
 ## Tier 2: the paid paths, with the paid part faked (hosted agents built, the rest to build)
 

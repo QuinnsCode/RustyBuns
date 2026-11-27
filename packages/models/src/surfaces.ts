@@ -10,7 +10,7 @@
 // Textures tile by metres: the gear's UVs are in metres across each face (gear.ts), and `tile` below is how many
 // metres one copy of a map covers. Meshes from elsewhere need UVs in metres too, or a `repeat` of their own.
 import * as THREE from "three";
-import { type GearLook, gearLook } from "./gear.ts";
+import { type GearLook, gearLook, RAMP } from "./gear.ts";
 
 type Spec = {
   /** Metres one copy of the map covers. */
@@ -79,6 +79,9 @@ export const SURFACES = {
   /** A dance stack's cabinets: a deep red-leaning violet over birch in a coarse textured coat (the strong pebble a
    * rolled or sprayed cabinet paint has, its grains near the coat's own colour) with a satin sheen, rubbed pale at the edges. */
   violet: { dir: "plastic", tile: 0.35, tint: 0x160a2b, roughness: 0.62, metalness: 0, normalScale: 0.9, wear: { chip: 0x8a7656, stipple: 3, scuff: 0.5, matte: 0.74, speck: 1, fleck: 0.8 } },
+  /** The Res2 top's own coat: a smooth near-black navy with a satin sheen (as its photo shows it), a fine even
+   * texture with no granules, so soft highlights roll along its rounded edges and top, rubbed paler at the edges. */
+  satin: { dir: "plastic", tile: 0.35, tint: 0x15142a, roughness: 0.4, metalness: 0, normalScale: 0.25, wear: { chip: 0x6e6a78, stipple: 0.5, scuff: 0.35, matte: 0.34 } },
   /** The tri-amp rig's cabinets: TurboBlue, a near-black blue semi-matt textured paint over birch, worn at the edges. */
   turbo: { dir: "plastic", tile: 0.35, tint: 0x0e1422, roughness: 0.82, metalness: 0, normalScale: 0.45, wear: { chip: 0x8a7656, stipple: 0.9, scuff: 0.8, matte: 0.65 } },
 } as const satisfies Record<string, Spec>;
@@ -234,14 +237,18 @@ function patch(material: THREE.MeshStandardMaterial, backing: number, wear?: Wea
 export function gearSurfaces(opts: SurfaceOptions): { look: GearLook; ready: Promise<void> } {
   const flat = gearLook(), loader = opts.loader ?? new THREE.TextureLoader();
   const pick = (name: SurfaceName) => surface(name, { ...opts, loader });
-  const parts = { paint: pick("plastic"), grille: pick("grille"), metal: pick("aluminium"), rubber: pick("rubber"), panel: pick("steel"), tolex: pick("tolex"), mesh: pick("mesh"), coat: pick("coat"), cheek: pick("cheek"), horn: pick("horn"), grime: pick("grime"), violet: pick("violet"), shade: pick("violet"), turbo: pick("turbo") };
+  const parts = { paint: pick("plastic"), grille: pick("grille"), metal: pick("aluminium"), rubber: pick("rubber"), panel: pick("steel"), tolex: pick("tolex"), mesh: pick("mesh"), coat: pick("coat"), cheek: pick("cheek"), horn: pick("horn"), grime: pick("grime"), violet: pick("violet"), satin: pick("satin"), facet: pick("horn"), shade: pick("violet"), turbo: pick("turbo") };
   // the violet down a horn cell, darkened per vertex toward the throat (gear.ts's `fade`)
   parts.shade.material.vertexColors = true;
+  // the Res2's mid horn lining: the same paint a touch glossier, each face stepped light or dark (gear.ts's `facets`)
+  parts.facet.material.vertexColors = true;
+  parts.facet.material.roughness = 0.4;
+  parts.facet.material.aoMap = RAMP;
   const lid = parts.paint.material.clone();
   lid.color.setHex(0xf2c230);
   lid.map = null;
   const lidReady = parts.paint.ready.then(() => { lid.normalMap = parts.paint.material.normalMap; lid.roughnessMap = parts.paint.material.roughnessMap; lid.needsUpdate = true; });
   const look: GearLook = { ...flat, paint: parts.paint.material, grille: parts.grille.material, metal: parts.metal.material, rubber: parts.rubber.material, panel: parts.panel.material, tolex: parts.tolex.material, lid,
-    mesh: parts.mesh.material, coat: parts.coat.material, cheek: parts.cheek.material, horn: parts.horn.material, grime: parts.grime.material, violet: parts.violet.material, shade: parts.shade.material, turbo: parts.turbo.material };
+    mesh: parts.mesh.material, coat: parts.coat.material, cheek: parts.cheek.material, horn: parts.horn.material, grime: parts.grime.material, violet: parts.violet.material, satin: parts.satin.material, facet: parts.facet.material, shade: parts.shade.material, turbo: parts.turbo.material };
   return { look, ready: Promise.all([...Object.values(parts).map((p) => p.ready), lidReady]).then(() => {}) };
 }

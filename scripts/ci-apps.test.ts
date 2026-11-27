@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { APPS, dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
+import { APPS, appsFor, docRead, dropSample, laneCommands, sharedCode, slowRun, sparseDirs } from "./ci-apps.ts";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { appDir } from "./app-dirs.ts";
 
 // A docs-only PR under packages/ used to run every app's suite (PR #5404: 4635 tests for a skill file).
@@ -15,6 +18,33 @@ test("only code under packages/, the lockfile and the apps workflow fan out to e
     ["README.md", false],
   ];
   for (const [file, shared] of cases) expect([file, sharedCode(file)]).toEqual([file, shared]);
+});
+
+// #5952: an app README edit ran the whole app suite; a doc its tests read (Mythic Masters' docs/RULES.md) still must.
+// #5899: playground's shelf.json is built from each package's package.json, so editing one runs playground's tests.
+test("an app's .md counts as touching the app only when its code names that doc in a path", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-docs-"));
+  const put = (f: string, s: string) => { mkdirSync(dirname(join(root, f)), { recursive: true }); writeFileSync(join(root, f), s); };
+  put("apps/game/package.json", "{}");
+  put("apps/game/test/rules.test.ts", "expect(await Bun.file(join(import.meta.dir, \"../docs/RULES.md\")).text()).toBe(md);\n");
+  put("apps/game/src/a.ts", "// see NOTES.md for why\nexport const a = 1;\n");
+  const cases: [string, boolean][] = [
+    ["apps/game/docs/RULES.md", true],
+    ["apps/game/README.md", false],
+    ["apps/game/NOTES.md", false],
+    ["apps/game/src/a.ts", true],
+  ];
+  for (const [file, runs] of cases) expect([file, docRead(file, root)]).toEqual([file, runs]);
+});
+
+test("a package's package.json runs playground's tests besides its own folder's", () => {
+  const cases: [string, string[]][] = [
+    ["packages/models/package.json", ["playground"]],
+    ["packages/models/src/human.ts", []],
+    ["apps/two-fronts/src/main.ts", ["two-fronts"]],
+    ["package.json", []],
+  ];
+  for (const [file, apps] of cases) expect([file, appsFor(file)]).toEqual([file, apps]);
 });
 
 // #5229: every app's tests in up to three lanes by time, the heavy files apart, and never an empty job.
@@ -87,4 +117,19 @@ test("a full run puts every sub-minute suite with nothing to build or boot in a 
   // A long suite still gets its lanes; a tiny one with a native build gets one job, not three builds.
   expect(rows.filter((r) => r.app === "mythic-masters").length).toBe(3);
   expect(rows.filter((r) => r.app === "auto-rig").length).toBe(1);
+});
+
+// #5783: codeSplitter's tour smoke runs in CI, but only on a PR that changes what it walks (the page, the strip, the script).
+test("codeSplitter's tour smoke runs only when the page, the feature strip or the script changes", () => {
+  const cs = APPS.codesplitter!, tour = "bun scripts/tour-smoke.ts";
+  const cases: [string[], boolean, string][] = [
+    [["apps/codesplitter/src/client.html"], false, tour],
+    [["apps/codesplitter/src/features/order.txt"], false, tour],
+    [["apps/codesplitter/scripts/tour-smoke.ts"], false, tour],
+    [["apps/codesplitter/src/worker.ts", "apps/codesplitter/test/a.test.ts"], false, ""],
+    [["scripts/ci-apps.ts"], true, tour], // its row changed
+    [["apps/two-fronts/src/client.html"], false, ""],
+  ];
+  for (const [changed, row, want] of cases) expect([changed, slowRun(cs, changed, row)]).toEqual([changed, want]);
+  expect(slowRun(APPS["two-fronts"]!, ["apps/two-fronts/src/client.html"], true)).toBe("");
 });

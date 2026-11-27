@@ -1,4 +1,6 @@
-import { DEFAULT_ROUND_SECS, type Difficulty } from "../sim/rules.ts";
+import { DEFAULT_ROUND_SECS, DIFFICULTIES, type Difficulty } from "../sim/rules.ts";
+import { fill } from "@rustybuns/util";
+import { bool, nul, num, oneOf, str, type Guard } from "@rustybuns/util/guard";
 import { guessQuality, sniffMachine } from "@rustybuns/util/quality";
 
 export type Quality = "low" | "medium" | "high";
@@ -24,21 +26,22 @@ export const DEFAULTS: Settings = {
   music: true, effects: true, reducedMotion: null, filmLook: true, quality: "high", players: 1,
 };
 
+/** How each saved setting reads; one that throws falls back to its default. */
+const READ: { [K in keyof Settings]: Guard<Settings[K]> } = {
+  name: str(), difficulty: oneOf(DIFFICULTIES), secs: num(-Infinity, Infinity),
+  muted: bool(), music: bool(), effects: bool(), filmLook: bool(),
+  reducedMotion: nul(bool()), quality: oneOf(QUALITIES), players: oneOf([1, 2]),
+};
+
 /** Saved settings over the defaults; anything malformed falls back field by field. */
 export function parseSettings(raw: string | null): Settings {
   let saved: Partial<Record<keyof Settings, unknown>> = {};
   try { const v = JSON.parse(raw ?? "{}"); if (v && typeof v === "object") saved = v; } catch { /* corrupt: defaults */ }
-  const out = { ...DEFAULTS } as Record<keyof Settings, unknown>;
-  for (const k of Object.keys(DEFAULTS) as (keyof Settings)[]) {
-    const v = saved[k], d = DEFAULTS[k];
-    if (k === "reducedMotion") { if (v === null || typeof v === "boolean") out[k] = v; }
-    else if (k === "quality") { if (QUALITIES.includes(v as Quality)) out[k] = v; }
-    else if (k === "players") { if (v === 1 || v === 2) out[k] = v; }
-    else if (v !== undefined && typeof v === typeof d) out[k] = v;
-  }
-  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- each key above is checked against its default's type before it is kept
-  return out as unknown as Settings;
+  return fill<Settings>(READ, (k) => {
+    try { return READ[k](saved[k]); } catch { return DEFAULTS[k]; }
+  });
 }
+
 
 export function loadSettings(): Settings {
   let raw: string | null = null;

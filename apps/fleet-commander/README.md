@@ -20,8 +20,8 @@ hold strongpoints for supply.
 **How to play the Theater:** press *Theater*. The board is dark: the Compact is in the system, but you can't see where.
 Press **3** to pick your scouts and right-click into the black to send them (they see into rifts; only the sensor
 ship, or thermal sensors, sees into the star's heat). Drag a box round your ships and right-click to move or attack, or
-right-drag a route that curves round a planet or the star: a hull falling along a gravity well moves faster, so the
-long way round can be the quick way. **K** pings with the sensor ship: everything near shows for a few seconds,
+right-drag a route that curves round a planet or the star: a hull going round a gravity well low down moves faster, so the
+long way round a planet's rim is the quick way. **K** pings with the sensor ship: everything near shows for a few seconds,
 mines too, but the Compact hears it. Park hulls on a strongpoint to take it; each one you hold pays supply, which buys
 wings and thermal sensors (the buttons at the right of the bar). Hold all four for a minute, burn the base on Hollow,
 or break every Compact hull to win. Watch for mines round what the Compact holds, and for ambushers that wait in the
@@ -66,11 +66,12 @@ Jump links: `/?battle=theater` (or `quick`, `armada`, `campaign`, `levels`), `/?
 | `src/sim/plays.ts` | the playbook: wing plays (`runPlay`) and the same plays for a fleet of destroyers (`runFleetPlay`) |
 | `src/sim/ai.ts` | the Compact admiral and its tempers, the captains that run a ship and its wings, and `autoCommander` (a by-the-book player for tests, the menu and an empty seat) |
 | `src/sim/levels.ts` | the levels: each one a battle built as data, the line it teaches, and its intended play as a brain (the test plays it to a win, and a fleet with no orders to a loss) |
-| `src/sim/theater.ts` | the Theater: sensors and the fog (rifts, heat shear, pings, firing gives you away), mines, strongpoints and supply, requisitions, the Pyre system. Gravity wells are `wellAt` in `world.ts`. |
+| `src/sim/theater.ts` | the Theater: sensors and the fog (rifts, heat shear, pings, firing gives you away outside a rift), mines, strongpoints and supply, requisitions, the Pyre system. Gravity wells are `wellAt` in `world.ts`. |
 | `src/view/fog.ts`, `minimap.ts` | the fog of war over the table (explored, seen, the veils) and the minimap |
 | `src/sim/scenarios.ts` | the battles: the assault on a base, a picket, a strike on a half-built base, the Armada |
 | `src/sector.ts` | the campaign map: worlds, lanes, supply, bases that spread, refits |
 | `src/view/scene.ts`, `models.ts` | the view: hulls made in code, tracer streams, bolts, drive plumes, explosions, the orders overlay, holo and cinema looks |
+| `src/view/sheets.ts`, `ships.ts` | the hull drawing sheets (our own: size in metres and every named piece) and each piece built from its sheet, with a cheap far level for the Theater. Built so far: the Lance-class destroyer and the Bastion cruiser; the other hulls and the craft are still plain shapes in `models.ts`. See them on `/ships.html?ship=destroyer` (`~exploded`, `~<piece>`, `~far`; `&view=three\|top\|side\|front\|below\|stern`) |
 | `src/main.ts` | the page: input, the HUD, the sector screen, the harness |
 | `src/names.ts` | every faction, hull and wing name the player reads |
 

@@ -7,7 +7,7 @@ import { tourSteps } from "./tour-steps.ts";
 // The bundler hands over each step's file and order.txt; tour-steps.ts checks them.
 const files = import.meta.glob<unknown>("../features/*.json", { eager: true, import: "default" });
 const STEPS = tourSteps(
-  Object.fromEntries(Object.entries(files).map(([path, v]) => [path.slice(path.lastIndexOf("/") + 1, -5), v])),
+  Object.entries(files).map(([path, v]) => [path.slice(path.lastIndexOf("/") + 1, -5), v] as const),
   Object.values(import.meta.glob<string>("../features/order.txt", { eager: true, query: "?raw", import: "default" }))[0] ?? "",
 );
 

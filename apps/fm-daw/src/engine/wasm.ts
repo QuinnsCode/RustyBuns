@@ -45,6 +45,8 @@ export interface Exports {
   fm_amp_supply(r: number): number;
   fm_amp_process(r: number, buf: number, frames: number): void;
   fm_amp_levels(r: number, out: number): void;
+  fm_amp_set_scope(r: number, link: number, node: number): number;
+  fm_amp_scope(r: number, out: number, max: number): number;
   fm_amp_misses(r: number): number;
   fm_amp_iterations(r: number): number;
   fm_remote_new(nominal: number): number;

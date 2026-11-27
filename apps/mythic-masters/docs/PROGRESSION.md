@@ -23,8 +23,8 @@ The rules a player lives under, each written once with its numbers read from the
   to it is too (gates still apply). A strong wild one attacks every 400 m; a loss sends you to your last playable
   region. (`reach`, `WILD_EVERY`, `sendHome`)
 - **Regions 17-64** are coming soon and never open.
-- **Levels** are fixed by region number, not by the order you reach it: region n's trail starts at `2 + (n-1)*8`
-  and its mythic is level `2 + 8n`. (`baseLevel`, `sectionLevel`)
+- **Levels** follow the road (`road`: 1, 2, 3, 5, 4, 6, 7, 8): the region in place i on it (0 for the Pine Barrens) starts at `2 + 8i`
+  and its mythic is level `10 + 8i`, the level the next region on the road starts at. (`baseLevel`, `sectionLevel`)
 
 ## The road graph (regions 1-16)
 
@@ -33,8 +33,8 @@ The rules a player lives under, each written once with its numbers read from the
 | 1 | Pine Barrens | Jersey Devil (10) | open at start | | 2, 3 (30, 34 soon) |
 | 2 | Appalachian hollows | Mothman (18) | 1 or 3 or 7 | flier | 7, 10, 12 (39 soon) |
 | 3 | Great North Woods | Hidebehind (26) | 1, 2, 5 or 7 | | 5, 7 |
-| 4 | Pacific Northwest rainforest | Sasquatch (34) | 5 or 6 | | 6 |
-| 5 | Great Lakes and Lake Champlain | Champ (42) | 3, 4, 7 or 8 | | 4, 7, 8 |
+| 4 | Pacific Northwest rainforest | Sasquatch (42) | 5 or 6 | | 6 |
+| 5 | Great Lakes and Lake Champlain | Champ (34) | 3, 4, 7 or 8 | | 4, 7, 8 |
 | 6 | Southwest desert | Chupacabra (50) | 4 or 8 | | 4, 8 |
 | 7 | Bayou and Everglades | Rougarou (58) | 2, 3, 5 or 8 | | 8, 9, 10 |
 | 8 | Ozarks and the southern plains | Ozark howler (66) | 5, 6 or 7 | | 6, 9 |

@@ -6,7 +6,7 @@ import { Music } from "./audio.ts";
 import { accountChip, achieve, achievements, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { backplate, faderCap, faderSlot, fibre, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
+import { backplate, brushed, faderCap, faderSlot, swayScale, volumeScale, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
@@ -268,9 +268,46 @@ mountControls({
 {
   const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
   sheet.style.setProperty("--fibre", fibre);
+  // The rows' hardware: the faders' printed scale, the bat-handle toggle, and the brushed plate each section's rows sit on.
+  sheet.style.setProperty("--scale-x", swayScale());
+  sheet.style.setProperty("--scale-x-lg", swayScale(11));
+  sheet.style.setProperty("--scale-pct", volumeScale());
+  sheet.style.setProperty("--scale-pct-lg", volumeScale(11));
+  const keys = sheet.querySelector<HTMLElement>(".gc-keys");
+  if (keys) keyStrip(keys);
+  sheet.style.setProperty("--toggle-off", toggleOff);
+  sheet.style.setProperty("--toggle-on", toggleOn);
+  sheet.style.setProperty("--plate", [screwAt("left 5px top 5px", 30), screwAt("right 5px top 5px", 110), screwAt("left 5px bottom 5px", 70), screwAt("right 5px bottom 5px", 150),
+    `${brushed} 0 0 / 240px 60px`, "linear-gradient(#1b1e24, #101216)"].join(", "));
   LANE_COLOURS.forEach((c, i) => sheet.style.setProperty(`--lane-${i}`, c));
   const strips = [sheet.querySelector<HTMLElement>(".gc-head h2"), ...sheet.querySelectorAll<HTMLElement>(".gc-sec-h > span:not(.gc-chev)")];
   strips.forEach((s, i) => { if (s) taped(s, 40 + i); });
+}
+
+/** The Keyboard section as the radio's printed legend strip: the four pads as columns in their lane's colour, each with its
+ * letter key and its arrow key, then Hold, M and Esc as caps with their legend printed under. Read from `KEYS`, so the strip
+ * shows what the keys do. Replaces the panel's plain text table (its `dl`), keeping dt for the keys and dd for what they do. */
+function keyStrip(dl: HTMLElement) {
+  const ARROW: Record<string, string> = { ArrowLeft: "←", ArrowDown: "↓", ArrowUp: "↑", ArrowRight: "→" };
+  const cap = (t: string, name: string, wide = false) => Object.assign(document.createElement("kbd"), { textContent: t, title: name, className: wide ? "wide" : "" });
+  const group = (cls: string, caps: HTMLElement[], what: string) => {
+    const g = Object.assign(document.createElement("div"), { className: cls });
+    const dt = document.createElement("dt");
+    dt.append(...caps);
+    g.append(dt, Object.assign(document.createElement("dd"), { textContent: what }));
+    return g;
+  };
+  const pads = Object.assign(document.createElement("div"), { className: "dr-pads" });
+  for (const lane of [0, 1, 2, 3] as Lane[]) {
+    const codes = Object.keys(KEYS).filter((c) => KEYS[c] === lane);
+    const g = group("dr-lane", codes.map((c) => cap(ARROW[c] ?? c.replace("Key", ""), c.replace(/^Key|^Arrow/, ""))), `Pad ${lane + 1}`);
+    g.style.setProperty("--c", LANE_COLOURS[lane]!);
+    pads.append(g);
+  }
+  const rest = Object.assign(document.createElement("div"), { className: "dr-rest" });
+  rest.append(group("dr-key", [cap("Hold", "Hold a pad", true)], "Long notes"), group("dr-key", [cap("M", "M")], "Mute"), group("dr-key", [cap("Esc", "Escape", true)], "Leave run"));
+  dl.classList.add("dr-keys");
+  dl.replaceChildren(pads, rest);
 }
 
 // ---- drawing ----

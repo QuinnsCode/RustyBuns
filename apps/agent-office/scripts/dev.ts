@@ -22,12 +22,11 @@
 //   office missing its files (./office half built)     rebuild from clean once
 //   port held by another checkout's office, or by something else   never touched: say who, and to try --port
 //   office started from a worker's worktree           warn: its office-workers command dies when the worktree goes
-//   the office exits on its own                        start another, after a growing wait (mama.ts's backoff)
+//   the office exits on its own                        start another, after a growing wait (supervise in @rustybuns/util)
 import { $ } from "bun";
-import { spawn } from "node:child_process";
 import { existsSync, watch } from "node:fs";
 import path from "node:path";
-import { backoff } from "./mama.ts";
+import { supervise } from "@rustybuns/util/supervise";
 import { listening, ours } from "./update.ts";
 
 const root = path.dirname(import.meta.dir);
@@ -104,8 +103,13 @@ async function main() {
   const port = Number((at >= 0 && args[at + 1]) || 4600);
   const say = (m: string) => console.log(`🥐 dev: ${m}`);
   const tail: string[] = [];
-  let child: ReturnType<typeof spawn> | null = null;
-  let restarting = false, crashes = 0;
+  const text = new TextDecoder();
+  // detached, so stopping this script leaves the office (and its workers) running
+  const office = supervise(["bun", path.join(root, "office/bin/agent-office.js"), ...args], {
+    cwd: root, detached: true, output: "pipe", env: { ...process.env, AGENT_OFFICE_RB_MAMA: "1" },
+    onOutput: (d) => { process.stdout.write(d); tail.push(...text.decode(d).split("\n")); tail.splice(0, Math.max(0, tail.length - 20)); },
+    onExit: (code, signal, wait) => say(`the office exited (${signal ?? code}); starting another in ${wait / 1000}s`),
+  });
 
   /** Run rustybunsify for these stages, capturing its output; null if it built, else what it said. */
   async function build(p: Plan, fresh: boolean) {
@@ -139,36 +143,19 @@ async function main() {
     return false;
   }
 
-  const spawnOffice = () => {
-    const c = spawn("bun", [path.join(root, "office/bin/agent-office.js"), ...args], {
-      cwd: root, stdio: ["ignore", "pipe", "pipe"], detached: true, env: { ...process.env, AGENT_OFFICE_RB_MAMA: "1" },
-    });
-    child = c;
-    const born = Date.now();
-    for (const s of [c.stdout, c.stderr]) s?.on("data", (d: Buffer) => { process.stdout.write(d); tail.push(...d.toString().split("\n")); tail.splice(0, Math.max(0, tail.length - 20)); });
-    c.on("exit", (code, sig) => {
-      if (child !== c) return;
-      child = null;
-      if (restarting) return;
-      crashes = Date.now() - born > 60_000 ? 1 : crashes + 1;
-      say(`the office exited (${sig ?? code}); starting another in ${backoff(crashes) / 1000}s`);
-      setTimeout(() => !child && !restarting && void start(), backoff(crashes));
-    });
-  };
-
   /** Start the office and wait for the port, healing once; true if it's up. */
   async function start() {
     for (let attempt = 0; attempt < 2; attempt++) {
       tail.length = 0;
-      spawnOffice();
+      office.start();
       let up = false;
-      for (let i = 0; i < 300 && child && !up; i++) { await Bun.sleep(100); up = await listening(port); }
+      for (let i = 0; i < 300 && office.child && !up; i++) { await Bun.sleep(100); up = await listening(port); }
       if (up) { say(`the office is up on port ${port}`); return true; }
       const h = heal({ kind: "start", text: tail.join("\n"), attempt });
       say(h.line);
       if (h.action === "clean" && !(await rebuild({ full: true, stages: ["skin", "pages", "live"], restart: true }))) return false;
       if (h.action === "none") return false;
-      child?.kill("SIGTERM");
+      await office.stop({ kill: false });
       for (let i = 0; i < 50 && (await listening(port)); i++) await Bun.sleep(100);
     }
     return false;
@@ -176,26 +163,21 @@ async function main() {
 
   /** SIGTERM whatever office is on the port if it's ours, and start the new one. */
   async function restart() {
-    restarting = true;
-    try {
-      if (await listening(port)) {
-        const old = await ours(port);
-        if (!old) {
-          const pid = (await $`lsof -nP -t -iTCP:${port} -sTCP:LISTEN`.nothrow().quiet().text()).trim().split("\n")[0];
-          say(heal({ kind: "port", text: `pid ${pid}`, attempt: 0 }).line);
-          return;
-        }
-        process.kill(old.pid, "SIGTERM");
-        // upstream exits 300ms after SIGTERM; never SIGKILL: let it finish
-        for (let i = 0; i < 100 && (await listening(port)); i++) await Bun.sleep(100);
-        if (await listening(port)) { say(`the old office (pid ${old.pid}) hasn't stopped after 10s; it's left running. Try again, or stop it yourself`); return; }
-        if (old.mama) { say("office:mama starts the new one; the workers keep running"); return; }
+    if (await listening(port)) {
+      const old = await ours(port);
+      if (!old) {
+        const pid = (await $`lsof -nP -t -iTCP:${port} -sTCP:LISTEN`.nothrow().quiet().text()).trim().split("\n")[0];
+        say(heal({ kind: "port", text: `pid ${pid}`, attempt: 0 }).line);
+        return;
       }
-      child = null;
-      await start();
-    } finally {
-      restarting = false;
+      // upstream exits 300ms after SIGTERM; never SIGKILL: let it finish. Ours stops being kept alive first
+      if (office.child?.pid === old.pid) await office.stop({ kill: false, graceMs: 0 });
+      else process.kill(old.pid, "SIGTERM");
+      for (let i = 0; i < 100 && (await listening(port)); i++) await Bun.sleep(100);
+      if (await listening(port)) { say(`the old office (pid ${old.pid}) hasn't stopped after 10s; it's left running. Try again, or stop it yourself`); return; }
+      if (old.mama) { say("office:mama starts the new one; the workers keep running"); return; }
     }
+    await start();
   }
 
   // first: a built ./office, then an office on the port

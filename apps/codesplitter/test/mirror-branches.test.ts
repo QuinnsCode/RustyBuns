@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { git, pushBranch, upstreamMessages } from "../src/mirror.ts";
 import type { Exec } from "../src/agent-run.ts";
 import { drained } from "../src/ci-runner.ts";
-import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
+import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, upShow } from "./mirror-kit.ts";
 
 setDefaultTimeout(30_000);
 

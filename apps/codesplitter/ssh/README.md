@@ -106,6 +106,7 @@ fetch nothing up front. That is the next thing to try if repos get big.
 - **Key auth:** done (#5504, above). The site still needs a page to paste a key into: #5545.
 - **Pushes into Artifacts:** done in the gate (#5505) and the Worker's lookup (#5541, above). A push over ssh to a
   cloud repo, which Artifacts doesn't tell the Worker of: #5699.
-- **rustybuns:** carry a `connect` export and the `connect` port through `rustybuns dev` and deploy. Alchemy has no
-  Spectrum resource, so the app is a `cf spectrum apps create` step or a small resource of our own.
+- **rustybuns:** done (#5506): `worker.connect` in rustybuns.config.ts, and the Spectrum app is a step
+  ([REFERENCE.md](../../../REFERENCE.md#config), "Inbound TCP"). Moving `connect` and `SshGate` into codeSplitter's own Worker,
+  so this folder's wrangler.jsonc goes: #6195.
 - **Live (owner):** a Pro zone, the Spectrum app on one port (22 is the nice one), and a priced run.

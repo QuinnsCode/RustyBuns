@@ -12,6 +12,8 @@ import { mulberry32 } from "@rustybuns/util";
 import { hasTrail, SECTIONS, sections, type Journey } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
 import { TAPES } from "./tapes.ts";
+import { Story } from "../story/model.ts";
+import story from "../../content/story.json";
 import { GRID } from "./places.ts";
 import { ARENA_R, arenaOf, CELL, dry, onIsland, ownerAt } from "./world.ts";
 import type { Pack } from "../packs.ts";
@@ -38,7 +40,7 @@ export interface Poi {
   k: number;
   /** A tape's number among its region's tapes. */
   tape?: number;
-  /** A pack's own tape (poi.json), played in place of the region's. */
+  /** A pack's own tape (poi.json), or a story beat's (content/story.json), played in place of the region's. */
   play?: Tape;
 }
 
@@ -91,11 +93,25 @@ function placeholder(g: Region, k: number): Tape {
   ] };
 }
 
-/** The tape a tape place plays: the region's written one by number, else the placeholder for its section. */
+const written = (g: Region): Tape[] => g.biome === "pine-barrens" ? PINE : TAPES[g.id] ?? [];
+
+/** The tapes the story bible writes (content/story.json): each built beat with a `tape`, by "region:section", in the
+ * bible's order. The unmarked tapes of that section play them, one each, in place of their placeholders. */
+const TOLD = new Map<string, Tape[]>();
+for (const a of Story(story).arcs) for (const b of a.beats) {
+  const m = /^section:(\d+):(\d+)$/.exec(b.at);
+  if (!b.tape || b.status !== "built" || !m) continue;
+  let list = TOLD.get(`${m[1]}:${m[2]}`);
+  if (!list) TOLD.set(`${m[1]}:${m[2]}`, list = []);
+  list.push(b.tape);
+}
+
+/** The tape a tape place plays: a story beat's or a pack's, else the region's written one by number, else the
+ * placeholder for its section. */
 export function tapeOf(p: Poi): Tape {
   if (p.play) return p.play;
-  const g = REGIONS[p.n - 1]!, hand = g.biome === "pine-barrens" ? PINE : TAPES[g.id] ?? [];
-  return hand[p.tape ?? 0] ?? placeholder(g, p.k);
+  const g = REGIONS[p.n - 1]!;
+  return written(g)[p.tape ?? 0] ?? placeholder(g, p.k);
 }
 
 // --- placement -----------------------------------------------------------------------------------------------------
@@ -137,6 +153,7 @@ function place(g: Region): Poi[] {
   // Order them along the trail (section, then north to south), and deal the kinds out.
   const placed = mine.map((q) => ({ ...q, k: bandAt(q.x, q.z) - 1 })).sort((a, b) => a.k - b.k || a.z - b.z || a.x - b.x);
   let tapes = 0;
+  const told = new Map<number, number>(); // how many of each section's story tapes are dealt
   // Two landmarks become sighting boards: the first in the trail's early half, the first in its late half.
   const boards = new Set([1, 6].flatMap((from) => { const i = placed.findIndex((q, at) => q.k >= from && KINDS[at % KINDS.length] === "landmark"); return i < 0 ? [] : [i]; }));
   // Three more become cabins, early, middle and late on the trail: somewhere to sit out the dark between the fires.
@@ -145,7 +162,11 @@ function place(g: Region): Poi[] {
     const kind = boards.has(i) ? "board" : cabins.has(i) ? "cabin" : KINDS[i % KINDS.length]!, x = Math.round(q.x * 10) / 10, z = Math.round(q.z * 10) / 10, s = sections(g)[Math.min(q.k, SECTIONS - 2)]!;
     const noun = NOUNS[Math.floor(rnd() * NOUNS.length)]!;
     const p: Poi = { id: `${g.n}.${Math.round(x)}.${Math.round(z)}`, n: g.n, kind, x, z, k: q.k, name: "" };
-    if (kind === "tape") p.tape = tapes++;
+    if (kind === "tape") {
+      p.tape = tapes++;
+      const i = told.get(q.k) ?? 0, beat = written(g)[p.tape] ? undefined : TOLD.get(`${g.n}:${q.k}`)?.[i];
+      if (beat) { p.play = beat; told.set(q.k, i + 1); }
+    }
     p.name = kind === "fire" ? `Campfire, ${s.name}` : kind === "cabin" ? `Old cabin, ${s.name}` : kind === "board" ? `Sighting board, ${s.name}` : kind === "landmark" ? `${s.name} ${noun}` : tapeOf(p).title;
     return p;
   });

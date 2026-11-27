@@ -5,6 +5,7 @@
 import { cutPoints, planCuts } from "@rustybuns/gear/circuit";
 import { rigSpec } from "./live.ts";
 import { BLOCK, Ring } from "./ring.ts";
+import type { ScopeAt } from "@rustybuns/gear/circuit";
 import type { AmpSettings, FromAmp, ToAmp, ToPart } from "./messages.ts";
 
 /** Over this share of a thread's time, it can't keep up for long: split. */
@@ -52,6 +53,7 @@ export class AmpThreads {
   private workers: Worker[] = [];
   private meters: FromAmp[] = [];
   private over = 0;
+  private scopeAt: ScopeAt | null = null;
   readonly can = typeof SharedArrayBuffer !== "undefined" && globalThis.crossOriginIsolated === true;
 
   /**
@@ -81,8 +83,9 @@ export class AmpThreads {
     this.workers = cuts.map((_, i) => {
       const w = this.spawn();
       w.onmessage = (e: MessageEvent<FromAmp>) => this.report(i + 1, e.data);
-      const m: ToPart = { t: "start", rings, index: i + 1, sampleRate: this.sampleRate };
+      const m: ToPart = { t: "start", rings, index: i + 1, sampleRate: this.sampleRate }, sc: ToPart = { t: "scope", at: this.scopeAt };
       w.postMessage(m);
+      w.postMessage(sc);
       return w;
     });
     const r: ToAmp = { t: "rings", rings };
@@ -98,6 +101,15 @@ export class AmpThreads {
       cuts: [...this.cuts], hopMs: (this.cuts.length * BLOCK * 1000) / this.sampleRate, loads: m.map((x) => x?.load ?? 0),
       slots: m.length === parts && m.every(Boolean) ? slotLoads(m) : [], late: this.meters[0]?.late ?? 0, can: this.can,
     };
+  }
+
+  /** A scope on a link's net (numbered across the whole rig), or none: whichever thread plays the link reports it. */
+  scope(at: ScopeAt | null): void {
+    if (JSON.stringify(at) === JSON.stringify(this.scopeAt)) return;
+    this.scopeAt = at;
+    const m: ToAmp = { t: "scope", at };
+    this.node.port.postMessage(m);
+    for (const w of this.workers) w.postMessage(m);
   }
 
   /** Workers stopped, rings dropped. */
@@ -134,6 +146,7 @@ export class AmpThreads {
       levels: parts.flatMap((x) => x?.levels ?? []),
       load: Math.max(...parts.map((x) => x?.load ?? 0)),
       misses: parts.reduce((a, x) => a + (x?.misses ?? 0), 0),
+      scope: parts.find((x) => x?.scope)?.scope,
     };
     this.watch(m);
     this.onMeter(merged);
