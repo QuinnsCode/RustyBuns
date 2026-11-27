@@ -23,6 +23,8 @@ export const Party = obj({
   scene: ID,
   scenes: arr(Scene, MAX_SCENES, { min: 1 }),
   versions: arr(Version, MAX_VERSIONS),
+  /** The Qollab event this party is (an event on the owner's eqosys account, #6428): its room lets in whom the event does. */
+  event: opt(str(40, { re: /^[\w-]{1,40}$/ })),
 });
 /** Every party this browser keeps, which one is open in the builder and which one is live. */
 export const Parties = obj({ open: opt(ID), live: opt(ID), parties: arr(Party, MAX_PARTIES) });
@@ -105,6 +107,12 @@ export const reschedule = (s: Parties, patch: { name?: string; when?: number | n
   const name = patch.name?.trim();
   if (patch.name !== undefined && !name) return "A party needs a name";
   return { ...p, name: name ? name.slice(0, 60) : p.name, when: patch.when === undefined ? p.when : patch.when };
+});
+
+/** Tie the open party to one of the owner's Qollab events (its id), or to none (null): the room's door follows the event's. */
+export const linkEvent = (s: Parties, event: string | null): Done => withParty(s, s.open, (p) => {
+  const { event: _was, ...rest } = p;
+  return event ? { ...rest, event } : rest;
 });
 
 /** The builder changed the scene on stage: keep it (the party's working copy, not a saved version). */

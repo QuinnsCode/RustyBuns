@@ -47,8 +47,6 @@ interface Env extends WorldEnv {
   PROFILE: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One per live set: relays the DJ's stream to its listen link (src/listen.ts). */
   LISTEN: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
-  /** Where eqosys is (a test's or a local one); unset, the live one. */
-  EQOSYS_URL?: string;
   /** Bearer token for GET /signups. Unset, the list can't be read from outside. */
   SIGNUPS_TOKEN?: string;
   /** Cloudflare Realtime's TURN key: its id and API token. Unset, a call gets STUN alone. */
@@ -88,11 +86,14 @@ export default {
       const headers = new Headers(req.headers);
       // signed in with eqosys (Qollab Studio): the room knows you by your eqosys id and name; anyone else is a random guest
       headers.delete("X-User-Name");
+      // an event's room asks eqosys whether the event lets this guest in, with their own token (world.ts eventDoor)
+      headers.delete("X-Eqosys-Token");
       if (url.searchParams.has("token")) {
         const who = await whoIs(url, { app: APP, eqosys: env.EQOSYS_URL ?? EQOSYS, fallbackName: "Someone" });
         if (who instanceof Response) return who;
         headers.set("X-User-Id", who.uid);
         headers.set("X-User-Name", who.name);
+        headers.set("X-Eqosys-Token", url.searchParams.get("token") ?? "");
       } else headers.set("X-User-Id", crypto.randomUUID());
       headers.set("X-Room", room);
       headers.set("X-Room-Idle-Ms", String(IDLE_MS));

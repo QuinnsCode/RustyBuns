@@ -12,6 +12,8 @@ import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
 import { decodeGrantClient, grant, handOn, isMuted, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { act, guestList, GuestList, type GuestAct } from "@rustybuns/util/guests";
+import { EventDoor } from "@rustybuns/util/events";
+import { EQOSYS } from "../../src/account.ts";
 import { decodeGuestClient, listFor, mayHere, STUDIO_ROLES, type GuestServer } from "../../src/guest-list.ts";
 import { applySpin, decodeSpinClient, leave as leaveSpin, mayDeck, noSpin, onNow, sanitizeSpin, stepUp, type Spin, type SpinOp, type SpinServer } from "../../src/spin.ts";
 import type { DeckPress, DeckSay, MixSay } from "../../src/dj/booth.ts";
@@ -48,6 +50,7 @@ const LIMITS = {
 
 const REFUSED: Record<Full, string> = {
   room: "this room is full", rooms: "every room is taken", closed: "the maker closed this sesh", code: "this sesh needs its code", tries: "too many wrong codes", blocked: "you can't come in here",
+  rsvp: "this event lets in those who RSVPed", invite: "this event is invite only", unchecked: "the event's list couldn't be read",
 };
 
 interface Stub { fetch(url: string, init?: RequestInit): Promise<Response> }
@@ -63,9 +66,11 @@ const backupKey = (room: string) => `sesh/${room}.json`;
 const bounceKey = (room: string) => `sesh/${room}/bounce.wav`;
 /** A bounce this big at most: two minutes of 48 kHz 16-bit stereo, a long song bounced once. */
 export const MAX_BOUNCE_BYTES = 24 * 2 ** 20;
+/** A Qollab event's id (`@rustybuns/util/events`), as the maker's page brings it on ?event=. */
+const EVENT = /^[\w-]{1,40}$/;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
 /** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash, the studio's patch, who may do what and the wind-back ladder. An older copy is the project alone. */
-const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, boards: raw, grants: raw, spin: maybe(raw), guests: maybe(raw), ladder: raw });
+const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), event: maybe(str(40, { re: EVENT })), studio: raw, boards: raw, grants: raw, spin: maybe(raw), guests: maybe(raw), ladder: raw });
 /** One rung of the wind-back ladder in storage: the groove at the start of that minute (src/rewind.ts). */
 const snapKey = (minute: number) => `snap:${minute}`;
 // Takes kept at once, used or not: the ones on tracks, plus what undo may bring back until the room empties.
@@ -87,6 +92,8 @@ export interface WorldEnv {
   ROOM_SEATS?: string;
   /** How long a named page's drop is held before the room hears it left (LEAVE_GRACE_MS when unset). */
   LEAVE_GRACE_MS?: string;
+  /** Where eqosys is, whose event an event's room follows at its door (#6428); unset, the live one. */
+  EQOSYS_URL?: string;
 }
 /** `peer` numbers a socket for the live line; 0 is one that was turned away. `host`: it's the sesh's maker. */
 /** A deck someone's machine plays, as the World last heard it. */
@@ -150,6 +157,9 @@ export default class World {
   private deckSides: [DeckHeld | null, DeckHeld | null] = [null, null];
   /** The maker's room code, hashed: "" is a public sesh. */
   private lock = "";
+  /** The Qollab event this room is (#6428), as the maker's page named it: "" is no event. Its door is the event's. */
+  private event = "";
+  private eqosys: string;
   /** When each address last got the code wrong. */
   private wrong = new Map<string, number[]>();
   /** Every whole take in storage, id to how many chunks it is. */
@@ -170,6 +180,7 @@ export default class World {
     this.lobby = env.LOBBY ? env.LOBBY.get(env.LOBBY.idFromName("lobby")) : null;
     this.bucket = env.BACKUP ?? null;
     this.seats = Number(env.ROOM_SEATS) > 0 ? Number(env.ROOM_SEATS) : MAX_SOCKETS;
+    this.eqosys = env.EQOSYS_URL ?? EQOSYS;
     ctx.blockConcurrencyWhile(async () => {
       this.project = sanitize(await ctx.storage.get("project"));
       this.chat = sanitizeChat(await ctx.storage.get("chat"));
@@ -183,6 +194,7 @@ export default class World {
       const floor = await ctx.storage.get("floor");
       if (floor === "held" || floor === "closed") this.floor = floor;
       this.lock = String((await ctx.storage.get("lock")) ?? "");
+      this.event = String((await ctx.storage.get("event")) ?? "");
       this.grants = sanitizeGrants(await ctx.storage.get("grants"));
       this.spin = sanitizeSpin(await ctx.storage.get("spin"));
       this.guests = check(GuestList, await ctx.storage.get("guests"));
@@ -213,6 +225,11 @@ export default class World {
     // the maker never needs the code; checked before the Lobby, so a wrong one never holds an edge room open
     const locked = !host && room ? await this.locked(room, request) : null;
     if (locked) return this.refuse(userId, locked);
+    // an event's room: the maker's page names the event, and everyone else comes in only if the event lets them (#6428)
+    const event = new URL(request.url).searchParams.get("event") ?? "";
+    if (host && room && EVENT.test(event) && event !== this.event) { this.event = event; this.backupDirty = true; await this.ctx.storage.put("event", event); }
+    const shut = !host && room && this.event ? await this.eventDoor(this.event, request.headers.get("X-Eqosys-Token")) : null;
+    if (shut) return this.refuse(userId, shut);
     if (this.lobby && !(await this.admitted(this.lobby, room))) return this.refuse(userId, "rooms");
     const idle = Number(request.headers.get("X-Room-Idle-Ms"));
     if (idle > 0) this.idleMs = idle;
@@ -286,6 +303,7 @@ export default class World {
       if (b?.host && !this.host) { this.host = b.host; await this.ctx.storage.put("host", b.host); }
       if (b?.floor && b.floor !== "free") { this.floor = b.floor; await this.ctx.storage.put("floor", b.floor); }
       if (b?.lock && !this.lock) { this.lock = b.lock; await this.ctx.storage.put("lock", b.lock); }
+      if (b?.event && !this.event) { this.event = b.event; await this.ctx.storage.put("event", b.event); }
       if (b?.grants) { this.grants = sanitizeGrants(b.grants); await this.ctx.storage.put("grants", this.grants); }
       if (b?.spin) { this.spin = sanitizeSpin(b.spin); await this.ctx.storage.put("spin", this.spin); }
       const gl = check(GuestList, b?.guests);
@@ -319,6 +337,19 @@ export default class World {
     this.wrong.set(ip, [...recent, now]);
     if (this.wrong.size > 1000) this.wrong.delete(this.wrong.keys().next().value!);
     return "code";
+  }
+
+  /**
+   * An event's door: eqosys says who the event lets in and whether this is one of them (GET /q/events/<id>/door, with the
+   * guest's own token, X-Eqosys-Token from the Worker). null is come in; so is an event that's gone (its room stays a room).
+   * eqosys out of reach shuts the door rather than opening an invite-only event to anyone.
+   */
+  private async eventDoor(id: string, token: string | null): Promise<Full | null> {
+    const r = await fetch(`${this.eqosys}/q/events/${encodeURIComponent(id)}/door`, { headers: token ? { authorization: `Bearer ${token}` } : {} }).catch(() => null);
+    if (r?.status === 404) return null;
+    const d = r?.ok ? check(EventDoor, await r.json().catch(() => null)) : null;
+    if (!d) return "unchecked";
+    return d.in ? null : d.access === "anyone" ? "blocked" : d.access;
   }
 
   /** The maker sets, changes or clears the code; everyone in gets the new one so their reconnects work. */
@@ -885,7 +916,7 @@ export default class World {
         const snaps: { at: number; project: unknown }[] = [];
         for (const at of this.ladder.snaps) { const p = await s.get(snapKey(at)); if (p) snaps.push({ at, project: p }); }
         const ladder = snaps.length ? { edited: this.ladder.edited, snaps } : undefined;
-        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, boards: this.boards.length ? this.boards : undefined, grants: this.grants, spin: this.spin, guests: this.guests ?? undefined, ladder }));
+        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, event: this.event || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, boards: this.boards.length ? this.boards : undefined, grants: this.grants, spin: this.spin, guests: this.guests ?? undefined, ladder }));
       } catch { this.backupDirty = true; }
     }
     // the last one out: undo goes with them, so only the takes on tracks and on the ladder are kept
