@@ -2,8 +2,9 @@
 // the way a console's memory card screen turns its saves' icons: the guitar for Learn the setup, a speaker stack for the
 // Event Planner, the desk's own screen for QDAW, a turntable, an amp on its cab, a real pedal's board (circuits/
 // drive.pcb.svg) for Q Builder, and a mic for The Event. One WebGL renderer draws them all, only the ones on the screen,
-// at 30 frames a second at most, into a 2D canvas each. The one nearest the middle of the screen turns fastest, and
-// scrolling spins them all a little faster. With reduced motion each is drawn once, turned three-quarters.
+// at 30 frames a second at most, into a 2D canvas each. Each swings like a pendulum, a quarter turn each way of its
+// front, rather than spinning round to its back. The one nearest the middle of the screen swings fastest, and
+// scrolling swings them all a little faster. With reduced motion each is drawn once, facing you.
 import * as THREE from "three";
 import { GEAR_SIZES, gear, gearLook, type GearId } from "@rustybuns/models/gear";
 import pcbUrl from "../circuits/drive.pcb.svg?url";
@@ -14,6 +15,9 @@ export type ShelfItem = "guitar" | "stack" | "screen" | "turntable" | "amp" | "b
 const DAW_SHOT = "/door/daw.jpg";
 /** The pixels each item is drawn at before its canvas scales it: square, enough for a card's thing at 2x. */
 const PX = 512;
+/** How far each thing swings from its front, each way: a quarter turn, so it sweeps half a turn and back; the flat
+ *  screen and board swing less, so they never turn edge-on. Everything is built facing you (+z). */
+const SWING: Record<ShelfItem, number> = { guitar: Math.PI / 2, stack: Math.PI / 2, turntable: Math.PI / 2, amp: Math.PI / 2, mic: Math.PI / 2, screen: 0.85, board: 0.85 };
 
 /** Pieces of gear stood one on another, bottom first, each centred over the one under it. */
 function stacked(ids: readonly GearId[]) {
@@ -77,7 +81,7 @@ function board() {
     const jack = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.18), knob); jack.position.set(x, t / 2 + 0.07, d / 2 - 0.16);
     g.add(jack);
   }
-  g.rotation.x = -1.2; // stood up, its copper toward you, as a card is held up to show it
+  g.rotation.x = 1.2; // stood up, its copper toward you, as a card is held up to show it
   return g;
 }
 
@@ -102,7 +106,7 @@ function onTurntable(kind: ShelfItem) {
   return spin;
 }
 
-interface Slot { canvas: HTMLCanvasElement; kind: ShelfItem; tone: THREE.Color; spin: THREE.Group | null; seen: boolean; angle: number; focus: boolean; drawn: boolean }
+interface Slot { canvas: HTMLCanvasElement; kind: ShelfItem; tone: THREE.Color; spin: THREE.Group | null; seen: boolean; phase: number; focus: boolean; drawn: boolean }
 
 export function mountShelf() {
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -121,7 +125,7 @@ export function mountShelf() {
   function draw(s: Slot) {
     renderer ??= (() => { const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); r.setSize(PX, PX, false); r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.5; return r; })();
     s.spin ??= onTurntable(s.kind);
-    scene.add(s.spin); s.spin.rotation.y = s.angle; rim.color.copy(s.tone);
+    scene.add(s.spin); s.spin.rotation.y = SWING[s.kind] * Math.sin(s.phase); rim.color.copy(s.tone);
     renderer.render(scene, camera); scene.remove(s.spin);
     const c = s.canvas, g = c.getContext("2d")!;
     if (c.width !== PX) { c.width = PX; c.height = PX; }
@@ -133,7 +137,7 @@ export function mountShelf() {
     const live = slots.filter((s) => s.seen);
     if (!live.length) return;
     const dt = Math.min(0.1, (now - last) / 1000 || 0);
-    if (still) { for (const s of live) if (!s.drawn) { s.angle = -0.7; draw(s); } return; }
+    if (still) { for (const s of live) if (!s.drawn) { s.phase = 0; draw(s); } return; }
     if (now - last < 1000 / 30) { frame = requestAnimationFrame(tick); return; }
     last = now;
     // the thing nearest the middle of the screen is the one picked, as on the memory card screen: it turns fastest
@@ -142,7 +146,7 @@ export function mountShelf() {
     for (const s of live) { const r = s.canvas.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid); if (d < bestD) { bestD = d; best = s; } }
     for (const s of live) {
       s.focus = s === best; s.canvas.closest(".path")?.classList.toggle("focus", s.focus);
-      s.angle += dt * ((s.focus ? 1.1 : 0.35) + boost);
+      s.phase += dt * ((s.focus ? 1.1 : 0.35) + boost);
       draw(s);
     }
     boost *= 0.9;
@@ -155,7 +159,7 @@ export function mountShelf() {
   return {
     /** Puts a thing on a card's canvas, lit at the back in `tone`; it is built and drawn once it comes onto the screen. */
     add(canvas: HTMLCanvasElement, kind: ShelfItem, tone: string) {
-      const s: Slot = { canvas, kind, tone: new THREE.Color(tone), spin: null, seen: false, angle: -0.7, focus: false, drawn: false };
+      const s: Slot = { canvas, kind, tone: new THREE.Color(tone), spin: null, seen: false, phase: 0, focus: false, drawn: false };
       slots.push(s); seen.observe(canvas);
     },
     /** What the shelf has drawn: each thing, whether it is on the screen, picked and drawn, and the frames drawn so far. */

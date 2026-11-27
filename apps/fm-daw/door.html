@@ -45,7 +45,7 @@
   @media (max-width: 899px) { .lane { padding: 8px 12px; } .lane b { font-size: 19px; } .lane span { display: none; } }
   /* a lane open: the field fixed and dimmed behind, the tabs along the top, the shelf scrolling over it */
   body.lane-open #hero { position: fixed; inset: 0; height: auto; min-height: 0; z-index: 0; }
-  body.lane-open #hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, #0f1013f0 0, #0f1013c4 35%, #0f1013b0 70%, #0f1013e0 100%); }
+  body.lane-open #hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, #0f101399 0, #0f101333 30%, #0f101333 70%, #0f101399 100%); }
   body.lane-open #hero canvas { pointer-events: none; }
   body.lane-open #hero .words, body.lane-open .lanes, body.lane-open #air-egg, body.lane-open .panel, body.lane-open main { display: none; }
   #tabs { display: none; }
@@ -63,22 +63,23 @@
   #lane-view { position: relative; z-index: 1; box-sizing: border-box; max-width: 1080px; margin: 0 auto; padding: 108px max(16px, env(safe-area-inset-right)) 96px max(16px, env(safe-area-inset-left)); }
   #lane-view[hidden] { display: none; }
   /* the shelf: one row per path, the thing turning on a pool of its lane's light, its words beside it */
-  .sector { --tone: #2dd4bf; display: grid; gap: 8px; }
+  .sector { --tone: #2dd4bf; display: grid; gap: 8px; justify-items: center; text-align: center; }
   .sector[hidden] { display: none; }
-  .sector > h2 { margin: 0; font: 600 clamp(44px, 8vw, 84px)/.9 "Barlow Condensed", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--tone); text-shadow: 0 0 40px color-mix(in srgb, var(--tone) 40%, transparent); }
-  .sector > .line { margin: 0 0 24px; color: #d8d3c8; font-size: 17px; max-width: 52ch; }
+  .sector > h2 { margin: 0; font: 600 clamp(44px, 8vw, 84px)/.9 "Barlow Condensed", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--tone); text-shadow: 0 2px 18px #0f1013, 0 0 40px color-mix(in srgb, var(--tone) 40%, transparent); }
+  .sector > .line { justify-self: center; margin: 0 0 24px; padding: 8px 14px; border-radius: 12px; background: #0f1013b8; backdrop-filter: blur(8px); color: #e4dccd; font-size: 17px; max-width: 52ch; }
   .cards { display: grid; gap: clamp(24px, 6vh, 72px); }
-  .path { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: clamp(20px, 4vw, 56px); align-items: center; padding: 8px; border-radius: 22px; color: inherit; text-decoration: none; border: 1px solid transparent; opacity: 0; transform: translateY(64px) scale(.97); transition: opacity .7s ease, transform .8s cubic-bezier(.2,.75,.2,1), border-color .2s, background .2s; }
+  .path { display: grid; grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 8px; width: min(100%, 720px); justify-self: center; padding: clamp(12px, 2.5vw, 28px); border-radius: 24px; color: inherit; text-decoration: none; border: 1px solid #ffffff1a; background: #101216c4; backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 24px 60px #0007; opacity: 0; transform: translateY(64px) scale(.97); transition: opacity .7s ease, transform .8s cubic-bezier(.2,.75,.2,1), border-color .2s, background .2s; }
   .path.in { opacity: 1; transform: none; }
-  .path:nth-child(even) .item { order: 2; }
-  .path:hover, .path:focus-visible { border-color: color-mix(in srgb, var(--tone) 50%, transparent); background: #ffffff06; outline: none; }
+  .path .item { width: min(100%, 440px, 52vh); }
+  .path:hover, .path:focus-visible, .path.focus { border-color: color-mix(in srgb, var(--tone) 55%, transparent); outline: none; }
+  .path:hover, .path:focus-visible { background: #14171cd8; }
   .item { position: relative; display: block; aspect-ratio: 1; width: 100%; border-radius: 50%; background: radial-gradient(circle at 50% 62%, color-mix(in srgb, var(--tone) 26%, transparent) 0, transparent 62%); transition: filter .4s; }
   .item::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: 9%; height: 9%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--tone) 45%, transparent), transparent); filter: blur(4px); }
   .item canvas { position: relative; z-index: 1; display: block; width: 100%; height: 100%; }
   .path:not(.focus) .item { filter: saturate(.7) brightness(.75); }
-  .text { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .text { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .text > * { transition: opacity .6s ease, transform .7s cubic-bezier(.2,.75,.2,1); }
-  .path:not(.in) .text > * { opacity: 0; transform: translateX(24px); }
+  .path:not(.in) .text > * { opacity: 0; transform: translateY(18px); }
   .path.in .text > :nth-child(2) { transition-delay: .08s; } .path.in .text > :nth-child(3) { transition-delay: .16s; } .path.in .text > :nth-child(4) { transition-delay: .24s; } .path.in .text > :nth-child(5) { transition-delay: .32s; }
   .text .icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--tone); color: #0f1013; }
   .text b { max-width: 100%; font: 600 clamp(32px, 5vw, 52px)/1.05 "Barlow Condensed", sans-serif; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -92,10 +93,7 @@
     .tablist button { padding: 10px 10px 12px; font-size: 17px; letter-spacing: .12em; }
     .tablist button::after { left: 10px; right: 10px; }
     #lane-view { padding-top: 92px; }
-    .path { grid-template-columns: 1fr; justify-items: center; text-align: center; }
-    .path .item, .path:nth-child(even) .item { order: 0; width: min(78vw, 300px); }
-    .text { align-items: center; }
-    .path:not(.in) .text > * { transform: translateY(16px); }
+    .path .item { width: min(78vw, 300px); }
   }
   @media (prefers-reduced-motion: reduce) { .path, .text > * { transition: none !important; } .path, .path:not(.in) .text > * { opacity: 1; transform: none; } }
   section.block { margin-top: 36px; display: grid; gap: 12px; }

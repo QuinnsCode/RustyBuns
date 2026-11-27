@@ -10,9 +10,11 @@ import { ICON, iconSvg } from "./paths.ts";
 
 type V3 = { x: number; y: number; z: number };
 
-/** The camera: behind the back of the field, up on a tower, looking down the field at the stacks. */
-const CAM = { x: 0, y: 16, z: FIELD.z1 + 26, pitch: 0.22 };
-const F = { y: -Math.sin(CAM.pitch), z: -Math.cos(CAM.pitch) }, U = { y: Math.cos(CAM.pitch), z: -Math.sin(CAM.pitch) };
+interface Cam { x: number; y: number; z: number; pitch: number }
+/** The camera on the door: behind the back of the field, up on a tower, looking down the field at the stacks. */
+const TOWER: Cam = { x: 0, y: 16, z: FIELD.z1 + 26, pitch: 0.22 };
+/** The camera with a lane open: flown up over that lane, looking almost straight down, so the map fills the screen behind the cards. */
+const OVER = (x: number): Cam => ({ x, y: 26, z: (FIELD.z0 + FIELD.z1) / 2 + 26 / Math.tan(1.25), pitch: 1.25 });
 
 /** A lane down the field: one of the door's words, its strip of grass, and the colour its plate and beam take. */
 export interface HeroLane { id: string; word: string; tone: string }
@@ -29,6 +31,8 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
 
   let air: HeroAir = { ...HERO_START }, map = heroMap(air), back = backSeat(air), draws = 0;
   let W = 0, H = 0, f = 0, cx = 0, cy = 0;
+  let cam: Cam = { ...TOWER }, F = { y: 0, z: 0 }, U = { y: 0, z: 0 };
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const land = (a: HeroAir) => (a.bank ? banks([BANK]) : () => 0);
 
   // the lanes: the field cut into strips from the back to the stage, a word painted on the grass of each and a button
@@ -79,7 +83,7 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
     g.fillStyle = fill; g.textBaseline = "bottom"; g.fillText(text, 0, 0); g.restore();
   }
   const project = (p: V3): [number, number] => {
-    const dx = p.x - CAM.x, dy = p.y - CAM.y, dz = p.z - CAM.z, depth = Math.max(0.5, dy * F.y + dz * F.z);
+    const dx = p.x - cam.x, dy = p.y - cam.y, dz = p.z - cam.z, depth = Math.max(0.5, dy * F.y + dz * F.z);
     return [cx - (f * dx) / depth, cy - (f * (dy * U.y + dz * U.z)) / depth];
   };
 
@@ -90,9 +94,18 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
     const dpr = Math.min(2, devicePixelRatio || 1), r = canvas.getBoundingClientRect();
     if (Math.round(r.width * dpr) !== canvas.width || Math.round(r.height * dpr) !== canvas.height) { canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr); }
     W = r.width; H = r.height; f = Math.min(W * 1.3, H); cy = H * 0.5; // on a tall phone the field comes closer, so its lanes fill the width
-    cx = W / 2; // the field fills the screen, and stays lit behind an open lane's shelf
+    cx = W / 2;
+    // the camera flies between the tower and over the open lane, a step a frame until it gets there
+    const lane = strips.find((s) => s.id === open), goal = lane ? OVER((lane.x0 + lane.x1) / 2) : TOWER;
+    let moving = false;
+    for (const k of ["x", "y", "z", "pitch"] as const) {
+      const d = goal[k] - cam[k];
+      if (still || Math.abs(d) < (k === "pitch" ? 0.002 : 0.02)) cam[k] = goal[k]; else { cam[k] += d * 0.14; moving = true; }
+    }
+    if (moving) requestAnimationFrame(() => draw());
+    F = { y: -Math.sin(cam.pitch), z: -Math.cos(cam.pitch) }; U = { y: Math.cos(cam.pitch), z: -Math.sin(cam.pitch) };
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const horizon = cy - f * Math.tan(CAM.pitch);
+    const horizon = cy - f * Math.tan(cam.pitch);
     // the sky at dusk, the sun gone down behind the stage
     const sky = g.createLinearGradient(0, 0, 0, horizon);
     sky.addColorStop(0, "#151832"); sky.addColorStop(0.55, "#3d2b55"); sky.addColorStop(0.85, "#b55a4a"); sky.addColorStop(1, "#f0a060");
