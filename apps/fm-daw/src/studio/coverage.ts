@@ -1,7 +1,7 @@
 // The room's PA over its floor, from above: @rustybuns/gear's coverage map of the very boxes the jam room plays the set
 // from (pa-room.ts paSources), over the same field (roomField: air, ground, banks), so the map in the builder is what
 // you hear on Walk in. The colours are against a level you name (the floor's middle, pa-room.ts floorMiddle, where the PA
-// sets its level): pale gold louder than it, orange within 3 dB, teal 9 dB down, deep blue past 15. The rig cards (rig-cards.ts) paint the same ramp. Pure but for `heatUrl`.
+// sets its level): pale gold louder than it, orange within 3 dB, teal 9 dB down, deep blue past 15. Pure but for `heatUrl`.
 import { coverage, floorStats, levelAt, type Area, type FloorStats, type Grid } from "@rustybuns/gear";
 import { arrivalSpread, EAR_Y, floorMiddle, paSources, paSpeakers, roomField } from "./pa-room.ts";
 import type { StudioDef } from "./room.ts";
