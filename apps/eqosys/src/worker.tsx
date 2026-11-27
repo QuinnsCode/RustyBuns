@@ -17,7 +17,7 @@ import { link, members } from "./members.ts";
 import { countsOf, unlocksOf } from "./achievements.ts";
 import { newKey } from "@rustybuns/util/token";
 import type { Env as AppEnv } from "./env.ts";
-import { house, studiosOf } from "./studios.ts";
+import { house, invitesOf, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
 import { regionAt } from "@rustybuns/util/privacy";
@@ -96,11 +96,11 @@ const app = defineApp([
       const ways = tab === "account" ? await waysOf(request, conf) : null;
       const shown = hub && !("error" in hub) ? hub : null;
       // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
-      const [counts, visitors, studios, apps] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
+      const [counts, visitors, studios, apps, invites] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
         everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
-        tab === "studio" ? studiosOf(conf, me.id) : null, appsOf(conf)]);
+        tab === "studio" ? studiosOf(conf, me.id) : null, appsOf(conf), tab === "studio" ? invitesOf(conf, me.id) : null]);
       return <Home ways={ways} social={providers(conf)} invite={invite} origin={new URL(request.url).origin} apps={apps} visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
-        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
+        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios} invites={invites}
         scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
     }),
     route("/spaces", async ({ request, response }) => {
@@ -150,7 +150,7 @@ const app = defineApp([
 export { Vault } from "./vault.ts";
 // The EQ binding of an eq_execute program (codemode.ts): a stub of this class, made for the caller, runs each tool call as them.
 // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- cloudflare:workers has no types in this app; only the class it uses is named
-const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> });
+const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => object) | undefined> });
 export class EQBridge extends cf.WorkerEntrypoint {
   call(name: string, json: string) { return bridgeCall(this.env as AppEnv, this.ctx.props, name, json); }
 }
@@ -169,7 +169,7 @@ export default {
     const conf = e();
     ctx.waitUntil(lapseSeats(conf, async (studio, user) => {
       const sid = conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-      if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: user })}`));
+      if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: user, sid })}`));
     }));
   },
 };

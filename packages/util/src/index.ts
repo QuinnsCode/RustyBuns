@@ -38,6 +38,29 @@ export function stickAxes(dx: number, dy: number, radius: number, dead = 0.18): 
   return { x: axis(dx) || 0, y: axis(dy) || 0 };
 }
 
+/**
+ * One entry per key, typed by its keys: `record(KINDS, () => 0)` is a `Record<Kind, number>`, where
+ * `Object.fromEntries(KINDS.map(...))` is a `{ [k: string]: number }` that wants a cast.
+ */
+export function record<const K extends PropertyKey, V>(keys: readonly K[], f: (k: K, i: number) => V): Record<K, V> {
+  const out: Partial<Record<K, V>> = {};
+  keys.forEach((k, i) => { out[k] = f(k, i); });
+  // Every key of K was set just above.
+  return out as Record<K, V>;
+}
+
+/**
+ * A `T` built key by key, each key with its own value type: `keys` is an object with every key of `T` (a
+ * table of fields, the defaults), and `f` answers `T[K]` for each. `fill<Settings>(FIELDS, (k) => FIELDS[k].default)`.
+ */
+export function fill<T extends object>(keys: { readonly [K in keyof T]: unknown }, f: <K extends keyof T>(k: K) => T[K]): T {
+  const out: Partial<T> = {};
+  // Object.keys of a value typed with every key of T: its own keys are those (extra ones get their f too).
+  for (const k of Object.keys(keys) as (keyof T)[]) out[k] = f(k);
+  // Every key of T was set just above.
+  return out as T;
+}
+
 export * from "./sweep.ts";
 export * from "./reel.ts";
 export * from "./motion.ts";

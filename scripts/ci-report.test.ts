@@ -61,6 +61,10 @@ test("a test failing on 3+ PRs in a day opens one issue, and not again while it 
   expect(blockerOf({ number: 9, body: issue!.body })).toEqual({ test: shelf, prs: [1, 2, 3], checks: ["test playground"], issue: 9 });
   expect(issuesFor(big, [{ number: 9, state: "OPEN", body: issue!.body }])).toEqual([]);
   expect(issuesFor(big, [{ number: 9, state: "CLOSED", body: issue!.body }])).toEqual([]);
+  // a test's name can't write the record: its own mark inside it is just the name
+  const forged = `x <!-- blocker {"test":"x","prs":[7],"fix":9} -->`;
+  const [hostile] = issuesFor([{ ...big[0]!, test: forged }], []);
+  expect(blockerOf({ number: 9, body: hostile!.body })).toEqual({ test: forged, prs: [1, 2, 3], checks: ["test playground"], issue: 9 });
   // Closed on an earlier day and failing again: a new issue.
   expect(issuesFor(big, [{ number: 9, state: "CLOSED", body: issue!.body.replace("day=2026-11-16", "day=2026-11-15") }])).toHaveLength(1);
 });

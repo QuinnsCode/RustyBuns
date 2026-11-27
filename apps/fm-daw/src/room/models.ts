@@ -5,11 +5,14 @@
 // pedal wall and the sound wall's case and modules (each panel labelled as its drill template is) are drawn here. Each model is built at its STUDIO_GEAR size, its own frame as room.ts has it (bottom
 // centre at the origin, front +z), and the jack rings and knob caps go where room.ts aims.
 import * as THREE from "three";
-import { gear, gearLook, type GearLook, stompbox } from "@rustybuns/models/gear";
+import { GEAR_SIZES, gear, gearLook, type GearId, type GearLook, stompbox } from "@rustybuns/models/gear";
+
+const isModel = (id: string | undefined): id is GearId => !!id && Object.hasOwn(GEAR_SIZES, id);
 import type { Face, GearDef, Vec3 } from "./room.ts";
 import { PEDAL_WALL, RACK } from "./room.ts";
 import { CASE } from "./frame.ts";
-import { surface } from "../studio/look.ts";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { metreUV, surface } from "../studio/look.ts";
 
 /** Hardboard pegboard: a brown face with a hole every inch, as a map with its holes dark (none without a DOM). */
 function pegboard(): THREE.Texture | null {
@@ -121,6 +124,85 @@ function panelFace(g: GearDef): THREE.Texture {
   return t;
 }
 
+/**
+ * FM DAW's desk as a desk people work at: an oiled wooden top on a black steel frame, the patch bay along its back
+ * (where room.ts puts the sends and returns), and on it the shared 12-channel mixer, an open laptop, a pair of
+ * headphones and a mug, with the mixer's leads over the back edge to the floor and a power strip under it.
+ */
+function desk(group: THREE.Group, w: number, h: number, d: number) {
+  const top = new THREE.Mesh(metreUV(new THREE.BoxGeometry(w, 0.035, d)), surface("wood", "#6a4a32"));
+  top.position.y = h - 0.0175;
+  const steel = mat(0x17181b, 0.6, 0.45), legH = h - 0.035;
+  group.add(top);
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+    const leg = box(0.04, legH, 0.04, steel);
+    leg.position.set(x * (w / 2 - 0.045), legH / 2, z * (d / 2 - 0.045));
+    group.add(leg);
+  }
+  for (const z of [-1, 1]) { const rail = box(w - 0.09, 0.05, 0.02, steel, legH - 0.025); rail.position.z = z * (d / 2 - 0.045); group.add(rail); }
+  const stretcher = box(w - 0.09, 0.03, 0.02, steel, 0.12);
+  stretcher.position.z = -(d / 2 - 0.045);
+  const bay = box(w * 0.96, 0.012, 0.12, mat(0x2b2e33, 0.6, 0.4), h + 0.006);
+  bay.position.z = -0.2;
+  group.add(stretcher, bay);
+  // the mixer on the left, its leads out of its back
+  const mixer = gear("mixer-small");
+  mixer.position.set(-0.25, h, 0.1);
+  group.add(mixer);
+  // an open laptop on the right, turned a little toward whoever sits there, its screen dimmed
+  const laptop = new THREE.Group(), shell = mat(0xa9adb3, 0.8, 0.35);
+  laptop.add(box(0.31, 0.014, 0.215, shell, 0.007));
+  const keys = box(0.27, 0.002, 0.1, mat(0x1c1d20, 0.1, 0.7), 0.015);
+  keys.position.z = -0.03;
+  const lid = new THREE.Group();
+  lid.position.set(0, 0.014, -0.1075);
+  lid.rotation.x = -0.32;
+  lid.add(box(0.31, 0.205, 0.008, shell, 0.1025));
+  const screen = box(0.285, 0.175, 0.001, new THREE.MeshStandardMaterial({ color: 0x05070a, emissive: 0x5d7488, emissiveIntensity: 0.35, roughness: 0.15 }), 0.105);
+  screen.position.z = 0.0045;
+  lid.add(screen);
+  laptop.add(keys, lid);
+  laptop.position.set(0.37, h, 0.06);
+  laptop.rotation.y = -0.22;
+  // headphones laid flat between them: a band and two cups
+  const cans = new THREE.Group(), pad = mat(0x141416, 0.05, 0.85);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.008, 6, 20, Math.PI), mat(0x222326, 0.3, 0.5));
+  band.rotation.x = -Math.PI / 2;
+  band.position.y = 0.01;
+  cans.add(band);
+  for (const x of [-0.08, 0.08]) { const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.045, 0.032, 16), pad); cup.position.set(x, 0.016, 0); cans.add(cup); }
+  cans.position.set(0.06, h, 0.02);
+  cans.rotation.y = 0.5;
+  // a mug, half drunk
+  const mug = new THREE.Group(), china = mat(0xd8d2c4, 0, 0.35);
+  mug.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.038, 0.095, 18, 1, true), china));
+  mug.children[0]!.position.y = 0.0475;
+  const coffee = new THREE.Mesh(new THREE.CircleGeometry(0.038, 18), mat(0x2a1a10, 0, 0.2));
+  coffee.rotation.x = -Math.PI / 2;
+  coffee.position.y = 0.07;
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.006, 6, 12), china);
+  handle.position.set(0.045, 0.05, 0);
+  mug.add(coffee, handle);
+  mug.position.set(-0.53, h, 0.2);
+  // the leads: out of the mixer's back, over the desk's back edge, down and along the floor toward the wall
+  const leads: THREE.BufferGeometry[] = [];
+  for (const [i, x] of [-0.36, -0.29, -0.2, -0.12].entries()) {
+    const run = new THREE.CatmullRomCurve3([[x, h + 0.04, -0.08], [x - 0.01, h + 0.012, -0.29], [x - 0.02 + i * 0.01, h - 0.05, -d / 2 - 0.03], [x + 0.02, 0.25, -d / 2 - 0.06 - i * 0.015], [x + 0.05 * i, 0.006, -d / 2 - 0.16], [x + 0.1 + i * 0.06, 0.006, -d / 2 - 0.5]].map((p) => new THREE.Vector3(...p)));
+    leads.push(new THREE.TubeGeometry(run, 28, 0.0035, 5));
+  }
+  // the power strip under the desk, its switch lit, and its lead
+  const strip = box(0.34, 0.04, 0.06, mat(0x1a1a1c, 0.1, 0.6), 0.02);
+  strip.position.set(0.12, 0, -0.12);
+  strip.rotation.y = 0.15;
+  const lit = box(0.02, 0.012, 0.02, new THREE.MeshStandardMaterial({ color: 0x400806, emissive: 0xff3a20, emissiveIntensity: 0.8 }), 0.045);
+  lit.position.set(-0.03, 0, -0.12);
+  const power = new THREE.CatmullRomCurve3([[-0.05, 0.02, -0.13], [-0.2, 0.006, -0.18], [-0.35, 0.006, -0.45], [-0.3, 0.006, -0.8]].map((p) => new THREE.Vector3(...p)));
+  leads.push(new THREE.TubeGeometry(power, 16, 0.004, 5));
+  const merged = mergeGeometries(leads);
+  if (merged) group.add(new THREE.Mesh(merged, mat(0x0d0d0f, 0, 0.75)));
+  group.add(laptop, cans, mug, strip, lit);
+}
+
 export function gearModel(g: GearDef): GearModel {
   const group = new THREE.Group(), [w, h, d] = g.size;
   const m: GearModel = { group, knobs: new Map(), jacks: new Map(), tubes: [], cones: [] };
@@ -171,21 +253,11 @@ export function gearModel(g: GearDef): GearModel {
       for (const z of [-0.025, 0.025]) group.add(onFace(0.006, w * 0.8, "right", [0, h + 0.004, z], mat(0xc9ccd1, 0.9, 0.3)));
     }
   } else if (g.kind === "desk") {
-    // FM DAW's desk: a console top on two legs, a fader per track, the patch bay along the back of the top.
-    group.add(box(w, 0.04, d, mat(0x1d1f23, 0.4, 0.5), h - 0.02));
-    for (const x of [-w / 2 + 0.05, w / 2 - 0.05]) { const leg = box(0.05, h - 0.04, d * 0.9, mat(0x30343a, 0.7, 0.4)); leg.position.x = x; group.add(leg); }
-    const bay = box(w * 0.96, 0.012, 0.12, mat(0x2b2e33, 0.6, 0.4), h + 0.006);
-    bay.position.z = -0.2;
-    group.add(bay);
-    for (let i = 0; i < 4; i++) {
-      const x = -0.41 + i * 0.3, slot = box(0.006, 0.004, 0.16, mat(0x0c0d0f, 0, 0.9), h + 0.002), cap = box(0.03, 0.02, 0.012, mat(0xff6b4a, 0.2, 0.4), h + 0.01);
-      slot.position.set(x, h + 0.002, 0.1);
-      cap.position.set(x, h + 0.01, 0.1);
-      group.add(slot, cap);
-    }
+    desk(group, w, h, d);
   } else if (g.kind === "pa") {
-    // the setup lesson's small PA: Sound Guy Simulator's own boxes (a condenser's body stands in for the vocal mic)
-    group.add(shared(gear(g.pa === "mic-dynamic" ? "mic-condenser" : g.pa === "mixer-small" ? "mixer-small" : "top-12-powered"), g.size));
+    // the setup lessons' PA and amp rack: Sound Guy Simulator's own boxes (a condenser's body stands in for the vocal mic)
+    const id = g.pa === "mic-dynamic" ? "mic-condenser" : g.pa;
+    group.add(shared(gear(isModel(id) ? id : "top-12-powered"), g.size));
   } else {
     // the shared guitar, stood on its end
     group.add(shared(gear("guitar"), g.size));

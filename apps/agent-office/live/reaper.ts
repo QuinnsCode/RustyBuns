@@ -24,14 +24,20 @@
 //     in a row gets SIGCONT. On 2026-11-18 about 90 sessions sat stopped for up to 6 days: the storage guard had paused
 //     them with SIGSTOP, and a stopped process neither runs nor dies of the SIGHUP or SIGTERM sent when its worker
 //     goes, while it keeps its memory in swap. `end` sends SIGCONT after SIGTERM for the same reason.
+//  5. `runaways` (#6154): a seated worker's process tree (what runs in its worktree, and under that) holding
+//     `RUNAWAY_COPIES` copies of one command line, or past `RUNAWAY_MB` of memory all told, loses the branch that holds
+//     them: the topmost process under the worker's own session (its claude, never ended) that has the copies, or the
+//     heaviest one. On 2026-11-25 a `pnpm add pnpm@11.3.0` loop in a cloned app reached 1,164 processes and 27 GB and
+//     the office Mac went off (#5764). The floor and the worker are told what ended, and #6154 gets a comment.
 import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { NAME as BOX } from "../sandbox/box.ts";
+import { every } from "./every.ts";
 import { WORKTREES } from "./sweep.ts";
 
 export interface Proc {
   pid: number; ppid: number; cwd: string; args: string; /** ps state: T is stopped. */ stat?: string;
-  /** Its process group. */ pgid?: number; /** Seconds since it started. */ age?: number;
+  /** Its process group. */ pgid?: number; /** Seconds since it started. */ age?: number; /** Resident memory, KB. */ rss?: number;
 }
 
 /** ps's elapsed time, `[[dd-]hh:]mm:ss`, in seconds. */
@@ -58,11 +64,11 @@ export function processes(): Proc[] {
     }
   }
   const out: Proc[] = [];
-  for (const l of run(["ps", "-A", "-o", "pid=,ppid=,pgid=,etime=,stat=,args="]).split("\n")) {
-    const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s(.*)$/.exec(l);
+  for (const l of run(["ps", "-A", "-o", "pid=,ppid=,pgid=,rss=,etime=,stat=,args="]).split("\n")) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s(.*)$/.exec(l);
     if (!m) continue;
     const pid = Number(m[1]);
-    out.push({ pid, ppid: Number(m[2]), pgid: Number(m[3]), age: parseEtime(m[4]!), stat: m[5]!, cwd: cwds.get(pid) ?? "", args: m[6]!.trim() });
+    out.push({ pid, ppid: Number(m[2]), pgid: Number(m[3]), rss: Number(m[4]), age: parseEtime(m[5]!), stat: m[6]!, cwd: cwds.get(pid) ?? "", args: m[7]!.trim() });
   }
   return out;
 }
@@ -188,7 +194,13 @@ export function leftShells(procs: Proc[], self = process.pid): Proc[] {
   return [...out];
 }
 
-export interface ReapFloor { dir: string; workers?: { list(): { worktree?: { path?: string } }[] } }
+export interface ReapFloor {
+  dir: string;
+  workers?: {
+    list(): { id?: string; name?: string; worktree?: { path?: string } }[];
+    prompt?(id: string, text: string, by?: string): string | undefined;
+  };
+}
 
 /** An orphan in a seated worktree older than this (a day) is an earlier session's leftover, not a demo left up for today. */
 export const OLD_ORPHAN_S = 86_400;
@@ -239,6 +251,54 @@ export function stuck(floors: Iterable<ReapFloor>, seen: Set<number>, procs = pr
   const out = now.filter((p) => seen.has(p.pid));
   seen.clear();
   for (const p of now) if (!out.includes(p)) seen.add(p.pid);
+  return out;
+}
+
+/** Copies of one command line in a worker's tree that make it a runaway: 100, or AGENT_OFFICE_RUNAWAY_COPIES. */
+export const RUNAWAY_COPIES = 100;
+/** Memory a worker's tree may hold, all told: 8 GB, or AGENT_OFFICE_RUNAWAY_MB. */
+export const RUNAWAY_MB = 8192;
+const limit = (name: string, def: number) => { const v = Number(process.env[name]); return v > 0 ? v : def; };
+
+export interface Runaway { worker: string; id?: string; why: string; procs: Proc[] }
+
+/**
+ * Each seated worker whose tree (what runs in its worktree, and under that) holds `copies` copies of one command line
+ * or more than `capMb` in all, with the processes to end: every branch holding the copies, or else the heaviest
+ * branch. A branch is a process whose parent is the worker's session (claude, caffeinate, the office mcp) or outside
+ * the tree, with everything under it. The session itself, the office and its parents are never in one.
+ */
+export function runaways(floors: Iterable<ReapFloor>, procs = processes(), self = process.pid,
+  copies = limit("AGENT_OFFICE_RUNAWAY_COPIES", RUNAWAY_COPIES), capMb = limit("AGENT_OFFICE_RUNAWAY_MB", RUNAWAY_MB)): Runaway[] {
+  const keep = ours(procs, self);
+  const byPid = new Map(procs.map((p) => [p.pid, p]));
+  const kids = new Map<number, Proc[]>();
+  for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p]);
+  const out: Runaway[] = [];
+  for (const f of floors) for (const w of f.workers?.list() ?? []) {
+    if (!w.worktree?.path) continue;
+    const dirs = spellings(path.resolve(f.dir, w.worktree.path));
+    const tree = new Set(procs.filter((p) => !keep.has(p.pid) && inside(p.cwd, dirs)));
+    for (const todo = [...tree]; todo.length;) for (const k of kids.get(todo.pop()!.pid) ?? []) if (!tree.has(k) && !keep.has(k.pid)) { tree.add(k); todo.push(k); }
+    const top = (p: Proc) => { let t = p; for (let up = byPid.get(t.ppid); up && tree.has(up) && !SESSION.test(up.args); up = byPid.get(t.ppid)) t = up; return t; };
+    const branches = new Map<Proc, Proc[]>();
+    for (const p of tree) if (!SESSION.test(p.args)) { const t = top(p); branches.set(t, [...(branches.get(t) ?? []), p]); }
+    const count = new Map<string, number>();
+    for (const ps of branches.values()) for (const p of ps) count.set(p.args, (count.get(p.args) ?? 0) + 1);
+    const [cmd, n] = [...count].sort((a, b) => b[1] - a[1])[0] ?? ["", 0];
+    const worker = w.name ?? path.basename(w.worktree.path);
+    const kb = (ps: Iterable<Proc>) => [...ps].reduce((s, p) => s + (p.rss ?? 0), 0);
+    if (n >= copies) {
+      const hit = [...branches.values()].filter((ps) => ps.some((p) => p.args === cmd)).flat();
+      out.push({ worker, id: w.id, why: `${n} copies of \`${cmd.slice(0, 80)}\``, procs: hit });
+      continue;
+    }
+    // the session's own memory is left out: ending something else would not bring it down
+    const total = kb([...branches.values()].flat()) / 1024;
+    if (total <= capMb) continue;
+    const [root, heaviest] = [...branches].sort((a, b) => kb(b[1]) - kb(a[1]))[0] ?? [];
+    if (root && heaviest) out.push({ worker, id: w.id, why: `${(total / 1024).toFixed(1)} GB in all, over ${(capMb / 1024).toFixed(1)} GB; the heaviest, \`${root.args.slice(0, 80)}\`, held ${(kb(heaviest) / 1024 ** 2).toFixed(1)} GB`, procs: heaviest });
+  }
   return out;
 }
 
@@ -297,13 +357,28 @@ export function swapHold(swap = swapUsage(), big = stats.heavy, box = stats.box)
   return `Swap is at ${swap.pct}% (${(swap.usedMb / 1024).toFixed(1)} of ${(swap.totalMb / 1024).toFixed(1)} GB): no new hires until it is under ${at}%.${big.length ? ` Most of it: ${big.join(", ")}.` : ""}${boxLine} Send someone home or stop what they left running (#4905)`;
 }
 
-export interface ReaperStats { reaped: number; lastReaped: string[]; woken: number; swap: Swap | null; hold: number | null; at: number; heavy: string[]; box: boolean }
+export interface ReaperStats { reaped: number; lastReaped: string[]; woken: number; swap: Swap | null; hold: number | null; at: number; heavy: string[]; box: boolean; /** The last runaways ended (#6154), newest first. */ runaways: string[] }
 
-const stats: ReaperStats = { reaped: 0, lastReaped: [], woken: 0, swap: null, hold: SWAP_HOLD, at: 0, heavy: [], box: false };
+const stats: ReaperStats = { reaped: 0, lastReaped: [], woken: 0, swap: null, hold: SWAP_HOLD, at: 0, heavy: [], box: false, runaways: [] };
 const stopped = new Set<number>();
 
 /** What the reaper has done since the office started, for /__rb/mem. */
-export const reaperStats = (): ReaperStats => ({ ...stats, hold: Number.isFinite(holdAt()) ? holdAt() : null, lastReaped: [...stats.lastReaped], heavy: [...stats.heavy] });
+export const reaperStats = (): ReaperStats => ({ ...stats, hold: Number.isFinite(holdAt()) ? holdAt() : null, lastReaped: [...stats.lastReaped], heavy: [...stats.heavy], runaways: [...stats.runaways] });
+
+/** Ends each runaway (`runaways`), says it on the floor and tells its worker, whose card shows it. Resolves with how many processes ended. */
+async function endRunaways(floors: ReapFloor[], procs: Proc[], toast: (message: string) => void): Promise<number> {
+  let total = 0;
+  for (const r of runaways(floors, procs)) {
+    const n = await end(r.procs.map((p) => p.pid));
+    if (!n) continue;
+    total += n;
+    const line = `${r.worker}: ${r.why}; ended ${n} process${n === 1 ? "" : "es"}`;
+    stats.runaways = [`${new Date().toISOString().slice(0, 16)} ${line}`, ...stats.runaways].slice(0, 5);
+    toast(`Runaway in ${line} (#6154)`);
+    if (r.id) for (const f of floors) f.workers?.prompt?.(r.id, `The office ended ${n} of your processes: ${r.why} (#6154). Find out why it looped or grew before you run it again, and add a comment on #6154 naming the command (no secrets or paths from your home).`, "Office");
+  }
+  return total;
+}
 
 /** One round: wake what stays stopped, end the orphans, read the swap, and say on the floor once when swap crosses SWAP_HOLD. */
 export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (message: string) => void, read: { procs: () => Proc[]; swap: () => Swap | null; heavy?: () => string[]; box?: () => boolean } = { procs: processes, swap: swapUsage, heavy, box: boxUp }) {
@@ -318,6 +393,8 @@ export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (messag
     stats.lastReaped = found.slice(0, 10).map((p) => `${p.pid} ${p.args.slice(0, 80)} (in ${p.cwd})`);
     toast(`Ended ${n} leftover process${n === 1 ? "" : "es"}: shells and stopped sessions whose session is gone, servers of worktrees nobody sits at, or a day-old one an earlier session left (#4905, #5209, #5658)`);
   }
+  const ran = await endRunaways([...floors()], read.procs(), toast);
+  stats.reaped += ran;
   const was = stats.swap?.pct ?? 0;
   stats.swap = read.swap();
   stats.at = Date.now();
@@ -326,14 +403,10 @@ export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (messag
   stats.box = over && !!read.box?.();
   const hold = swapHold(stats.swap);
   if (hold && was <= holdAt()) toast(hold);
-  return n;
+  return n + ran;
 }
 
 /** Every `everyMs` (5 minutes, beside the mem samples), a reaper round. The office starts it once. */
 export function startReaper(floors: () => Iterable<ReapFloor>, toast: (message: string) => void, everyMs = 300_000) {
-  const tick = () => void reapOnce(floors, toast).catch((e) => console.warn("[rb] reaper:", (e as Error).message));
-  tick();
-  const timer = setInterval(tick, everyMs);
-  timer.unref?.();
-  return () => clearInterval(timer);
+  return every(everyMs, () => reapOnce(floors, toast), { name: "reaper", first: 0 });
 }

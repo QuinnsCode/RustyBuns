@@ -13,7 +13,7 @@ const pushes: { token: boolean; pushed: string; comments: string[] }[] = [
   { token: true, pushed: "#12 merged main in and pushed", comments: [] },
   { token: false, pushed: "::warning::#12 merged main in and pushed, but the push starts no checks without AFTER_TOKEN (#5733): commented", comments: [NO_CHECKS] },
 ];
-test.each(pushes)("a PR that says merge after #9 waits while #9 is open, then gets main merged in and pushed once #9 lands (token: $token)", ({ token, pushed, comments }) => {
+test.each(pushes)("a PR that says merge after #9 waits while #9 is open, then gets main merged in and pushed once #9 lands (token: $token)", async ({ token, pushed, comments }) => {
   const root = mkdtempSync(join(tmpdir(), "after-"));
   try {
     const run = (cwd: string, ...a: string[]) => {
@@ -43,7 +43,7 @@ test.each(pushes)("a PR that says merge after #9 waits while #9 is open, then ge
     const said: string[] = [];
     const gh: Gh = { open: () => [pr], state: (n) => states[n]!, comment: (_, text) => { said.push(text); }, setBody: (_, b) => { pr.body = b; }, head, runs: () => [], closedBlockers: () => [] };
 
-    expect(pass(gh, git, { token })).toEqual(["#12 waits on #9"]);
+    expect(await pass(gh, git, { token })).toEqual(["#12 waits on #9"]);
 
     // #9 lands on main.
     ok(dev, "checkout", "-q", "main");
@@ -51,13 +51,13 @@ test.each(pushes)("a PR that says merge after #9 waits while #9 is open, then ge
     ok(dev, "push", "-q", "origin", "main");
     states[9] = "MERGED";
 
-    expect(pass(gh, git, { token })).toEqual([pushed]);
+    expect(await pass(gh, git, { token })).toEqual([pushed]);
     const files = ok(origin, "ls-tree", "--name-only", "mine").split("\n");
     expect(files).toEqual(["a.ts", "mine.ts", "theirs.ts"]);
     expect(pr.body).toContain("Merged main in after #9");
     // The merge was a person's here (git name t), so there is no bot head to watch.
-    expect(pass(gh, git)).toEqual([]);
-    expect(pass(gh, git, { token })).toEqual([]);
+    expect(await pass(gh, git)).toEqual([]);
+    expect(await pass(gh, git, { token })).toEqual([]);
     // The push-time comment carries the head's marker, which the later CI check reads as already flagged.
     expect(said.map((s) => s.split("\n")[0])).toEqual(comments);
     if (!token) expect(said[0]).toContain(`<!-- after:unchecked ${ok(origin, "rev-parse", "mine")} -->`);
@@ -71,14 +71,18 @@ const HIGH = '  "stack-mid-high": [0.6, 0.9, 0.5],', BASS = '  "stack-mid-bass":
 const doc = (...l: string[]) => `# fm-daw\n\n## Features\n\n${l.join("\n")}\n\nThe end.\n`;
 const gear = (...l: string[]) => `export const GEAR_SIZES = {\n  turntable: [0.453, 0.169, 0.353],\n${l.join("\n")}\n  "horn-sub-21": [1.1, 0.8, 1.0],\n};\n`;
 const NEXT_DOOR = { file: "gear.ts", base: gear(HIGH, BASS), main: gear('  "stack-mid-high": [0.522, 0.92, 0.56],', BASS), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],') };
-const settles: { why: string; file: string; base: string; main: string; branch: string; want: string | null; unused?: string; stop?: string }[] = [
+const TWO_WAYS = { file: "gear.ts", base: gear(HIGH, BASS), main: gear(HIGH, '  "stack-mid-bass": [0.8, 0.75, 0.85],'), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],') };
+const settles: { why: string; file: string; base: string; main: string; branch: string; want: string | null; unused?: string; stop?: string; mergiraf?: string | null }[] = [
   { why: "a bullet the branch grew, a bullet main added after it", file: "README.md", base: doc(A, B), main: doc(A, NEW, B), branch: doc(`${A} It plays back in time.`, B), want: doc(`${A} It plays back in time.`, NEW, B) },
   { why: "next-door rows each side changed", ...NEXT_DOOR, want: gear('  "stack-mid-high": [0.522, 0.92, 0.56],', '  "stack-mid-bass": [0.7, 0.8, 0.85],') },
-  { why: "one row changed two ways stops", file: "gear.ts", base: gear(HIGH, BASS), main: gear(HIGH, '  "stack-mid-bass": [0.8, 0.75, 0.85],'), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],'), want: null, stop: "Mervin left 1 card" },
+  { why: "one row changed two ways stops", ...TWO_WAYS, want: null, stop: "Mervin left 1 card" },
+  // #6152: a file Mervin leaves cards in gets Mergiraf's run; its clean answer is pushed, its refusal still stops
+  { why: "a file Mervin left a card in that Mergiraf settles is pushed", ...TWO_WAYS, mergiraf: gear(HIGH, '  "stack-mid-bass": [0.8, 0.8, 0.85],'), want: gear(HIGH, '  "stack-mid-bass": [0.8, 0.8, 0.85],') },
+  { why: "a file Mergiraf can't settle either stops", ...TWO_WAYS, mergiraf: null, want: null, stop: "Mervin left 1 card, and Mergiraf couldn't settle it either" },
   // #6015, #6017: a clean merge that leaves a function with no callers would turn CI's lint red after the push
   { why: "a clean merge lint finds unused callers in stops", ...NEXT_DOOR, want: null, unused: "Mervin's merge leaves mouth with no callers", stop: "Mervin's merge leaves mouth with no callers" },
 ];
-test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want, unused, stop }) => {
+test.each(settles)("main's conflict: $why", async ({ file, base, main, branch, want, unused, stop, mergiraf }) => {
   const root = mkdtempSync(join(tmpdir(), "after-"));
   try {
     const run = (cwd: string, ...a: string[]) => {
@@ -100,7 +104,9 @@ test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want, u
     const gh: Gh = { open: () => [pr], state: () => "MERGED", comment: (_, t) => { said.push(t); }, setBody: (_, b) => { pr.body = b; }, head: () => { throw new Error("no head"); }, runs: () => [], closedBlockers: () => [] };
     const before = ok(origin, "rev-parse", "mine");
     const linted: string[][] = [];
-    const out = pass(gh, (...a) => run(ci, ...a), { token: true, lineMerge, unused: (fs) => { linted.push(fs); return unused ? fs.map((f) => `\`${f}\`: ${unused}`) : []; } });
+    const asked: string[][] = [];
+    const ask = mergiraf === undefined ? null : async (...a: string[]) => { asked.push(a); return mergiraf ?? null; };
+    const out = await pass(gh, (...a) => run(ci, ...a), { token: true, lineMerge, mergiraf: ask, unused: (fs) => { linted.push(fs); return unused ? fs.map((f) => `\`${f}\`: ${unused}`) : []; } });
     if (want === null) {
       expect(out).toEqual([`#12 conflicts with main in ${file}: commented`]);
       expect(ok(origin, "rev-parse", "mine")).toBe(before);
@@ -115,6 +121,9 @@ test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want, u
     expect(said).toHaveLength(1);
     expect(said[0]).toContain(`- \`${file}\``);
     expect(linted).toEqual(file.endsWith(".ts") ? [[file]] : []);
+    // Mergiraf is asked only where Mervin left cards, with git's three versions of the file.
+    expect(asked).toEqual(mergiraf === undefined ? [] : [[file, base, main, branch]]);
+    if (mergiraf) expect(said[0]).toContain(`- \`${file}\`: Mergiraf`);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -127,13 +136,13 @@ test("newUnused names a settled file's functions past lint.allow.json's no-unuse
   expect(newUnused(all, { "old.ts": { "no-unused-vars": 1 } }, ["gear.ts", "old.ts"])).toEqual(["`gear.ts`: Mervin's merge leaves mouth, wedge with no callers (lint's no-unused-vars would fail)"]);
 });
 
-test("a PR a Claude watch holds is left to it: no push, no body change, picked up once the label goes", () => {
+test("a PR a Claude watch holds is left to it: no push, no body change, picked up once the label goes", async () => {
   const pr: AfterPr = { number: 12, headRefName: "mine", body: "Merge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [{ name: "claude-pr-steward-is-working" }] };
   const gh: Gh = { open: () => [pr], state: () => "OPEN", comment: () => { throw new Error("no comment"); }, setBody: () => { throw new Error("no body change"); }, head: () => { throw new Error("no head"); }, runs: () => [], closedBlockers: () => [] };
   const git = () => { throw new Error("no git"); };
-  expect(pass(gh, git)).toEqual(["#12 skipped: a Claude watch holds it (claude-pr-steward-is-working) and merges main in itself"]);
+  expect(await pass(gh, git)).toEqual(["#12 skipped: a Claude watch holds it (claude-pr-steward-is-working) and merges main in itself"]);
   pr.labels = [{ name: "bug" }];
-  expect(pass(gh, git)).toEqual(["#12 waits on #9"]);
+  expect(await pass(gh, git)).toEqual(["#12 waits on #9"]);
 });
 
 // #5837: a head the after bot pushed that never got CI is started (token) or flagged once (no token).
@@ -149,7 +158,7 @@ const rows: Row[] = [
   { why: "young head: waits", author: "rustybuns-after", age: 2, runs: [], token: true, comments: [], line: "#12 head abc1234 has no CI run yet (2 min old)", push: false, comment: false },
   { why: "a person's head: nothing", author: "Someone", age: 30, runs: [], token: true, comments: [], push: false, comment: false },
 ];
-test.each(rows)("$why", ({ author, age, runs, token, comments, line, push, comment }) => {
+test.each(rows)("$why", async ({ author, age, runs, token, comments, line, push, comment }) => {
   const pr: AfterPr = { number: 12, headRefName: "mine", body: "Merged main in after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [] };
   const said: string[] = [], pushed: string[] = [];
   const gh: Gh = {
@@ -164,7 +173,7 @@ test.each(rows)("$why", ({ author, age, runs, token, comments, line, push, comme
     if (a[0] === "push") pushed.push(a.join(" "));
     return { code: 0, out: "" };
   };
-  const out = pass(gh, git, { token, now: NOW });
+  const out = await pass(gh, git, { token, now: NOW });
   expect(out.map((l) => l.split("\n")[0])).toEqual(line ? [line] : []);
   expect(pushed).toEqual(push ? [`push -q origin ${KICK}:refs/heads/mine`] : []);
   expect(said.length).toBe(comment ? 1 : 0);

@@ -557,6 +557,8 @@ export function party({ url, token }: PartyConfig) {
 
   return {
     make, join,
+    /** This player's account id, off their own token: how a page tells its own row from a namesake's. */
+    me: (): string | undefined => peek(token() ?? "")?.sub,
     ready: (r: boolean) => void link?.send({ t: "ready", ready: r }),
     start: () => void link?.send({ t: "start" }),
     say: (text: string) => void link?.send({ t: "say", text }),
@@ -671,7 +673,7 @@ export const SpaceDm = obj({ channel: str(24), id: str(200), name: str(200) });
 export type SpaceDm = Of<typeof SpaceDm>;
 /** A line of a space's audit log, for those who run it: a role change, a kick (`everywhere`: from every space they run), a channel deleted, the retention set, an export. */
 export const SpaceAudit = obj({
-  at: int(0, 1e15), act: oneOf(["role", "kick", "everywhere", "drop", "keep", "export"]), by: obj({ id: str(200), name: opt(str(200)) }),
+  at: int(0, 1e15), act: oneOf(["role", "kick", "everywhere", "drop", "keep", "export"]), by: obj({ id: str(200, { min: 0 }), name: opt(str(200)) }),
   who: opt(str(200)), channel: opt(str(24)), to: opt(str(20)),
 });
 export type SpaceAudit = Of<typeof SpaceAudit>;
@@ -764,6 +766,8 @@ export interface SpaceHandlers {
  * owner and admins `channel`, `privateChannel`, `allow`, `mute` and `kick`, and the owner `role`. `leave()` takes you out of the space; `close()` only hangs up.
  */
 export function space({ url, token }: PartyConfig) {
+  /** This person's account id, off their own token (as `party().me`). */
+  const me = (): string | undefined => peek(token() ?? "")?.sub;
   type Out = { t: string; channel?: string; text?: string; reply?: number; of?: number; q?: string; before?: number; id?: string; on?: boolean; voice?: boolean; private?: boolean; role?: SpaceRole; everywhere?: boolean; days?: number };
   let link: Link<Out> | null = null;
   const authed = (method: string, body?: unknown): RequestInit | null => {
@@ -879,6 +883,7 @@ export function space({ url, token }: PartyConfig) {
       const r = t ? await fetch(`${url()}/q/space/${encodeURIComponent(spaceId)}/export${channel ? `?${new URLSearchParams({ channel })}` : ""}`, { headers: { authorization: `Bearer ${t}` } }).catch(() => null) : null;
       return r?.ok ? r.blob() : null;
     },
+    me,
     report: (id: string) => send({ t: "report", id }),
     leave: () => { send({ t: "leave" }); },
     close: () => { link?.close(); link = null; },

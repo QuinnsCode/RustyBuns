@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tourSteps } from "../src/app/tour-steps.ts";
 
 const dir = join(import.meta.dir, "../src/features");
-const read = () => Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => [f.slice(0, -5), JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown]));
+const read = () => readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => [f.slice(0, -5), JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown] as const);
 const order = readFileSync(join(dir, "order.txt"), "utf8");
 
 test("the tour's files are whole, in order.txt's order, and the demo step hands on to the app", () => {
@@ -18,5 +18,5 @@ test.each([
   [{ a: { icon: "x", title: "A", at: "#a" } }, "", "src/features/a.json needs what"],
   [{ a: { icon: "x", title: "A", what: "w", at: "#a" } }, "a\nghost\n", "ghost"],
 ])("a step that isn't whole, or an order naming a ghost, fails: %j", (files, ord, why) => {
-  expect(() => tourSteps(files, ord)).toThrow(why);
+  expect(() => tourSteps(Object.entries(files), ord)).toThrow(why);
 });

@@ -22,4 +22,4 @@ const join = async (url: string, ticket: string): Promise<VoiceCall> => {
     onGone: (f) => { voice.gone = f; return () => {}; },
   };
 };
-Object.assign(window, { voice, panel: spacesPanel({ box, space: space({ url: () => location.origin, token: () => token }), name: () => q.get("name") ?? undefined, icon, join }) });
+Object.assign(window, { voice, panel: spacesPanel({ box, start: q.get("open") ?? undefined, space: space({ url: () => location.origin, token: () => token }), name: () => q.get("name") ?? undefined, icon, join }) });

@@ -181,6 +181,7 @@ import {
 import {
   audit,
   auditRoutes,
+  viaToken,
   via,
 } from "./audit.ts";
 import {
@@ -277,7 +278,7 @@ import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";
 // The CS binding of a code-mode program (codemode.ts): on the edge a stub of this class, under Bun nothing.
 // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- cloudflare:workers has no types in this app; only the class it uses is named
-const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> }, () => null);
+const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => object) | undefined> }, () => null);
 export const CSBridge = cf && class extends cf.WorkerEntrypoint {
   call(name: string, json: string) { const p = csProps(this.ctx.props); return bridgeCall(p, name, json, bridgeDispatch(p, this.env as Env)); }
 };
@@ -298,6 +299,9 @@ export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
 export { CiRunner } from "./ci-runner.ts";
 export { EgressGate } from "./egress.ts";
+// git over ssh:// (ssh-gate.ts): the gate's DO and the key lookup its sshd asks through ctx.exports.
+export { KeyLookup, SshGate } from "./ssh-gate.ts";
+import { sshConnect, type Socket } from "./ssh-gate.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   // A visitor's dig that has expired is gone, swept or not.
@@ -400,6 +404,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   // A self-request made inside another (edit.ts) was signed in the way that one was; any other is a job.
   const outer = onBehalfOf.get(req);
   via.set(req, actingAs.has(req) ? (outer && via.get(outer)) || "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
+  const tokenId = actingAs.has(req) ? outer && viaToken.get(outer) : token?.id;
+  if (tokenId) viaToken.set(req, tokenId);
   if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
   const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin, token?.id));
   if (slow) return slow;
@@ -1049,6 +1055,8 @@ async function route(req: Request, env: Env): Promise<Response> {
 }
 
 const app = {
+  // Inbound TCP (worker.connect in rustybuns.config.ts): git over ssh://, through the SshGate's sshd container.
+  connect(socket: Socket, env: Env): Promise<void> { return sshConnect(socket, env); },
   // Each answer to the internet is tallied for the admins' insights page (insights.ts), after it's sent.
   async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     hearPushes(env);

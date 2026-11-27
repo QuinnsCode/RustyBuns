@@ -16,6 +16,8 @@ export const DIVE_BAR: Level = {
   room: { x0: -2.5, x1: 2.5, z0: 0, z1: 12, height: 2.7, door: 1.6 },
   outlets: [{ key: "stage-outlet", x: 0, y: 0.3, z: 0.01 }, { key: "bar-outlet", x: -2.49, y: 0.3, z: 4.5 }],
   start: { x: 0, z: 12.8, yaw: 0 },
+  // The stands go either side of the stage's front edge: you see the tape and a ghost of each speaker from the door.
+  marks: [{ key: "stand-l", x: -1.7, z: 2.0 }, { key: "stand-r", x: 1.7, z: 2.0 }],
   truck: { x0: -1.1, x1: 1.1, z0: 13.8, z1: 17.8, h: 2.2 },
   items: [
     { key: "top-l", gear: "top-12-powered", x: -1.0, y: 0, z: 10.4, rot: 0 },

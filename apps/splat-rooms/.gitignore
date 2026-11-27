@@ -2,3 +2,4 @@ node_modules
 dist
 .rustybuns/*
 !.rustybuns/vite.d.ts
+rooms/out/

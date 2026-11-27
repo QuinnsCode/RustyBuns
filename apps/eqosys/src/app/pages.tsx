@@ -17,7 +17,7 @@ import type { Visitors as Counts } from "../visitors.ts";
 import type { Load } from "../scale.ts";
 import { SCALE_CSS, Scale } from "./Scale.tsx";
 import { STUDIO_CSS, Studios } from "./Studio.tsx";
-import type { Studio } from "../studios.ts";
+import type { Invite, Studio } from "../studios.ts";
 import { clipsOf } from "../trailers.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
@@ -41,7 +41,9 @@ export const MESSAGES: Record<string, string> = {
   link: "That sign-in couldn't be added. It may already belong to another account.",
   last: "That is your only way to sign in, so it stays.",
   nolink: "That friend link is no longer good. Ask them for a new one.",
-  nobody: "Nobody has signed up with that email yet.",
+  invites: "That studio has 50 invites waiting already. Take some back first.",
+  noinvite: "That invite isn't waiting for you any more.",
+  joinfull: "Couldn't join: that studio is full, or it would make you the owner of more than three studios.",
   studio: "Only a studio's owner or admin adds or takes out people, only an owner makes or takes out another owner, and a studio keeps one owner.",
   owned: "You own three studios already.",
   name: "A studio's name is 1 to 60 characters.",
@@ -53,7 +55,6 @@ export const MESSAGES: Record<string, string> = {
   sso: "Your company's sign-in didn't go through. Start again from here.",
   ssomail: "Your company's sign-in didn't say your email is verified, so it can't sign you in here.",
   ssodomain: "Your company signed you in with an email off its domain, so it can't sign you in here.",
-  ssotaken: "An account with that email was made another way. Sign in with it as usual.",
   ssoform: "Check the company sign-in: an https issuer that answers OpenID discovery, a client id, and the company's own mail domain (not public mail).",
   ssoclash: "Another studio already signs in that domain. If it's your company's, add the TXT record shown under Company sign-in to it, then save again.",
   ssoonly: "Your company signs that email in here. Use Sign in through your company.",
@@ -750,7 +751,7 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string; game?: string | null } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invites, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string; game?: string | null } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; invites?: Invite[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
     const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
@@ -775,7 +776,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
 
         {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} invite={invite} origin={origin} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
 
-        {tab === "studio" && studios && <Studios studios={studios} unlocks={unlocks} origin={origin} />}
+        {tab === "studio" && studios && <Studios studios={studios} invites={invites ?? []} unlocks={unlocks} origin={origin} />}
 
         {tab === "people" && everyone && (
           <>
@@ -898,7 +899,8 @@ export const Privacy = () => (
     <h2>Deleting it</h2>
     <p>Delete your account from any Q app's settings or at <a href="/delete">eqosys.qntbr.com/delete</a>. Everything above goes at once, every
       Q app that keeps data of its own is told to erase it, and a Sign in with Apple link is revoked at Apple. Your vault goes first, so any
-      copy of your saves left in a backup can never be opened again.</p>
+      copy of your saves left in a backup can never be opened again. Other people's pages forget you too: you leave their friends,
+      coworkers and notifications, and a space's log of who changed what keeps the change but says "a deleted account" for you.</p>
     <h2>If you're in the EU, the EEA, the UK or Switzerland</h2>
     <p>What is in place today: your vault (the key to your saves, and the record of what you agreed to and asked for) is kept in the EU; you can
       download everything we keep and delete it all yourself, any time, without asking anyone; and each thing you agree to is written down

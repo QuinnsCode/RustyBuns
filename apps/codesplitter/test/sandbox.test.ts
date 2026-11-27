@@ -414,7 +414,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   });
 
   test("a path .gitattributes locks is refused before a container starts", async () => {
-    const { call, post, runs } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
+    const { post, runs } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
     await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: ".gitattributes", content: "src/a.js codesplitter-live=locked" });
     const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "x" });
     expect(res.status).toBe(409);

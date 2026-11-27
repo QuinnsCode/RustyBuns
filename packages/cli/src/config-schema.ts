@@ -151,6 +151,7 @@ export const ConfigSchema = Schema.Struct({
     }))),
     flaggedClasses: opt(StrMap),
     crons: opt(Strs), cronPriority: opt(Priority),
+    connect: opt(Schema.Struct({ port: Port })),
     cpuMs: opt(int(10, 300_000)),
     placement: opt(Schema.Struct({ mode: Schema.Literal("smart") })),
     codeUpdate: opt(Schema.Union([Schema.Literal("immediate"), Schema.Struct({ maxDelay: int(0, 86_400) })])),

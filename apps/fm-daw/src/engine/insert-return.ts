@@ -21,13 +21,14 @@ export class InsertReturns {
    * Adds track `t`'s return into `out` (interleaved stereo), `frames` long: `l` and `r` its two sides (one for a mono
    * effect), from `from`. `strip.gain` is the master here (the fader is in the tap); `send`, the Space bus, when given.
    */
-  mix(t: number, l: Float32Array, r: Float32Array, from: number, out: Float32Array, frames: number, strip: Pick<Strip, "gain" | "pan" | "send">, send?: Float32Array) {
-    const [tl, tr] = panGains(strip.pan(t)), g = strip.gain(t), sa = strip.send(t);
+  mix(t: number, l: Float32Array, r: Float32Array, from: number, out: Float32Array, frames: number, strip: Pick<Strip, "gain" | "pan" | "send" | "duck">, send?: Float32Array) {
+    const [tl, tr] = panGains(strip.pan(t)), g0 = strip.gain(t), sa = strip.send(t), duck = strip.duck?.(t);
     let p = this.pans.get(t);
     if (!p) this.pans.set(t, (p = [tl, tr]));
     for (let f = 0; f < frames; f++) {
       p[0] += (tl - p[0]) * SMOOTH;
       p[1] += (tr - p[1]) * SMOOTH;
+      const g = duck ? g0 * duck[f] : g0;
       const a = (l[from + f] ?? 0) * p[0] * g, c = (r[from + f] ?? 0) * p[1] * g;
       out[2 * f] += a;
       out[2 * f + 1] += c;

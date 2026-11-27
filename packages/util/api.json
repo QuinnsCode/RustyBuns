@@ -3,11 +3,11 @@
   "stable": ["index", "sweep", "reel", "motion", "guard", "bytes", "http", "limits", "room", "socket"],
   "shared": [
     "index", "guard", "bytes", "http", "socket", "token", "board", "connectors",
-    "sweep", "reel", "motion", "avatar", "dexter", "features", "overlap", "party-rules", "guests", "ports", "train", "visitors", "wasm-shared"
+    "sweep", "reel", "motion", "avatar", "dexter", "features", "overlap", "party-rules", "events", "guests", "ports", "train", "visitors", "wasm-shared"
   ],
   "web": [
     "dom", "keys", "commands", "palette", "director", "memories", "morph", "skin", "eqosys", "lobby", "guest-panel", "spaces",
     "voice", "qlave-call", "quality", "report", "tutorial", "vault"
   ],
-  "server": ["copy", "room", "seats", "matchmaker", "limits", "protocol", "privacy", "codemode", "stripe", "secrets"]
+  "server": ["copy", "room", "seats", "matchmaker", "limits", "protocol", "privacy", "codemode", "stripe", "secrets", "supervise"]
 }

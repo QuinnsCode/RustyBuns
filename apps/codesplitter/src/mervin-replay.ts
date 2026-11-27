@@ -9,6 +9,7 @@
 // Pausing a replay holds the replay and touches nothing else. Pausing a live feed is real: the page tells the feed
 // (`PAUSE`, scripts/mervin-watch.ts), and `scripts/mervin-merge.ts --go` waits on it before it merges the next PR.
 
+import { record } from "@rustybuns/util";
 import { arr, check, int, maybe, num, obj, rec, str, type Guard } from "@rustybuns/util/guard";
 
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
@@ -138,7 +139,7 @@ export function view(round: Round, played: Step[]): View {
   for (const v of round.verdicts) if (v.title) titles.set(v.pr, v.title);
   const waveOf = new Map(round.verdicts.map((v) => [v.pr, v.wave]));
   const prs = new Map(round.verdicts.map((v): [number, PrView] => [v.pr, { pr: v.pr, title: titles.get(v.pr) ?? "", state: "queued", wave: waveOf.get(v.pr), files: [], cards: [] }]));
-  const tiers = Object.fromEntries(TIERS.map((t) => [t, 0])) as Record<Tier, number>;
+  const tiers = record(TIERS, () => 0);
   const log: string[] = [];
   const lanes: View["lanes"] = { add: [], build: [], deploy: [] };
   let wave = 0, paused = false;

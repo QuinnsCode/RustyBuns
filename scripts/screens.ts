@@ -13,6 +13,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { localOnly } from "../packages/cms/src/index.ts";
 import { screens, type Screen } from "../packages/cms/src/screens.ts";
 import { portArg } from "../packages/util/src/ports.ts";
 import { launchChrome, load, openTab, startVite } from "./chrome.ts";
@@ -111,6 +112,6 @@ if (import.meta.main) {
     }
   }
   const port = portArg(flag("--port"), "screens");
-  const server = Bun.serve({ hostname: "127.0.0.1", port, idleTimeout: 120, fetch: screens({ title: "First screens", screens: SCREENS, shots: out, shoot: (s) => shoot(SCREENS.find((r) => r.id === s.id)!, out) }) });
+  const server = Bun.serve({ hostname: "127.0.0.1", port, idleTimeout: 120, fetch: localOnly(screens({ title: "First screens", screens: SCREENS, shots: out, shoot: (s) => shoot(SCREENS.find((r) => r.id === s.id)!, out) })) });
   console.log(`First screens: http://localhost:${server.port} (pictures in ${out})`);
 }

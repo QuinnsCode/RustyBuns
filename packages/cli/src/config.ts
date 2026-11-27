@@ -683,6 +683,14 @@ export interface RustyBunsConfig {
      */
     cronPriority?: "realtime" | "high" | "normal" | "low";
     /**
+     * Inbound TCP: the Worker exports `connect(socket, env, ctx)`, and `port` is where local dev
+     * listens for it (wrangler.jsonc's `"connect": [{ "protocol": "tcp", "port": 8788 }]`; HTTP stays
+     * where it was). `rustybuns dev` opens the port itself and hands each connection to `connect()`.
+     * On the edge a Spectrum app (`traffic_type: "worker"`) on a Pro zone or above sends one public
+     * port to it; that app is a step the zone's owner runs once (REFERENCE.md, "Inbound TCP").
+     */
+    connect?: { port: number };
+    /**
      * CPU time one invocation may use, in ms (`limits.cpu_ms`). Workers Paid
      * defaults to 30,000 and allows up to 300,000; the free plan is fixed at 10.
      * Billed per CPU ms used, not per ms allowed. The desktop and box hosts

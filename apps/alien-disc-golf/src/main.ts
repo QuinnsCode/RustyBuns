@@ -70,7 +70,7 @@ const earn = (id: string) => void achieve(id);
 
 const course: Course = makeCourse(seed);
 // The course's own botany on the scorecard's corner, in space kept for it.
-document.documentElement.style.setProperty("--flora-big", cssUrl(fronds(seed + 1, 240, 170)));
+document.documentElement.style.setProperty("--flora-big", cssUrl(fronds(seed + 1, 240, 170, 0.9, "print")));
 const scores: HoleScore[] = [];
 let wind: Wind = { levels: [], source: "synthetic", label: "loading" };
 let phase: Phase = "loading";
@@ -260,13 +260,16 @@ function renderPanel() {
     const total = scores.reduce((t, s) => t + s.strokes - (s.guessed ? 1 : 0), 0);
     const rows = scores.map((s, i) => {
       const h = course.holes[i]!, net = s.strokes - (s.guessed ? 1 : 0), d = net - h.par;
-      return `<tr><td>${lieGlyph(!!s.wet)}${h.n} <span class="where">${esc(h.teeCountry)}</span></td><td>${h.par}</td><td><span class="mark ${markFor(d)}">${s.strokes}${s.guessed ? "-1" : ""}</span></td><td class="${d < 0 ? "under" : d > 0 ? "over" : ""}">${d === 0 ? "E" : d > 0 ? `+${d}` : d}</td></tr>`;
+      return `<tr class="hole ${markFor(d)}"><td>${lieGlyph(!!s.wet)}${h.n} <span class="where">${esc(h.teeCountry)}</span></td><td>${h.par}</td><td><span class="mark ${markFor(d)}">${s.strokes}${s.guessed ? "-1" : ""}</span></td><td class="${d < 0 ? "under" : d > 0 ? "over" : ""}">${d === 0 ? "E" : d > 0 ? `+${d}` : d}</td></tr>`;
     }).join("");
-    const d = total - par;
+    const d = total - par, toPar = d === 0 ? "E" : d > 0 ? `+${d}` : String(d);
+    // The forecast the round was played in, as the card's own note: which run of NOAA's model, or that none came.
+    const forecast = wind.source === "noaa" ? `Forecast: ${esc(wind.label)}` : "Forecast: synthetic";
     panel.innerHTML = `<div class="slot" aria-hidden="true"><i></i></div><div class="scorecard"><header><span>Alien Disc Golf · Planet Earth</span><span>Course #${seed}</span></header>
-      <h2>${icon("flag")} Round over: ${d === 0 ? "even par" : d > 0 ? `${d} over` : `${-d} under`}</h2>
-      <table class="card"><tr><th>Hole</th><th>Par</th><th>Strokes</th><th></th></tr>${rows}<tr><th>Total</th><th>${par}</th><th>${total}</th><th>${d === 0 ? "E" : d > 0 ? `+${d}` : d}</th></tr></table>
-      <footer><span>${lieGlyph(false)}dry ${lieGlyph(true)}swam</span><span>Wind: ${esc(wind.label)}</span></footer></div>
+      <div class="stamp ${d < 0 ? "under" : d > 0 ? "over" : "even"}" aria-hidden="true"><small>Total</small><b>${total}</b><span>par ${par}</span></div>
+      <h2>${icon("flag")} <span>Round over: <span class="nb">${d === 0 ? "even par" : d > 0 ? `${d} over` : `${-d} under`}</span></span></h2>
+      <table class="card"><tr><th>Hole</th><th>Par</th><th>Strokes</th><th></th></tr>${rows}<tr><th>Total</th><th>${par}</th><th>${total}</th><th>${toPar}</th></tr></table>
+      <footer><span>${lieGlyph(false)}dry ${lieGlyph(true)}swam</span><span>${forecast}</span></footer></div>
       <div class="actions card-actions"><button type="button" id="again" class="primary">${icon("rotate-ccw")} Same course</button><button type="button" id="new">${icon("globe")} New course</button><button type="button" id="share" title="Copy a link to this course">${icon("share")}</button></div>`;
     $("#again").addEventListener("click", () => { scores.length = 0; startHole(0); });
     $("#new").addEventListener("click", () => { location.href = `${location.pathname}?seed=${Math.floor(Math.random() * 1e6) + 1}`; });
@@ -497,6 +500,9 @@ mountControls({
   hide: ["lookX", "lookY", "touch", "invertY"],
   keys: [["Arrows", "Aim and power"], ["L", "Loft"], ["Space", "Throw"], ["Left stick", "Aim and power"]],
 });
+// Controls gets the course's art too: the title's disc-in-orbit etched beside its heading, and a faint frond by Reset.
+document.querySelector(".gc-head h2")?.insertAdjacentHTML("afterbegin", `<i class="gc-mark" aria-hidden="true">${orbitMark("gc-orbit")}</i>`);
+document.documentElement.style.setProperty("--flora-faint", cssUrl(fronds(seed + 2, 260, 180, 0.85)));
 
 // ?speed=4 runs the game clock four times as fast (flights and swims), for a test or an agent playing a round.
 const speed = clamp(Number(params.get("speed")) || 1, 0.25, 20);

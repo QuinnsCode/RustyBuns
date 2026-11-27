@@ -28,11 +28,12 @@ import { SpaceRole, type SpaceAudit, type SpaceInfo, type SpaceMsg, type SpaceMe
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf } from "../listings.ts";
 import { ChatGate, SAY_MAX, STUDIO_SAY_MAX, type Said } from "./chat.ts";
-import { addMember, removeMember, roleIn, STUDIO_MEMBERS, type Made, type Role } from "../studios.ts";
+import { addMember, answerInvite, cancelInvite, removeMember, roleIn, STUDIO_MEMBERS, type Made, type Role } from "../studios.ts";
 import { json, type Env } from "../env.ts";
 import { flush, Present, queue, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
 import { file, reporterId } from "../reports.ts";
 import { mintCode } from "./party.ts";
+import { studioLeft } from "../members.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;
 /** The direct messages a space keeps at once, and the entries its audit log keeps (the newest). */
@@ -82,6 +83,8 @@ type Roster = { in: Of<typeof Present>; at: number };
 type Kept = { channel: string; msg: number; by: string; key: string; size: number };
 /** A line of the audit log (SpaceAudit in @rustybuns/util/eqosys): who did what to whom, and when. */
 type Audit = SpaceAudit;
+/** Who an audit line names once their account is deleted (#6238): the act stays, the person doesn't. */
+const GONE = { id: "", name: "a deleted account" };
 /** What a file is called, and its type, as the uploader's page says: no slashes or control characters, a plain `type/subtype`. */
 const fileName = (v: string | null) => v?.replace(/[\u0000-\u001f\u007f/\\]+/g, " ").trim().slice(0, 200) || "file";
 const fileType = (v: string | null) => {
@@ -115,6 +118,11 @@ export const spaceOf = (spaces: Spaces, id: string): Stub => spaces.get(spaces.i
 /** The ids of every space a person is in (bind their id as ?1): the ones they joined, and their studios' spaces. */
 export const SPACES_OF = `SELECT space_id AS id FROM space_members WHERE user_id = ?1
   UNION SELECT s.id FROM spaces s JOIN studio_members sm ON sm.studio_id = s.studio_id WHERE sm.user_id = ?1`;
+/** SPACES_OF for any of `n` people at once (bind their ids as ?1 to ?n). */
+export const spacesOfAny = (n: number) => SPACES_OF.replaceAll("user_id = ?1", `user_id IN (${Array.from({ length: n }, (_, i) => `?${i + 1}`).join(", ")})`);
+/** Those and the ones they have left or were taken out of (`space_past`), where what they wrote still is. */
+export const SPACES_EVER = `${SPACES_OF}
+  UNION SELECT space_id FROM space_past WHERE user_id = ?1`;
 
 /** A seat in a space, or null when they aren't in it. `runs`: channels, mute and kick are theirs (an owner or an admin, SpaceRole). */
 /** `office`: a business studio's space, which speaks office words (meetings, status lines; VISION.md#the-words). */
@@ -164,15 +172,17 @@ export async function makeSpace(conf: Pick<Env, "DB">, owner: string, name: stri
 
 /**
  * Takes someone out of a studio by their email (the Studio tab, eq_studio_remove), by studios.ts removeMember's rules, and closes the
- * sockets they have open in the studio's space: they are out of every channel at once.
+ * sockets they have open in the studio's space: they are out of every channel at once, and out of the studio's unlisted games.
  */
-export async function studioRemove(conf: Pick<Env, "DB" | "SPACE">, studio: string, by: string, email: string): Promise<Made> {
+export async function studioRemove(conf: Env, studio: string, by: string, email: string): Promise<Made> {
   const who = await conf.DB.prepare(`SELECT u.id FROM "user" u JOIN studio_members m ON m.user_id = u.id AND m.studio_id = ? WHERE lower(u.email) = lower(?)`)
     .bind(studio, email.trim()).first<string>("id");
-  if (!who) return { ok: false, status: 404, error: "nobody in that studio has that email" };
+  // Not in it yet: an invite still waiting is taken back.
+  if (!who) return cancelInvite(conf, studio, by, email);
   const r = await removeMember(conf, studio, by, who);
   const sid = r.ok && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-  if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: who, by })}`)).catch(() => null);
+  if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: who, by, sid })}`)).catch(() => null);
+  if (r.ok) await studioLeft(conf, studio, who).catch(() => null);
   return r;
 }
 
@@ -196,22 +206,37 @@ export async function removeEverywhere(conf: Pick<Env, "DB" | "SPACE">, by: { id
   return { done, refused };
 }
 
+/** Tells the studio's space that someone's seat changed: their sockets close and reconnect with the new role (ROLE_CHANGED). */
+async function roleChanged(conf: Pick<Env, "DB" | "SPACE">, studio: string, who: string, by: string, to: string) {
+  const sid = conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
+  if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: who, by, to })}`)).catch(() => null);
+}
+
 /**
- * Puts someone in a studio by email or changes their role (the Studio tab, eq_studio_add), by studios.ts addMember's rules. Whether
- * they run the studio's space is read when their socket opens, so a changed role closes the sockets they have open there with a
- * code the page reconnects on (ROLE_CHANGED): they come back with the new powers, not the old ones.
+ * Asks someone into a studio by email or changes a member's role (the Studio tab, eq_studio_add), by studios.ts addMember's rules:
+ * someone new gets an invite to say yes to (studioJoin). At most 20 a minute a person, as sign-in is (#6232). Whether they run
+ * the studio's space is read when their socket opens, so a changed role closes the sockets they have open there with a code the
+ * page reconnects on (ROLE_CHANGED): they come back with the new powers, not the old ones.
  */
-export async function studioAdd(conf: Pick<Env, "DB" | "SPACE">, studio: string, by: string, email: string, role: Role): Promise<Made> {
+export async function studioAdd(conf: Pick<Env, "DB" | "SPACE" | "AUTH_LIMIT">, studio: string, by: string, email: string, role: Role): Promise<Made> {
+  if (conf.AUTH_LIMIT && !(await conf.AUTH_LIMIT.limit({ key: `studio-add:${by}` })).success) return { ok: false, status: 429, error: "too many invites: wait a minute" };
   const before = await conf.DB.prepare(`SELECT u.id, m.role FROM "user" u JOIN studio_members m ON m.user_id = u.id AND m.studio_id = ? WHERE lower(u.email) = lower(?)`)
     .bind(studio, email.trim()).first<{ id: string; role: Role }>();
   const r = await addMember(conf, studio, by, email, role);
-  // A guest of the studio's space who joins the studio sits there as the studio's from now on: their guest row goes, so leaving the
-  // studio later takes them out of the space too.
-  const guest = r.ok ? await conf.DB.prepare(`DELETE FROM space_members WHERE space_id IN (SELECT id FROM spaces WHERE studio_id = ?)
-    AND user_id IN (SELECT id FROM "user" WHERE lower(email) = lower(?)) RETURNING user_id`).bind(studio, email.trim()).first<string>("user_id") : null;
-  const who = guest ?? (before && before.role !== role ? before.id : null);
-  const sid = r.ok && who && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-  if (sid && who) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: who, by, to: guest ? "member" : role })}`)).catch(() => null);
+  if (r.ok && before && before.role !== role) await roleChanged(conf, studio, before.id, by, role);
+  return r;
+}
+
+/**
+ * Says yes or no to an invite to a studio (the Studio tab, eq_studio_join), by studios.ts answerInvite's rules. A guest of the
+ * studio's space who joins the studio sits there as the studio's from now on: their guest row goes, so leaving the studio later
+ * takes them out of the space too.
+ */
+export async function studioJoin(conf: Pick<Env, "DB" | "SPACE">, studio: string, who: string, yes: boolean): Promise<Made> {
+  const r = await answerInvite(conf, studio, who, yes);
+  const guest = r.ok && yes ? await conf.DB.prepare(`DELETE FROM space_members WHERE space_id IN (SELECT id FROM spaces WHERE studio_id = ?) AND user_id = ? RETURNING user_id`)
+    .bind(studio, who).first<string>("user_id") : null;
+  if (guest) await roleChanged(conf, studio, who, who, "member");
   return r;
 }
 
@@ -237,15 +262,18 @@ export class Space {
     if (iss) await this.ctx.storage.put("iss", iss);
     if (url.pathname === "/drop") return this.drop();
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
-    // Signed out (members.ts closeSockets): the person's sockets that `app`'s tokens opened close; they stay a member.
+    // Signed out (members.ts closeMany): the sockets that `app`'s tokens opened for these people (one `id` each) close; they stay members.
     if (url.pathname === "/out") {
-      const id = url.searchParams.get("id"), app = url.searchParams.get("app") ?? "*";
-      if (id) this.close((m) => m.id === id && (app === "*" || m.app === app), 4003, "signed out");
+      const ids = new Set(url.searchParams.getAll("id")), app = url.searchParams.get("app") ?? "*";
+      if (ids.size) this.close((m) => ids.has(m.id) && (app === "*" || m.app === app), 4003, "signed out");
       return json({ ok: true });
     }
     // Out of the studio that owns this space (studioLeft): their sockets close and Qlave drops them from its voice channels.
     // `by` (who took them out, on the Studio tab) goes in the audit log; a seat that lapsed (lapseSeats) has none.
     if (url.pathname === "/gone") {
+      // A space nobody has opened yet doesn't know its own id, so it goes with the order: the invite to retire is found by it.
+      const sid = url.searchParams.get("sid");
+      if (sid) await this.ctx.storage.put("sid", sid);
       const id = url.searchParams.get("id") ?? "", by = url.searchParams.get("by");
       if (id) await this.log({ act: "kick", by: by ? { id: by } : { id: "", name: "company sign-in" }, who: id });
       await this.out(id, "removed from the studio");
@@ -299,6 +327,7 @@ export class Space {
     if (msg.t === "status") {
       // A status line beside their name in the online list, kept on this socket (each page sets its own); empty clears it.
       const { status: _, ...rest } = me, line = (msg.text ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, STATUS_MAX);
+      if (line && (await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id)) return this.sockets.send(ws, { t: "refused", why: "you're muted here" });
       this.sockets.attach(ws, { ...rest, ...(line ? { status: line } : {}) });
       return this.online();
     }
@@ -397,6 +426,7 @@ export class Space {
       const r = await removeMember(this.env, studio, me.id, id);
       if (!r.ok) return r.error;
       await this.out(id, "removed from the studio");
+      await studioLeft(this.env, studio, id).catch(() => null);
     }
     await this.log({ act: everywhere ? "everywhere" : "kick", by: { id: me.id, name: me.name }, who: id });
     return null;
@@ -407,8 +437,9 @@ export class Space {
 
   private async channels(): Promise<string[]> { return await this.ctx.storage.get<string[]>("channels") ?? ["general"]; }
   private async voices(): Promise<Voice[]> { return await this.ctx.storage.get<Voice[]>("voice") ?? []; }
-  private async locked(): Promise<Locked> { return await this.ctx.storage.get<Locked>("private") ?? {}; }
-  private async dms(): Promise<Dms> { return await this.ctx.storage.get<Dms>("dms") ?? {}; }
+  // No prototype: both are keyed by channel names, and a channel may be called `constructor`.
+  private async locked(): Promise<Locked> { return Object.assign(Object.create(null) as Locked, await this.ctx.storage.get<Locked>("private")); }
+  private async dms(): Promise<Dms> { return Object.assign(Object.create(null) as Dms, await this.ctx.storage.get<Dms>("dms")); }
   private async rules(): Promise<Rules> { return { locked: await this.locked(), dms: await this.dms() }; }
   /** The text channels and the direct messages: every channel that holds messages. */
   private async all(): Promise<string[]> { return [...await this.channels(), ...Object.keys(await this.dms())]; }
@@ -426,7 +457,11 @@ export class Space {
     const online = (await this.members()).find((m) => m.id === id);
     const name = online?.name ?? (await this.env.DB.prepare(`SELECT name FROM "user" WHERE id = ?`).bind(id).first<string>("name")) ?? "";
     const channel = `dm-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
-    await this.ctx.storage.put("dms", { ...dms, [channel]: { ids: [me.id, id], names: [me.name, name] } } satisfies Dms);
+    // Read again after the awaits above: another DM opened meanwhile stays, and two asks at once for the same pair make one.
+    const now = await this.dms(), raced = Object.entries(now).find(([, d]) => d.ids.includes(me.id) && d.ids.includes(id));
+    if (raced) return this.sockets.send(ws, { t: "dm", channel: raced[0], id });
+    if (Object.keys(now).length >= DMS) return this.sockets.send(ws, { t: "refused", why: "this space holds as many direct messages as it can" });
+    await this.ctx.storage.put("dms", { ...now, [channel]: { ids: [me.id, id], names: [me.name, name] } } satisfies Dms);
     await this.tell([me.id, id]);
     this.sockets.send(ws, { t: "dm", channel, id });
   }
@@ -520,6 +555,8 @@ export class Space {
     if (!set) return this.sockets.send(ws, { t: "refused", why: "no such member" });
     await this.log({ act: "role", by: { id: me.id, name: me.name }, who: id, to: role });
     this.close((m) => m.id === id, ROLE_CHANGED, "your role in the space changed");
+    // A guest has no voice channels: a call they were in ends with the role, not when they next ask for a ticket.
+    if (role === "guest") await this.enqueue((await this.voices()).map((v): Order => ({ t: "kick", room: roomOf(sid, v.id), sub: id })));
   }
   /** The studio that owns this space, if one does. */
   private async studio(): Promise<string | undefined> { return await this.ctx.storage.get<string>("studio"); }
@@ -658,15 +695,23 @@ export class Space {
     if ((await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id)) return json({ error: "you're muted here" }, 403);
     const now = Date.now(), recent = (this.posted.get(me.id) ?? []).filter((t) => t > now - 60_000);
     if (recent.length >= FILES_A_MINUTE) return json({ error: `up to ${FILES_A_MINUTE} files a minute; wait a little` }, 429);
+    // The minute's slot and the space's bytes are taken before the slow steps, so uploads sent together can't each see them free.
+    this.posted.set(me.id, [...recent, now]);
     const data = await req.arrayBuffer();
     if (!data.byteLength) return json({ error: "that file is empty" }, 400);
     if (data.byteLength > FILE_MAX) return json({ error: `a file is up to ${FILE_MAX / 1024 / 1024} MB` }, 413);
     const used = await this.ctx.storage.get<number>("fileBytes") ?? 0;
     if (used + data.byteLength > FILE_BYTES) return json({ error: `this space keeps up to ${FILE_BYTES / 1024 ** 3} GB of files: delete some first` }, 507);
-    this.posted.set(me.id, [...recent, now]);
-    const id = crypto.randomUUID(), name = fileName(q.get("name")), type = fileType(q.get("type")), key = `${await this.sid()}/${ch}/${id}`;
-    await bucket.put(key, data, { httpMetadata: { contentType: type } });
     await this.ctx.storage.put("fileBytes", used + data.byteLength);
+    const giveBack = async () => this.ctx.storage.put("fileBytes", Math.max(0, (await this.ctx.storage.get<number>("fileBytes") ?? 0) - data.byteLength));
+    const id = crypto.randomUUID(), name = fileName(q.get("file")), type = fileType(q.get("type")), key = `${await this.sid()}/${ch}/${id}`;
+    try { await bucket.put(key, data, { httpMetadata: { contentType: type } }); } catch (e) { await giveBack(); throw e; }
+    // R2 took a while: the channel or direct message may be gone (and saying into it would show it to all), or their seat or voice.
+    if (!(await this.all()).includes(ch) || !sees(me, ch, await this.rules()) || (await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id) || !await seatIn(this.env, await this.sid(), me.id)) {
+      await bucket.delete(key);
+      await giveBack();
+      return json({ error: `you can't post in #${ch} now` }, 403);
+    }
     const m = await this.say(ch, { from: { id: me.id, name: me.name }, text: name, at: now, file: { id, name, size: data.byteLength, type } });
     await this.ctx.storage.put(`f:${id}`, { channel: ch, msg: m.id, by: me.id, key, size: data.byteLength } satisfies Kept);
     return json({ id, message: m.id });
@@ -731,20 +776,37 @@ export class Space {
   /** Out of the space: their D1 row goes, their sockets close, and Qlave drops them from every voice channel. */
   private async leave(id: string, why = "left the space") {
     const sid = await this.sid();
-    const out = await this.env.DB.prepare("DELETE FROM space_members WHERE space_id = (SELECT id FROM spaces WHERE id = ? AND owner != ?) AND user_id = ? RETURNING user_id")
+    // In a studio's space the roles are the studio's, so whoever made it is a guest like any other once they're out of the studio.
+    const out = await this.env.DB.prepare("DELETE FROM space_members WHERE space_id = (SELECT id FROM spaces WHERE id = ? AND (owner != ? OR studio_id IS NOT NULL)) AND user_id = ? RETURNING user_id")
       .bind(sid, id, id).first<string>("user_id");
     this.close((m) => m.id === id && m.role !== "owner", 4003, why);
-    // A kick retires the invite too: the kicked person holds it (everyone joined with it), so a fresh one is minted that only the owner hands out.
-    if (out && why !== "left the space") await this.env.DB.prepare("UPDATE spaces SET invite = ? WHERE id = ?").bind(mintInvite(), sid).run();
+    if (out && why !== "left the space") await this.shutOut(id);
     // The owner can't leave their own space, so nothing goes to Qlave for them.
     if (out) await this.enqueue((await this.voices()).map((v): Order => ({ t: "kick", room: roomOf(sid, v.id), sub: id })));
+    if (out) await this.wasHere(id);
     if (out) await this.dropDms(id);
+  }
+
+  /**
+   * Taken out, they keep no way back: the invite retires (they may hold it, everyone who joined with it does), so a fresh one is minted
+   * that only those who run the space hand out, and the private channels forget them.
+   */
+  private async shutOut(id: string) {
+    await this.env.DB.prepare("UPDATE spaces SET invite = ? WHERE id = ?").bind(mintInvite(), await this.sid()).run();
+    await this.ctx.storage.put("private", Object.fromEntries(Object.entries(await this.locked()).map(([c, ids]) => [c, ids.filter((x) => x !== id)])));
+  }
+
+  /** What they wrote stays after they go, so D1 remembers they sat here: deleting their account and their download still find it. */
+  private async wasHere(id: string) {
+    await this.env.DB.prepare("INSERT INTO space_past (user_id, space_id) VALUES (?, ?) ON CONFLICT DO NOTHING").bind(id, await this.sid()).run();
   }
 
   /** Someone is no longer seated here (D1 already says so): their sockets close, whoever they were, and Qlave drops them from every voice channel. */
   private async out(id: string, why: string) {
     if (!id) return;
     this.close((m) => m.id === id, 4003, why);
+    await this.shutOut(id);
+    await this.wasHere(id);
     await this.dropDms(id);
     const sid = await this.sid();
     await this.enqueue((await this.voices()).map((v): Order => ({ t: "kick", room: roomOf(sid, v.id), sub: id })));
@@ -773,7 +835,7 @@ export class Space {
     if (!filed.ok) this.sockets.send(ws, { t: "refused", why: filed.error });
   }
 
-  /** Their account was deleted: their sockets close and every message they wrote goes. */
+  /** Their account was deleted: their sockets close, every message they wrote goes, and the audit log keeps what was done but not by or to whom. */
   private async erase(id: string): Promise<Response> {
     if (!id) return json({ error: "bad" }, 400);
     this.close((m) => m.id === id, 4001, "account deleted");
@@ -783,6 +845,9 @@ export class Space {
     await this.dropDms(id);
     await this.ctx.storage.put("muted", (await this.ctx.storage.get<string[]>("muted") ?? []).filter((x) => x !== id));
     await this.ctx.storage.put("private", Object.fromEntries(Object.entries(await this.locked()).map(([c, ids]) => [c, ids.filter((x) => x !== id)])));
+    const audit = await this.ctx.storage.get<Audit[]>("audit") ?? [];
+    if (audit.some((a) => a.by.id === id || a.who === id))
+      await this.ctx.storage.put("audit", audit.map(({ who, ...a }) => ({ ...a, ...(a.by.id === id ? { by: GONE } : {}), ...(who && who !== id ? { who } : {}) })));
     return json({ ok: true });
   }
 

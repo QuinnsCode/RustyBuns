@@ -392,6 +392,11 @@ function hang(def: StudioDef, group: THREE.Group): Record<Side, [number, number]
       wall.add(flatten(joints));
     }
     const panels = (def.panels ?? []).filter((p) => p.wall === side);
+    // round 16: what stands off a wall shades it, the cans being overhead: a soft dark rim round each panel, deepest
+    // under it and reaching further the prouder it stands, so a panel sits on the wall instead of floating in front
+    const behind = new THREE.Group();
+    const drop = (x: number, y: number, wide: number, tall: number, proud: number) =>
+      behind.add(at(new THREE.Mesh(new THREE.PlaneGeometry(wide + 0.12 + proud * 2.4, tall + 0.1 + proud * 3), dropMat()), x, y - proud * 1.1, 0.0625));
     let along = -s.len / 2 + 0.6; // panels fill the wall from its left end in, a gap between each kind
     for (const p of panels) {
       if (p.material === "curtain") {
@@ -412,7 +417,11 @@ function hang(def: StudioDef, group: THREE.Group): Record<Side, [number, number]
         const rows = n * 0.7 > room && h > 3 ? 2 : 1, cols = Math.ceil(n / rows), cell = Math.min(0.7, room / cols);
         const geo = metreUV(new RoundedBoxGeometry(0.6, 1.2, 0.1, 3, 0.025)), mat = surface("panel");
         const row = new THREE.Group();
-        for (let i = 0; i < n; i++) row.add(at(new THREE.Mesh(geo, mat), along + 0.3 + (i % cols) * cell, rows === 1 ? 1.5 : 0.95 + Math.floor(i / cols) * 1.3, 0.11));
+        for (let i = 0; i < n; i++) {
+          const x = along + 0.3 + (i % cols) * cell, y = rows === 1 ? 1.5 : 0.95 + Math.floor(i / cols) * 1.3;
+          row.add(at(new THREE.Mesh(geo, mat), x, y, 0.11));
+          drop(x, y, 0.6, 1.2, 0.1);
+        }
         wall.add(flatten(row));
         taken[side].push([along, along + cols * cell]);
         along += cols * cell + 0.5;
@@ -433,12 +442,29 @@ function hang(def: StudioDef, group: THREE.Group): Record<Side, [number, number]
           m.position.set(along + 0.3 + c * cell, 1.45 + (r - (rows - 1) / 2) * 0.64, foam ? 0.06 : 0.085);
           wall.add(m);
         }
+        // one rim round the whole block: the squares butt, so only its outside edge shades the wall
+        drop(along + 0.3 + ((cols - 1) * cell) / 2, 1.45, (cols - 1) * cell + 0.58, (rows - 1) * 0.64 + 0.58, foam ? 0.06 : 0.05);
         taken[side].push([along, along + cols * cell]);
         along += cols * cell + 0.5;
       }
     }
+    if (behind.children.length) wall.add(flatten(behind));
   }
   return taken;
+}
+
+let soft: THREE.CanvasTexture | null = null, dropShade: THREE.MeshBasicMaterial | null = null;
+/** A panel's shade on its wall (hang()): clear at the plane's edges, full under the panel's middle, eased between. */
+function dropMat() {
+  soft ??= canvasTex(64, (g) => {
+    const ease = (t: number) => { const k = Math.min(1, Math.max(0, t)); return k * k * (3 - 2 * k); };
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const u = Math.min(x, 63 - x) / 20, v = Math.min(y, 63 - y) / 20;
+      g.fillStyle = `rgba(0,0,0,${(ease(u) * ease(v)).toFixed(3)})`; g.fillRect(x, y, 1, 1);
+    }
+  }, false);
+  soft.wrapS = soft.wrapT = THREE.ClampToEdgeWrapping;
+  return (dropShade ??= shade(soft, 0.68));
 }
 
 // ---- light that stays put, baked once: where things meet the floor, and the room's own reflections ----
@@ -456,10 +482,10 @@ function ground(renderer: THREE.WebGLRenderer, scene: THREE.Scene, group: THREE.
   const cam = new THREE.OrthographicCamera(-w / 2, w / 2, d / 2, -d / 2, 0.01, reach + 0.02);
   cam.position.y = -0.02; // just under the floor, so a box standing on it is seen by its underside, not clipped
   cam.rotation.x = Math.PI / 2; // looking up from the floor, so the undersides of what stands on it are what it sees
-  // black, its alpha how near the floor it is, falling off as a square so only what's close casts much
+  // black, its alpha how near the floor it is, falling off as k^1.5 (round 13: a square left the shade under stands and legs thin)
   const depth = new THREE.MeshDepthMaterial({ side: THREE.DoubleSide });
   depth.onBeforeCompile = (s) => {
-    s.fragmentShader = s.fragmentShader.replace("gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );", "float k = 1.0 - fragCoordZ; gl_FragColor = vec4( vec3( 0.0 ), k * k );");
+    s.fragmentShader = s.fragmentShader.replace("gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );", "float k = 1.0 - fragCoordZ; gl_FragColor = vec4( vec3( 0.0 ), pow( k, 1.5 ) );");
   };
   const was = { target: renderer.getRenderTarget(), alpha: renderer.getClearAlpha(), color: renderer.getClearColor(new THREE.Color()), bg: scene.background, over: scene.overrideMaterial, shadows: renderer.shadowMap.autoUpdate };
   // the glass casts nothing, and what lies flat on the floor (the floor, a rug) is the floor
@@ -483,17 +509,30 @@ function ground(renderer: THREE.WebGLRenderer, scene: THREE.Scene, group: THREE.
       quad.material = pass.material; renderer.setRenderTarget(to); renderer.clear(); quad.render(renderer);
     }
   };
-  const copy = (src: THREE.WebGLRenderTarget) => { const c = target(); quad.material = new THREE.MeshBasicMaterial({ map: src.texture, transparent: true, blending: THREE.NoBlending }); renderer.setRenderTarget(c); renderer.clear(); quad.render(renderer); return c; };
+  // a copy whose shade is pushed toward full, 1 - (1 - a)^gain (round 19: a stand's 7 mm leg blurred to a faint line, so its feet left no mark)
+  const copy = (src: THREE.WebGLRenderTarget, gain: number) => {
+    const c = target();
+    quad.material = new THREE.ShaderMaterial({
+      uniforms: { map: { value: src.texture }, gain: { value: gain } }, blending: THREE.NoBlending,
+      vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+      fragmentShader: "uniform sampler2D map; uniform float gain; varying vec2 vUv; void main() { float a = texture2D(map, vUv).a; gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0 - pow(1.0 - clamp(a, 0.0, 1.0), gain)); }",
+    });
+    renderer.setRenderTarget(c); renderer.clear(); quad.render(renderer); (quad.material as THREE.Material).dispose();
+    return c;
+  };
   const k = n / 1024; // the blurs are in centimetres: a texel is about 1 cm on high in a 10 m room
   blur(0.9 * k); blur(0.6 * k);
-  const tight = copy(a);
-  for (let i = 0; i < 5; i++) blur((2 + i) * k);
+  const tight = copy(a, 2.6);
+  // a middle shade a few centimetres round every foot, case and leg, where the floor meets what stands on it
+  blur(2.5 * k); blur(3.5 * k);
+  const near = copy(a, 2);
+  for (let i = 0; i < 4; i++) blur((3 + i) * k);
   renderer.setRenderTarget(was.target); renderer.setClearColor(was.color, was.alpha);
   scene.background = was.bg; renderer.shadowMap.autoUpdate = was.shadows;
   for (const o of hidden) o.visible = true;
   quad.dispose(); depth.dispose(); b.dispose();
   // the tight line is dark; the wide shade is lighter, since the downlights and the bounce still reach under things
-  for (const [rt, opacity] of [[tight, 1], [a, 0.95]] as const) {
+  for (const [rt, opacity] of [[tight, 1], [near, 0.85], [a, 1]] as const) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shade(rt.texture, opacity));
     m.rotation.x = -Math.PI / 2; m.scale.y = -1; m.position.y = 0.002; m.name = "ground";
     group.add(m);
@@ -629,6 +668,131 @@ function falloff() {
   return ends;
 }
 
+let poolTex: THREE.CanvasTexture | null = null, scallop: THREE.CanvasTexture | null = null, footFloor: THREE.CanvasTexture | null = null;
+/**
+ * Where each can's light lands (round 16): a downlight near a wall throws a scallop on it, a bright arch whose crown
+ * is where the cone first meets the wall, sharpest at that edge and fading down toward the floor, dark above. The
+ * spotlights alone, wide and soft, lit every wall one flat grey. Baked: an additive warm arch on the outside wall behind
+ * each can within 1.8 m of it, none on glass. And the floor darkens along every wall's foot, where the wall shades it.
+ */
+function pools(def: StudioDef, group: THREE.Group, spots: [number, number][]) {
+  // u across the arch, v up the wall: the crown at v 0.8, the edge falling as a hyperbola does toward its sides
+  scallop ??= canvasTex(64, (g) => {
+    const step = (a: number, b: number, t: number) => { const k = Math.min(1, Math.max(0, (t - a) / (b - a))); return k * k * (3 - 2 * k); };
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 64; x++) {
+      const u = (x / 63 - 0.5) * 2, v = 1 - y / 127, edge = 0.8 - 0.62 * u * u;
+      const under = edge - v, lit = step(0.05, -0.04, -under), body = 0.3 + 0.7 * Math.exp(-Math.max(0, under) * 3.2);
+      const a = lit * body * Math.exp(-u * u * 1.4) * step(0, 0.25, v);
+      g.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`; g.fillRect(x, y, 1, 1);
+    }
+  }, false, 128);
+  scallop.wrapS = scallop.wrapT = THREE.ClampToEdgeWrapping;
+  const { h } = def.size, rnd = mulberry32(6265), p = new THREE.Vector3();
+  const tone = new THREE.Color(0xffd9ae);
+  footFloor ??= canvasTex(8, (g) => {
+    for (let y = 0; y < 64; y++) { const t = y / 63; g.fillStyle = `rgba(0,0,0,${((1 - t) ** 2.2).toFixed(3)})`; g.fillRect(0, y, 8, 1); }
+  }, false, 64);
+  footFloor.wrapS = footFloor.wrapT = THREE.ClampToEdgeWrapping;
+  const band = shade(footFloor, 0.55);
+  const archMat = new THREE.MeshBasicMaterial({ vertexColors: true, map: scallop, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
+  for (const side of ["front", "back", "left", "right"] as const) {
+    if ((def.materials?.walls[side] ?? "drywall") === "glass") continue;
+    const s = sideOf(def, side), wall = new THREE.Group();
+    wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn; group.add(wall); wall.updateMatrixWorld(true);
+    const arches = new THREE.Group();
+    for (const [x, z] of spots) {
+      wall.worldToLocal(p.set(x, 0, z));
+      const off = p.z - 0.06; // how far the can hangs off this wall
+      if (off < 0.2 || off > 1.8 || Math.abs(p.x) > s.len / 2 - 0.3) continue;
+      // nearer the wall: a narrower, brighter arch whose crown sits higher
+      const k = 1 - (off - 0.2) / 1.6, wide = 1.2 + off * 1.3, tall = h * (0.78 + 0.12 * k);
+      // each arch's own strength in its vertex colours, so a wall's arches merge into one draw call
+      const geo = new THREE.PlaneGeometry(wide, tall), c = tone.clone().multiplyScalar((0.22 + 0.22 * k) * (0.8 + rnd() * 0.4));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(Array.from({ length: geo.getAttribute("position").count }, () => [c.r, c.g, c.b]).flat(), 3));
+      arches.add(at(new THREE.Mesh(geo, archMat), p.x, tall / 2, 0.0612));
+    }
+    if (arches.children.length) { const merged = flatten(arches); merged.name = "pools"; wall.add(merged); }
+    // the floor along the wall's foot: the wall stands between it and half the room's light. Laid flat, the plane's
+    // top edge (the canvas's dark top) turns toward the wall
+    const foot = new THREE.Mesh(new THREE.PlaneGeometry(s.len, 0.45), band);
+    foot.rotation.x = -Math.PI / 2; foot.position.set(0, 0.003, 0.06 + 0.225); foot.name = "corner";
+    wall.add(foot);
+  }
+  // the pool on the floor under each can (round 17): a bright core with a soft edge, a lamp's hot spot where the soft
+  // fill alone reads flat. Just over the rug, so the pool lands on it too; every pool one merged mesh, strength in
+  // vertex colours, each can a little off plumb and its own size
+  poolTex ??= canvasTex(128, (g) => {
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+      const r = Math.hypot(x - 63.5, y - 63.5) / 63.5;
+      const a = r >= 1 ? 0 : 0.55 * Math.exp(-r * r * 9) + 0.45 * (1 - r * r) ** 2.4;
+      g.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`; g.fillRect(x, y, 1, 1);
+    }
+  }, false, 128);
+  poolTex.wrapS = poolTex.wrapT = THREE.ClampToEdgeWrapping;
+  const floorMat = new THREE.MeshBasicMaterial({ vertexColors: true, map: poolTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
+  const discs = new THREE.Group(), lean = mulberry32(6325);
+  for (const [x, z] of spots) {
+    const size = h * (0.6 + lean() * 0.2), geo = new THREE.PlaneGeometry(size, size);
+    const c = tone.clone().multiplyScalar(0.5 + lean() * 0.16);
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(Array.from({ length: geo.getAttribute("position").count }, () => [c.r, c.g, c.b]).flat(), 3));
+    const disc = new THREE.Mesh(geo, floorMat);
+    disc.rotation.x = -Math.PI / 2;
+    discs.add(at(disc, x + (lean() - 0.5) * 0.3, 0.012, z + (lean() - 0.5) * 0.3));
+  }
+  if (discs.children.length) { const merged = flatten(discs); merged.name = "pools"; group.add(merged); }
+  if ((def.materials?.floor ?? "floorboards") !== "carpet") group.add(streaks(spots, h));
+}
+
+/**
+ * Each can mirrored in the lacquered boards (round 18): a glossy floor shows a light as a streak where the light's mirror
+ * image under the floor lines up with the eye, stretched toward whoever looks, longer the lower the look. Baked pools
+ * can't follow the eye, so every streak is placed in its vertex shader from the camera: one quad per can, one draw call.
+ */
+function streaks(spots: [number, number][], h: number) {
+  const pos: number[] = [], can: number[] = [], corner: number[] = [], index: number[] = [], rnd = mulberry32(6348);
+  spots.forEach(([x, z], i) => {
+    const k = 0.75 + rnd() * 0.5;
+    for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { pos.push(x, 0, z); can.push(x, h, z, k); corner.push(u!, v!); }
+    index.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("can", new THREE.Float32BufferAttribute(can, 4));
+  geo.setAttribute("corner", new THREE.Float32BufferAttribute(corner, 2));
+  geo.setIndex(index);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { tint: { value: new THREE.Color(0xffdcb4).multiplyScalar(0.7) } },
+    vertexShader: /* glsl */ `
+      attribute vec4 can; attribute vec2 corner; varying vec2 vUv; varying float vK;
+      void main() {
+        vec3 c = (modelMatrix * vec4(can.xyz, 1.0)).xyz, foot = (modelMatrix * vec4(can.x, 0.0, can.z, 1.0)).xyz;
+        float above = c.y - foot.y, eye = max(cameraPosition.y - foot.y, 0.05);
+        // where the eye's line to the can's mirror image (as far under the floor as the can is over it) meets the floor
+        vec3 hit = cameraPosition + (eye / (eye + above)) * (vec3(c.x, foot.y - above, c.z) - cameraPosition);
+        vec2 to = cameraPosition.xz - hit.xz; float far = length(to); vec2 dir = far > 0.001 ? to / far : vec2(0.0, 1.0);
+        vec2 side = vec2(-dir.y, dir.x);
+        float along = 0.22 + 0.55 * clamp(far / (eye * 4.0), 0.0, 1.0), wide = 0.12 + 0.04 * can.w;
+        // the streak runs mostly toward the eye from the mirror point, a little past it
+        vec2 at = hit.xz + dir * (corner.y * along + along * 0.45) + side * corner.x * wide;
+        vUv = corner; vK = can.w;
+        gl_Position = projectionMatrix * viewMatrix * vec4(at.x, foot.y + 0.014, at.y, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 tint; varying vec2 vUv; varying float vK;
+      void main() {
+        float a = exp(-vUv.x * vUv.x * 5.0) * exp(-pow(abs(vUv.y + 0.35), 1.6) * 3.2) * smoothstep(1.0, 0.7, abs(vUv.y));
+        // a hot core where the mirror point is, the rest a soft sheen
+        a *= 0.55 + 0.45 * exp(-vUv.x * vUv.x * 30.0);
+        gl_FragColor = vec4(tint * vK * a, 1.0);
+      }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -10,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.frustumCulled = false; m.name = "streaks";
+  return m;
+}
+
 let glowFrom: THREE.CanvasTexture | null = null;
 /** What a warm wall gives back (round 12): the light a brick or wood wall throws off is its own colour. */
 const BOUNCE: Partial<Record<string, number>> = { brick: 0xc0603c, wood: 0xb57a42 };
@@ -749,7 +913,14 @@ function windows(def: StudioDef, group: THREE.Group) {
   const sheenMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xdfe9f0).multiplyScalar(0.12), map: sheen, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   const edgeGlass = new THREE.MeshStandardMaterial({ color: "#5f8f7c", roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55 });
   // black, so it adds only what it reflects; the room's own environment (baked in dress()) and the cans' highlights
-  glassFace ??= new THREE.MeshPhysicalMaterial({ color: "#000", roughness: 0.04, metalness: 0, specularIntensity: 0.3, envMapIntensity: 8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  glassFace ??= (() => {
+    const m = new THREE.MeshPhysicalMaterial({ color: "#000", roughness: 0.04, metalness: 0, specularIntensity: 0.3, envMapIntensity: 12, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    // a can mirrored in the pane came back past the bloom's threshold and, through the camera's blur, as a big halo over
+    // the kit (round 13): what each pane adds stops well under the threshold (the panes add up where they overlap)
+    m.onBeforeCompile = (s) => { s.fragmentShader = s.fragmentShader.replace("#include <opaque_fragment>", "#include <opaque_fragment>\ngl_FragColor.rgb = min(gl_FragColor.rgb, vec3(0.3));"); };
+    m.customProgramCacheKey = () => "glass-face-capped";
+    return m;
+  })();
   const seam = new THREE.MeshStandardMaterial({ color: "#a9b3ae", roughness: 0.3, metalness: 0, transparent: true, opacity: 0.18 });
   for (const wl of def.walls) {
     if (!wl.glass) continue;
@@ -1028,6 +1199,87 @@ function paperSheets() {
   }, true, H);
 }
 
+let trodden: THREE.CanvasTexture | null = null;
+type Wall = StudioDef["walls"][number];
+/** Where segment p to q crosses wall `wl` on the floor, in metres along the wall from its `from` end; null if it doesn't. */
+function crossing(p: [number, number], q: [number, number], wl: Wall): number | null {
+  const [ax, az] = wl.from, ex = wl.to[0] - ax, ez = wl.to[1] - az, dx = q[0] - p[0], dz = q[1] - p[1], den = dx * ez - dz * ex;
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((ax - p[0]) * ez - (az - p[1]) * ex) / den, u = ((ax - p[0]) * dz - (az - p[1]) * dx) / den;
+  return t > 0 && t < 1 && u > 0 && u < 1 ? u * Math.hypot(ex, ez) : null;
+}
+
+/**
+ * The way people walk (round 19): from the door to every seat on the boards, a trodden lane where the lacquer has gone
+ * dull and dark, darkest down its middle and in streaks along it, bowing a little as feet do. A seat behind an inner wall
+ * is reached through that wall's doorway. Each lane stops short of its seat, whose own worn ring (used()) takes over.
+ */
+function paths(def: StudioDef): THREE.Mesh[] {
+  const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 19));
+  // one tile is the lane's width across by 2 m along it: a soft middle, scuffed streaks along the walk, blotches
+  trodden ??= canvasTex(128, (g) => {
+    const r = mulberry32(12), across = g.createLinearGradient(0, 0, 128, 0);
+    for (const [at, a] of [[0, 0], [0.18, 0.3], [0.5, 0.62], [0.82, 0.3], [1, 0]] as const) across.addColorStop(at, `rgba(0,0,0,${a})`);
+    g.fillStyle = across; g.fillRect(0, 0, 128, 512);
+    g.lineCap = "round";
+    for (let i = 0; i < 70; i++) {
+      const x = 64 + (r() + r() + r() - 1.5) * 52, y = r() * 512, len = 20 + r() * 120;
+      g.strokeStyle = `rgba(0,0,0,${0.08 + r() * 0.2})`; g.lineWidth = 0.8 + r() * 3;
+      for (const dy of [0, -512]) { g.beginPath(); g.moveTo(x, y + dy); g.lineTo(x + (r() - 0.5) * 6, y + dy + len); g.stroke(); }
+    }
+    for (let i = 0; i < 14; i++) {
+      const x = 64 + (r() - 0.5) * 60, y = r() * 512, rad = 12 + r() * 22, gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, `rgba(0,0,0,${0.08 + r() * 0.1})`); gr.addColorStop(1, "rgba(0,0,0,0)");
+      for (const dy of [0, -512, 512]) { g.fillStyle = gr; g.save(); g.translate(0, dy); g.fillRect(x - rad, y - rad, rad * 2, rad * 2); g.restore(); }
+    }
+  }, false, 512);
+  trodden.wrapS = THREE.ClampToEdgeWrapping;
+  const mat = shade(trodden, 1), wide = 1.1, door = def.door.at;
+  const doorways = (wl: Wall): [number, number][] => {
+    const len = Math.hypot(wl.to[0] - wl.from[0], wl.to[1] - wl.from[1]);
+    return (wl.gaps ?? []).map(([a, b]) => { const f = (a + b) / 2 / len; return [wl.from[0] + (wl.to[0] - wl.from[0]) * f, wl.from[1] + (wl.to[1] - wl.from[1]) * f]; });
+  };
+  const blocked = (p: [number, number], q: [number, number], wl: Wall) => {
+    const u = crossing(p, q, wl);
+    return u !== null && !(wl.gaps ?? []).some(([a, b]) => u > a && u < b);
+  };
+  /** One lane along p, (a bend), q as a strip of quads, its V in metres walked. */
+  const lane = (p: [number, number], q: [number, number]) => {
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]), steps = Math.max(2, Math.ceil(len / 0.25)), bow = (rnd() - 0.5) * Math.min(0.6, len * 0.15);
+    const nx = -(q[1] - p[1]) / len, nz = (q[0] - p[0]) / len, pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps, s = Math.sin(Math.PI * t) * bow, x = p[0] + (q[0] - p[0]) * t + nx * s, z = p[1] + (q[1] - p[1]) * t + nz * s;
+      // the lane narrows into nothing at its seat end, and fans a little at the door
+      const half = (wide / 2) * (1.1 - 0.25 * t) * Math.min(1, (1 - t) * 6 + 0.2), v = (t * len) / 2;
+      pos.push(x - nx * half, 0, z - nz * half, x + nx * half, 0, z + nz * half); uv.push(0, v, 1, v);
+      if (i) { const b = i * 2; idx.push(b - 2, b - 1, b, b - 1, b + 1, b); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat); m.position.y = 0.0025;
+    return m;
+  };
+  const out: THREE.Mesh[] = [], walked = new Set<string>();
+  for (const s of def.spots) {
+    if (s.kind === "couch" || s.kind === "booth" || floorAt(def, s.at[0], s.at[1]) > 0) continue;
+    // stop 0.7 m short of the seat, on the line toward it
+    let from = door;
+    const through = def.walls.find((wl) => blocked(from, s.at, wl));
+    if (through) {
+      const gap = doorways(through).sort((a, b) => Math.hypot(a[0] - door[0], a[1] - door[1]) - Math.hypot(b[0] - door[0], b[1] - door[1]))[0];
+      if (!gap || def.walls.some((wl) => blocked(door, gap, wl))) continue;
+      if (!walked.has(`${gap}`)) { walked.add(`${gap}`); out.push(lane(door, gap)); }
+      from = gap;
+    }
+    const len = Math.hypot(s.at[0] - from[0], s.at[1] - from[1]);
+    if (len < 1.2) continue;
+    const f = (len - 0.7) / len;
+    out.push(lane(from, [from[0] + (s.at[0] - from[0]) * f, from[1] + (s.at[1] - from[1]) * f]));
+  }
+  return out;
+}
+
 /**
  * What a room people work in picks up (round 10). Scuffs low on the painted walls and on the wall under the glass,
  * where cases, stands and shoes knock them, and a dirty line over the skirting; the floor worn dull round every
@@ -1165,8 +1417,9 @@ function used(def: StudioDef, group: THREE.Group, taken: Record<Side, [number, n
     m.rotation.set(-Math.PI / 2, 0, rnd() * Math.PI * 2); m.position.set(s.at[0], 0.003, s.at[1]);
     flat.add(m);
   }
+  if (hard) flat.add(...paths(def));
   // the keys player's music stand and set list
-  const rod = (a: THREE.Vector3, b: THREE.Vector3, r: number) => {
+  const rod =(a: THREE.Vector3, b: THREE.Vector3, r: number) => {
     const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, a.distanceTo(b), 8), black);
     c.position.copy(a).add(b).multiplyScalar(0.5); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
     return c;
@@ -1207,6 +1460,157 @@ function used(def: StudioDef, group: THREE.Group, taken: Record<Side, [number, n
     if (p) stuff.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.062, 0.032, 20), white), p[0], h - 0.016, p[1]));
   }
   group.add(flatten(stuff), flatten(flat));
+}
+
+/**
+ * Where the floor's clutter goes (strewn()): the free boards nearest `near`, on a 0.3 m grid, clear of every seat and
+ * instrument, the walls, the door's way in and what was already put down (`kept`, each a point and how far it reaches).
+ */
+export function freeFloor(def: StudioDef, near: [number, number], reach: number, kept: [number, number, number][]): [number, number] | null {
+  const { w, d } = def.size, clear = (x: number, z: number) => {
+    if (Math.abs(x) > w / 2 - 0.5 - reach || Math.abs(z) > d / 2 - 0.5 - reach || floorAt(def, x, z) > 0) return false;
+    if (Math.hypot(x - def.door.at[0], z - def.door.at[1]) < 0.5 + reach) return false;
+    if (def.walls.some((wl) => toSegment([x, z], wl.from, wl.to) < 0.4 + reach)) return false;
+    if (kept.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr + reach)) return false;
+    return def.spots.every((s) => {
+      const b = thingBox(s);
+      return Math.hypot(x - s.at[0], z - s.at[1]) > 0.75 + reach && Math.hypot(x - b.cx, z - b.cz) > Math.max(b.hw, b.hd) + 0.35 + reach;
+    });
+  };
+  let best: [number, number] | null = null, far = Infinity;
+  for (let x = -w / 2; x <= w / 2; x += 0.3) for (let z = -d / 2; z <= d / 2; z += 0.3) {
+    const dist = Math.hypot(x - near[0], z - near[1]);
+    if (dist < far && clear(x, z)) { far = dist; best = [x, z]; }
+  }
+  return best;
+}
+
+/**
+ * What a band leaves on the floor between the kit and the keys (round 15): a pedalboard with its patch leads and two
+ * instrument leads wandering off it, a guitar's hard case laid flat, and a vocal mic on a stand whose XLR runs down the
+ * pole and across the boards to its spare length coiled on the floor. A room with no kit or no keys keeps a clear floor.
+ */
+function strewn(def: StudioDef, group: THREE.Group) {
+  const { w, d } = def.size, drums = def.spots.find((s) => s.kind === "drums"), keys = def.spots.find((s) => s.kind === "keys");
+  if (w > 16 || d > 16 || !drums || !keys) return;
+  const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 41 + ch.charCodeAt(0)) | 0, 15));
+  // between the two players, a step behind the drummer's back (the way the band faces is toward the kit's front)
+  const back: [number, number] = [Math.sin(drums.yaw), Math.cos(drums.yaw)];
+  const near: [number, number] = [(drums.at[0] + keys.at[0]) / 2 + back[0] * 1.2, (drums.at[1] + keys.at[1]) / 2 + back[1] * 1.2];
+  const kept: [number, number, number][] = [];
+  const put = (reach: number, off: [number, number]) => {
+    const p = freeFloor(def, [near[0] + off[0], near[1] + off[1]], reach, kept);
+    if (p) kept.push([p[0], p[1], reach]);
+    return p;
+  };
+  const rubber = surface("rubber", "#0e0f11"), chrome = surface("chrome", "#c8cacd"), black = surface("metal", "#17181a");
+  const stuff = new THREE.Group(); stuff.name = "strewn";
+  const lead = (pts: THREE.Vector3[], r = 0.0036) => stuff.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 10, r, 6), rubber));
+  /** A lead lying on the boards from (x, z) toward `to`, kicked about on the way: `n` bends, the last one short of it. */
+  const wander = (x: number, z: number, to: [number, number], n: number, sway: number) => {
+    const pts: THREE.Vector3[] = [];
+    const nx = -(to[1] - z), nz = to[0] - x, nl = Math.hypot(nx, nz) || 1;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, s = Math.sin(t * Math.PI) * (rnd() - 0.5) * sway;
+      pts.push(new THREE.Vector3(x + (to[0] - x) * t + (nx / nl) * s, 0.0042, z + (to[1] - z) * t + (nz / nl) * s));
+    }
+    return pts;
+  };
+  /** A jack plug lying at the end of a lead, pointing along it. */
+  const plug = (p: THREE.Vector3, from: THREE.Vector3, xlr = false) => {
+    const g = new THREE.Group(); g.position.copy(p); g.rotation.y = Math.atan2(p.x - from.x, p.z - from.z);
+    const boot = new THREE.Mesh(new THREE.CylinderGeometry(xlr ? 0.011 : 0.007, 0.004, 0.035, 10).rotateX(Math.PI / 2), xlr ? chrome : black); boot.position.set(0, xlr ? 0.011 : 0.007, 0.017);
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(xlr ? 0.0105 : 0.0032, xlr ? 0.0105 : 0.0032, xlr ? 0.03 : 0.03, 10).rotateX(Math.PI / 2), chrome); tip.position.set(0, xlr ? 0.011 : 0.007, xlr ? 0.05 : 0.048);
+    g.add(boot, tip); stuff.add(g);
+  };
+
+  // the pedalboard: a sloped black frame, felt on top, six pedals in a row patched one to the next, the power under it
+  const pb = put(0.4, [0.3, 0.15]);
+  if (pb) {
+    const g = new THREE.Group(); g.position.set(pb[0], 0, pb[1]); g.rotation.y = Math.atan2(-back[0], -back[1]) + Math.PI + (rnd() - 0.5) * 0.5;
+    const deck = new THREE.Group(); deck.rotation.x = 0.1; deck.position.y = 0.035; g.add(deck);
+    deck.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.028, 0.32), black), 0, 0, 0), at(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.004, 0.3), surface("cloth", "#1f2023")), 0, 0.016, 0));
+    g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.05, 0.02), black), 0, 0.025, -0.15), at(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.09), surface("metal", "#2c2e31")), 0.1, 0.018, -0.1));
+    const colors = ["#cfc6ae", "#34483a", "#9ea3a8", "#2a3a55", "#a8582e", "#5a2828"];
+    const knob = surface("plastic", "#141416"), led = new THREE.MeshStandardMaterial({ color: "#200", emissive: "#ff3a2a", emissiveIntensity: 2.2 });
+    const jacks: [number, number][] = [];
+    for (let i = 0; i < 6; i++) {
+      const big = i === 0, pw = big ? 0.09 : 0.072, x = -0.25 + i * 0.1 + (big ? -0.008 : 0), z = (i % 2 ? 0.035 : -0.025) + (rnd() - 0.5) * 0.02;
+      const p = new THREE.Group(); p.position.set(x, 0.018, z); p.rotation.y = (rnd() - 0.5) * 0.06; deck.add(p);
+      p.add(at(new THREE.Mesh(new RoundedBoxGeometry(pw, 0.04, 0.12, 2, 0.006), surface("metal", colors[i]!)), 0, 0.02, 0));
+      for (const [kx, kz] of big ? [[0, -0.03]] : [[-0.02, -0.035], [0.02, -0.035], [0, -0.008]]) p.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0085, 0.013, 12), knob), kx!, 0.046, kz!));
+      p.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0065, 0.012, 10), chrome), 0, 0.046, 0.032), at(new THREE.Mesh(new THREE.SphereGeometry(0.003, 6, 4), led), 0, 0.041, 0.012));
+      jacks.push([x, z]);
+    }
+    // patch leads between neighbours, arcing over the gap at the pedals' sides
+    for (let i = 0; i < 5; i++) {
+      const [ax, az] = jacks[i]!, [bx, bz] = jacks[i + 1]!, y = 0.054;
+      const pts = [new THREE.Vector3(ax + 0.035, y, az - 0.04), new THREE.Vector3((ax + bx) / 2, y + 0.022, (az + bz) / 2 - 0.05), new THREE.Vector3(bx - 0.035, y, bz - 0.04)];
+      deck.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.0028, 5), rubber));
+    }
+    stuff.add(flatten(g));
+    // the leads in and out: off the board's ends and across the boards, one to the keys' side, one loose with its plug
+    g.updateMatrixWorld(true);
+    const end = (sx: number) => new THREE.Vector3(sx, 0.012, 0).applyMatrix4(g.matrixWorld);
+    const a = end(0.33), b = end(-0.33);
+    const inLead = wander(a.x, a.z, [keys.at[0] + (rnd() - 0.5) * 0.4, keys.at[1] + back[1] * 0.3], 7, 0.5);
+    inLead[0]!.y = 0.03; lead(inLead);
+    const loose: [number, number] = [b.x + (b.x - a.x) * 1.4 + (rnd() - 0.5) * 0.3, b.z + (b.z - a.z) * 1.4 + (rnd() - 0.5) * 0.3];
+    const outLead = wander(b.x, b.z, loose, 5, 0.6);
+    outLead[0]!.y = 0.03; lead(outLead);
+    plug(outLead.at(-1)!, outLead.at(-2)!);
+  }
+
+  // a guitar's hard case laid flat: a moulded outline (two bouts, a waist, the neck, the head) in black tolex, latches down one side
+  const gc = put(0.45, [-0.6, 0.25]);
+  if (gc) {
+    const bout = (y: number, cy: number, r: number) => (Math.abs(y - cy) < r ? Math.sqrt(r * r - (y - cy) ** 2) : 0);
+    const half = (y: number) => Math.max(bout(y, 0, 0.215), bout(y, 0.37, 0.17), y > 0.08 && y < 0.3 ? 0.158 : 0, y > 0.4 && y < 0.98 ? 0.07 : 0, y >= 0.98 ? 0.088 : 0);
+    const shape = new THREE.Shape(), ys: number[] = [];
+    for (let y = -0.213; y <= 1.1; y += 0.02) ys.push(y);
+    ys.forEach((y, i) => (i ? shape.lineTo(half(y), y) : shape.moveTo(half(y), y)));
+    for (const y of [...ys].reverse()) shape.lineTo(-half(y), y);
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.022, bevelSize: 0.018, bevelSegments: 3, curveSegments: 4 });
+    geo.rotateX(-Math.PI / 2); geo.translate(0, 0.022, 0);
+    const g = new THREE.Group(); g.position.set(gc[0], 0, gc[1]); g.rotation.y = Math.PI / 2 + 0.35 + (rnd() - 0.5) * 0.4;
+    g.add(new THREE.Mesh(metreUV(geo), surface("tolex", "#111214")));
+    // the seam where lid meets base, and the latches and handle on the treble side
+    const seam = new THREE.ExtrudeGeometry(shape, { depth: 0.006, bevelEnabled: true, bevelThickness: 0, bevelSize: 0.021, bevelSegments: 1, curveSegments: 4 });
+    seam.rotateX(-Math.PI / 2); g.add(at(new THREE.Mesh(seam, surface("rubber", "#050506")), 0, 0.072, 0));
+    for (const y of [-0.05, 0.25, 0.62]) {
+      const l = at(new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.04), chrome), half(y) + 0.036, 0.075, -y);
+      g.add(l);
+    }
+    const handle = at(new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.01, 6, 14, Math.PI), rubber), 0.21, 0.075, -0.2); handle.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+    g.add(handle);
+    stuff.add(flatten(g));
+  }
+
+  // a vocal mic on a straight stand, its XLR clipped down the pole, across the boards, and the spare coiled on the floor
+  const ms = put(0.3, [0.6, -0.55]), coil = ms && put(0.3, [-0.1, -0.45]);
+  if (ms && coil) {
+    const g = new THREE.Group(); g.position.set(ms[0], 0, ms[1]); g.rotation.y = Math.atan2(keys.at[0] - ms[0], keys.at[1] - ms[1]);
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.135, 0.018, 24), black), 0, 0.009, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.95, 8), black), 0, 0.48, 0));
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.05, 10), rubber), 0, 0.95, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.42, 8), chrome), 0, 1.18, 0));
+    const mic = new THREE.Group(); mic.position.set(0, 1.4, 0.02); mic.rotation.x = 1.1; g.add(mic);
+    mic.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.014, 0.13, 14), black), 0, -0.02, 0), at(new THREE.Mesh(new THREE.SphereGeometry(0.027, 14, 10), surface("grille", "#9a9ca0")), 0, 0.07, 0));
+    stuff.add(flatten(g));
+    // down the pole on the side away from the player, off the base and out to the coil
+    const t = Math.atan2(keys.at[0] - ms[0], keys.at[1] - ms[1]), ox = -Math.sin(t) * 0.018, oz = -Math.cos(t) * 0.018;
+    const run = wander(ms[0] + ox * 7, ms[1] + oz * 7, coil, 6, 0.7);
+    lead([new THREE.Vector3(ms[0] + ox, 1.36, ms[1] + oz), new THREE.Vector3(ms[0] + ox, 0.9, ms[1] + oz), new THREE.Vector3(ms[0] + ox, 0.3, ms[1] + oz), new THREE.Vector3(ms[0] + ox * 4, 0.03, ms[1] + oz * 4), ...run], 0.0042);
+    // the coil: five loose loops that don't sit on each other quite, the end with its plug lying out of it
+    const pts: THREE.Vector3[] = [], turns = 5;
+    for (let i = 0; i <= turns * 18; i++) {
+      const a = (i / 18) * Math.PI * 2, r = 0.17 + Math.sin(a * 0.6) * 0.025 + (i / (turns * 18)) * 0.03;
+      pts.push(new THREE.Vector3(coil[0] + Math.cos(a) * r + (i / 90) * 0.05, 0.005 + (i / (turns * 18)) * 0.03, coil[1] + Math.sin(a) * r * 0.92));
+    }
+    lead(pts, 0.0042);
+    const last = pts.at(-1)!, out = new THREE.Vector3(last.x + 0.25, 0.0045, last.z + 0.12);
+    lead([last, new THREE.Vector3((last.x + out.x) / 2, 0.012, (last.z + out.z) / 2 + 0.04), out], 0.0042);
+    plug(out, last, true);
+  }
+  group.add(flatten(stuff));
 }
 
 /**
@@ -1276,11 +1680,14 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   windows(def, group);
   lived(def, group);
   used(def, group, taken);
-  scene.add(new THREE.HemisphereLight(0xf4efe8, 0x4a3a2e, 0.42)); // the bounce that reaches the tops of the walls
+  strewn(def, group);
+  // the bounce that reaches the tops of the walls; fainter since round 16, so the scallops and shade read over it
+  scene.add(new THREE.HemisphereLight(0xf4efe8, 0x4a3a2e, 0.32));
 
   // downlights in the ceiling (cans()), each a warm spot with a soft edge; on high the ones nearest the middle throw shadows
   const { w, d, h } = def.size, spots = cans(w, d);
-  const can = new THREE.CylinderGeometry(0.09, 0.09, 0.02, 20), rim = new THREE.TorusGeometry(0.095, 0.012, 6, 24);
+  pools(def, group, spots);
+  const can =new THREE.CylinderGeometry(0.09, 0.09, 0.02, 20), rim = new THREE.TorusGeometry(0.095, 0.012, 6, 24);
   const bulb = new THREE.MeshStandardMaterial({ color: "#000", emissive: "#ffe6c4", emissiveIntensity: 6 }), trim = surface("metal", "#d9d6d0");
   const lights: THREE.SpotLight[] = [];
   const per = (w * d) / spots.length, power = 16 * per * Math.max(1, h / 3.4); // candela, so a big room's few lights still light it
@@ -1297,9 +1704,10 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     const r = new THREE.Mesh(rim, trim); r.rotation.x = Math.PI / 2; r.position.set(x, h - 0.02, z);
     group.add(c, r);
     if (!lit.has(spot)) { rnd(); rnd(); continue; }
-    // a real can throws a scallop whose edge melts into the wall, each its own: wide and faint (round 12), and no
-    // two aimed quite plumb (a can's gimbal is set by hand), so the scallops land at different heights and leans
-    const l = new THREE.SpotLight(warm.clone().lerp(cool, tint), strength * 0.85, 0, Math.PI * (0.33 + rnd() * 0.06), 0.88 + rnd() * 0.12, 2);
+    // a real can throws a pool with a soft edge, each its own: a 38 to 45 degree cone (round 17; the 60 degree cones
+    // before lit the floor evenly, so the room read flat), and no two aimed quite plumb (a can's gimbal is set by
+    // hand), so the pools and scallops land at different spots and leans
+    const l = new THREE.SpotLight(warm.clone().lerp(cool, tint), strength * 0.85, 0, Math.PI * (0.21 + rnd() * 0.04), 0.6 + rnd() * 0.15, 2);
     l.position.set(x, h - 0.03, z);
     l.target.position.set(x + (aim() - 0.5) * 1.6, 0, z + (aim() - 0.5) * 1.6);
     group.add(l, l.target);
@@ -1329,7 +1737,10 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   shadeGlow ??= canvasTex(64, (g) => {
     for (let y = 0; y < 64; y++) { const t = Math.abs(y / 63 - 0.5) * 2, k = 0.55 + 0.45 * t * t; g.fillStyle = `rgb(${Math.round(255 * k)},${Math.round(236 * k)},${Math.round(206 * k)})`; g.fillRect(0, y, 64, 1); }
   }, true);
-  const shadeMat = new THREE.MeshStandardMaterial({ color: "#8f7150", emissive: "#ff9e4a", emissiveMap: shadeGlow, emissiveIntensity: 0.6, roughness: 0.95, side: THREE.DoubleSide });
+  // unlit (round 13): the bulb's own lights sit 20 cm inside it, lit the cloth past the bloom's threshold and threw a
+  // halo round the lamp no lens makes. The cloth glows by its map alone, bright but under the bloom, and the lights
+  // inside light only the room.
+  const shadeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color("#ffb87a").multiplyScalar(1.3), map: shadeGlow, side: THREE.DoubleSide });
   const pole = surface("metal", "#2a2724");
   for (const [x, z] of practicals(def)) {
     const lamp = new THREE.Group(); lamp.name = "floor-lamp"; lamp.position.set(x, 0, z);
@@ -1408,6 +1819,12 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       o.userData.looked = true;
       const glow = typeof o.userData.glow === "number" ? o.userData.glow : 0;
       const mat = o.material;
+      // a lamp's shade (glowing and open, so seen from both sides) is unlit (round 13): the bulb's light 13 cm inside it lit
+      // the cloth past the bloom's threshold, a halo round the lamp no lens makes. It glows by its own colour, under the bloom.
+      if (glow > 0 && mat instanceof THREE.MeshStandardMaterial && mat.side === THREE.DoubleSide) {
+        o.material = new THREE.MeshBasicMaterial({ color: mat.color.clone().multiplyScalar(1 + 1.2 * glow), map: mat.map, side: THREE.DoubleSide });
+        return;
+      }
       if (glow > 0 && mat instanceof THREE.MeshStandardMaterial) {
         o.material = mat.clone();
         if (o.material instanceof THREE.MeshStandardMaterial) { if (mat.emissive.getHex() === 0) o.material.emissive.copy(mat.color); /* a screen is dark glass lit by its own colour: keep it */ o.material.emissiveIntensity = 2 * glow; o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; } // a lit bulb is solid light, even one made of glass

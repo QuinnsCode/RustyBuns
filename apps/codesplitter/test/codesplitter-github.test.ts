@@ -1,6 +1,5 @@
 import { describe, expect, setSystemTime, test } from "bun:test";
-import { empty, merge, text, type Doc } from "../src/lines.ts";
-import { run } from "../agents.ts";
+import { text, type Doc } from "../src/lines.ts";
 import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";

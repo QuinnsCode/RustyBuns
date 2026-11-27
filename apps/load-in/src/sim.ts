@@ -43,6 +43,8 @@ export interface Level {
   outlets: { key: string; x: number; y: number; z: number; circuit?: string; amps?: 15 | 20 }[];
   /** Where people walk: a cable lying across one with no ramp over it is a trip hazard. */
   walkways?: { name: string; x0: number; x1: number; z0: number; z1: number }[];
+  /** The crew's spike marks: where a piece (a speaker stand, by its key) goes, taped on the floor before load-in. */
+  marks?: readonly { key: string; x: number; z: number }[];
   start: { x: number; z: number; yaw: number };
   items: Item[];
   /** What comes off the truck only when a crew plays: a load too heavy for one (crewLoad puts it in the world). */
@@ -149,7 +151,7 @@ export const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, 
 
 /** How high you carry a box alone, as its top below your eyes, m: a light one hugged at the chest, a heavy one low at the
  *  hips (as the dial feels it). Your hands on its sides sit just under the top, so they stay in view. */
-export const carryDrop = (kg: number) => 0.1 + 0.4 * clamp((feltKg(kg) - 10) / (MAX_LIFT - 10), 0, 1);
+export const carryDrop = (kg: number) => 0.16 + 0.3 * clamp((feltKg(kg) - 10) / (MAX_LIFT - 10), 0, 1);
 
 /** How far in front of you the middle of what you hold sits, m: a box you carry far enough out that its sides, and your
  *  hands on them, fit across a phone held upright; gear you push, right against you. It lands there when you set it down. */

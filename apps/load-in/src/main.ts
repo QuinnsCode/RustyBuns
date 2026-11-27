@@ -56,8 +56,9 @@ import { handsView, type Hold } from "./hands/view.ts";
 import { mountInk } from "./you/ink-view.ts";
 import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
-import { dress, faceLook, tapeLabel, type Dressed } from "./faces.ts";
-import { begun, callName, idlePrompt, nextStep } from "./next.ts";
+import { dress, faceLook, type Dressed } from "./faces.ts";
+import { begun, idlePrompt, nextStep, tapeLabel, towardMark, towardName } from "./next.ts";
+import { marksView } from "./marks-view.ts";
 import { toward } from "./toward.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
@@ -130,6 +131,7 @@ window.addEventListener("keyup", (e) => { if (e.code === "KeyY") showArms = fals
 $("arms").addEventListener("pointerdown", (e) => { e.stopPropagation(); showArms = true; });
 for (const up of ["pointerup", "pointercancel", "pointerleave"]) $("arms").addEventListener(up, () => { showArms = false; });
 const shoes = shoesView(scene);
+const marks = marksView(scene);
 const ink = mountInk($("ink-host"), hands, () => tour.nights, shoes);
 // Solve the grips the game uses while the menu is up, one a tick, so the first grab doesn't hitch.
 [REST, { kind: "flat" } as const, { kind: "roll" } as const, { kind: "plug" } as const, ...[...Object.values(CABLE_RADIUS), ...Object.values(CABLE).map((c) => c.radius)].map((radius) => ({ kind: "cable", radius }) as const)].forEach((w, i) => setTimeout(() => hands.warm([w]), 200 + i * 60));
@@ -150,11 +152,79 @@ goal.add(goalEdges, goalPool);
 scene.add(goal);
 const goalLamp = new THREE.PointLight(0x9fe3ff, 0, 2.6, 1.6);
 scene.add(goalLamp);
-function poolTexture() {
+// Where the piece goes (the free stand for a top): a thin tripod is lost against a dark wall, so it gets a crew's spike
+// mark on the floor (a ring of warm tape with a cross), a soft beam down from the ceiling and its own warm lamp. Amber,
+// where the piece to lift is blue. The lamp too is always in the scene, dimmed to 0.
+const spot = new THREE.Group();
+const spotMark = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: spikeTexture(), transparent: true, depthWrite: false }));
+const spotGlow = new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: poolTexture(0xffb45a), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+const beamMat = new THREE.MeshBasicMaterial({ map: beamTexture(), color: 0xffcf8a, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+const spotBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 1, 1, 32, 1, true).translate(0, 0.5, 0), beamMat);
+spotMark.renderOrder = spotGlow.renderOrder = 1;
+spot.add(spotGlow, spotMark, spotBeam);
+spot.visible = false;
+scene.add(spot);
+const spotLamp = new THREE.PointLight(0xffc88a, 0, 2.8, 1.6);
+// While the piece has a place to go, both ends speak amber: its outline, pool, cone and lamp take the stand's warm
+// colour, and a dashed line of the same tape runs along the floor from your feet to the piece and on to its stand
+// (from you, once it is in your hands).
+const COOL = 0x4cc9f0, WARM = 0xff8a1e, coolPool = goalPool.material.map, warmPool = poolTexture(WARM);
+const trails = [0, 1].map(() => {
+  const tex = trailTexture(), mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  mesh.renderOrder = 1;
+  mesh.visible = false;
+  scene.add(mesh);
+  return { mesh, tex };
+});
+/** Lay one length of tape from `a` to `b` on the floor, short of each end by `inset` (or a third of the way, if shorter). */
+function layTrail(t: (typeof trails)[number], a: { x: number; z: number } | null | undefined, b: { x: number; z: number } | null | undefined, inset: [number, number]) {
+  const dx = b && a ? b.x - a.x : 0, dz = b && a ? b.z - a.z : 0, len = Math.hypot(dx, dz);
+  t.mesh.visible = !!a && !!b && len > 0.9;
+  if (!a || !b || !t.mesh.visible) return;
+  const i0 = Math.min(inset[0], len / 3), i1 = Math.min(inset[1], len / 3), run = len - i0 - i1, mid = i0 + run / 2;
+  t.mesh.position.set(a.x + (dx / len) * mid, (world.level.floorAt?.(b.x, b.z) ?? 0) + 0.011, a.z + (dz / len) * mid);
+  t.mesh.rotation.y = -Math.atan2(dz, dx);
+  t.mesh.scale.set(run, 1, 0.1);
+  t.tex.repeat.set(run / 0.3, 1);
+  t.tex.offset.x = -performance.now() / 1600;
+}
+function trailTexture() {
+  const c = document.createElement("canvas");
+  c.width = 64; c.height = 16;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "rgba(245, 120, 20, 0.95)"; g.fillRect(4, 2, 36, 12);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
+}
+/** Empty hands drop out of the way while you look at a piece or the Next one is in view (set a frame late, after the goal). */
+let handsLow = false;
+scene.add(spotLamp);
+function spikeTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.strokeStyle = "rgba(255, 196, 110, 0.95)"; g.lineWidth = 16;
+  g.beginPath(); g.arc(128, 128, 100, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = 14; g.lineCap = "butt";
+  g.beginPath(); g.moveTo(128, 70); g.lineTo(128, 186); g.moveTo(70, 128); g.lineTo(186, 128); g.stroke();
+  return new THREE.CanvasTexture(c);
+}
+/** Up the beam: bright at the floor, gone by the ceiling. */
+function beamTexture() {
+  const c = document.createElement("canvas");
+  c.width = 4; c.height = 128;
+  const g = c.getContext("2d")!, r = g.createLinearGradient(0, 0, 0, 128);
+  r.addColorStop(0, "rgba(255,255,255,0)"); r.addColorStop(0.5, "rgba(255,255,255,0.07)"); r.addColorStop(1, "rgba(255,255,255,0.22)");
+  g.fillStyle = r; g.fillRect(0, 0, 4, 128);
+  return new THREE.CanvasTexture(c);
+}
+function poolTexture(color = 0x4cc9f0) {
   const c = document.createElement("canvas");
   c.width = c.height = 128;
   const g = c.getContext("2d")!, r = g.createRadialGradient(64, 64, 8, 64, 64, 64);
-  r.addColorStop(0, "rgba(140, 225, 255, 0.85)"); r.addColorStop(0.55, "rgba(76, 201, 240, 0.4)"); r.addColorStop(1, "rgba(76, 201, 240, 0)");
+  const rgb = `${(color >> 16) & 255}, ${(color >> 8) & 255}, ${color & 255}`;
+  r.addColorStop(0, `rgba(${rgb}, 0.85)`); r.addColorStop(0.55, `rgba(${rgb}, 0.4)`); r.addColorStop(1, `rgba(${rgb}, 0)`);
   g.fillStyle = r; g.fillRect(0, 0, 128, 128);
   return new THREE.CanvasTexture(c);
 }
@@ -257,6 +327,7 @@ function buildItems() {
   touch.venue(world.level.name);
 }
 buildItems();
+marks.build(world);
 const ropes = cableView(scene);
 const mates = crewView(scene);
 
@@ -273,6 +344,7 @@ function load(level: Level) {
   ropes.clear();
   scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup);
   scene.remove(lights); lights = venueLights(world.level); scene.add(lights);
+  marks.build(world);
   sky.intensity = fill(world.level);
   buildItems();
   // A crew is a room on one level: another level is another room with the same code.
@@ -316,20 +388,27 @@ function draw() {
   glow.update(cable.glowing(world, cables), world.t);
   clock?.update(world.level.name, world.t, strikeState(world, cables)?.since ?? null);
   loadOut?.update(world, cables);
-  hands.update({ ...holding(), show: showArms }, world.t, stepSpeed());
   shoes.update(you.x, world.level.floorAt?.(you.x, you.z) ?? 0, you.z, you.yaw, stepSpeed(), 1 / 60);
-  ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
   const next = phase === "play" && !festival ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
-  marker.visible = !!tgt;
-  if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
+  // An empty right hand reaches for the piece that's next, at its middle.
+  const reach: [number, number, number] | undefined = tgt && tgt !== held ? [tgt.x, tgt.y + dims(tgt)[1] / 2, tgt.z] : undefined;
+  hands.update({ ...holding(), show: showArms, reach, low: handsLow }, world.t, stepSpeed());
+  ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
+  // With nothing to lift, a tape mark to carry a stand to is what the marker and the arrow point at.
+  const mark = !tgt && next?.at ? next.at : null, bob = Math.sin(performance.now() / 260) * 0.05;
+  marker.visible = !!tgt || !!mark;
+  if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + bob, tgt.z);
+  else if (mark) marker.position.set(mark.x, (world.level.floorAt?.(mark.x, mark.z) ?? 0) + 1.95 + bob, mark.z);
   // Out of view, an arrow on the screen edge says which way to turn for it.
-  const away = tgt ? camera.worldToLocal(marker.position.clone()) : null, ndc = tgt ? marker.position.clone().project(camera) : null;
+  const away = marker.visible ? camera.worldToLocal(marker.position.clone()) : null, ndc = marker.visible ? marker.position.clone().project(camera) : null;
   const arrow = away && ndc ? toward(ndc, away.z > 0) : null;
   $("toward").hidden = !arrow;
-  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = (gear(tgt.gear).speaker && tapeLabel(tgt.key, tgt.gear)) || callName(world, cables, tgt.key); }
+  $("toward").classList.toggle("warm", !!next?.to || !!next?.at);
+  if (arrow) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = tgt ? towardName(world, cables, tgt.key) : mark ? towardMark(world, mark) : ""; }
   // In view, the outline and the pool, breathing slowly.
   const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 380), seen = !!tgt && !arrow && tgt !== held;
   goal.visible = seen;
+  handsLow = !held && !end && !jack && (!!at || seen);
   goalLamp.intensity = seen ? 3 * pulse : 0;
   if (seen && tgt) {
     const [w, h, d] = dims(tgt);
@@ -338,12 +417,36 @@ function draw() {
     goalPool.position.set(tgt.x, (world.level.floorAt?.(tgt.x, tgt.z) ?? 0) + 0.012, tgt.z); goalPool.scale.setScalar(Math.max(w, d) * 1.1 + 0.35);
     goalLamp.position.set(tgt.x, tgt.y + h + 0.6, tgt.z + 0.3);
   }
+  // Where it goes, lit whether or not it is on screen, so you see the stand as you turn to it.
+  const to = next?.to ? world.items.find((i) => i.key === next.to) ?? null : next?.at ?? null;
+  const warm = !!to;
+  marks.update(world, pulse);
+  marker.material.color.setHex(warm ? WARM : COOL);
+  goalLine.color.setHex(warm ? WARM : COOL);
+  goalLamp.color.setHex(warm ? 0xffc88a : 0x9fe3ff);
+  if (goalPool.material.map !== (warm ? warmPool : coolPool)) { goalPool.material.map = warm ? warmPool : coolPool; goalPool.material.needsUpdate = true; }
+  // The tape starts where you stand: to the piece while your hands are empty, then on from it to the stand.
+  const piece = tgt && tgt !== held ? tgt : null;
+  layTrail(trails[0], to ? { x: you.x, z: you.z } : null, to ? piece ?? to : null, [0.35, 0.45]);
+  layTrail(trails[1], to ? piece : null, to, [0.45, 0.45]);
+  spot.visible = !!to;
+  spotLamp.intensity = to ? 2.4 + 0.5 * pulse : 0;
+  if (to) {
+    const floor = world.level.floorAt?.(to.x, to.z) ?? 0, top = world.level.outdoor ? floor + 3 : world.level.room.height;
+    spot.position.set(to.x, floor, to.z);
+    spotMark.position.y = 0.014; spotMark.scale.setScalar(0.55);
+    spotGlow.position.y = 0.013; spotGlow.scale.setScalar(0.85 + 0.05 * pulse);
+    spotBeam.scale.set(0.42, top - floor, 0.42);
+    spotLamp.position.set(to.x, floor + 1.9, to.z + 0.2);
+  }
   // Until you start (a piece moved, a cable out), only the Next line: no score card, no speakers tab.
   document.body.classList.toggle("fresh", !!next && !begun(world, cables));
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
   if (phase === "play") touch.relabel(ar?.pad() ?? {});
+  // A box in your hands fills the middle of the view, its tape label too: the key hint moves down, over the carry line.
+  document.body.classList.toggle("carrying", !!held);
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? dj?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? band?.hint() ?? ar?.hint() ?? hint(at, jack));
   // In a crew room, the mess everyone sees: cables left loose and gear left in the walkways.
   const left = phase === "play" && online?.status === "in" ? cable.mess(world, cables) : [];

@@ -18,12 +18,30 @@ import { mulberry32 } from "@rustybuns/util";
 import { van } from "@rustybuns/models/van";
 import { firePit } from "@rustybuns/models/fire";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
-import { SYSTEMS, stackWidth, behindStacks, isTop, LINE_PINS, powerPlan, gear as sheet } from "@rustybuns/gear";
+import { banks, type Bank, SYSTEMS, stackWidth, behindStacks, isTop, LINE_PINS, powerPlan, gear as sheet } from "@rustybuns/gear";
 import { rigPlan, rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
+
+/** The field's banks as ground you can see: a sheet over each one's footprint, lifted to the height the sound reads
+ *  (@rustybuns/gear `banks`, the one height map), in the sand the floor is made of. Empty with no banks. */
+export function bankMounds(list: readonly Bank[], material: THREE.Material = surface("sand", "#a88a66")): THREE.Group {
+  const g = new THREE.Group(), land = banks(list);
+  for (const b of list) {
+    const wide = b.width ?? Math.max(2, 4 * b.h), long = b.len + wide;
+    const geo = new THREE.PlaneGeometry(long, wide, Math.max(8, Math.ceil(long / 0.5)), Math.max(8, Math.ceil(wide / 0.4))).rotateX(-Math.PI / 2).rotateY(b.yaw).translate(b.at[0], 0, b.at[1]);
+    const p = geo.attributes.position!;
+    // a hair over the floor where the bank runs out, so its foot never flickers into it
+    for (let i = 0; i < p.count; i++) p.setY(i, land(p.getX(i), p.getZ(i)) + 0.008);
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(metreUV(geo), material);
+    m.receiveShadow = m.castShadow = true;
+    g.add(m);
+  }
+  return g;
+}
 
 /** The beams' colours, cycling across the heads: magenta, cyan, amber, violet. */
 export const BEAMS = ["#ff2bd6", "#22e3ff", "#ffb02b", "#8a5bff"] as const;
@@ -301,7 +319,8 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   // ---- the stacks: bin, mid-bass horn, mid-high horn, on a sand dolly
   // the boxes in the photo kit's coats and grilles (the page hands in gear-kit.ts's look), as the gear climb shoots them
   const look = kit;
-  // ---- the rugs on the sand
+  // ---- the banks on the field, and the rugs on the sand
+  group.add(bankMounds(out.banks ?? []));
   group.add(rugs(out));
 
   const rig = roomRig(def);

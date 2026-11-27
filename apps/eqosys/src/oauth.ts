@@ -60,13 +60,15 @@ function clientOf(req: Request, conf: Env, body: { client_id?: string }) {
   return appOf(conf, id);
 }
 
-async function tokens(conf: Env, iss: string, who: Handoff, nonce: string | null, refresh: boolean, web = false, jkt: string | null = null) {
-  const access = await sign(conf, iss, who);
+/** The grant's tokens with its refresh token, if it has one, signed as of `at` (when the grant was checked), so a sign-out or a
+ * deletion landing while they are made cuts them too. */
+async function tokens(conf: Env, iss: string, who: Handoff, nonce: string | null, refresh: string | undefined, at: number) {
+  const access = await sign(conf, iss, who, at);
   if (!access) return null;
-  const id = await sign(conf, iss, who, Date.now(), { email_verified: await emailVerified(conf, who.user.id), ...(nonce ? { nonce } : {}) });
+  const id = await sign(conf, iss, who, at, { email_verified: await emailVerified(conf, who.user.id), ...(nonce ? { nonce } : {}) });
   return {
     access_token: access, id_token: id, token_type: "Bearer", expires_in: TOKEN_S, scope: refresh ? "openid email profile offline_access" : "openid email profile",
-    ...(refresh ? { refresh_token: await mintRefresh(conf, who.user.id, who.app, Date.now(), web, jkt) } : {}),
+    ...(refresh ? { refresh_token: refresh } : {}),
   };
 }
 
@@ -118,16 +120,17 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
       const traded = await exchange(conf, app.id, body.code, body.code_verifier, body.redirect_uri);
       if (!traded) return oops("invalid_grant", "that code is used, late, for another client or redirect_uri, or the verifier is wrong", 400, head);
       // Native apps ask for offline_access and keep the refresh token; a site with its own sessions doesn't need one.
-      const out = await tokens(conf, iss, traded.who, traded.nonce, /\boffline_access\b/.test(body.scope ?? ""));
+      const keep = /\boffline_access\b/.test(body.scope ?? "") ? await mintRefresh(conf, traded.who.user.id, traded.who.app, Date.now(), traded.web) : undefined;
+      const out = await tokens(conf, iss, traded.who, traded.nonce, keep, Date.now());
       return out ? json(out, 200, head) : oops("temporarily_unavailable", "eqosys has no signing key yet", 503, head);
     }
     if (!body.refresh_token) return oops("invalid_request", "send refresh_token", 400, head);
     // A game page's token (/api/exchange with `keep`) renews here too, and its next one stays a page's. One bound to the
     // page's key (DPoP) needs a proof from that key; an unbound one sent with a proof binds the next.
     const proved = await provedBy(req, iss);
-    const spent = await spendRefresh(conf, app.id, body.refresh_token, Date.now(), proved);
+    const at = Date.now(), spent = await spendRefresh(conf, app.id, body.refresh_token, at, proved);
     if (!spent) return oops("invalid_grant", "that refresh token is spent, late, revoked, another client's, or bound to another key", 400, head);
-    const out = await tokens(conf, iss, spent.who, null, true, spent.web, proved);
+    const out = await tokens(conf, iss, spent.who, null, spent.next, at);
     return out ? json(out, 200, head) : oops("temporarily_unavailable", "eqosys has no signing key yet", 503, head);
   }
 

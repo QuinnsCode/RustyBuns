@@ -13,7 +13,7 @@
 // (hibernating sockets, no alarms). A status change costs one request per friend; nothing runs while people idle.
 import { arr, check, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { GENRES, onSite } from "../apps.ts";
+import { GENRES, onSite, studioGame } from "../apps.ts";
 import { appOf } from "../listings.ts";
 import { b64url, json, loopbackOn, sha256, type D1 } from "../env.ts";
 import { coworkersOf } from "../studios.ts";
@@ -44,7 +44,7 @@ export type Who = Of<typeof Who>;
 const OpCall = obj({ who: Who, op: Op });
 // `to` is whose hub this is for: a hub nobody has opened yet learns who it belongs to from the first message it gets.
 const Peer = obj({
-  from: Person, to: Person, kind: oneOf(["ask", "accept", "drop", "presence", "note", "linked"]),
+  from: Person, to: Person, kind: oneOf(["ask", "accept", "drop", "presence", "note", "linked", "gone"]),
   presence: opt(arr(Presence, MAX_SOCKETS)), app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)),
 });
 type Peer = Of<typeof Peer>;
@@ -89,6 +89,15 @@ export interface HubEnv { HUB?: Hubs; DB: D1; LOOPBACK_RETURNS?: string }
 /** Wipe a person's hub, telling their friends: the last step of deleting the account. */
 /** Close the person's hub tabs that `app`'s tokens opened ("*": every app's). */
 export const hubOut = (hubs: Hubs, id: string, app: string) => hubOf(hubs, id).fetch(new Request(`https://hub/out?${new URLSearchParams({ app })}`, { method: "POST", body: "{}" }));
+/** The most people one hubOuts order names: the hub that takes it makes one fetch for each of the others. */
+export const OUT_BATCH = 50;
+/** hubOut for up to OUT_BATCH people with one fetch from the Worker: the first one's hub closes its own tabs and passes the order on. */
+export const hubOuts = (hubs: Hubs, ids: string[], app: string) =>
+  hubOf(hubs, ids[0]!).fetch(new Request(`https://hub/out?${new URLSearchParams({ app })}`, { method: "POST", body: JSON.stringify({ more: ids.slice(1) }) }));
+/** What a studio's own game may not do: it sees friends and notes them, and never decides who they are. */
+const DECIDES = new Set<Op["op"]>(["befriend", "accept", "drop", "relink", "clear"]);
+/** The state as `app` may see it: the friend link makes friends of whoever opens it, so a studio's game doesn't get it. */
+const shown = (app: string, state: HubState): HubState => { if (!studioGame(app)) return state; const { link: _, ...rest } = state; return rest; };
 export const hubErase = (hubs: Hubs, id: string) => hubOf(hubs, id).fetch(new Request("https://hub/erase", { method: "POST", body: "{}" }));
 
 /** Tell a person's friends (one note each) something an app did for them. Quiet when it fails: the unlock stands. */
@@ -154,7 +163,7 @@ export class Hub {
       const { server, response } = this.sockets.upgrade({ app: who.app, doing: "" });
       // Past MAX_SOCKETS, the oldest tab goes.
       for (const old of this.sockets.open().slice(0, -MAX_SOCKETS)) try { old.close(4000, "too many tabs"); } catch { /* closing */ }
-      this.sockets.send(server, { t: "state", ...await this.state() });
+      this.sockets.send(server, { t: "state", ...shown(who.app, await this.state()) });
       await this.presenceChanged();
       return response;
     }
@@ -164,7 +173,7 @@ export class Hub {
       if (!call) return json({ error: "send { who, op }" }, 400);
       await this.meet(call.who);
       const error = await this.act(call.who, call.op);
-      return error ? json({ error }, 400) : json(await this.state());
+      return error ? json({ error }, 400) : json(shown(call.who.app, await this.state()));
     }
     // Account deletion (members.ts): tell everyone who knows this person they are gone, close their tabs, forget it all.
     if (url.pathname === "/erase") {
@@ -172,8 +181,10 @@ export class Hub {
       return json({ ok: true });
     }
     // A sign-out everywhere, or an app's tokens revoked (members.ts): the tabs those tokens opened close; a cut token can't open another.
+    // `more` (hubOuts): the other people's hubs are told the same, from this hub's own subrequests rather than the Worker's.
     if (url.pathname === "/out") {
-      const app = url.searchParams.get("app") ?? "*";
+      const app = url.searchParams.get("app") ?? "*", more = check(obj({ more: arr(Id, OUT_BATCH) }), body)?.more ?? [];
+      if (more.length && this.env.HUB) await Promise.allSettled(more.map((id) => hubOut(this.env.HUB!, id, app)));
       for (const ws of this.sockets.open()) if (app === "*" || this.sockets.who(ws)?.app === app) try { ws.close(4003, "signed out"); } catch { /* closing */ }
       await this.presenceChanged();
       return json({ ok: true });
@@ -247,6 +258,7 @@ export class Hub {
   private async act(who: Who, op: Op): Promise<string | null> {
     const s = this.ctx.storage, me: Person = { id: who.id, name: who.name };
     const done = async (e: string | null = null) => { if (!e) await this.push(); return e; };
+    if (studioGame(who.app) && DECIDES.has(op.op)) return "friends are made and dropped on eqosys or in a Q app, not in a studio's game";
     switch (op.op) {
       case "state": return null;
       case "status": return "status is for a socket";
@@ -291,7 +303,8 @@ export class Hub {
         const app = await appOf(this.env, who.app);
         const at = op.link && app ? onSite(app, op.link, loopbackOn(this.env)) : null;
         if (op.link && (!at || !/^https?:$/.test(at.protocol))) return "a link must be a page on the app's own site";
-        await this.send(friend, { from: me, kind: "note", app: who.app, text: op.text, ...(op.link ? { link: op.link } : {}) });
+        // The URL as it was checked, not as typed: `https:host/path` passes as that host, and would resolve on eqosys's own pages.
+        await this.send(friend, { from: me, kind: "note", app: who.app, text: op.text, ...(at ? { link: at.href } : {}) });
         return null;
       }
       // The home's folded rows: saved, not pushed, as no other tab draws them live.
@@ -344,7 +357,9 @@ export class Hub {
         ...(await Promise.all(["f:", "in:"].map((prefix) => s.list<Person>({ prefix })))).flatMap((m) => [...m.values()]),
         ...[...(await s.list<Out>({ prefix: "out:" })).values()].flatMap((o) => (o.to ? [o.to] : [])),
       ];
-      await Promise.all(known.map((p) => this.send(p, { from: me, kind: "drop" })));
+      // Coworkers too, whose hubs keep a row of their presence (`c:`); "gone" also takes every note they left there.
+      const ids = new Set(known.map((p) => p.id)), coworkers = (await coworkersOf(this.env, me.id)).filter((c) => !ids.has(c.id));
+      await Promise.all([...known, ...coworkers].map((p) => this.send(p, { from: me, kind: "gone" })));
     }
     for (const ws of this.sockets.open()) try { ws.close(4001, "account deleted"); } catch { /* closing */ }
     await this.forget([...(await s.list({ prefix: "" })).keys()]);
@@ -388,6 +403,12 @@ export class Hub {
       case "drop":
         await this.forget([`f:${id}`, `in:${id}`, `out:${id}`, ...(await this.askNotesFrom(id))]);
         break;
+      // Their account was deleted (erase): nothing of them stays here, their notes and their row as a coworker included.
+      case "gone": {
+        const notes = [...(await s.list<Note>({ prefix: "n:" })).entries()].filter(([, n]) => n.from.id === id).map(([k]) => k);
+        await this.forget([`f:${id}`, `in:${id}`, `out:${id}`, `c:${id}`, ...notes]);
+        break;
+      }
       // This side opened their friend link (`linked` above, on their hub): a friend here too. Full here, they are told to let go.
       case "linked": {
         if (friend) return;
@@ -471,6 +492,9 @@ export class Hub {
     // Coworkers come from D1 each time, so someone who left the studio drops out; their presence is what their hub last said.
     const heard = new Map((await vals<Coworker>("c:")).map((c) => [c.id, c.presence]));
     const coworkers = me ? (await coworkersOf(this.env, me.id, MAX_FRIENDS)).filter((c) => !ids.has(c.id)).map((c): Coworker => ({ ...c, presence: heard.get(c.id) ?? [] })) : [];
+    // The row of someone no longer a coworker (they left, or their account went while this hub wasn't told) goes too.
+    const now = new Set(coworkers.map((c) => c.id)), stale = [...heard.keys()].filter((id) => !now.has(id));
+    if (me && stale.length) await this.forget(stale.map((id) => `c:${id}`));
     return {
       me: me ?? null,
       friends, ...(coworkers.length ? { coworkers } : {}),
@@ -482,5 +506,8 @@ export class Hub {
   }
 
   /** The state to every open tab. */
-  private async push() { this.sockets.broadcast({ t: "state", ...await this.state() }); }
+  private async push() {
+    const state = await this.state();
+    for (const ws of this.sockets.open()) this.sockets.send(ws, { t: "state", ...shown(this.sockets.who(ws)?.app ?? "", state) });
+  }
 }

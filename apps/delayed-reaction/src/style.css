@@ -151,3 +151,162 @@ button.info svg { width: 16px; height: 16px; }
 .about[popover]:popover-open { display: grid; }
 .about[popover]::backdrop { background: rgba(0, 0, 0, 0.5); }
 .about .hint { text-align: left; color: #e9ecf28c; }
+
+/* ---- the Controls sheet as the radio (the cog's dialog from @rustybuns/game-controls, its `presets` hook) ---- */
+/* The title on a torn strip of tape, the close key a radio key. */
+body > .gc-dialog .gc-head h2 { padding: 5px 14px 5px 18px; background: var(--fibre) 0 0 / 96px 48px, #dfe5ec; color: #11141a; font: 700 17px/1.2 ui-monospace, Menlo, monospace;
+  letter-spacing: 0.18em; text-transform: uppercase; clip-path: var(--clip); transform: rotate(var(--tilt, 0deg)); box-shadow: inset 7px 0 0 var(--lane-2); }
+body > .gc-dialog .gc-close { border: 1px solid #000; background: linear-gradient(#262a33, #121419); box-shadow: inset 0 1px 0 #ffffff29, 0 3px 0 #000; }
+/* The station display under the title, set in the speaker grille: the fascia's tuning dial behind glass, and the MUSIC VU. */
+body > .gc-dialog .dr-monitor { --hair: #e9ecf22e; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 9px 10px;
+  border: 1px solid #000; border-radius: 8px; background: #050608 var(--grille); box-shadow: inset 0 2px 8px #000, inset 0 0 0 1px var(--hair), 0 1px 0 #ffffff12; }
+body > .gc-dialog .dr-monitor .display { margin: 0; padding: 7px 10px 3px; }
+body > .gc-dialog .dr-monitor .live svg { width: 100px; }
+@media (min-width: 600px) { body > .gc-dialog .dr-monitor .live svg { width: 104px; } }
+@media (max-height: 480px) {
+  body > .gc-dialog .dr-monitor { padding: 5px 8px; gap: 8px; }
+  body > .gc-dialog .dr-monitor .display { padding: 3px 8px 1px; }
+  body > .gc-dialog .dr-monitor .scale { max-height: 34px; }
+  body > .gc-dialog .dr-monitor .live svg { width: 64px; }
+}
+/* Presets: a band selector. The keys sit in one sunk tray under a band window (--band, a printed tick over each key), and a
+   lit pointer in the key's lane colour slides along it to the one in use. Each key keeps its lane's LED, its number and
+   its name on tape. */
+body > .gc-dialog .gc-profiles.gc-presets { --at: 0; --on: var(--lane-0); position: relative; gap: 5px; padding: 28px 8px 9px; border: 1px solid #000; border-radius: 8px;
+  background: var(--plate); box-shadow: inset 0 2px 7px #000c, 0 1px 0 #ffffff12; }
+body > .gc-dialog .gc-presets:has([data-slot="1"][aria-pressed=true]) { --at: 1; --on: var(--lane-1); }
+body > .gc-dialog .gc-presets:has([data-slot="2"][aria-pressed=true]) { --at: 2; --on: var(--lane-2); }
+body > .gc-dialog .gc-presets:has([data-slot="3"][aria-pressed=true]) { --at: 3; --on: var(--lane-3); }
+body > .gc-dialog .gc-presets::before { content: ""; position: absolute; top: 7px; left: 8px; right: 8px; height: 16px; border-radius: 3px;
+  background: var(--band) 0 3px / 100% 13px no-repeat, linear-gradient(#ffffff14, #0000 50%), #03060a; box-shadow: inset 0 1px 3px #000, 0 0 0 1px #000, 0 1px 0 #ffffff1a; }
+body > .gc-dialog .gc-presets::after { content: ""; position: absolute; top: 8px; height: 14px; width: 3px; border-radius: 1px; left: calc(8px + (100% - 16px) * (var(--at) * 2 + 1) / 8 - 1.5px);
+  background: var(--on); box-shadow: 0 0 6px var(--on), 0 0 14px color-mix(in srgb, var(--on) 60%, #0000); transition: left 280ms cubic-bezier(0.3, 1.3, 0.5, 1), background 280ms; }
+body > .gc-dialog .gc-presets .gc-prof { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; --led: var(--lane-0); }
+body > .gc-dialog .gc-presets .gc-prof[data-slot="1"] { --led: var(--lane-1); }
+body > .gc-dialog .gc-presets .gc-prof[data-slot="2"] { --led: var(--lane-2); }
+body > .gc-dialog .gc-presets .gc-prof[data-slot="3"] { --led: var(--lane-3); }
+body > .gc-dialog .gc-presets .gc-prof b { display: grid; place-items: center; align-self: stretch; height: 46px; border: 1px solid #000; border-radius: 7px; font: 700 20px ui-monospace, Menlo, monospace; color: #f4f6fa;
+  background: linear-gradient(#262a33, #121419); box-shadow: inset 0 1px 0 #ffffff29, inset 0 -3px 0 color-mix(in srgb, var(--led) 45%, #000), 0 3px 0 #000, 0 5px 10px #0009; transition: transform 60ms; }
+body > .gc-dialog .gc-presets .gc-led { position: absolute; top: 7px; left: 8px; z-index: 1; width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--led) 30%, #000); }
+body > .gc-dialog .gc-presets .gc-name { align-self: center; padding: 2px 8px; background: var(--fibre) 0 0 / 96px 48px, #dfe5ec; color: #11141a; font: 600 11px/1.3 ui-monospace, Menlo, monospace; white-space: nowrap; box-shadow: inset 4px 0 0 var(--led); }
+body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] { background: none; }
+body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] b { transform: translateY(2px); background: linear-gradient(#1c1f26, #0d0f13); box-shadow: inset 0 2px 6px #000, inset 0 -2px 0 var(--led), 0 1px 0 #000, 0 0 14px color-mix(in srgb, var(--led) 40%, #0000); }
+body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] .gc-led { top: 9px; background: var(--led); box-shadow: 0 0 8px var(--led); }
+body > .gc-dialog .gc-presets .gc-prof:hover b, body > .gc-dialog .gc-presets .gc-prof:focus-visible b { outline: 1.5px solid #e9ecf2; outline-offset: 1px; }
+body > .gc-dialog .gc-presets .gc-prof:focus-visible { outline: none; }
+/* Sections are hardware too: each header is its own screwed strip of brushed metal (--head-plate) with the name on tape and a
+   lane's colour code, and a flight-case latch at its end in place of the web chevron: lever down and lamp lit while the
+   section is open, folded flat and dark when it is shut. */
+body > .gc-dialog .gc-sec { border: 0; border-radius: 0; margin-top: 0; }
+body > .gc-dialog .gc-sec-h { min-height: 38px; padding: 4px 20px 4px 22px; border: 1px solid #000; border-radius: 6px; background: var(--head-plate);
+  box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0008, 0 2px 0 #0006; }
+body > .gc-dialog .gc-sec-h:hover { background: var(--head-plate); }
+body > .gc-dialog .gc-sec-h:focus-visible { outline: 1.5px solid #e9ecf2; outline-offset: 2px; }
+body > .gc-dialog .gc-sec-h > svg { display: none; }
+body > .gc-dialog .gc-sec-h > span:not(.gc-chev) { padding: 3px 10px 3px 13px; background: var(--fibre) 0 0 / 96px 48px, #dfe5ec; color: #11141a; font: 700 11px/1.3 ui-monospace, Menlo, monospace;
+  letter-spacing: 0.16em; text-transform: uppercase; clip-path: var(--clip); transform: rotate(var(--tilt, 0deg)); box-shadow: inset 5px 0 0 var(--code, var(--lane-0)); }
+body > .gc-dialog .gc-sec[data-sec="lookX"] .gc-sec-h > span { --code: var(--lane-1); }
+body > .gc-dialog .gc-sec[data-sec="lookY"] .gc-sec-h > span { --code: var(--lane-2); }
+body > .gc-dialog .gc-sec[data-sec="music"] .gc-sec-h > span { --code: var(--lane-3); }
+body > .gc-dialog .gc-chev { order: 2; width: 50px; height: 27px; margin-left: 10px; opacity: 1; background: var(--latch-open) center / 100% 100% no-repeat; filter: drop-shadow(0 2px 0 #000); }
+/* The strip's empty metal carries its engraving, as a channel strip's does: the section's number cut in (CH 01 to CH 04) and,
+   under it, what the latch says, OPEN or SHUT, so a glance reads the state as well as the lamp. Decorative to a screen
+   reader (the button's aria-expanded says it). */
+body > .gc-dialog .gc-card { counter-reset: dr-sec; }
+body > .gc-dialog .gc-sec { counter-increment: dr-sec; }
+body > .gc-dialog .gc-sec-h::after { content: "CH " counter(dr-sec, decimal-leading-zero) "\A OPEN" / ""; order: 1; margin-left: auto; white-space: pre; text-align: right;
+  font: 700 10px/1.25 ui-monospace, Menlo, monospace; letter-spacing: 0.2em; color: #8a909c; text-shadow: 0 -1px 0 #000, 0 1px 0 #ffffff1a; }
+body > .gc-dialog .gc-sec.shut .gc-sec-h::after { content: "CH " counter(dr-sec, decimal-leading-zero) "\A SHUT" / ""; color: #5c626e; }
+body > .gc-dialog .gc-sec.shut .gc-chev { transform: none; background-image: var(--latch-shut); }
+body > .gc-dialog .gc-chev > svg { display: none; }
+/* The rows read like the fascia's engraving: small capitals in the label grey. */
+body > .gc-dialog .gc-sec-b .gc-lab { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: #e9ecf2; }
+/* The rows are hardware on a plate: each section's rows sit on brushed black metal screwed to the panel, sunk a little. */
+body > .gc-dialog .gc-sec-b { gap: 0; margin: 3px 0 0; padding: 2px 18px; border: 1px solid #000; border-radius: 6px; background: var(--plate);
+  box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0008, 0 2px 0 #0006; }
+/* Keyboard: the radio's printed legend strip on the same plate. The pads are four columns, each a letter key and an arrow key
+   with its lane's colour under the caps; Hold, M and Esc follow, each legend printed under its cap. */
+body > .gc-dialog .gc-sec[data-sec="keys"] .gc-sec-b { padding: 14px 18px 12px; }
+body > .gc-dialog .dr-keys { display: grid; grid-template-columns: 1fr; gap: 12px; }
+body > .gc-dialog .dr-keys > div { display: grid; gap: 10px; }
+body > .gc-dialog .dr-pads { grid-template-columns: repeat(4, 1fr); }
+body > .gc-dialog .dr-rest { grid-template-columns: 1fr 0.7fr 1.3fr; padding-top: 11px; border-top: 1px solid #00000080; box-shadow: inset 0 1px 0 #ffffff0d; }
+body > .gc-dialog .dr-keys .dr-lane, body > .gc-dialog .dr-keys .dr-key { display: grid; justify-items: center; gap: 6px; }
+body > .gc-dialog .dr-keys dt { display: flex; gap: 5px; }
+body > .gc-dialog .dr-keys kbd { display: grid; place-items: center; min-width: 30px; height: 30px; padding: 0 7px; border: 1px solid #000; border-radius: 5px;
+  background: linear-gradient(#30343e, #17191f); box-shadow: inset 0 1px 0 #ffffff2e, inset 0 -3px 0 color-mix(in srgb, var(--c, #6a707c) 70%, #000), 0 2px 0 #000, 0 4px 8px #0008;
+  color: #f4f6fa; font: 700 14px/1 ui-monospace, Menlo, monospace; }
+body > .gc-dialog .dr-keys kbd.wide { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+/* The legend printed on the plate: the pad's number in its lane's colour, the rest in the panel's engraving. */
+body > .gc-dialog .dr-keys dd { margin: 0; font: 600 10px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 0.16em; text-transform: uppercase; text-align: center; color: #e9ecf2b8; opacity: 1; }
+body > .gc-dialog .dr-lane dd { color: var(--c); text-shadow: 0 0 6px color-mix(in srgb, var(--c) 45%, #0000); }
+body > .gc-dialog .gc-sec-b label { border-bottom: 1px solid #00000080; box-shadow: 0 1px 0 #ffffff0d; }
+body > .gc-dialog .gc-sec-b label:last-child { border: 0; box-shadow: none; }
+/* A fader is a channel strip's: a painted plate set into the brushed panel (dark enamel worn to the metal in specks, a
+   bevelled edge), the slot cut through it, the dished cap riding in the slot, and its own range printed under it (Side and
+   Up 0.25x to 3x, Volume 0 to 100%) lined up with the cap's travel, the numbers a size up on desktop. */
+/* The plate is the row's own grid item (its ::before) spanning the fader and its read-out, so the read-out's window is set in
+   the same plate rather than floating beside it. */
+body > .gc-dialog .gc-sec-b label:has(input[type=range]) { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.65fr) 5.6em; column-gap: 0; }
+@media (max-width: 599px) { body > .gc-dialog .gc-sec-b label:has(input[type=range]) > .gc-lab { gap: 6px; letter-spacing: 0.07em; } }
+body > .gc-dialog .gc-sec-b label:has(input[type=range])::before { content: ""; grid-area: 1 / 2 / 2 / 4; align-self: stretch; margin: 6px 0; border-radius: 6px;
+  background: var(--fader-plate) 0 0 / 160px 60px, linear-gradient(#1d212b, #13161d);
+  box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0009, 0 0 0 1px #000, 0 1px 0 1px #ffffff0d, 0 3px 6px #0008; }
+body > .gc-dialog .gc-sec-b label:has(input[type=range]) > .gc-lab { grid-area: 1 / 1; padding-right: 8px; }
+body > .gc-dialog .gc-sec-b label:has(input[type=range]) > input { grid-area: 1 / 2; position: relative; }
+body > .gc-dialog .gc-sec-b label:has(input[type=range]) > output { grid-area: 1 / 3; justify-self: stretch; margin-right: 8px; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x); --sh: 17px; box-sizing: content-box; width: calc(100% - 18px); margin-right: 6px; padding: 11px 6px 26px; border-radius: 6px;
+  background: var(--s) 16px calc(100% - 8px) / calc(100% - 33px) var(--sh) no-repeat; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=range][name=music] { --s: var(--scale-pct); }
+@media (min-width: 600px) {
+  body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x-lg); --sh: 19px; padding-bottom: 28px; }
+  body > .gc-dialog .gc-card .gc-sec-b input[type=range][name=music] { --s: var(--scale-pct-lg); }
+}
+/* The read-out is a lit window set in the plate: a chrome bezel round smoked glass (--glass), the number glowing in the
+   tunnel's cyan over the unlit segments' ghost (8.88x, 888%), as a radio's display shows them. */
+body > .gc-dialog .gc-sec-b output { position: relative; justify-self: end; min-width: 5ch; padding: 7px 11px; border: 0; border-radius: 4px; background: var(--glass) center / 100% 100%;
+  box-shadow: 0 1px 0 #ffffff14, 0 3px 6px #000; color: #c8f6ff; font: 700 15px/1 ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; text-align: right;
+  text-shadow: 0 0 7px #4de3ffaa, 0 0 1px #fff; }
+body > .gc-dialog .gc-sec-b output::before { content: "8.88x"; position: absolute; right: 11px; top: 7px; color: #4de3ff; opacity: 0.1; text-shadow: none; pointer-events: none; }
+body > .gc-dialog .gc-sec-b label:has(input[name=music]) output::before { content: "888%"; }
+/* Music on: a bat-handle toggle on its own plate, OFF and ON printed either side, the go LED lit when it is on. */
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox] { width: 56px; height: 34px; border: 0; border-radius: 4px; background: var(--toggle-off) center / 100% 100%; box-shadow: 0 2px 0 #000; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]:checked { background: var(--toggle-on) center / 100% 100%; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]::after { display: none; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]:focus-visible { outline: 1.5px solid #e9ecf2; outline-offset: 2px; }
+/* Desktop: the section tapes a size up, so they read at arm's length. */
+@media (min-width: 600px) {
+  body > .gc-dialog .gc-sec-h > span:not(.gc-chev) { padding: 4px 13px 4px 16px; font-size: 13px; }
+}
+body > .gc-dialog .gc-reset { border: 1px solid #000; background: linear-gradient(#262a33, #121419); box-shadow: inset 0 1px 0 #ffffff29, 0 3px 0 #000; letter-spacing: 0.14em; text-transform: uppercase; font-size: 13px; }
+/* A phone on its side: the sheet sits low, so the header, the preset keys and the key strip shrink and more rows show before you scroll. */
+@media (max-height: 480px) {
+  body > .gc-dialog .gc-card { gap: 6px; padding-top: 12px; }
+  body > .gc-dialog .gc-head h2 { padding: 3px 12px 3px 16px; font-size: 14px; }
+  body > .gc-dialog .gc-close { width: 36px; height: 36px; }
+  body > .gc-dialog .gc-profiles.gc-presets { padding: 20px 6px 6px; }
+  body > .gc-dialog .gc-presets::before { top: 5px; left: 6px; right: 6px; height: 12px; background-position: 0 0; background-size: 100% 12px; }
+  body > .gc-dialog .gc-presets::after { top: 6px; height: 10px; left: calc(6px + (100% - 12px) * (var(--at) * 2 + 1) / 8 - 1.5px); }
+  body > .gc-dialog .gc-sec-b output { padding: 5px 9px; font-size: 13px; }
+  body > .gc-dialog .gc-sec-b output::before { right: 9px; top: 5px; }
+  /* Each key keeps its cell's width with its tape under it, as on a phone held upright, just shorter: the tape no longer
+     crowds the key and the band pointer stands over the key's middle. */
+  body > .gc-dialog .gc-presets .gc-prof { gap: 4px; }
+  body > .gc-dialog .gc-presets .gc-prof b { height: 28px; font-size: 15px; }
+  body > .gc-dialog .gc-presets .gc-led { top: 4px; left: 5px; width: 5px; height: 5px; }
+  body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] .gc-led { top: 6px; }
+  body > .gc-dialog .gc-presets .gc-name { padding: 1px 7px; font-size: 10px; }
+  body > .gc-dialog .gc-sec-h { min-height: 30px; padding: 2px 18px 2px 20px; }
+  body > .gc-dialog .gc-chev { width: 42px; height: 23px; }
+  body > .gc-dialog .gc-sec-h::after { content: "CH " counter(dr-sec, decimal-leading-zero) " OPEN" / ""; }
+  body > .gc-dialog .gc-sec.shut .gc-sec-h::after { content: "CH " counter(dr-sec, decimal-leading-zero) " SHUT" / ""; }
+  body > .gc-dialog .gc-card .gc-sec-b input[type=range] { padding: 6px 6px 22px; }
+  body > .gc-dialog .gc-card label { min-height: 40px; }
+  body > .gc-dialog .gc-sec[data-sec="keys"] .gc-sec-b { padding: 10px 14px 8px; }
+  body > .gc-dialog .dr-keys { grid-template-columns: 1.6fr 1fr; gap: 10px; }
+  body > .gc-dialog .dr-rest { grid-template-columns: repeat(3, auto); padding: 0 0 0 10px; border: 0; border-left: 1px solid #00000080; box-shadow: inset 1px 0 0 #ffffff0d; }
+  body > .gc-dialog .dr-keys kbd { min-width: 26px; height: 26px; padding: 0 5px; font-size: 13px; }
+  body > .gc-dialog .dr-keys kbd.wide { font-size: 10px; }
+}
+/* A phone held upright: the sections sit closer, so Music and Reset come up sooner. */
+@media (max-width: 599px) and (min-height: 481px) { body > .gc-dialog .gc-card { gap: 8px; } }

@@ -68,10 +68,30 @@ export function viewFrame(what: What["kind"], kg: number, t: number, speed: numb
       f = frame([0.2, -0.27 - drop, -0.34], [0.25, -0.55 - tip, 0.8], [1, 0.2 + tip, 0]);
       break;
     default:
-      f = frame([0.23, -0.27, -0.34], [0.3, -0.45, 0.85], [-0.4, 0.6, -0.5]);
+      // Wrists high enough that the shirt cuffs show, the forearms coming up from the bottom corners.
+      f = frame([0.25, -0.205, -0.42], [0.34, -0.62, 0.7], [-0.4, 0.6, -0.5]);
   }
   f.o = add(f.o, b);
   return side > 0 ? f : mirror(f);
+}
+
+/** The right hand reaching for what's next (camera space, `to` a direction or a point ahead): out and up toward it,
+ *  fingers leading, thumb up, palm turned in to take it. Null when it is behind you or far off to the side, so the
+ *  hand stays at rest rather than twisting round. */
+export function reachFrame(to: V3, t: number, speed: number): Frame | null {
+  const d = unit(to);
+  if (d[2] > -0.35) return null;
+  const k = 0.42 / -d[2], b = sway(t, speed, 1);
+  const o: V3 = [Math.min(0.24, Math.max(0.05, d[0] * k * 0.55 + 0.1)), Math.min(-0.17, Math.max(-0.23, d[1] * k * 0.5 - 0.14)), -0.45];
+  const lead = unit([d[0] * 0.8 - 0.1, d[1] - 0.25, d[2]]);
+  return frame(add(o, b), [-lead[0] + 0.35, -lead[1] - 0.3, -lead[2] * 0.7 + 0.3], [-0.55, 0.8, -0.1]);
+}
+
+/** A frame `k` of the way from `a` to `b` (0 a, 1 b), its axes kept square. */
+export function blendFrame(a: Frame, b: Frame, k: number): Frame {
+  const l = (p: V3, q: V3): V3 => [p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k];
+  const x = l(a.x, b.x);
+  return frame(l(a.o, b.o), l(a.z, b.z), [-x[0], -x[1], -x[2]]);
 }
 
 /** The palm's centre on its front face, in the hand frame (right hand). */
@@ -82,7 +102,7 @@ export const PALM_FACE: V3 = [0.004, PALM.front, -0.05];
 export function carryFrames(box: Box, kg: number): { right: Frame; left: Frame } {
   const c = Math.cos(box.rot), s = Math.sin(box.rot);
   const toWorld = (v: V3): V3 => [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
-  const y = box.h * (0.78 - Math.min(0.25, kg / 200)), z = box.d * 0.12;
+  const y = box.h * (0.92 - Math.min(0.25, kg / 200)), z = box.d * 0.3;
   // In the box's own frame: hand y (back) = +x, z (to the elbow) = +z toward you, x = y cross z = -y (thumb up).
   const local: Frame = { o: [0, 0, 0], x: [0, -1, 0], y: [1, 0, 0], z: [0, 0, 1] };
   const side = (f: Frame, sx: Side): Frame => {

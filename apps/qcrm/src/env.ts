@@ -1,9 +1,10 @@
 // The Worker's bindings as the app sees them, and the two helpers every route uses.
-// Keep this file importing nothing: src/openapi.ts and the tests lean on it.
+// Keep this file importing nothing at run time (a type import is fine): src/openapi.ts and the tests lean on it.
+import type { WorkerLoaderLike } from "@rustybuns/util/codemode";
 
 /** A table row, or an entity's fields before `validate` (crm.ts) checks them against ENTITIES: the one shapeless bag the app passes around. */
 export type Row = Record<string, unknown>;
-export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes?: number; last_row_id?: number } }
+export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes: number; last_row_id: number } }
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;
   first<T = Row>(column?: string): Promise<T | null>;
@@ -13,6 +14,7 @@ export interface D1Statement {
 export interface D1 {
   prepare(sql: string): D1Statement;
   batch<T = Row>(stmts: D1Statement[]): Promise<D1Result<T>[]>;
+  exec(sql: string): Promise<unknown>;
 }
 
 /** A webhook delivery: one message per try (src/webhooks.ts). */
@@ -23,11 +25,8 @@ export interface QueueLike<T> { send(body: T, opts?: { delaySeconds?: number }):
 /** Social sign-in, on when both halves are set (auth.ts). */
 export interface SocialEnv { GITHUB_CLIENT_ID?: string; GITHUB_CLIENT_SECRET?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
 
-/** The part of a dynamic Worker's code (worker_loader) this app writes, and of the loader it calls (scripts.ts). */
-export interface WorkerCode { compatibilityDate?: string; mainModule: string; modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: unknown }
-export interface WorkerLoaderLike {
-  get(id: string, code: () => WorkerCode | Promise<WorkerCode>): { getEntrypoint(): { fetch(input: string, init?: RequestInit): Promise<Response> } };
-}
+/** The loader scripts.ts runs a script in: one type with code mode's (util/codemode). */
+export type { WorkerLoaderLike };
 
 /** The part of an R2 bucket the demo snapshot uses (demo-snapshot.ts). */
 export interface BucketLike {

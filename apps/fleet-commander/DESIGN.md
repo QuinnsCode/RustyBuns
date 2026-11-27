@@ -38,14 +38,14 @@ These are the bones. Every taste option below changes how they look or are named
 | Play | A set of wing orders with timing: groups wait at waypoints and go together; a feint holds its real strike. | `src/sim/plays.ts` |
 | Doctrine | How a captain AI runs a ship: press, steady, shield. The same three as stances, one level up. | `Doctrine`, `captain` |
 | Captain / admiral | AIs that call plays from the same playbook. The Compact admiral has a temper (zealot, pragmatist, cagey) that decides what it does when you rake its world. | `src/sim/ai.ts` |
-| Gravity well and lane | Every battle is fought over a planet with a base; reinforcements come through a hyperspace lane. An interdictor on the lane pulls them out on top of itself, shields down. | `arrive`, `orbitPoint` |
+| Gravity well and lane | Every battle is fought over a planet with a base; reinforcements come through a hyperspace lane. An interdictor on the lane pulls them out short, on top of itself: a third of each hull torn away, shields down, guns and hangars dazed for 18 s (`WARDEN`). | `arrive`, `orbitPoint` |
 | Rake vs guard | Raking bombards the base from low orbit (your guns stop shooting ships). A bastion's shield lets only a quarter through. Compact hulls on the line take 70% of the fire meant for the land. | `rake` |
 | Focus | The commander's meter: fills with time and kills. Spent on Foresight (see their next move, weak arcs hit harder), Fleet Trance (your pilots better, theirs worse) or Command Voice (orders land at once). | `usePower`, `FOCUS` |
 | The radio | Orders to wings are data on the radio (`Pending`: a play or a route, ids and points) and land `COMMS_LAG` (2 s) later; ships on your own bridge obey at once. The same data is what a lockstep game will send. | `send`, `courier` |
 | Drawn route | A play you draw: points to fly through, then an order where the stroke ends. Routes with one group wait for each other at their ends, so two strokes make your own pincer. | `runRoute`, `Wing.route` |
 | Sector | Worlds joined by lanes; one jump a turn; mines pay supply; bases spread and raid; refit spends supply. | `src/sector.ts` |
-| Gravity well | Round a star, a planet or a rift: a hull or craft inside falls along it (up to 1.8x speed at the core, its path bent inward) and nothing enters a body's core. A route drawn round a well is the slingshot. Only in the Theater. | `Well`, `wellAt` |
-| Sensors and the fog | Every hull and wing sees so far (`SENSOR`), and a held strongpoint listens. Rifts hide what is in them from all but scouts and the sensor ship; the star's heat shear from all but the sensor ship. Point blank, anything shows; firing gives a ship away for 4 s. What you lost sight of stays as a last-known ring. | `sensors`, `Veil`, `Field.sees`, `Field.known` |
+| Gravity well | Round a star, a planet or a rift: a hull or craft inside falls along it, its path bent inward. Going round it is fastest low down near the rim (up to 2.4x), falling in is a little faster, climbing out slower, and a hull flown into a body grinds along its rim and bleeds speed (`WELL`). So a route drawn round the rim (the slingshot) beats both the straight line through the planet and the wide berth round it. Only in the Theater. | `Well`, `wellAt` |
+| Sensors and the fog | Every hull and wing sees so far (`SENSOR`), and a held strongpoint listens. Rifts hide what is in them from all but scouts and the sensor ship; the star's heat shear from all but the sensor ship. Point blank, anything shows; firing gives a ship away for 4 s, except in a rift, which swallows the flash. An ambusher sees into the veil it hides in, a mine in a veil shows only to an eye that sees into it, and guns the target can't see hit harder and mostly past its shields (`DARK`): go into a rift blind and you are shot from the dark. What you lost sight of stays as a last-known ring. | `sensors`, `Veil`, `Field.sees`, `Field.known` |
 | Ping | The sensor ship lights up everything within 4.2k for 8 s, veils and mines too; the Compact hears it from anywhere for 15 s. Every 35 s. | `ping` |
 | Mines | The Compact sows them round what it holds; a hull that touches one takes 520 (much of it past the shields). Point defence clears the ones its side can see. | `Mine`, `mines` |
 | Strongpoint and supply | Hulls inside, none of theirs: the hold swings your way in 20 s. Held, it pays 0.25 supply a second. Supply buys a wing from the flagship's hangar, or thermal sensors (+1 to every sensor). Hold all four for 60 s and the system falls. | `Strongpoint`, `requisition` |
@@ -61,7 +61,7 @@ Compact is in the system, not where, and you hunt it like a hunted submarine: se
   (screen edges, arrows, the minimap, the middle button), not one riding the flagship.
 - **Point and click.** Drag a box to pick ships and wings; right-click to move or attack; right-drag a route (ships fly
   routes too, so they can slingshot). The plays, stances and formations work as everywhere else.
-- **Gravity wells.** Falling along a well is faster, so the long way round a planet can beat the straight line; a
+- **Gravity wells.** Falling round a well low down is faster, so the long way round a planet's rim beats the straight line through it; a
   rift's well is a mild pull and a place to hide.
 - **Scouts and a sensor ship.** Scouts are fast and unarmed, see into rifts, and run from fighters. The sensor ship
   sees into everything and pings. The star's heat shear (the temperature gradient) is a permanent fog unless you have
@@ -75,6 +75,36 @@ Compact is in the system, not where, and you hunt it like a hunted submarine: se
 Next on this line: the Compact hunting you too (its own scouts, decoys that read as hulls), mining your routes, a
 dreadnought in the Theater (the Armada's captains on a big board), a co-op seat per destroyer, and the sector map
 itself as a Theater (real time, not turns).
+
+## Levels (2026-11-26, #6062)
+
+Short battles, each built round one idea, easiest first. The list (menu, *Levels*) shows each one's line before it
+starts, and the banner says it again as it does. Each level is data on the seeded sim (`src/sim/levels.ts`): who is
+where, and a `goal` that says what the clock running out means (most: you were too slow and lose; the last stand:
+you held and win) and, for an escort, which ship must reach where. Each also carries `plan`, its intended play as a
+brain. `test/levels.test.ts` plays every level with its plan (it wins) and with no orders (it loses).
+
+| # | Level | Stars | The idea | What it is |
+| --- | --- | --- | --- | --- |
+| 1 | Torpedo Run | 1 | Bombers break ships | A lone carrier, drive cold, four minutes before it jumps. Two bomber wings and an escort. |
+| 2 | Through the Screen | 1 | The role triangle | A carrier behind three interceptor flights. Hunt them with escorts first, then the bombers go in. |
+| 3 | Split Shields | 2 | Shield arcs and the pincer | A bulwark whose deep forward shields soak a straight run. A pincer from both flanks splits them. |
+| 4 | Escort Run | 2 | Guarding a ship that isn't yours to fly | The Argus flies itself to a relay while bomber waves come for it from both sides. Fighters on it, hunt the bombers. |
+| 5 | Into the Rift | 3 | Fog and scouts | An ambush (a cruiser and a bulwark) waits in a rift round a relay, mines across its mouth. Scouts ride ahead; the guns follow. |
+| 6 | Hold the Lane | 4 | The interdictor | Two waves come through the lane. The interdictor on its mouth drags them out dazed, shields down, for the bombers. |
+| 7 | Guns or Land | 4 | Rake vs ships | Two bulwarks and a cruiser over a small base, a short clock. Their shields outlast it; the base doesn't. Rake. |
+| 8 | Last Stand | 5 | Focus fire and broadsides | A hurt flagship, three cruisers and bomber waves, three minutes until relief. Break the gun line one cruiser at a time. |
+
+How much each idea matters today, from the intended play against the obvious wrong one over four seeds: hunting
+first wins Through the Screen where a straight torpedo run loses three times in four; the pincer wins Split Shields in
+86 s where torpedo runs take 230 s or lose; the escort, the rake and the last stand are lost without their move. Two
+are weaker. Into the Rift is also won going in blind, because the ambush gives itself away when it fires. Hold the
+Lane is won without the interdictor too; with it the win comes about 10 s sooner and with more hull left. Both are
+tuning work for a later round (#6100).
+
+Left out: a slingshot level. A destroyer routed round a planet's rim reaches a gate 10 to 30% later than one flying
+straight, in every layout tried (its turn rate and the well's 1.8x top boost don't make up the longer path), so a
+level teaching it would teach something untrue. It waits on #6100.
 
 ## The battle, minute to minute
 
@@ -100,6 +130,7 @@ itself as a Theater (real time, not turns).
 | Campaign: bigger sectors | The same, with two more sectors | New Compact hulls (a battlecarrier, minelayers), new craft for you (boarding shuttles, drone swarms), a bonus mission in the middle (a convoy, a rescue) and an end battle | Next |
 | Drawn plays | Routes you draw on the table | Right-drag a route for the picked wings; Shift adds an arm that strikes with the last | **Built** |
 | Playbook | Your own plays | Save a drawn play as a card of its own (its arms by role, relative to the target), plus earned plays that unlock as you win | Next |
+| Levels | One idea per battle | Eight short battles, easiest first, each with the line it teaches; a fleet with no orders loses every one | **Built** |
 | Armada | A dreadnought, three destroyers with captains, its own wings | The fractal: plays and doctrines now go to captains, who call plays for their own wings | **Built (quick battle)** |
 | Theater | The fleet, two destroyers, the interdictor and a sensor ship, over a whole star system | Fog of war, gravity wells, rifts and heat shear, scouts, pings, mines, strongpoints and supply, box select and a minimap | **Built (first cut)** |
 | Admiral | Several armadas over a sector | One level further: sector plays (a pincer of two fleets on one system, a feint on a mine), battles you can fight or let your captains settle by doctrine | Later |

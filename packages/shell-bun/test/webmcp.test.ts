@@ -109,3 +109,11 @@ test("webmcp: a browser without WebMCP still takes the secret off the URL, and r
   expect(p.store.get("rb_prof_secret")).toBe(SECRET);
   expect(p.replaced).toEqual(["/play?x=1"]);
 });
+
+test("webmcp: a server whose /__rb/mem isn't a box's memory stats gets an error, not a line of undefined", async () => {
+  for (const reply of [Response.json({ rssMb: "120" }), new Response("<html>app</html>")]) {
+    const other = Bun.serve({ port: 0, fetch: () => reply.clone() });
+    expect(await page(`http://localhost:${other.port}`).call("mem_stats")).toEqual({ text: "/__rb/mem answered something that isn't a box's memory stats", error: true });
+    other.stop(true);
+  }
+});

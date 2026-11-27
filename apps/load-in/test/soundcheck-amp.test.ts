@@ -2,6 +2,7 @@
 // the page's worker runs): grittier than the same stem through the amp turned down, at the stem's own level, and
 // looping without a click. Once the band is on, the amp is theirs.
 import { expect, setDefaultTimeout, test } from "bun:test";
+import { head } from "@rustybuns/gear/circuit";
 import { SET_LIST, SHOW, atAmp, newDesk, newShow, setAmp, showState, startShow } from "../src/venues/show.ts";
 import { newWorld, walkTo } from "../src/sim.ts";
 import { BAKE_RATE, bakeGuitar } from "../src/audio/amp.ts";
@@ -26,6 +27,8 @@ test("set the amp at soundcheck, and the guitar baked through it is grittier at 
   expect(setAmp(w, s, "gain", 4)).toEqual({ ok: true });
   expect(setAmp(w, s, "gain", 4)).toEqual({ ok: true });
   expect(showState(w, newDesk(), s).amp.gain).toBe(10);
+  // The head on the stage is Qollab Studio's Q Brit 3, from the kit both games share.
+  expect(showState(w, newDesk(), s).head).toBe(head("brit").name);
 
   const di = stems(BAKE_RATE, SET_LIST[1]!).guitar;
   const hot = bakeGuitar(di, BAKE_RATE, s.amp), low = bakeGuitar(di, BAKE_RATE, { ...s.amp, gain: 2 });

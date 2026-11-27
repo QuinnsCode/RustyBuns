@@ -36,11 +36,12 @@ const dist = (ax: number, az: number, bx: number, bz: number) => Math.hypot(bx -
 /** How far a held strongpoint listens: what a side holds, it watches. */
 export const POST_EARS = 2000;
 
-/** Every eye a side has: its ships, its wings in the air and the strongpoints it holds, each with a reach and a tier. */
+/** Every eye a side has: its ships, its wings in the air and the strongpoints it holds, each with a reach and a tier.
+ *  An ambusher has charted the veil it hides in, so it sees into that one as deep as it goes. */
 export function eyes(w: World, side: Side) {
-  const bonus = w.field?.tier[side] ?? 0;
+  const f = w.field, bonus = f?.tier[side] ?? 0;
   const out: { x: number; z: number; r: number; tier: number }[] = [];
-  for (const s of w.ships) if (!s.dead && s.side === side) out.push({ x: s.x, z: s.z, r: SENSOR[s.kind].range, tier: SENSOR[s.kind].tier + bonus });
+  for (const s of w.ships) if (!s.dead && s.side === side) out.push({ x: s.x, z: s.z, r: SENSOR[s.kind].range, tier: Math.max(SENSOR[s.kind].tier, s.post && f ? veilDepth(f, s.post.x, s.post.z) : 0) + bonus });
   for (const g of w.wings) if (g.side === side && g.state === "out" && alive(g).length) out.push({ x: g.x, z: g.z, r: CRAFT_SENSOR[g.role].range, tier: CRAFT_SENSOR[g.role].tier + bonus });
   for (const p of w.field?.points ?? []) if (p.owner === side) out.push({ x: p.x, z: p.z, r: POST_EARS, tier: bonus });
   return out;
@@ -56,6 +57,9 @@ export function veilDepth(f: Field, x: number, z: number) {
 type Eye = ReturnType<typeof eyes>[number];
 const spots = (es: Eye[], x: number, z: number, depth: number, loud: boolean) =>
   es.some((e) => { const d = dist(e.x, e.z, x, z); return d < POINT_BLANK || (d < e.r && (e.tier >= depth || loud)); });
+/** Whether a gun's flash shows from here: a rift bends light round it and swallows the flash, so an ambusher in one can
+ *  fire and stay hidden; the star's shear only hides heat, and a flash shows through it. */
+const flashShows = (f: Field, x: number, z: number) => !f.veils.some((v) => v.kind === "rift" && dist(v.x, v.z, x, z) < v.r);
 
 /** The sensors: what each side sees, refreshed into `field.sees`. */
 export function sensors(w: World) {
@@ -66,11 +70,12 @@ export function sensors(w: World) {
     const pinged = (x: number, z: number) => side === "navy" && w.t < f.ping.until && dist(f.ping.x, f.ping.z, x, z) < PING.reach;
     for (const s of w.ships) {
       if (s.dead) { f.known[side].delete(s.id); continue; }
-      if (s.side === foe && (pinged(s.x, s.z) || spots(es, s.x, s.z, veilDepth(f, s.x, s.z), w.t < s.loudUntil))) { seen.add(s.id); f.known[side].set(s.id, { x: s.x, z: s.z, t: w.t }); }
+      if (s.side === foe && (pinged(s.x, s.z) || spots(es, s.x, s.z, veilDepth(f, s.x, s.z), w.t < s.loudUntil && flashShows(f, s.x, s.z)))) { seen.add(s.id); f.known[side].set(s.id, { x: s.x, z: s.z, t: w.t }); }
     }
     for (const g of w.wings) if (g.side === foe && g.state === "out" && alive(g).length && (pinged(g.x, g.z) || spots(es, g.x, g.z, veilDepth(f, g.x, g.z), false))) seen.add(g.id);
-    // A mine is cold and small: seen close to, by a deep sensor in range, or by a ping.
-    for (const m of f.mines) if (!m.dead && m.side === foe && (pinged(m.x, m.z) || es.some((e) => { const d = dist(e.x, e.z, m.x, m.z); return d < MINE.see || (e.tier >= 2 && d < e.r); }))) seen.add(m.id);
+    // A mine is cold and small: seen close to (in a veil, only by an eye that sees into it), by a deep sensor in
+    // range, or by a ping.
+    for (const m of f.mines) if (!m.dead && m.side === foe && (pinged(m.x, m.z) || es.some((e) => { const d = dist(e.x, e.z, m.x, m.z); return (d < MINE.see && e.tier >= veilDepth(f, m.x, m.z)) || (e.tier >= 2 && d < e.r); }))) seen.add(m.id);
     f.sees[side] = seen;
   }
 }
@@ -195,18 +200,22 @@ export const fieldBrain: Brain = (w) => {
 /** Every brain a theater battle runs. */
 export const theaterBrains: Brain[] = [fieldBrain, ...brains];
 
+/** An empty board in the fog, `wide` by `deep` each way from the middle, each side starting with `supply`. */
+export function newField(wide: number, deep: number, supply: number): Field {
+  return {
+    wide, deep, wells: [], veils: [], mines: [], points: [],
+    supply: { navy: supply, rim: supply }, sees: { navy: new Set(), rim: new Set() }, tier: { navy: 0, rim: 0 },
+    ping: { x: 0, z: 0, until: 0, ready: 0 }, heldSince: 0, known: { navy: new Map(), rim: new Map() },
+  };
+}
+
 /** The Pyre system: you drop in at the west edge; the Compact's home world, Hollow, is at the east. Between them a star
  *  whose heat shear hides ships, two planets, two rifts, and four strongpoints, two of them the Compact's and mined. */
 export function theater(seed: number): World {
   const w = emptyWorld(seed);
   w.rimTemper = (["zealot", "pragmatist", "cagey"] as const)[Math.floor(rand(w) * 3)];
   w.limit = 900;
-  const f: Field = {
-    wide: 8000, deep: 5000, wells: [], veils: [], mines: [], points: [],
-    supply: { navy: 6, rim: 6 }, sees: { navy: new Set(), rim: new Set() }, tier: { navy: 0, rim: 0 },
-    ping: { x: 0, z: 0, until: 0, ready: 0 }, heldSince: 0, known: { navy: new Map(), rim: new Map() },
-  };
-  w.field = f;
+  const f = (w.field = newField(8000, 5000, 6));
   w.planet = { name: "Hollow", x: 6000, z: 300, r: 520, base: 3200, baseMax: 3200 };
   f.wells.push(
     { kind: "star", name: "Pyre", x: 0, z: 400, core: 650, r: 3000, pull: 14 },

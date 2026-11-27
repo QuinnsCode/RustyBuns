@@ -79,13 +79,15 @@ export function installCommand(pm: string, hasWorkspaceFile: boolean, deps: Reco
   }
 }
 
+/** An `overrides` map: npm's nest (a package can hold its own map), so a value is a version or another map. */
+type Overrides = { [pkg: string]: string | Overrides };
+
 /** pnpm and npm need overrides to pin transitive @effect/*; bun/yarn honor "resolutions"/"overrides" too. */
 export function applyOverrides(pkg: any, pm: string): { pkg: any; changed: boolean } {
   const key = pm === "yarn" ? "resolutions" : "overrides";
   const target = pm === "pnpm" ? (pkg.pnpm ??= {}) : pkg;
   const before = JSON.stringify(target[key] ?? {});
-  // npm overrides nest (a package can hold its own map), so the values stay unknown: only our pins are strings.
-  const next: Record<string, unknown> = { ...target[key] };
+  const next: Overrides = { ...target[key] };
   // A range that already covers the pin stays: narrowing a monorepo root's "^4.1.4" to "4.1.4" would downgrade every app (#3803).
   for (const [name, pin] of Object.entries(DEPLOY_OVERRIDES)) {
     const have = next[name];

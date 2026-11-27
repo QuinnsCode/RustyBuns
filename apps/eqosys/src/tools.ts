@@ -2,9 +2,9 @@
 // from a script or the CLI (scripts/eq.ts), and by the `eq_batch` tool, which runs several of them in one round trip and keeps only
 // the fields asked for. The agent's cheapest path is one batch with `pick`, not a screenshot and not a call per fact (GET /agents says so).
 // A tool is a plain function of (who is asking, checked arguments); the guard is the type. Add one here and every door has it.
-import { arr, bool, Bad, check, int, isRecord, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
+import { arr, bool, Bad, check, int, isRecord, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
-import { APPS, GENRES, HOME, MATURITY, playOf } from "./apps.ts";
+import { APPS, GENRES, HOME, MATURITY, playOf, studioGame } from "./apps.ts";
 import { appOf, appsOf, Draft, isListing, pull, queue, recheck, review, save, send, type Done } from "./listings.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
 import { hubAsk, Who } from "./qollab/hub.ts";
@@ -12,8 +12,8 @@ import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type T
 import { members } from "./members.ts";
 import { slotsOf } from "./qollab/saves.ts";
 import { visitorsOf } from "./visitors.ts";
-import { house, Kind, makeStudio, Role, STUDIO_NAME, studiosOf, KINDS, ROLES } from "./studios.ts";
-import { studioAdd, studioRemove } from "./qollab/space.ts";
+import { house, invitesOf, Kind, makeStudio, Role, STUDIO_NAME, studiosOf, KINDS, ROLES } from "./studios.ts";
+import { studioAdd, studioJoin, studioRemove } from "./qollab/space.ts";
 import type { Env } from "./env.ts";
 
 /** Who is asking: a signed-in page (a session cookie; `email` and maybe `admin`) or an app's token (just who). */
@@ -47,6 +47,8 @@ const READ: Hints = { readOnlyHint: true, openWorldHint: false };
 const done = (r: Done) => { if (!r.ok) throw new Refused(r.error, r.status); return r.listing; };
 /** A studio's games change from the signed-in page, not from one app's token. */
 const onPage = (c: Ctx) => { if (!c.email) throw new Refused("a studio's games change from the signed-in page, not an app's token", 403); };
+/** Studios hold other people's names and emails, and a studio's own game is somebody else's code: it neither reads nor makes them. */
+const notAGame = (c: Ctx) => { if (studioGame(c.who.app)) throw new Refused("studios are read and made on eqosys or in a Q app, not in a studio's game", 403); };
 const unlocked =(list: { at: number | null }[]) => list.filter((a) => a.at !== null).length;
 const knownApp = async (c: Ctx, id: string) => (await appOf(c.conf, id)) ?? (() => { throw new Refused(`no app "${id}": ${APPS.map((a) => a.id).join(", ")}`); })();
 /** The one app an app's token may read the person's data for (its own), or null on eqosys's page, which reads them all. */
@@ -121,10 +123,13 @@ export const TOOLS: Tool[] = [
   tool(obj({}), {
     name: "eq_studios", title: "Studios", annotations: READ,
     description: "The studios this person is in (an account that makes apps: solo, team or business), with their role, its members (name, email, role) and how many, and each app on the shelf: " +
-      "`play` (its site), `make` (its codeSplitter repo, null until linked), `ship` (live or not deployed) and `shipped` (the last deploy it reported: stage, version, at; null until one does). The super admin's QNTBR studio is made the first time they ask.",
+      "`play` (its site), `make` (its codeSplitter repo, null until linked), `ship` (live or not deployed) and `shipped` (the last deploy it reported: stage, version, at; null until one does). The super admin's QNTBR studio is made the first time they ask. " +
+      "Its owners and admins also see `pending`, the invites waiting for a yes (email, role); `invites` are the ones waiting for this person's (studio, name, kind, role, by): answer them with eq_studio_join.",
     run: async (c) => {
+      notAGame(c);
       if (c.admin) await house(c.conf, c.who.id);
-      return { studios: await studiosOf(c.conf, c.who.id) };
+      const [studios, invites] = await Promise.all([studiosOf(c.conf, c.who.id), invitesOf(c.conf, c.who.id)]);
+      return { studios, invites };
     },
   }),
   tool(obj({ name: STUDIO_NAME, kind: Kind }), {
@@ -132,14 +137,16 @@ export const TOOLS: Tool[] = [
     description: "Make a studio with this person as its owner: `name` (1-60 characters) and `kind` (solo, team or business). Answers { id }. Three a person.",
     input: { name: { type: "string" }, kind: { enum: [...KINDS] } }, required: ["name", "kind"],
     run: async (c, a) => {
+      notAGame(c);
       const r = await makeStudio(c.conf, c.who.id, a.name, a.kind);
       if (!r.ok) throw new Refused(r.error, r.status);
       return { id: r.id };
     },
   }),
   tool(obj({ studio: str(64), email: str(320), role: Role }), {
-    name: "eq_studio_add", title: "Add someone to a studio", annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-    description: "Signed in on the page only. Put someone who has an eqosys account in a studio by their email, as owner, admin or maker (or change their role). The studio's owner or admin asks; only an owner makes another owner.",
+    name: "eq_studio_add", title: "Invite someone to a studio", annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    description: "Signed in on the page only. Invite someone to a studio by their email, as owner, admin or maker: they are in once they say yes (eq_studio_join), and the answer is the same whether or not the email has an account. " +
+      "For someone already in, it changes their role at once. The studio's owner or admin asks; only an owner makes another owner; 50 invites wait at most, and 20 a minute.",
     input: { studio: { type: "string" }, email: { type: "string" }, role: { enum: [...ROLES] } }, required: ["studio", "email", "role"],
     run: async (c, a) => {
       if (!c.email) throw new Refused("adding people by email is for the signed-in page, not an app's token", 403);
@@ -148,9 +155,20 @@ export const TOOLS: Tool[] = [
       return { ok: true };
     },
   }),
+  tool(obj({ studio: str(64), yes: bool() }), {
+    name: "eq_studio_join", title: "Answer a studio's invite", annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    description: "Signed in on the page only. Say yes (join it with the role it offers) or no to an invite waiting for you (`invites` in eq_studios). Either way the invite goes.",
+    input: { studio: { type: "string" }, yes: { type: "boolean" } }, required: ["studio", "yes"],
+    run: async (c, a) => {
+      if (!c.email) throw new Refused("answering an invite is for the signed-in page, not an app's token", 403);
+      const r = await studioJoin(c.conf, a.studio, c.who.id, a.yes);
+      if (!r.ok) throw new Refused(r.error, r.status);
+      return { ok: true };
+    },
+  }),
   tool(obj({ studio: str(64), email: str(320) }), {
     name: "eq_studio_remove", title: "Take someone out of a studio", annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    description: "Signed in on the page only. Take someone out of a studio by their email, or leave it with your own. The studio's owner or admin asks; only an owner takes out another owner, and a studio keeps one owner. They are out of the studio's space at once.",
+    description: "Signed in on the page only. Take someone out of a studio by their email (or take back their invite), or leave it with your own. The studio's owner or admin asks; only an owner takes out another owner, and a studio keeps one owner. They are out of the studio's space at once.",
     input: { studio: { type: "string" }, email: { type: "string" } }, required: ["studio", "email"],
     run: async (c, a) => {
       if (!c.email) throw new Refused("taking people out by email is for the signed-in page, not an app's token", 403);
@@ -175,15 +193,15 @@ export const TOOLS: Tool[] = [
     input: { id: { type: "string" } }, required: ["id"],
     run: async (c, a) => { onPage(c); return { listing: done(await send(c.conf, c.who.id, a.id)) }; },
   }),
-  tool(obj({ id: opt(str(40)), verdict: opt(oneOf(["list", "refuse", "check"])), note: str(500, { min: 0, dflt: "" }) }), {
+  tool(obj({ id: opt(str(40)), verdict: opt(oneOf(["list", "refuse", "check"])), note: str(500, { min: 0, dflt: "" }), at: opt(num(0, 1e14)) }), {
     name: "eq_listing_review", title: "Review studios' games (admin)", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true }, admin: true,
-    description: "Super admin only. With no `id`: the review queue (every game in review, oldest first), each with `checks`: what a machine checked when it was sent (https: its origins answer; loads: its page and the files it names answer; signin: someone in its studio signed in through eqosys; state: its window.<handle> harness is in its scripts, with the `bun run probe` line that asks it live). With `id` and `verdict`: `list` puts it on everyone's shelf, `refuse` sends it back to its studio with `note` (required) saying why, `check` runs the checks again. Answers { queue }, { checks } or { listing }.",
-    input: { id: { type: "string" }, verdict: { enum: ["list", "refuse", "check"] }, note: { type: "string" } },
+    description: "Super admin only. With no `id`: the review queue (every game in review, oldest first), each with `checks`: what a machine checked when it was sent (https: its origins answer; loads: its page and the files it names answer; signin: someone in its studio signed in through eqosys; state: its window.<handle> harness is in its scripts, with the `bun run probe` line that asks it live). With `id` and `verdict`: `list` (with the `at` the queue gave for it, so a change made since you read it isn't listed unread) puts it on everyone's shelf, `refuse` sends it back to its studio with `note` (required) saying why, `check` runs the checks again. Answers { queue }, { checks } or { listing }.",
+    input: { id: { type: "string" }, verdict: { enum: ["list", "refuse", "check"] }, note: { type: "string" }, at: { type: "number" } },
     run: async (c, a) => {
       if (!a.id) return { queue: await queue(c.conf) };
       if (!a.verdict) throw new Refused("say `verdict`: list, refuse or check");
       if (a.verdict === "check") { const checks = await recheck(c.conf, a.id); if (!checks) throw new Refused(`no game "${a.id}" in review`, 404); return { checks }; }
-      return { listing: done(await review(c.conf, a.id, a.verdict, a.note)) };
+      return { listing: done(await review(c.conf, a.id, a.verdict, a.note, a.at)) };
     },
   }),
   tool(obj({ id: str(40) }), {
@@ -280,6 +298,9 @@ const execTool: Tool = {
     const a = check(obj({ code: str(32_000), input: opt(raw) }), rawArgs);
     if (!a) throw new Refused("send { code: the body of an async function, input? }");
     if (!c.conf.LOADER) throw new Refused("code mode is not running here: use eq_batch", 503);
+    // Each run loads a Dynamic Worker, so an account gets a few a minute (EXEC_LIMIT).
+    if (c.conf.EXEC_LIMIT && !(await c.conf.EXEC_LIMIT.limit({ key: `exec:${c.who.id}` })).success)
+      throw new Refused("too many programs: wait a minute, or put more into one", 429);
     const r = await execute(c.conf.LOADER, a.code, programTools.map((x) => x.name), (name, json) => answer(c, name, json), a.input, edge.stub?.(propsOf(c)));
     return { ok: !r.isError, calls: r.calls, ...JSON.parse(r.text.length < MAX_BACK ? r.text : JSON.stringify({ error: r.text })) };
   },

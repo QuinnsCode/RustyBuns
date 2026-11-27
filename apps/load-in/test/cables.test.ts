@@ -104,6 +104,7 @@ const PANELS_ROOM: Level = {
     { key: "top", gear: "top-15-passive", x: -1.4, y: 0, z: 2.5, rot: 0 },
     { key: "array", gear: "line-array-box", x: 1.2, y: 0, z: 2.5, rot: 0 },
     { key: "fill", gear: "line-array-10", x: -1.4, y: 0, z: 4.5, rot: 0 },
+    { key: "cab", gear: "cab-4x12", x: 1.2, y: 0, z: 4.5, rot: 0 },
     { key: "case", gear: "road-case-m", x: 0, y: 0, z: 1.2, rot: 0 },
   ],
   caseLoad: [
@@ -114,7 +115,7 @@ const PANELS_ROOM: Level = {
   ],
 };
 
-test("each box takes the plug on its sheet: speakON not into a quarter-inch link, NL8 for a four-way box, TRUE1 for powerCON", () => {
+test("each box takes the plug on its sheet: speakON not into a quarter-inch link or a guitar cab, NL8 for a four-way box, TRUE1 for powerCON", () => {
   setDial("sim");
   const w = newWorld(PANELS_ROOM), c = newCables(w), behind = (x: number, z = 1.9) => walkWith(w, c, x, z);
   // The passive top: a speakON goes in its NL4, not its quarter-inch link.
@@ -140,4 +141,8 @@ test("each box takes the plug on its sheet: speakON not into a quarter-inch link
   walkWith(w, c, -2.0, 0.7); expect(plug(w, c, "outlet", "power-out-2")).toEqual({ ok: true });
   behind(0.4, 1.2); expect(grabEnd(w, c, "true1", "b")).toEqual({ ok: true });
   behind(-1.4, 3.9); expect(plug(w, c, "fill", "power-in")).toEqual({ ok: true });
+  // The guitar cab: its inputs are quarter-inch jacks, so the speakON lead left on the floor won't go in.
+  behind(1.2); expect(grabEnd(w, c, "nl4", "b")).toEqual({ ok: true });
+  behind(0.2); behind(0.2, 3.9); behind(1.2, 3.9);
+  expect(plug(w, c, "cab", "speaker-in")).toEqual({ ok: false, why: "that speakON NL4 plug won't go into a quarter-inch TS socket" });
 });

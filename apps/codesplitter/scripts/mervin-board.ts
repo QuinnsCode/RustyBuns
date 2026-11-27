@@ -53,6 +53,7 @@
 // it; what the person landed is the answer to learn from). Files a commit outside the board touched since
 // are `moved` and files of PRs that haven't landed are `waiting`; neither is scored.
 
+import { record } from "@rustybuns/util";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -97,7 +98,7 @@ export const TIERS = ["certain", "agree", "mervin", "differ", "card"] as const s
 export const BoardPr = obj({
   number: int(1, 1e9), title: opt(str(1000)), body: opt(str(70_000)), headRefOid: str(64), headRefName: opt(str(1000)), baseRefName: opt(str(1000)),
   autoMergeRequest: opt(raw),
-  statusCheckRollup: opt(arr(obj({ name: opt(str(1000)), conclusion: opt(nul(str(100, { min: 0 }))), status: opt(str(100, { min: 0 })), startedAt: opt(str(100)), completedAt: opt(str(100)) }), 1000)),
+  statusCheckRollup: opt(arr(obj({ name: opt(str(1000)), workflowName: opt(str(1000)), conclusion: opt(nul(str(100, { min: 0 }))), status: opt(str(100, { min: 0 })), startedAt: opt(str(100)), completedAt: opt(str(100)) }), 1000)),
 });
 export type BoardPr = Of<typeof BoardPr>;
 export const BoardPrs = arr(BoardPr, 1000);
@@ -409,7 +410,7 @@ function applyFile(root: string, path: string, text: string | null) {
   else { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text); }
 }
 
-export const count = (rows: FileRow[]) => Object.fromEntries(TIERS.map((t) => [t, rows.filter((r) => r.tier === t).length])) as Record<Tier, number>;
+export const count = (rows: FileRow[]) => record(TIERS, (t) => rows.filter((r) => r.tier === t).length);
 
 /** One stage as lines: the tally, then every file that isn't certain. */
 export function describe(s: Stage): string[] {

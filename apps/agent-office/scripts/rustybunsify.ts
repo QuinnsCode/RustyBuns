@@ -27,6 +27,8 @@ import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { endedClicks, endedManager } from "./ended.ts";
+import { installFirst } from "./install-first.ts";
+import { lastPromptBin, lastPromptHooks, lastPromptPersist, lastPromptTasks } from "./lastprompt.ts";
 import { screenTerminal } from "./screen.ts";
 import { plainCheckout, slowCheckout, startFromDefault } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
@@ -74,7 +76,7 @@ let shared: Promise<Map<string, string>> | undefined;
 const stamp = path.join(office, ".rustybuns");
 // what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
 // a new patch in prepare() needs a new word here, or a restart skips it
-const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended checkout pool breaker`;
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended checkout pool breaker toldwhilebooting`;
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
@@ -172,15 +174,9 @@ async function prepare(tag: string) {
   patch("worktrees.js", "                if (existsSync(abs)) {\n                    try {\n",
     "                if (existsSync(abs)) {\n                    await __rbPool(abs);\n                    try {\n");
 
-  // 6b. #3167: a fresh worktree gets its `bun install` from the hire step, and the worker starts once it is done
-  prepend("workers/manager.js", "import { installWorktree as __rbInstall } from '../rb-install.js';\n");
-  patch("workers/manager.js", "        this.launch(w, seat.station && info.prompt ? `${stationBrief(seat.station, this.prompts)}\\n\\n${info.prompt}` : info.prompt, undefined);\n",
-    "        const __rbFirst = seat.station && info.prompt ? `${stationBrief(seat.station, this.prompts)}\\n\\n${info.prompt}` : info.prompt;\n" +
-    "        if (worktree && !repos.length && wt?.path)\n" +
-    "            void __rbInstall(path.join(this.trees.dir, wt.path)).then((why) => {\n" +
-    "                if (why)\n                    this.events.toast(`${info.name}'s bun install: ${why}`, 'warn');\n" +
-    "                if (this.workers.get(id) === w)\n                    this.launch(w, __rbFirst, undefined);\n            });\n" +
-    "        else\n            this.launch(w, __rbFirst, undefined);\n");
+  // 6b. #3167: a fresh worktree gets its `bun install` from the hire step, and the worker starts once it is done;
+  // #4470: a prompt told to it meanwhile waits for that session instead of starting a second one
+  writeFileSync(path.join(srv, "workers/manager.js"), installFirst(readFileSync(path.join(srv, "workers/manager.js"), "utf8")));
 
   // 6c. a slow breaker on the worker ceiling (live/breaker.ts): CPU or memory at 90% for 30 s holds it at the workers
   // there now, and each 2 minutes under 90% opens it by one, back to the normal cap; the queues look again on each step
@@ -234,7 +230,7 @@ async function prepare(tag: string) {
     "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;\n__rbMem(infoPath);");
 
   // 7b. a Host allowlist in front of every request and socket (live/hosts.ts): the DNS-rebinding guard
-  prepend("http/router.js", "import { guardHost as __rbGuardHost } from '../rb-hosts.js';\n");
+  prepend("http/router.js", "import { guardHost as __rbGuardHost, foreignWrite as __rbForeignWrite } from '../rb-hosts.js';\n");
   patch("http/router.js", "    return async (req, res) => {\n        const { cfg, auth } = ctx;\n",
     "    const __rbHost = __rbGuardHost(ctx.cfg);\n    return async (req, res) => {\n        if (__rbHost(req, res))\n            return;\n        const { cfg, auth } = ctx;\n");
   prepend("ws/upgrade.js", "import { guardUpgrade as __rbGuardUpgrade } from '../rb-hosts.js';\n");
@@ -299,12 +295,20 @@ async function prepare(tag: string) {
   // (the card is a page script, asks/), with the office-workers command waiting long enough for the answer
   const bin = path.resolve(srv, "../../../bin/office-workers.js");
   writeFileSync(bin, floorGuardBin(readFileSync(bin, "utf8")));
-  prepend("http/router.js", "import { asksRoute as __rbAsks, outboundRoute as __rbOut } from '../rb-floorguard.js';\nimport { grantsRoute as __rbGrants } from '../rb-askfirst.js';\n");
+  // 12e. each worker keeps the full text of its last prompt, through a restart, for `office-workers show` to hand on (#4753)
+  for (const [file, change] of [[path.join(srv, "workers/tasks.js"), lastPromptTasks], [path.join(srv, "workers/persist.js"), lastPromptPersist],
+    [path.join(srv, "hooks/office-workers.js"), lastPromptHooks], [bin, lastPromptBin]] as const)
+    writeFileSync(file, change(readFileSync(file, "utf8")));
+  prepend("http/router.js", "import { asksRoute as __rbAsks, outboundRoute as __rbOut, ownAddress as __rbOwn } from '../rb-floorguard.js';\nimport { readBody as __rbReadBody } from './util.js';\nimport { grantsRoute as __rbGrants } from '../rb-askfirst.js';\n");
   // the box's egress proxy has no session: it asks about an outbound host here with the box's own token (live/floorguard.ts)
   patch("http/router.js", "            const session = auth.fromRequest(req);",
-    "            if (p === '/__rb/outbound') {\n                const chunks = [];\n                for await (const c of req)\n                    chunks.push(c);\n                const body = await Promise.resolve().then(() => JSON.parse(Buffer.concat(chunks).toString())).catch(() => undefined);\n                const out = await __rbOut(req.method, url, req.headers.authorization, body);\n                return out ? send(res, out.status, out.body) : send(res, 404, { error: 'No such route' });\n            }\n            const session = auth.fromRequest(req);");
+    "            if (p === '/__rb/outbound') {\n                const body = await __rbReadBody(req, 4096).then((t) => JSON.parse(t)).catch(() => undefined);\n                const out = await __rbOut(req.method, url, req.headers.authorization, body);\n                return out ? send(res, out.status, out.body) : send(res, 404, { error: 'No such route' });\n            }\n            const session = auth.fromRequest(req);");
   patch("http/router.js", "const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url)",
-    "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name) ?? __rbGrantsRoute(req.method, url, req.headers['x-rb-ask'] === '1') ?? await __rbCsRoute(req.method, url)");
+    "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name, __rbOwn(req.socket.remoteAddress)) ?? __rbGrantsRoute(req.method, url, req.headers['x-rb-ask'] === '1') ?? await __rbCsRoute(req.method, url)");
+
+  // and the added routes take writes from the office's own page only (live/hosts.ts)
+  patch("http/router.js", "            const __rb = p.startsWith('/__rb/') && (",
+    "            if (__rbForeignWrite(req, p, ctx.cfg))\n                return send(res, 403, { error: 'This route takes writes from the office’s own page only' });\n            const __rb = p.startsWith('/__rb/') && (");
 
   // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitter tiles both hang off it
   officeTicks();

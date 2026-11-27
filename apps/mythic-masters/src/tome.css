@@ -1503,6 +1503,45 @@ body:has(#journal:not([hidden])) #worldHud { visibility: hidden; }
 .select.book button.tile.ribbon-tile:is(:hover, :focus-visible) .pic { filter: grayscale(1) contrast(2.3) sepia(1) saturate(1.9) brightness(0.8); }
 @media (min-width: 960px) { .title .leaf .page.verso { justify-content: safe center; } .title .verso .plate { width: min(380px, 88%); margin: 0; } } /* the demand left the plate's leaf: the plate stands in the middle of it */
 
+/* --- round 117 (#5621): the chapter ribbons come out from between the leaves at the page head, the way a bound
+ * book's bookmarks do, instead of standing up off the cover like folder tabs: worn cloth in old dyes, darker where
+ * the leaf above presses them, the tail cut ragged with a thread or two loose; the open chapter's hangs furthest
+ * down. Closing the compendium breaks its wax seal (main.ts draws it), not a sans cross */
+.journal .tome { padding-top: 66px; }
+.journal .tome > .ribbons { top: -1px; gap: 10px; }
+.journal .tome > .ribbons .ribbon { font-size: 17px; color: #eadcbc; padding: 10px 13px 16px; transform: none; filter: drop-shadow(1px 2px 1.5px rgba(20, 10, 4, 0.35));
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55); letter-spacing: 0.01em;
+  background-image: linear-gradient(rgba(14, 7, 2, 0.6), rgba(14, 7, 2, 0.15) 7px, transparent 12px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.22), rgba(255, 240, 210, 0.07) 40%, rgba(0, 0, 0, 0.08) 70%, rgba(0, 0, 0, 0.26)),
+    repeating-linear-gradient(90deg, rgba(255, 240, 210, 0.06) 0 1px, transparent 1px 3px), repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.07) 0 1px, transparent 1px 3px), var(--rb);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 93% 95%, 87% 99%, 80% 93%, 72% 97%, 63% 90%, 50% 82%, 38% 91%, 30% 96%, 22% 92%, 14% 98%, 7% 94%, 0 99%); }
+.journal .tome > .ribbons .ribbon:is(:hover, :focus-visible) { transform: none; padding-bottom: 20px; }
+.journal .tome > .ribbons .ribbon.on { transform: none; padding-bottom: 28px; color: #fff1d4; }
+.journal .tome > .ribbons .ribbon:focus-visible { outline: none; text-decoration: underline 1px currentColor; text-underline-offset: 4px; }
+.journal .tome > .ribbons .ribbon .ri { display: none; }
+.journal .tome > .ribbons .ribbon { transform-origin: top center; } /* laid in by hand: none hangs quite plumb */
+.journal .tome > .ribbons .ribbon:nth-child(1) { rotate: -0.8deg; } .journal .tome > .ribbons .ribbon:nth-child(2) { rotate: 0.6deg; }
+.journal .tome > .ribbons .ribbon:nth-child(3) { rotate: -0.4deg; } .journal .tome > .ribbons .ribbon:nth-child(4) { rotate: 1deg; }
+.journal .tome > .ribbons .ribbon svg { display: none; }
+.journal .tome > .ribbons .r-lineup { --rb: linear-gradient(#7c3326, #561d14); } .journal .tome > .ribbons .r-bestiary { --rb: linear-gradient(#4b5a38, #2f3b22); }
+.journal .tome > .ribbons .r-regions { --rb: linear-gradient(#7d6030, #54401c); } .journal .tome > .ribbons .r-factions { --rb: linear-gradient(#44536a, #2b3546); }
+.journal .tome.c-lineup::after { --mark: linear-gradient(#7c3326, #561d14); } .journal .tome.c-bestiary::after { --mark: linear-gradient(#4b5a38, #2f3b22); }
+.journal .tome.c-regions::after { --mark: linear-gradient(#7d6030, #54401c); } .journal .tome.c-factions::after { --mark: linear-gradient(#44536a, #2b3546); }
+.journal #closeJournal { padding: 4px; top: -10px; right: -10px; }
+.journal #closeJournal svg.seal { width: 44px; height: 44px; transform: rotate(-9deg); filter: drop-shadow(1px 2px 1.5px rgba(30, 10, 4, 0.5)); transition: transform 0.18s ease, filter 0.18s ease; }
+.journal #closeJournal:is(:hover, :focus-visible) svg.seal { transform: rotate(-3deg) scale(1.06); filter: drop-shadow(1px 3px 2.5px rgba(30, 10, 4, 0.55)) brightness(1.12); }
+@media (max-width: 959px) { .journal #closeJournal { right: 34px; } } /* clear of the margin ribbon */
+@media (max-width: 640px) {
+  .journal .tome { padding-top: 58px; }
+  .journal .tome > .ribbons { left: 14px; gap: 6px; }
+  .journal .tome > .ribbons .ribbon { font-size: 16px; padding: 8px 10px 14px; }
+  .journal .tome > .ribbons .ribbon.on { padding-bottom: 22px; }
+  .journal .tome > .ribbons .ribbon:not(.on) { min-width: 34px; }
+  .journal .tome > .ribbons .ribbon:not(.on) .ri { display: inline; font-family: var(--f-title); font-size: 18px; }
+  .journal #closeJournal { top: -8px; right: 26px; }
+  .journal #closeJournal svg.seal { width: 34px; height: 34px; }
+}
+
 /* --- Settings > Display --------------------------------------------------------------------------------------------
  * The quality picker reads like the layout presets: four words in the Book's hand, the chosen one inked in blood, and
  * the note under it in the faded italic the Book uses for asides. */

@@ -6,7 +6,7 @@
 // rectangle, round the arm by wrist to elbow, for the tattoos of #5029's step 11.
 import * as THREE from "three";
 import { FINGERS, FOREARM, HAND, HandSolver, gripFor, handMesh, localQuats, placeHand, type HandPose, type V3, type What } from "@rustybuns/rig/hand";
-import { type Box, type Frame, carryFrames, elbow, showFrame, viewFrame } from "./place.ts";
+import { type Box, type Frame, blendFrame, carryFrames, elbow, reachFrame, showFrame, viewFrame } from "./place.ts";
 import { connectorMesh } from "../cables/ends-view.ts";
 import type { Connector } from "../cables/ends.ts";
 
@@ -21,10 +21,33 @@ export type Hold = {
   lead?: { at: V3; color: number; end?: Connector };
   /** looking at your arms: both forearms raised into view (empty hands only) */
   show?: boolean;
+  /** what's next (world space): an empty right hand reaches toward it */
+  reach?: V3;
+  /** looking at a piece you could take: empty hands drop out of the way so its face and label show */
+  low?: boolean;
 };
 
 const SKIN = 0xb57a58;
 const BLEND = 0.2;
+/** Where the shirt's cuff sits along the forearm (0 the wrist, 1 the elbow), and how far past the elbow the sleeve runs. */
+const CUFF = 0.07, SLEEVE_END = 1.3;
+
+/** A charcoal-and-rust work-shirt flannel, as plain texels (no canvas, so a page without a DOM can make it). */
+function flannel(): THREE.DataTexture {
+  const n = 32, px = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const bx = x % 16 < 5, by = y % 16 < 5, thin = x % 16 === 9 || y % 16 === 9, weave = ((x + y) & 1) * 6;
+    const c = bx && by ? [104, 46, 38] : bx || by ? [78, 44, 40] : thin ? [70, 74, 78] : [44, 47, 52];
+    px.set([c[0] + weave, c[1] + weave, c[2] + weave, 255], (y * n + x) * 4);
+  }
+  const t = new THREE.DataTexture(px, n, n);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(2, 1.5);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
 
 /** Your two hands and forearms, children of the camera. `update(hold, t, speed)` each frame; `state()` for the harness. */
 export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
@@ -39,15 +62,25 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   // A tapered tube, wrist (v 0) to elbow (v 1), U once round: an unwrapped rectangle. Drawn wider across than deep, as a forearm is.
   // Its wrist end a little slimmer than the hand's wrist, which covers it (skin.ts).
   const forearmGeo = new THREE.CylinderGeometry(FOREARM.elbow, FOREARM.wrist * 0.9, 1, 32, 1, true).translate(0, 0.5, 0);
+  // The sleeve: a flannel work shirt, in the forearm's own unit space (y 0 the wrist, 1 the elbow), loose over the arm
+  // from a buttoned cuff just past the wrist bone. It runs on past the elbow, out of the view. Looking at your arms (Y)
+  // pushes the sleeves up, so the ink shows.
+  const armR = (v: number) => FOREARM.wrist * 0.9 + (FOREARM.elbow - FOREARM.wrist * 0.9) * v;
+  const sleeveGeo = new THREE.CylinderGeometry(armR(1) * 1.3, armR(CUFF) * 1.22, SLEEVE_END - CUFF, 24, 4, true).translate(0, (CUFF + SLEEVE_END) / 2, 0);
+  const cuffGeo = new THREE.CylinderGeometry(armR(CUFF + 0.14) * 1.3, armR(CUFF) * 1.3, 0.14, 24, 1, true).translate(0, CUFF + 0.07, 0);
+  const cloth = new THREE.MeshStandardMaterial({ map: flannel(), roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+  const cuffCloth = new THREE.MeshStandardMaterial({ map: cloth.map, color: 0x8a8a8a, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
   const sides = ([1, -1] as const).map((side) => {
     const h = handMesh(side, skin, nail), forearm = new THREE.Mesh(forearmGeo, side === 1 ? arm : armLeft);
+    const sleeve = new THREE.Mesh(sleeveGeo, cloth), cuff = new THREE.Mesh(cuffGeo, cuffCloth);
     forearm.matrixAutoUpdate = false;
+    forearm.add(sleeve, cuff);
     camera.add(h.root, forearm);
     return {
-      ...h, forearm, key: "", pose: null as HandPose | null, since: 0,
+      ...h, forearm, sleeve, cuff, key: "", reachK: 0, pose: null as HandPose | null, since: 0,
       /** the joint turns and the placement shown now, and where a blend started from */
       cur: HAND.bones.map(() => new THREE.Quaternion()), from: [] as THREE.Quaternion[], to: [] as THREE.Quaternion[],
-      at: new THREE.Vector3(), turn: new THREE.Quaternion(), fromAt: null as THREE.Vector3 | null, fromTurn: new THREE.Quaternion(),
+      lastReach: null as Frame | null, at: new THREE.Vector3(), turn: new THREE.Quaternion(), fromAt: null as THREE.Vector3 | null, fromTurn: new THREE.Quaternion(),
     };
   });
   const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 6).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 }));
@@ -65,13 +98,16 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   camera.add(plug);
   lead.visible = plug.visible = false;
 
+  let lastT = -1;
   const mPlace = new THREE.Matrix4(), camInv = new THREE.Matrix4();
-  const tAt = new THREE.Vector3(), tTurn = new THREE.Quaternion();
+  const vR = new THREE.Vector3(), tAt = new THREE.Vector3(), tTurn = new THREE.Quaternion();
   const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
   const toV = (v: V3, out = new THREE.Vector3()) => out.set(v[0], v[1], v[2]);
   /** The middle of what the right hand grips (world space), as of the last update: where a page hangs a coil. */
   const gripWorld = new THREE.Vector3();
   const fromV = (v: THREE.Vector3): V3 => [v.x, v.y, v.z];
+  /** How far the empty hands have dropped (0 up, 1 down), eased toward `hold.low`. */
+  let low = 0, lowAt = -1;
   /** A world-space frame (a carry) in the camera's space. */
   const toCam = (f: Frame): Frame => {
     const r = (v: V3) => fromV(toV(v, vA).transformDirection(camInv));
@@ -81,17 +117,37 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   return {
     /** Pose and place both hands for this frame; `speed` (m/s) sets the bob of your steps. */
     update(hold: Hold, t: number, speed = 0) {
+      const dt = lastT < 0 ? 1 : Math.max(0, Math.min(0.1, t - lastT));
+      lastT = t;
       camera.updateMatrixWorld();
       camInv.copy(camera.matrixWorld).invert();
       const narrow = camera instanceof THREE.PerspectiveCamera ? Math.min(1, Math.max(0.62, camera.aspect)) : 1;
       const carry = hold.carry ? carryFrames(hold.carry, hold.kg) : null;
+      // The right hand reaches for what's next when it's free and ahead of you; it eases in and out over a third of a second.
+      const reachTo = hold.reach && !hold.show && !carry && hold.right.kind === "rest" ? toV(hold.reach, vR).applyMatrix4(camInv) : null;
+      const reach = reachTo ? reachFrame(fromV(reachTo), t, speed) : null;
+      const far = reachTo ? Math.min(1, Math.max(0.45, 1.5 - reachTo.length() / 8)) : 0;
+      const lowDt = lowAt < 0 ? 0 : Math.min(0.1, Math.max(0, t - lowAt));
+      lowAt = t;
+      low += ((hold.low ? 1 : 0) - low) * Math.min(1, lowDt * 7);
       for (const s of sides) {
-        const what = s.side > 0 ? hold.right : hold.left, grip = gripFor(what);
+        const what = s.side > 0 ? hold.right : hold.left;
         const show = !!hold.show && !carry && what.kind === "rest";
-        const f = carry ? toCam(s.side > 0 ? carry.right : carry.left) : show ? showFrame(t, s.side) : viewFrame(what.kind, hold.kg, t, speed, s.side);
+        const want = s.side > 0 && reach ? far : 0;
+        s.reachK += (want - s.reachK) * Math.min(1, dt * 6);
+        if (Math.abs(want - s.reachK) < 0.01) s.reachK = want;
+        const grip = gripFor(what);
+        s.sleeve.visible = s.cuff.visible = !show;
+        const rest = carry ? toCam(s.side > 0 ? carry.right : carry.left) : show ? showFrame(t, s.side) : viewFrame(what.kind, hold.kg, t, speed, s.side);
+        const lastReach = s.side > 0 ? reach ?? s.lastReach : null;
+        if (s.side > 0 && reach) s.lastReach = reach;
+        const f = !carry && !show && lastReach && s.reachK > 0 ? blendFrame(rest, lastReach, s.reachK) : rest;
         // On a tall, narrow screen (a phone held upright) the hands come in toward the middle so they stay in view. Not
         // the raised arms: they already reach across the view, and pulled in they cross in the middle (#5157).
         if (!carry && !show && narrow < 1) f.o = [f.o[0] * narrow, f.o[1], f.o[2]];
+        // Out of the way while you look at a piece: down and apart, out to the sides so they leave its tape label clear. A hand reaching for the next piece stays on it.
+        const drop = low * (1 - s.reachK);
+        if (!carry && !show && what.kind === "rest" && drop > 0.001) f.o = [f.o[0] * (1 + 0.32 * drop), f.o[1] - 0.05 * drop, f.o[2]];
         mPlace.makeBasis(toV(f.x, vA), toV(f.y, vB), toV(f.z, vC)).setPosition(f.o[0], f.o[1], f.o[2]);
         tAt.setFromMatrixPosition(mPlace);
         tTurn.setFromRotationMatrix(mPlace);

@@ -2,6 +2,7 @@
 // size) and no joint bent past its range, and carrying a cabinet puts both palms flat on its sides. The solver and the
 // placement are plain TS, so this runs without a page. The skin over the bones is one closed surface, and bent by the
 // same pose its fingers close on what the hand holds.
+import { record } from "@rustybuns/util";
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { CABLE_RADIUS, HandSolver, gripFor, surfaceDistance, thumbOverlap, type What } from "@rustybuns/rig/hand";
 import * as THREE from "three";
@@ -43,7 +44,7 @@ describe("hands", () => {
   /** The skin bent by the pose of a grip on `what`: how close each finger's skin comes to what it holds (negative: inside). */
   const skinGaps = (what: What) => {
     const grip = gripFor(what), m = solver.pose(grip).mats, P = skin.positions;
-    const near = Object.fromEntries(FINGERS.map((f) => [f, Infinity])) as Record<(typeof FINGERS)[number], number>;
+    const near = record(FINGERS, () => Infinity);
     // The thumb's base is the ball of the thumb, part of the palm: its skin is the palm's, flat on what it holds.
     const fingerOf = new Map(FINGERS.flatMap((f) => HAND.chains[f].slice(f === "thumb" ? 1 : 0).map((j) => [j, f] as const)));
     for (let i = 0; i < P.length / 3; i++) {
@@ -110,6 +111,25 @@ test.each([["a phone", 390 / 844, -10], ["a laptop", 1280 / 800, 0], ["a laptop"
     expect(Math.abs(p.y)).toBeLessThan(1);
   }
   expect(carryDrop(45)).toBeGreaterThan(carryDrop(18) + 0.2);
+});
+
+// The next piece ahead and to the left: the free right hand eases out toward it, and stays put for one behind you.
+test("an empty right hand reaches for what's next, not for what's behind you", () => {
+  const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 150), scene = new THREE.Scene();
+  scene.add(camera);
+  const view = handsView(scene, camera), rest: What = { kind: "rest" };
+  // the right forearm (drawn first, in its sleeve): where its wrist is
+  const right = camera.children.find((o) => o instanceof THREE.Mesh && o.children.length > 0)!;
+  const after = (reach?: [number, number, number]) => {
+    for (let t = 0; t <= 1; t += 1 / 60) view.update({ right: rest, left: rest, kg: 0, reach }, t);
+    return new THREE.Vector3().setFromMatrixPosition(right.matrix);
+  };
+  const idle = after();
+  const ahead = after([-0.6, -1, -2]);
+  expect(ahead.x).toBeLessThan(idle.x - 0.05);
+  expect(ahead.z).toBeLessThan(idle.z);
+  const behind = after([0, -1, 2]);
+  expect(behind.distanceTo(idle)).toBeLessThan(0.01);
 });
 
 // Holding Y on a phone held upright: both forearms raised, each hand on its own side of the view, the fingers not

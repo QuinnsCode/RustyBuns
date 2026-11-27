@@ -12,6 +12,9 @@
     "binding": "ASSETS",
     "directory": "dist/client"
   },
+  "browser": {
+    "binding": "BROWSER"
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -33,6 +36,22 @@
       "namespace_id": "8204",
       "simple": {
         "limit": 5,
+        "period": 60
+      }
+    },
+    {
+      "name": "EXEC_LIMIT",
+      "namespace_id": "8207",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    {
+      "name": "VISIT_LIMIT",
+      "namespace_id": "8208",
+      "simple": {
+        "limit": 30,
         "period": 60
       }
     }

@@ -12,10 +12,11 @@
 //
 // A studio's game starts experimental with `play` only: `member`, a native scheme and `featured` come only from APPS, in a PR.
 import { arr, check, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
-import { APPS, GENRES, genreOf, type QApp } from "./apps.ts";
+import { APPS, GENRES, genreOf, HOME, type QApp } from "./apps.ts";
 import { checksOf, check as machineCheck, type Checks } from "./checks.ts";
 import type { Env } from "./env.ts";
 import { roleIn } from "./studios.ts";
+import { gamePulled } from "./members.ts";
 
 export const STATES = ["draft", "in review", "listed", "refused", "pulled"] as const;
 export type State = (typeof STATES)[number];
@@ -25,7 +26,11 @@ export const PULLED_KEEP_MS = 30 * 86_400_000;
 export const FRESH_MS = 60_000;
 
 /** A studio's game as the rest of eqosys sees it: a QApp that says whose it is and where its review stands. */
-export interface Listing extends QApp { studio: { id: string; name: string }; state: State; note: string }
+export interface Listing extends QApp { studio: { id: string; name: string }; state: State; note: string; at: number }
+
+/** Names a token's `aud` already means something by (eqosys's page, the service calls), and games of ours that aren't in APPS
+ * yet: a studio's game under one would be handed tokens meant for them. */
+const RESERVED = new Set([HOME, "erase", "qlave", "qlave-admin", "load-in", "fleet-commander"]);
 
 const HTTPS = str(200, { re: /^https:\/\/[^\s/?#]+$/ });
 const RETURN = str(500, { re: /^https:\/\/[^\s#]+$/ });
@@ -50,7 +55,7 @@ const listingOf = (r: Row): Listing => ({
   id: r.id, name: r.name, kind: r.kind, genre: genreOf(r.genre) ?? "Games",
   origins: urls(r.origins) ?? [], ...(r.returns ? { returns: urls(r.returns) ?? [] } : {}), ...(r.erase ? { erase: r.erase } : {}),
   starts: ["play"], maturity: "experimental", ...(r.blurb ? { blurb: r.blurb } : {}),
-  studio: { id: r.studio_id, name: r.studio }, state: check(oneOf(STATES), r.state) ?? "draft", note: r.note,
+  studio: { id: r.studio_id, name: r.studio }, state: check(oneOf(STATES), r.state) ?? "draft", note: r.note, at: r.at,
 });
 
 const SELECT = `SELECT l.*, COALESCE(s.name, '') AS studio FROM listings l LEFT JOIN studios s ON s.id = l.studio_id`;
@@ -69,7 +74,7 @@ async function live(conf: Env, now = Date.now()): Promise<Listing[]> {
       .bind(now - PULLED_KEEP_MS).all<Row>();
     const done = results.filter((r) => r.state === "pulled").map((r) => r.id);
     if (done.length) await conf.DB.batch(done.flatMap((id) => [conf.DB.prepare("DELETE FROM saves WHERE app = ?").bind(id), conf.DB.prepare("UPDATE listings SET erased = 1 WHERE id = ?").bind(id)]));
-    const rows = results.filter((r) => r.state !== "pulled").map(listingOf);
+    const rows = results.filter((r) => r.state !== "pulled" && !RESERVED.has(r.id)).map(listingOf);
     kept.set(conf.DB, { at: now, rows });
     return rows;
   } catch (e) {
@@ -142,7 +147,7 @@ const same = (a: string[] | undefined, b: string[] | undefined) => JSON.stringif
  */
 export async function save(conf: Env, who: string, d: Draft, now = Date.now()): Promise<Done> {
   if (!(await owns(conf, d.studio, who))) return no(403, "only a studio's owner or admin saves its games");
-  if (APPS.some((a) => a.id === d.id)) return no(409, `"${d.id}" is taken`);
+  if (RESERVED.has(d.id) || APPS.some((a) => a.id === d.id)) return no(409, `"${d.id}" is taken`);
   const was = await listing(conf, d.id);
   if (was && was.studio.id !== d.studio) return no(409, `"${d.id}" is taken`);
   if (!was && await conf.DB.prepare("SELECT 1 FROM studio_apps WHERE app = ?").bind(d.id).first()) return no(409, `"${d.id}" is taken`);
@@ -150,12 +155,13 @@ export async function save(conf: Env, who: string, d: Draft, now = Date.now()): 
   const moved = was && (!same(was.origins, d.origins) || !same(was.returns, d.returns) || (was.erase ?? null) !== (d.erase ?? null));
   const state: State = !was || moved || was.state === "refused" ? "draft" : was.state;
   const kind = d.kind ?? "game", returns = d.returns ? JSON.stringify(d.returns) : null;
-  await conf.DB.batch([
-    conf.DB.prepare(`INSERT INTO listings (id, studio_id, name, kind, genre, origins, returns, erase, blurb, state, note, made_at, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, '', ?11, ?11)
-      ON CONFLICT (id) DO UPDATE SET name = ?3, kind = ?4, genre = ?5, origins = ?6, returns = ?7, erase = ?8, blurb = ?9, state = ?10, at = ?11`)
-      .bind(d.id, d.studio, d.name.trim(), kind, d.genre, JSON.stringify(d.origins), returns, d.erase ?? null, d.blurb ?? "", state, now),
-    conf.DB.prepare("INSERT INTO studio_apps (app, studio_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(d.id, d.studio, now),
-  ]);
+  // The write lands only on the row as it was just read: a pull, a verdict or another studio's save in between wins.
+  const put = await conf.DB.prepare(`INSERT INTO listings (id, studio_id, name, kind, genre, origins, returns, erase, blurb, state, note, made_at, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, '', ?11, ?11)
+      ON CONFLICT (id) DO UPDATE SET name = ?3, kind = ?4, genre = ?5, origins = ?6, returns = ?7, erase = ?8, blurb = ?9, state = ?10, at = ?11
+        WHERE listings.studio_id = ?2 AND listings.at = ?12 RETURNING id`)
+    .bind(d.id, d.studio, d.name.trim(), kind, d.genre, JSON.stringify(d.origins), returns, d.erase ?? null, d.blurb ?? "", state, now, was?.at ?? -1).first<string>("id");
+  if (!put) return no(409, `"${d.id}" changed while you were saving it: look again`);
+  await conf.DB.prepare("INSERT INTO studio_apps (app, studio_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(d.id, d.studio, now).run();
   forget(conf);
   return { ok: true, listing: (await listing(conf, d.id))! };
 }
@@ -176,19 +182,23 @@ export async function send(conf: Env, who: string, id: string, now = Date.now())
   return done;
 }
 
-/** The super admin's verdict on a game in review: listed, or refused with a note the studio reads. */
-export async function review(conf: Env, id: string, verdict: "list" | "refuse", note: string, now = Date.now()): Promise<Done> {
+/** The super admin's verdict on a game in review: listed, or refused with a note the studio reads. `seen` is the `at` they read:
+ * listing takes it, so origins changed and sent again after the read aren't listed unread. */
+export async function review(conf: Env, id: string, verdict: "list" | "refuse", note: string, seen?: number, now = Date.now()): Promise<Done> {
   const l = await listing(conf, id);
   if (!l) return no(404, `no game "${id}"`);
   if (l.state !== "in review") return no(409, `"${id}" is ${l.state}, not in review`);
   if (verdict === "refuse" && !note.trim()) return no(400, "a refusal says why, in `note`");
+  if (verdict === "list" && seen !== l.at) return no(409, `read the queue again and list \`${id}\` with its \`at\`: it may have changed`);
   return move(conf, id, verdict === "list" ? "listed" : "refused", verdict === "refuse" ? note.trim() : "", now);
 }
 
-/** Take a game down: the super admin, or its own studio's owner or admin. Its tile goes and its sign-ins and tokens stop; its saves go in 30 days. */
+/** Take a game down: the super admin, or its own studio's owner or admin. Its tile goes, its sign-ins and tokens stop and the sockets they opened close; its saves go in 30 days. */
 export async function pull(conf: Env, who: string, admin: boolean, id: string, now = Date.now()): Promise<Done> {
   const l = await listing(conf, id);
   if (!l || (!admin && !(await owns(conf, l.studio.id, who)))) return no(404, `no game "${id}" in a studio you run`);
   if (l.state === "pulled") return no(409, `"${id}" is pulled already`);
-  return move(conf, id, "pulled", null, now);
+  const r = await move(conf, id, "pulled", null, now);
+  if (r.ok) await gamePulled(conf, id);
+  return r;
 }

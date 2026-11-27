@@ -7,7 +7,7 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serveParty } from "../scripts/party.ts";
 import { bot } from "../src/bot.ts";
 import { coopBind, recordCoop, type CoopAt } from "../src/coop.ts";
-import { cleared, newJourney, PICKS, STARTERS } from "../src/journey.ts";
+import { cleared, newJourney, PICKS, sectionLevel, STARTERS } from "../src/journey.ts";
 import { DuelLink } from "../src/net/duel-link.ts";
 import { sum, type DenFoe, type DuelOut, type Pick } from "../src/net/duel.ts";
 import { Online } from "../src/net/online.ts";
@@ -16,6 +16,8 @@ import { tsSim, type Live } from "../src/sim-wasm.ts";
 import { coopTeams } from "../src/versus.ts";
 
 setDefaultTimeout(30_000);
+/** Region 5's first keeper stands at its section's level, which follows the road (#5973). */
+const KEEPER_LV = sectionLevel(5, 0);
 const party = serveParty(0);
 afterAll(() => party.stop());
 
@@ -64,11 +66,11 @@ test("a friend in the region joins your fight at a keeper: one keeper, one end, 
   await until("ada sees bo beside her", () => ada.nearby() && [...bo.ghosts.values()].some((g) => g.name === "Ada" && g.pose.r === 5));
   await Bun.sleep(1100); // the room's rate limit, after the walk
 
-  ada.met("keeper:5:0", "loveland-frogman", 34);
+  ada.met("keeper:5:0", "loveland-frogman", KEEPER_LV);
   const den = ada.coop("ADAKEEP1");
-  expect(den).toEqual({ den: "keeper:5:0", c: "loveland-frogman", lv: 34 });
+  expect(den).toEqual({ den: "keeper:5:0", c: "loveland-frogman", lv: KEEPER_LV });
   await until("bo asked to join", () => asks.length === 1);
-  expect(asks[0]).toMatchObject({ who: "Ada", den: "keeper:5:0", c: "loveland-frogman", lv: 34, code: "ADAKEEP1" });
+  expect(asks[0]).toMatchObject({ who: "Ada", den: "keeper:5:0", c: "loveland-frogman", lv: KEEPER_LV, code: "ADAKEEP1" });
   await Bun.sleep(200);
   expect(cyAsks).toEqual([]);
 
@@ -87,7 +89,7 @@ test("a friend in the region joins your fight at a keeper: one keeper, one end, 
   // Each page writes the fight into its own journey: the keeper seen, the XP (or the knockout), the stone lit.
   for (const [k, seat] of [[0, 0], [1, 1]] as const) {
     const j = newJourney(STARTERS.slice(k, k + PICKS))!, me = j.party[0]!, before = { level: me.level, xp: me.xp };
-    const at: CoopAt = { region: REGIONS[4]!, kind: "keeper", k: 0, foe: { id: "loveland-frogman", level: 34 }, host: k === 0 };
+    const at: CoopAt = { region: REGIONS[4]!, kind: "keeper", k: 0, foe: { id: "loveland-frogman", level: KEEPER_LV }, host: k === 0 };
     const live = a.p.live!, lines = recordCoop(j, me, at, won, live.m.f[seat]!.hp / live.m.f[seat]!.b.hp);
     expect(j.seen).toContain("loveland-frogman");
     expect(lines.length).toBeGreaterThan(0);

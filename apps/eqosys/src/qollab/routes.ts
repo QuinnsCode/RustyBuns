@@ -1,7 +1,8 @@
 // Qollab's paths: a person's hub (one Durable Object a player) and the rooms they meet in (a party a room code, a space a group),
 // plus cloud saves and Qlave's voice roster. Every one is entered with an app's token (door.ts), never a session cookie, so this
 // file and the rest of qollab/ could move to a Worker of their own with nothing else changing (QOLLAB.md).
-import { onSite } from "../apps.ts";
+import { onSite, type QApp } from "../apps.ts";
+import { isListing } from "../listings.ts";
 import { json, loopbackOn, type Env } from "../env.ts";
 import { bearerOf, cors, echoProtocol, issuer, socketToken, tokenOf } from "../door.ts";
 import { hubAsk, hubOf, Op } from "./hub.ts";
@@ -9,6 +10,7 @@ import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf, SEATED } from ".
 import { FILE_MAX, makeSpace, ROLE_OF, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import { board, isBoard } from "./board.ts";
+import { events, isEvents } from "./events.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import type { SpaceRow } from "@rustybuns/util/eqosys";
 import { RoomMintGate } from "@rustybuns/util/limits";
@@ -25,16 +27,20 @@ const tryCode = (req: Request, who: string, code: string) => {
   const ip = req.headers.get("cf-connecting-ip"), now = Date.now();
   return tries.allow(`who:${who}`, code, now) && (!ip || tries.allow(`ip:${ip}`, code, now));
 };
+/** Whether a token for `app` opens a space of `studio` (null: a person's own): ours and eqosys's pages open any, a studio's game only its studio's. */
+const ours = (app: QApp, studio: string | null | undefined) => !isListing(app) || studio === app.studio.id;
 
 /** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
 export const isQollab = (pathname: string) =>
-  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+(?:\/file(?:\/[^/]+)?|\/export)?)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+(?:\/file(?:\/[^/]+)?|\/export)?)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname) || isEvents(pathname);
 
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);
   // Posts and reactions (board.ts): read signed out, written with the app's token.
   if (isBoard(pathname)) return board(req, conf);
+  // Events (events.ts): an account's events, with any Q app's token.
+  if (isEvents(pathname)) return events(req, conf);
   // A person's hub (hub.ts): a live socket at /hub (the token as a subprotocol, see socketToken), or one op at POST /api/hub with the token as a bearer.
   // The token is the proof, so the hub needs no cookie; a socket stays open after its token expires.
   if (pathname === "/hub" || pathname === "/api/hub") {
@@ -108,6 +114,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
   // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one (with { studio }, the studio's own space, its owner or admin asks),
   // POST /q/space/join { invite } joins one, and /q/space/<id> is a member's socket (the token as a subprotocol). A space is the person's, not an app's:
   // a token from any Q app opens it. A studio's members are in its space with no invite; its invite lets someone outside the studio in as a guest.
+  // A studio's game (a listing) is somebody else's code holding the player's token: it opens only the space of the studio that made it (`ours`, #6234).
   if (pathname === "/q/space" || pathname === "/q/space/join") {
     const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
@@ -123,7 +130,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
       const spaces = results.map((r): SpaceRow => {
         const runs = r.role === "owner" || r.role === "admin";
         return { id: r.id, name: r.name, owner: runs, ...(runs ? { invite: r.invite } : {}), ...(r.studio ? { studio: r.studio } : {}) };
-      });
+      }).filter((r) => ours(t.app, r.studio));
       return json({ spaces }, 200, head);
     }
     if (req.method !== "POST") return json({ error: "GET your spaces or POST one" }, 405, head);
@@ -132,7 +139,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
       const invite = codeOf(String(check(obj({ invite: str(12) }), await req.json().catch(() => null))?.invite ?? ""));
       if (invite && !tryCode(req, t.who.id, invite)) return json({ error: "too many invites just now; wait a minute" }, 429, head);
       const s = invite && await conf.DB.prepare("SELECT id, name, studio_id AS studio FROM spaces WHERE invite = ?").bind(invite).first<{ id: string; name: string; studio: string | null }>();
-      if (!s) return json({ error: "no space has that invite" }, 404, head);
+      if (!s || !ours(t.app, s.studio)) return json({ error: "no space has that invite" }, 404, head);
       // One of the studio's own is in its space already: no guest row, which would outlast their seat in the studio.
       if (s.studio && await conf.DB.prepare("SELECT 1 AS y FROM studio_members WHERE studio_id = ? AND user_id = ?").bind(s.studio, t.who.id).first("y"))
         return json({ id: s.id, name: s.name }, 200, head);
@@ -141,6 +148,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
       await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(s.id, t.who.id, now).run();
       return json({ id: s.id, name: s.name }, 200, head);
     }
+    if (isListing(t.app)) return json({ error: "spaces are made on eqosys or in a Q app, not in a studio's game" }, 403, head);
     const asked = check(obj({ name: SPACE_NAME, studio: opt(str(64, { min: 1 })) }), await req.json().catch(() => null)), name = asked?.name.trim();
     if (!asked || !name) return json({ error: "send { name } (1-60 characters)" }, 400, head);
     const r = await makeSpace(conf, t.who.id, name, asked.studio ?? null);
@@ -165,7 +173,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     const origin = req.headers.get("origin");
     if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
     const s = await seatIn(conf, spaceAt[1]!, t.who.id);
-    if (!s) return json({ error: "not a space you're in" }, 404);
+    if (!s || !ours(t.app, s.studio)) return json({ error: "not a space you're in" }, 404);
     const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), ...(s.office ? { office: "1" } : {}), iss: issuer(req, conf) });
     return echoProtocol(await spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
@@ -182,10 +190,11 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (!fileAt[2] && Number(req.headers.get("content-length")) > FILE_MAX) return json({ error: `a file is up to ${FILE_MAX / 1024 / 1024} MB` }, 413, head);
     const s = await seatIn(conf, fileAt[1]!, t.who.id);
-    if (!s) return json({ error: "not a space you're in" }, 404, head);
+    if (!s || !ours(t.app, s.studio)) return json({ error: "not a space you're in" }, 404, head);
     const u = new URL(req.url).searchParams;
     const q = new URLSearchParams({ ...t.who, sid: fileAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}),
-      ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", name: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
+      // The file's name goes as `file`: `name` is the sender's, from their token.
+      ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", file: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
     const r = await spaceOf(conf.SPACE, fileAt[1]!).fetch(new Request(`https://space/file${fileAt[2] ? `/${fileAt[2]}` : ""}?${q}`,
       fileAt[2] ? {} : { method: "POST", body: await req.arrayBuffer() }));
     const out = new Headers(r.headers);
@@ -203,7 +212,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     const t = await tokenOf(req, conf, bearerOf(req), { home: true });
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     const s = await seatIn(conf, exportAt[1]!, t.who.id);
-    if (!s) return json({ error: "not a space you're in" }, 404, head);
+    if (!s || !ours(t.app, s.studio)) return json({ error: "not a space you're in" }, 404, head);
     const channel = new URL(req.url).searchParams.get("channel");
     const q = new URLSearchParams({ ...t.who, sid: exportAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), ...(channel ? { channel } : {}) });
     const r = await spaceOf(conf.SPACE, exportAt[1]!).fetch(new Request(`https://space/export?${q}`));

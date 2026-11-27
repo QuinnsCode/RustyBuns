@@ -15,7 +15,7 @@ const STUCCO = 0xf0e6cc, ROOF = 0x55585a, SHUTTER = 0x2f4a36, TRIM = 0xeeeae0, G
   SHINGLE = 0x4a4541, IRONSTONE = 0x8b5a3e, MORTAR = 0x9a7a62, TIN = 0x7c5c48, DOOR = 0x4a3626, BRICK = 0x8a4a3a, STEEL = 0x9aa1a6,
   CAB = 0xd4d2c8, CAB_GLASS = 0x3c4c5a, DYKE = 0xbfb08a, PLANK = 0x5e4a36, TEA = 0x7a4a1c, LOGS = 0x7a5a3c,
   BEACH = 0xf0dcae, CEDAR_BARK = 0x6a4a36, CEDAR_LEAF = [0x2c4436, 0x33503c, 0x283c30, 0x3a5640], SEDGE = [0x8a8a4a, 0x6e7a3c, 0xa69a5c, 0x7c6e3a, 0x5c6a34],
-  PITCH_BARK = 0x4a3a30, PITCH_LEAF = [0x3e5a34, 0x46623a, 0x354e2e, 0x50683e];
+  PITCH_BARK = 0x3a2c26, PITCH_LEAF = [0x3e5a34, 0x46623a, 0x354e2e, 0x50683e];
 
 type G = THREE.BufferGeometry;
 /** A geometry painted one colour, non-indexed and without uvs, so any of them merge. */
@@ -121,26 +121,33 @@ function build(p: Part, seed: number): G[] {
     // spray nearly as wide at the top as low down, a bare stem showing under them, and a thin top
     case "cedar": {
       const rnd = mulberry32(seed), h = 8 + 5 * rnd(), out: G[] = [paint(new THREE.CylinderGeometry(0.08, 0.18, h * 0.95, 6).translate(0, h * 0.47, 0), CEDAR_BARK)];
-      for (let i = 0, n = 8; i < n; i++) {
-        const u = i / n, y = h * (0.42 + 0.5 * u), r = (w / 2) * (1 - u * 0.35) * (0.6 + 0.5 * rnd()), t = h * 0.13;
+      for (let i = 0, n = 11; i < n; i++) {
+        const u = i / n, y = h * (0.3 + 0.62 * u), r = (w / 2) * 0.55 * (1 - u * 0.45) * (0.7 + 0.4 * rnd()), t = h * 0.12;
         out.push(paint(new THREE.IcosahedronGeometry(1, 0).scale(r, t / 2, r).translate((rnd() - 0.5) * 0.5, y, (rnd() - 0.5) * 0.5), CEDAR_LEAF[Math.floor(rnd() * CEDAR_LEAF.length)]!));
       }
       out.push(paint(new THREE.ConeGeometry(w * 0.22, h * 0.14, 6).translate(0, h * 0.97, 0), CEDAR_LEAF[0]!));
       return out;
     }
-    // A pitch pine as it grows on the barrens' poor sand: a short trunk that kinks as it climbs, a few bare limbs, and
-    // an open, flat-topped crown of separate tufts, `w` across, the sky showing between them
+    // A pitch pine as it grows on the barrens' poor sand: a short, dark, fire-plated trunk that kinks as it climbs and
+    // forks low, crooked limbs reaching out and up from halfway, and needles in tufts all along each limb's outer half
+    // (not one ball at its tip), so the crown is ragged and open, `w` across, the sky showing between the tufts
     case "pitch": {
-      const rnd = mulberry32(seed), h = 7 + 4 * rnd(), out: G[] = [];
+      const rnd = mulberry32(seed), h = 6 + 3 * rnd(), out: G[] = [];
       let at = V(0, 0, 0);
-      for (let k = 1; k <= 3; k++) {
-        const next = V((rnd() - 0.5) * 1.2, (h * 0.78 * k) / 3, (rnd() - 0.5) * 1.2);
-        out.push(rod(at, next, 0.24 - 0.05 * k, PITCH_BARK)); at = next;
+      for (let k = 1; k <= 4; k++) {
+        const next = V(at.x + (rnd() - 0.5) * 1.1, (h * 0.7 * k) / 4, at.z + (rnd() - 0.5) * 1.1);
+        out.push(rod(at, next, 0.3 - 0.05 * k, PITCH_BARK)); at = next;
       }
-      for (let i = 0; i < 7; i++) {
-        const a = rnd() * Math.PI * 2, r = (w / 2) * (0.25 + 0.75 * rnd()), y = h * (0.62 + 0.36 * rnd()), tip = V(Math.cos(a) * r, y, Math.sin(a) * r);
-        out.push(rod(V(at.x * 0.8, y - 1.2, at.z * 0.8), tip, 0.06, PITCH_BARK));
-        out.push(paint(new THREE.IcosahedronGeometry(1, 0).scale(1.1 + 0.9 * rnd(), 0.55 + 0.35 * rnd(), 1.1 + 0.9 * rnd()).translate(tip.x, tip.y + 0.3, tip.z), PITCH_LEAF[Math.floor(rnd() * PITCH_LEAF.length)]!));
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + rnd() * 0.6, r = (w / 2) * (0.45 + 0.55 * rnd()), y0 = h * (0.35 + 0.35 * rnd());
+        const from = V(at.x * (y0 / (h * 0.7)), y0, at.z * (y0 / (h * 0.7)));
+        const knee = V(from.x + Math.cos(a + (rnd() - 0.5)) * r * 0.5, y0 + 0.6 + rnd() * 0.8, from.z + Math.sin(a + (rnd() - 0.5)) * r * 0.5);
+        const tip = V(from.x + Math.cos(a) * r, Math.min(h, y0 + 1.2 + rnd() * 1.8), from.z + Math.sin(a) * r);
+        out.push(rod(from, knee, 0.09, PITCH_BARK), rod(knee, tip, 0.06, PITCH_BARK));
+        for (let t = 0; t < 4; t++) {
+          const u = 0.35 + 0.65 * (t / 3), p = (t < 2 ? from.clone().lerp(knee, 0.5 + u * 0.5) : knee.clone().lerp(tip, (u - 0.5) * 2)), s = 0.45 + 0.3 * rnd();
+          out.push(paint(new THREE.IcosahedronGeometry(1, 0).scale(s * 1.2, s * 0.6, s * 1.2).translate(p.x + (rnd() - 0.5) * 0.4, p.y + 0.25, p.z + (rnd() - 0.5) * 0.4), PITCH_LEAF[Math.floor(rnd() * PITCH_LEAF.length)]!));
+        }
       }
       return out;
     }
@@ -223,6 +230,12 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
       float fr = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 6.0);
       gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.70, 0.73, 0.76), fr * 0.3);`);
   };
+  // The far shore in the lake: the sight's trees flipped about the water's face, darkened and tea-tinted, drawn right
+  // after the lake and before anything else, only where they lie beyond it (GreaterDepth: the lake is the one thing in
+  // the depth buffer yet, so the copy shows on the water and nowhere else). No second render pass, one draw call.
+  lake.depthWrite = true;
+  const mirror = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0x6a5440, depthWrite: false, depthFunc: THREE.GreaterDepth,
+    blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, opacity: 0.78 });
   const root = new THREE.Group();
   root.name = "pines";
   group.add(root);
@@ -243,7 +256,15 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
     const cedars = s.parts.filter((p) => GROVE.has(p.kind));
     const grove = cedars.length ? new THREE.Mesh(mergeGeometries(cedars.map((p) => mergeGeometries(build(p, si * 101 + s.parts.indexOf(p)))!.rotateY(p.yaw).translate(p.x - s.x, 0, p.z - s.z))) ?? new THREE.BufferGeometry(), solid) : null;
     if (grove) { grove.position.set(s.x, 0, s.z); grove.matrixAutoUpdate = false; grove.updateMatrix(); g.add(grove); }
-    return { s, g, parts, grove, cedars, reach: s.id === "fire-tower" ? TOWER_SEEN_R : SEEN_R };
+    const water = parts.find((q) => q.p.kind === "lake");
+    let mirrored: THREE.Mesh | null = null;
+    if (grove && water) {
+      water.m.renderOrder = -0.9;
+      mirrored = new THREE.Mesh(grove.geometry, mirror);
+      mirrored.renderOrder = -0.8; mirrored.scale.y = -1; mirrored.position.set(s.x, 0, s.z); mirrored.matrixAutoUpdate = false; mirrored.updateMatrix();
+      g.add(mirrored);
+    }
+    return { s, g, parts, grove, cedars, water, mirrored, reach: s.id === "fire-tower" ? TOWER_SEEN_R : SEEN_R };
   });
   const disc = new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2);
   const puddles = new THREE.InstancedMesh(disc, new THREE.MeshPhongMaterial({ color: 0x4a2c16, shininess: 90, specular: 0x6a5a48, polygonOffset: true, polygonOffsetFactor: -2 }), PUDDLE_CAP);
@@ -288,6 +309,9 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
         if (v.grove) {
           const y = Math.min(...v.cedars.map((p) => groundY(p.x, p.z))) - 0.1;
           if (v.grove.position.y !== y) { v.grove.position.y = y; v.grove.updateMatrix(); }
+          // the copy hangs from the water's face as far below it as the grove's foot is above it
+          const f = v.water && v.mirrored ? 2 * v.water.m.position.y - y : 0;
+          if (v.mirrored && v.mirrored.position.y !== f) { v.mirrored.position.y = f; v.mirrored.updateMatrix(); }
         }
       }
       let n = 0;

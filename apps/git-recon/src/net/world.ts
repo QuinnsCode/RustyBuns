@@ -60,6 +60,8 @@ export default class World {
 
   webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
     const now = Date.now();
+    // Only a setup is big, and only whoever may pick sends one: anyone else's big frame is dropped before it is parsed.
+    if (typeof raw === "string" && raw.length > MAX_INPUT) { const a = this.sockets.who(ws); if (!a || !this.mayPick(a)) return; }
     const frame = this.sockets.frame(ws, raw, now), who = this.sockets.who(ws);
     if (!frame || !who) return;
     const m = decodeToWorld(frame.value);

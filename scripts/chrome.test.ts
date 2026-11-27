@@ -2,8 +2,9 @@
 // stuck, not minutes later at the test's timeout: a page whose image never arrives is LoadStalled naming that image,
 // and a wait that never comes true is NeverTrue with the last value it saw.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { chromePath, launchChrome, load, LoadStalled, NeverTrue, openTab, until } from "./chrome.ts";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { chromePath, launchChrome, load, LoadStalled, NeverTrue, openTab, startVite, until } from "./chrome.ts";
 
 setDefaultTimeout(90_000); // a Chrome left running a minute after its parent is killed, and Chrome's own start
 
@@ -61,4 +62,19 @@ test.skipIf(!hasChrome)("a page that never loads names what it waits on, and a w
     expect(String(never)).toMatch(/n to reach 3 never came true in 1\.\d s \(last look: 2\)/);
     expect(Date.now() - t0).toBeLessThan(2000);
   } finally { await tab.close(); }
+});
+
+// #5992: git ignores an app's .rustybuns/vite.ts, so a fresh worktree (or the probe's origin/main copy) has none and
+// vite stopped on the config's import; startVite writes the glue first.
+test("startVite brings up an app whose vite config imports the boundary glue it has not written yet", async () => {
+  const dir = join(import.meta.dir, "..", ".probe-base", `glue-${process.pid}`);
+  mkdirSync(join(dir, "src"), { recursive: true });
+  try {
+    await Bun.write(join(dir, "package.json"), `{"name":"glue-test","private":true,"type":"module"}`);
+    await Bun.write(join(dir, "vite.config.ts"), `import { rustybuns } from "./.rustybuns/vite";\nexport default { plugins: [rustybuns()] };\n`);
+    await Bun.write(join(dir, "index.html"), `<!doctype html><title>glue</title><script type="module" src="/src/main.ts"></script>`);
+    await Bun.write(join(dir, "src/main.ts"), `document.title = "up";\n`);
+    const vite = await startVite(dir);
+    try { expect(await (await fetch(vite.url)).text()).toContain("<title>glue</title>"); } finally { vite.stop(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

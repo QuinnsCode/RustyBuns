@@ -1,5 +1,5 @@
 // An SSH public key, and what the key lookup answers (#5504): shared by codeSplitter's routes (ssh-keys.ts) and the
-// ssh gate (ssh/worker.ts), which asks the lookup who owns the key sshd was offered. Imports only the guards, so
+// ssh gate (ssh-gate.ts), which asks the lookup who owns the key sshd was offered. Imports only the guards, so
 // either side can take it.
 
 import { int, obj, str, type Of } from "@rustybuns/util/guard";
