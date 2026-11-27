@@ -34,7 +34,7 @@ describe("places on the ground", () => {
   });
 
   test("every playable region's tapes are written, not placeholders", () => {
-    for (const [n, ps] of POIS) {
+    for (const ps of POIS.values()) {
       const tapes = ps.filter((p) => p.kind === "tape");
       expect(tapes.length).toBeGreaterThanOrEqual(4);
       expect(tapes.slice(0, 6).every((p) => !tapeOf(p).placeholder && tapeOf(p).lines.length >= 3 && tapeOf(p).lines.every((l) => /^[A-Z][\w ]+: /.test(l)))).toBe(true);

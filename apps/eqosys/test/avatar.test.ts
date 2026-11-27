@@ -18,7 +18,7 @@ const avatar = async (method: "GET" | "PUT", who: { cookie?: string; bearer?: st
   if (who.cookie) headers.set("cookie", who.cookie);
   if (who.bearer) headers.set("authorization", `Bearer ${who.bearer}`);
   if (body !== undefined) headers.set("content-type", "application/json");
-  const res = (await handle(new Request(`${ORIGIN}/me/avatar`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), conf))!;
+  const res = (await handle(new Request(`${ORIGIN}/me/avatar`, { method, headers, ...(body !== undefined && { body: JSON.stringify(body) }) }), conf))!;
   return { status: res.status, body: check(AvatarReply, await res.json().catch(() => null)), cors: res.headers.get("access-control-allow-origin") };
 };
 

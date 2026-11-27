@@ -1,6 +1,5 @@
 // The background wildlife, headless: it sits until someone comes near, then runs or flies off and is never caught.
 import { expect, test } from "bun:test";
-import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { ALERT, Critters } from "../src/render/critters.ts";
 import { level } from "./parks.ts";

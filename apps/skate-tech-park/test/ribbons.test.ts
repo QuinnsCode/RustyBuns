@@ -2,8 +2,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 
 setDefaultTimeout(60000); // seventy levels take a while on CI
-import { LEVELS } from "../src/levels/index.ts";
-import type { ParkLevel } from "../src/levels/park.ts";
 import { berm, extrude, mirror, trace } from "../src/levels/ribbons.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { allParks } from "./parks.ts";

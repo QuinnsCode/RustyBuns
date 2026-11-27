@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { TAKE_RATE, spanOf, type Clip } from "../take.ts";
 import { clipEnd, cutClip, deleteClip, moveClip, slipClip, trimClip } from "../project.ts";
 import { Playhead } from "./Playhead.tsx";
+import { useThemeTick } from "./theme.ts";
 
 const HEIGHT = 88;
 /** How near an edge (px) a press grabs it: a finger needs more room than a mouse. */
@@ -52,7 +53,8 @@ export function ClipLane(props: {
   };
   const snap = (b: number) => Math.round(b / props.grid) * props.grid;
 
-  useEffect(() => draw(canvas.current, { ...props, width, sel }), [props, width, sel]);
+  const look = useThemeTick();
+  useEffect(() => draw(canvas.current, { ...props, width, sel }), [props, width, sel, look]);
 
   const commit = (next: readonly Clip[], keep: number, group?: string) => {
     if (next === clips) return;
@@ -139,13 +141,17 @@ function draw(cv: HTMLCanvasElement | null, o: { clips: readonly Clip[]; sound(i
   cv.style.width = `${w}px`; cv.style.height = `${h}px`;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, w, h);
+  // the grid and the grips in the desk's ink, so they read on the light look too
+  const ink = getComputedStyle(cv).getPropertyValue("--ink").trim() || "#eceef1";
   const px = (b: number) => ((b - o.from) / o.span) * w;
   const fpb = (60 / o.bpm) * TAKE_RATE, framesPerPx = (o.span / w) * fpb;
   // the grid, and every bar a little brighter
   const step = o.grid * (w / o.span) >= 6 ? o.grid : 4;
   for (let b = Math.ceil(o.from / step) * step; b < o.from + o.span; b += step) {
-    g.fillStyle = b % 4 === 0 ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.05)";
+    g.fillStyle = ink;
+    g.globalAlpha = b % 4 === 0 ? 0.12 : 0.05;
     g.fillRect(Math.round(px(b)), 0, 1, h);
+    g.globalAlpha = 1;
   }
   o.clips.forEach((c, i) => {
     const { from, to } = spanOf(c), a = px(c.beat), z = px(clipEnd(c, o.bpm)), zero = c.beat - from / fpb;
@@ -173,9 +179,11 @@ function draw(cv: HTMLCanvasElement | null, o: { clips: readonly Clip[]; sound(i
     g.lineWidth = i === o.sel ? 2 : 1;
     g.strokeRect(a + 0.5, 2.5, Math.max(1, z - a - 1), h - 5);
     // the handles: a light grip on each edge, so it shows over the sound
-    g.fillStyle = "rgba(236,238,241,0.9)";
+    g.fillStyle = ink;
+    g.globalAlpha = 0.9;
     g.fillRect(a, mid - 12, 4, 24);
     g.fillRect(z - 4, mid - 12, 4, 24);
+    g.globalAlpha = 1;
   });
 }
 

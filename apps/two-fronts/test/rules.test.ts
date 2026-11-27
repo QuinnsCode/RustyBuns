@@ -21,7 +21,7 @@ const whole = (c: Campaign, all: Orders[], ai = false) => {
   return after.deploying ? deployTurn(after, ai ? after.deploying.map((f) => ({ faction: f, orders: [], deploys: aiDeploys(after, f) })) : []) : after;
 };
 const finish = (c: Campaign) => (c.deploying ? deployTurn(c, []) : c);
-const none = (c: Campaign): Orders[] => [{ faction: "marines", orders: [] }, { faction: "wooka", orders: [] }];
+const none = (): Orders[] => [{ faction: "marines", orders: [] }, { faction: "wooka", orders: [] }];
 // A system's twin: where it lands when the map turns half a turn around its centre.
 const twinOf = (g: Galaxy) => {
   const at = new Map(g.systems.map((s) => [`${s.x},${s.y}`, s]));
@@ -168,11 +168,11 @@ test("the shield generator holds off bombardment", () => {
   const k = kessa(c);
   k.fleets = { marines: 4, wooka: 0 };
   k.orbit = "marines";
-  const shielded = whole(c, none(c));
+  const shielded = whole(c, none());
   expect(shielded.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([1, 1, 1, 1, 1, 1]);
   k.sectors[0]!.owner = "marines";
   k.sectors[0]!.armies = { marines: 1, wooka: 0 };
-  const open = whole(c, none(c));
+  const open = whole(c, none());
   expect(open.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([0, 0, 0, 0, 0, 0]);
   expect(open.systems.kessa!.sectors[0]!.owner).toBe("marines");
 });
@@ -207,7 +207,7 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   expect(spec.strikes).toEqual({ attacker: 1, defender: 0 });
   expect(spec.reinforcements).toEqual({ attacker: { cap: 100, perMinute: 60 }, defender: { cap: 0, perMinute: 0 } });
   expect(spec.vehicles).toEqual({ attacker: { tank: 1 }, defender: {} });
-  expect(whole(paused, none(paused))).toBe(paused); // nothing moves until it's fought
+  expect(whole(paused, none())).toBe(paused); // nothing moves until it's fought
 
   expect(() => applyBattleResult(paused, { id: "nope", winner: "attacker", tickets: { attacker: 1, defender: 0 }, heroDown: false })).toThrow();
   const after = finish(applyBattleResult(paused, { id: spec.id, winner: "attacker", tickets: { attacker: 70, defender: 0 }, heroDown: false }));
@@ -246,7 +246,7 @@ test("the hero can fly the space battle instead: the landings wait on who wins t
   const spec = paused.pending!.spec;
   expect(spec).toMatchObject({ id: "1-kessa-orbit", system: "Kessa", hero: "attacker", factions: { attacker: "marines", defender: "wooka" }, fleets: { attacker: 3, defender: 2 } });
   expect(paused.systems.kessa!.sectors[1]!.armies.marines).toBe(0); // still in the transports
-  expect(whole(paused, none(paused))).toBe(paused);
+  expect(whole(paused, none())).toBe(paused);
   expect(() => applyBattleResult(paused, { id: spec.id, winner: "attacker", tickets: { attacker: 1, defender: 0 }, heroDown: false })).toThrow();
 
   // Win the orbit: the cruisers fit to fly keep it, and the troops land under it.
@@ -294,11 +294,11 @@ test("an anti-ship cannon knocks a ship a turn out of a blockade, and can break 
   const corva = c.systems.corva!;
   corva.fleets = { marines: 0, wooka: 2 };
   corva.orbit = "wooka";
-  const one = whole(c, none(c));
+  const one = whole(c, none());
   expect(one.systems.corva!.fleets.wooka).toBe(1);
   expect(one.systems.corva!.orbit).toBe("wooka");
   expect(one.log).toContain("The cannon on Corva knocks out 1 Wooka ship.");
-  const two = whole(one, none(one));
+  const two = whole(one, none());
   expect(two.systems.corva!.fleets.wooka).toBe(0);
   expect(two.systems.corva!.orbit).toBeNull();
   expect(two.log).toContain("Wooka's blockade of Corva is broken.");
@@ -307,7 +307,7 @@ test("an anti-ship cannon knocks a ship a turn out of a blockade, and can break 
   lost.systems.corva!.sectors[0]!.owner = "wooka";
   lost.systems.corva!.sectors[0]!.armies = { marines: 0, wooka: 1 };
   lost.systems.corva!.fleets.marines = 1;
-  expect(whole(lost, none(lost)).systems.corva!.fleets.marines).toBe(0);
+  expect(whole(lost, none()).systems.corva!.fleets.marines).toBe(0);
 });
 
 test("forces cut off from a capital lose an army a turn, down to one", () => {
@@ -318,17 +318,17 @@ test("forces cut off from a capital lose an army a turn, down to one", () => {
   // Wooka's own orbit over Kessa cuts Thunder Marines's foothold off from Corva and Lumen.
   expect(supplied(c, "marines").has("kessa")).toBe(false);
   expect(supplied(c, "wooka").has("kessa")).toBe(true);
-  let t = whole(c, none(c));
+  let t = whole(c, none());
   expect(t.systems.kessa!.sectors[0]!.armies.marines).toBe(3);
   expect(t.log.some((l) => l.includes("cut off from supply"))).toBe(true);
-  for (let i = 0; i < 4; i++) t = whole(t, none(t));
+  for (let i = 0; i < 4; i++) t = whole(t, none());
   expect(t.systems.kessa!.sectors[0]!.armies.marines).toBe(1);
   // Clear the orbit and the line runs again.
   const open = structuredClone(c);
   open.systems.kessa!.fleets.wooka = 0;
   open.systems.kessa!.orbit = null;
   expect(supplied(open, "marines").has("kessa")).toBe(true);
-  expect(whole(open, none(open)).systems.kessa!.sectors[0]!.armies.marines).toBe(4);
+  expect(whole(open, none()).systems.kessa!.sectors[0]!.armies.marines).toBe(4);
   // A blockade further back cuts off everything past it: no Thunder Marines capital, no supply.
   const deep = newCampaign();
   for (const id of ["aster", "brill", "corva"]) for (const x of deep.systems[id]!.sectors) x.owner = "wooka";
@@ -356,7 +356,7 @@ test("the AI's orders are all legal, and a whole war is deterministic", () => {
 for (const [id, least] of [["short", 3], ["full", 10]] as const) test(`the AI gives each side the mirror image of the other's opening orders on the ${id} map`, () => {
   const twin = twinOf(GALAXIES[id]);
   let c = newCampaign(1, "marines", id);
-  for (let i = 0; i < 3; i++) c = whole(c, none(c)); // a few quiet turns' income to spend
+  for (let i = 0; i < 3; i++) c = whole(c, none()); // a few quiet turns' income to spend
   const mirrored = aiOrders(c, "marines").orders.map((o) =>
     o.kind === "build" ? { ...o, at: { ...o.at, system: twin(o.at.system) } }
     : o.kind === "fleet" ? { ...o, from: twin(o.from), to: twin(o.to) }
@@ -521,7 +521,7 @@ test("energy comes in at Muster, and both sides buy off the same face-up cards w
   expect(after.market!.ground[1]).toBe("guns");
   expect(after.energy!.marines).toBe(Math.min(ENERGY_CAP, 6 - 3 + 6));
   // Energy carries over to the cap, and the hand holds five.
-  for (let i = 0; i < 3; i++) c = whole(c, none(c));
+  for (let i = 0; i < 3; i++) c = whole(c, none());
   expect(c.energy).toEqual({ marines: ENERGY_CAP, wooka: ENERGY_CAP });
   c.hands!.marines = ["guns", "guns", "guns", "guns", "guns"];
   expect(planOrders(c, [{ faction: "marines", orders: [buy(0)] }]).errors[0]).toBe("Your hand is full (5)");
@@ -608,9 +608,9 @@ test("points: counted every Frost, first to the target wins, and the war's end c
   // Give the Marines both crystal fields: 3 each at the Frost, nothing on the turns between.
   for (const id of ["tarn", "umber"]) for (const x of c.systems[id]!.sectors) if (x.kind === "canyon") Object.assign(x, { owner: "marines", armies: { marines: 2, wooka: 0 } });
   let t = c;
-  for (let i = 0; i < 3; i++) t = whole(t, none(t));
+  for (let i = 0; i < 3; i++) t = whole(t, none());
   expect(t.points!.marines).toBe(0);
-  t = whole(t, none(t)); // turn 4: Frost
+  t = whole(t, none()); // turn 4: Frost
   const p = frostPoints(t, "marines");
   expect(p.fields).toBe(2);
   expect(t.points!.marines).toBe(p.total);
@@ -619,7 +619,7 @@ test("points: counted every Frost, first to the target wins, and the war's end c
   const near = structuredClone(t);
   near.turn = 8;
   near.points = { marines: 36 - p.total, wooka: 0 };
-  expect(whole(near, none(near)).winner).toBe("marines");
+  expect(whole(near, none()).winner).toBe("marines");
   // At the last turn, the secret and a scored card whose condition holds pay too.
   const end = structuredClone(t);
   end.turn = 32;
@@ -630,7 +630,7 @@ test("points: counted every Frost, first to the target wins, and the war's end c
   const one = structuredClone(end);
   one.systems.tarn!.sectors.find((x) => x.kind === "canyon")!.owner = "wooka";
   expect(endPoints(one, "marines").cards).toEqual(["skylord"]);
-  const over = whole(end, none(end));
+  const over = whole(end, none());
   expect(over.winner).not.toBeNull();
   expect(over.points!.marines).toBe(frostPoints(end, "marines").total + cash.total);
   expect(planOrders(end, [{ faction: "marines", orders: [{ kind: "card", card: "baron", at: { system: "tarn", sector: 0 } }] }]).errors[0]).toBe("Scored cards stay in your hand, and pay at the war's end");
@@ -696,7 +696,7 @@ test("taking places opens the deploy phase, and three or more earn a card", () =
   expect(fought.turn).toBe(1);
   expect(fought.deploying).toEqual(["marines"]);
   expect(fought.taken).toEqual({ marines: 3, wooka: 0 });
-  expect(resolveTurn(fought, none(fought))).toBe(fought); // nothing more until the deploys are in
+  expect(resolveTurn(fought, none())).toBe(fought); // nothing more until the deploys are in
   // Move what's left: to a sector you hold, next door on the ring or the next world, leaving one behind.
   const move = (from: number, to: Where, count: number): Order => ({ kind: "army", from: { system: "kessa", sector: from }, to, count });
   expect(planDeploys(fought, "marines", [move(0, { system: "kessa", sector: 1 }, 1)]).errors).toEqual([null]);
@@ -740,7 +740,7 @@ test("holding most of a region gives your troops cover across it, and it tells o
       c.systems.brill!.sectors[0]!.armies = { marines: 3, wooka: 3 };
       c.systems.brill!.fleets.marines = 0; // no orbit: the region is the only edge
       c.systems.brill!.orbit = null;
-      const x = resolveTurn(c, none(c)).systems.brill!.sectors[0]!;
+      const x = resolveTurn(c, none()).systems.brill!.sectors[0]!;
       if (x.owner === "marines") region ? held++ : open++;
     }
   }
