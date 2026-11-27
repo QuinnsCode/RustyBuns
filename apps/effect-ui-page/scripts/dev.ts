@@ -6,26 +6,33 @@ import { json, parseJson } from "@rustybuns/util/http";
 import type { ServerWebSocket } from "bun";
 import index from "../index.html";
 import { fromPage, linksFor, Relay } from "../src/relay.ts";
+import { pictureBucket, pictureHttp, type Pictures, withCard } from "../src/share.ts";
 import { ROOM } from "../src/tools.ts";
 
 const port = portArg(process.argv[process.argv.indexOf("--port") + 1], "agentPage");
 type Tag = { room: string };
-const rooms = new Map<string, { relay: Relay; pages: ServerWebSocket<Tag>[] }>();
+const rooms = new Map<string, { relay: Relay; pages: ServerWebSocket<Tag>[]; pictures: Pictures; uploads: ReturnType<typeof pictureBucket> }>();
 const roomFor = (id: string) => {
   let r = rooms.get(id);
   if (!r) {
     const pages: ServerWebSocket<Tag>[] = [];
-    r = { pages, relay: new Relay(() => { const p = pages.at(-1); return p ? (frame) => p.send(frame) : null; }) };
+    let picture: Uint8Array<ArrayBuffer> | undefined;
+    const pictures: Pictures = { get: async () => picture, put: async (bytes) => { picture = bytes; } };
+    r = { pages, pictures, uploads: pictureBucket(), relay: new Relay(() => { const p = pages.at(-1); return p ? (frame) => p.send(frame) : null; }) };
     rooms.set(id, r);
   }
   return r;
 };
 
+/** The bundled page (at /__page) with its link preview, as the Worker serves the built one. */
+const card = async (req: Request, srv: { url: URL }) =>
+  withCard(await fetch(new URL("/__page", srv.url)), new URL(req.url), async (room) => (await rooms.get(room)?.pictures.get()) !== undefined);
+
 const { server, moved } = onPortOrFree(port, (p) => Bun.serve<Tag>({
   port: p,
   // This Mac only: the room link is the key, so other machines on the same Wi-Fi shouldn't get a door at all.
   hostname: "127.0.0.1",
-  routes: { "/": index, "/r/:room": index },
+  routes: { "/__page": index, "/": card, "/r/:room": card, "/og.jpg": () => new Response(Bun.file(new URL("../public/og.jpg", import.meta.url))) },
   async fetch(req, srv) {
     const url = new URL(req.url);
     if (url.pathname.startsWith("/.well-known/")) return json({ error: "no sign-in: the room's link is its key" }, 404);
@@ -34,6 +41,7 @@ const { server, moved } = onPortOrFree(port, (p) => Bun.serve<Tag>({
     const [, room, rest = ""] = m;
     if (rest === "/socket" && !fromPage(req)) return json({ error: "only this site's page may hold the room" }, 403);
     if (rest === "/socket") return srv.upgrade(req, { data: { room: room! } }) ? undefined : json({ error: "this is the page's socket" }, 426);
+    if (rest === "/picture") { const r = roomFor(room!); return pictureHttp(req, r.pictures, r.uploads); }
     return roomFor(room!).relay.http(req, rest, linksFor(url.origin, room!));
   },
   websocket: {
