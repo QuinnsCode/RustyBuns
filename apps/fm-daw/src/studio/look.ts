@@ -509,17 +509,30 @@ function ground(renderer: THREE.WebGLRenderer, scene: THREE.Scene, group: THREE.
       quad.material = pass.material; renderer.setRenderTarget(to); renderer.clear(); quad.render(renderer);
     }
   };
-  const copy = (src: THREE.WebGLRenderTarget) => { const c = target(); quad.material = new THREE.MeshBasicMaterial({ map: src.texture, transparent: true, blending: THREE.NoBlending }); renderer.setRenderTarget(c); renderer.clear(); quad.render(renderer); return c; };
+  // a copy whose shade is pushed toward full, 1 - (1 - a)^gain (round 19: a stand's 7 mm leg blurred to a faint line, so its feet left no mark)
+  const copy = (src: THREE.WebGLRenderTarget, gain: number) => {
+    const c = target();
+    quad.material = new THREE.ShaderMaterial({
+      uniforms: { map: { value: src.texture }, gain: { value: gain } }, blending: THREE.NoBlending,
+      vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+      fragmentShader: "uniform sampler2D map; uniform float gain; varying vec2 vUv; void main() { float a = texture2D(map, vUv).a; gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0 - pow(1.0 - clamp(a, 0.0, 1.0), gain)); }",
+    });
+    renderer.setRenderTarget(c); renderer.clear(); quad.render(renderer); (quad.material as THREE.Material).dispose();
+    return c;
+  };
   const k = n / 1024; // the blurs are in centimetres: a texel is about 1 cm on high in a 10 m room
   blur(0.9 * k); blur(0.6 * k);
-  const tight = copy(a);
-  for (let i = 0; i < 5; i++) blur((2 + i) * k);
+  const tight = copy(a, 2.6);
+  // a middle shade a few centimetres round every foot, case and leg, where the floor meets what stands on it
+  blur(2.5 * k); blur(3.5 * k);
+  const near = copy(a, 2);
+  for (let i = 0; i < 4; i++) blur((3 + i) * k);
   renderer.setRenderTarget(was.target); renderer.setClearColor(was.color, was.alpha);
   scene.background = was.bg; renderer.shadowMap.autoUpdate = was.shadows;
   for (const o of hidden) o.visible = true;
   quad.dispose(); depth.dispose(); b.dispose();
   // the tight line is dark; the wide shade is lighter, since the downlights and the bounce still reach under things
-  for (const [rt, opacity] of [[tight, 1], [a, 1]] as const) {
+  for (const [rt, opacity] of [[tight, 1], [near, 0.85], [a, 1]] as const) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shade(rt.texture, opacity));
     m.rotation.x = -Math.PI / 2; m.scale.y = -1; m.position.y = 0.002; m.name = "ground";
     group.add(m);
@@ -1186,6 +1199,87 @@ function paperSheets() {
   }, true, H);
 }
 
+let trodden: THREE.CanvasTexture | null = null;
+type Wall = StudioDef["walls"][number];
+/** Where segment p to q crosses wall `wl` on the floor, in metres along the wall from its `from` end; null if it doesn't. */
+function crossing(p: [number, number], q: [number, number], wl: Wall): number | null {
+  const [ax, az] = wl.from, ex = wl.to[0] - ax, ez = wl.to[1] - az, dx = q[0] - p[0], dz = q[1] - p[1], den = dx * ez - dz * ex;
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((ax - p[0]) * ez - (az - p[1]) * ex) / den, u = ((ax - p[0]) * dz - (az - p[1]) * dx) / den;
+  return t > 0 && t < 1 && u > 0 && u < 1 ? u * Math.hypot(ex, ez) : null;
+}
+
+/**
+ * The way people walk (round 19): from the door to every seat on the boards, a trodden lane where the lacquer has gone
+ * dull and dark, darkest down its middle and in streaks along it, bowing a little as feet do. A seat behind an inner wall
+ * is reached through that wall's doorway. Each lane stops short of its seat, whose own worn ring (used()) takes over.
+ */
+function paths(def: StudioDef): THREE.Mesh[] {
+  const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 19));
+  // one tile is the lane's width across by 2 m along it: a soft middle, scuffed streaks along the walk, blotches
+  trodden ??= canvasTex(128, (g) => {
+    const r = mulberry32(12), across = g.createLinearGradient(0, 0, 128, 0);
+    for (const [at, a] of [[0, 0], [0.18, 0.3], [0.5, 0.62], [0.82, 0.3], [1, 0]] as const) across.addColorStop(at, `rgba(0,0,0,${a})`);
+    g.fillStyle = across; g.fillRect(0, 0, 128, 512);
+    g.lineCap = "round";
+    for (let i = 0; i < 70; i++) {
+      const x = 64 + (r() + r() + r() - 1.5) * 52, y = r() * 512, len = 20 + r() * 120;
+      g.strokeStyle = `rgba(0,0,0,${0.08 + r() * 0.2})`; g.lineWidth = 0.8 + r() * 3;
+      for (const dy of [0, -512]) { g.beginPath(); g.moveTo(x, y + dy); g.lineTo(x + (r() - 0.5) * 6, y + dy + len); g.stroke(); }
+    }
+    for (let i = 0; i < 14; i++) {
+      const x = 64 + (r() - 0.5) * 60, y = r() * 512, rad = 12 + r() * 22, gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, `rgba(0,0,0,${0.08 + r() * 0.1})`); gr.addColorStop(1, "rgba(0,0,0,0)");
+      for (const dy of [0, -512, 512]) { g.fillStyle = gr; g.save(); g.translate(0, dy); g.fillRect(x - rad, y - rad, rad * 2, rad * 2); g.restore(); }
+    }
+  }, false, 512);
+  trodden.wrapS = THREE.ClampToEdgeWrapping;
+  const mat = shade(trodden, 1), wide = 1.1, door = def.door.at;
+  const doorways = (wl: Wall): [number, number][] => {
+    const len = Math.hypot(wl.to[0] - wl.from[0], wl.to[1] - wl.from[1]);
+    return (wl.gaps ?? []).map(([a, b]) => { const f = (a + b) / 2 / len; return [wl.from[0] + (wl.to[0] - wl.from[0]) * f, wl.from[1] + (wl.to[1] - wl.from[1]) * f]; });
+  };
+  const blocked = (p: [number, number], q: [number, number], wl: Wall) => {
+    const u = crossing(p, q, wl);
+    return u !== null && !(wl.gaps ?? []).some(([a, b]) => u > a && u < b);
+  };
+  /** One lane along p, (a bend), q as a strip of quads, its V in metres walked. */
+  const lane = (p: [number, number], q: [number, number]) => {
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]), steps = Math.max(2, Math.ceil(len / 0.25)), bow = (rnd() - 0.5) * Math.min(0.6, len * 0.15);
+    const nx = -(q[1] - p[1]) / len, nz = (q[0] - p[0]) / len, pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps, s = Math.sin(Math.PI * t) * bow, x = p[0] + (q[0] - p[0]) * t + nx * s, z = p[1] + (q[1] - p[1]) * t + nz * s;
+      // the lane narrows into nothing at its seat end, and fans a little at the door
+      const half = (wide / 2) * (1.1 - 0.25 * t) * Math.min(1, (1 - t) * 6 + 0.2), v = (t * len) / 2;
+      pos.push(x - nx * half, 0, z - nz * half, x + nx * half, 0, z + nz * half); uv.push(0, v, 1, v);
+      if (i) { const b = i * 2; idx.push(b - 2, b - 1, b, b - 1, b + 1, b); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat); m.position.y = 0.0025;
+    return m;
+  };
+  const out: THREE.Mesh[] = [], walked = new Set<string>();
+  for (const s of def.spots) {
+    if (s.kind === "couch" || s.kind === "booth" || floorAt(def, s.at[0], s.at[1]) > 0) continue;
+    // stop 0.7 m short of the seat, on the line toward it
+    let from = door;
+    const through = def.walls.find((wl) => blocked(from, s.at, wl));
+    if (through) {
+      const gap = doorways(through).sort((a, b) => Math.hypot(a[0] - door[0], a[1] - door[1]) - Math.hypot(b[0] - door[0], b[1] - door[1]))[0];
+      if (!gap || def.walls.some((wl) => blocked(door, gap, wl))) continue;
+      if (!walked.has(`${gap}`)) { walked.add(`${gap}`); out.push(lane(door, gap)); }
+      from = gap;
+    }
+    const len = Math.hypot(s.at[0] - from[0], s.at[1] - from[1]);
+    if (len < 1.2) continue;
+    const f = (len - 0.7) / len;
+    out.push(lane(from, [from[0] + (s.at[0] - from[0]) * f, from[1] + (s.at[1] - from[1]) * f]));
+  }
+  return out;
+}
+
 /**
  * What a room people work in picks up (round 10). Scuffs low on the painted walls and on the wall under the glass,
  * where cases, stands and shoes knock them, and a dirty line over the skirting; the floor worn dull round every
@@ -1323,8 +1417,9 @@ function used(def: StudioDef, group: THREE.Group, taken: Record<Side, [number, n
     m.rotation.set(-Math.PI / 2, 0, rnd() * Math.PI * 2); m.position.set(s.at[0], 0.003, s.at[1]);
     flat.add(m);
   }
+  if (hard) flat.add(...paths(def));
   // the keys player's music stand and set list
-  const rod = (a: THREE.Vector3, b: THREE.Vector3, r: number) => {
+  const rod =(a: THREE.Vector3, b: THREE.Vector3, r: number) => {
     const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, a.distanceTo(b), 8), black);
     c.position.copy(a).add(b).multiplyScalar(0.5); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
     return c;

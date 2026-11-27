@@ -2,7 +2,7 @@
 // like the tunnel; the only colour is the lanes' own (the preset LEDs and tape codes, the VU meter's hot end). Weights,
 // as strings: a screw ~0.4 KB, the dial face ~4 KB, a worn knob ~3 KB, a VU meter ~2.5 KB, the grille and tape-fibre
 // tiles ~0.5 KB each; the Controls rows' hardware (a fader's dished cap ~1.4 KB, its slot ~0.7 KB and worn plate ~0.7 KB, its printed scale ~1.6 KB, the bat-handle toggle ~1.3 KB a side,
-// the brushed plate ~0.5 KB, a read-out's glass ~1 KB, the presets' band window ~0.8 KB). Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
+// the brushed plate ~0.5 KB, a read-out's glass ~1 KB, the presets' band window ~0.8 KB, a section latch ~1.1 KB a side). Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
 import { mulberry32 } from "@rustybuns/util";
 
 const INK = "#e9ecf2";
@@ -176,6 +176,24 @@ const toggle = (on: boolean) => {
     <line x1="28" y1="20" x2="${tip}" y2="14" stroke="url(#bat)" stroke-width="4" stroke-linecap="round"/><circle cx="${tip}" cy="14" r="3" fill="#dfe3ea" stroke="#000" stroke-opacity=".6"/>`, 56, 34);
 };
 export const toggleOff = toggle(false), toggleOn = toggle(true);
+
+/** A section header's latch, where the web chevron was: a flight-case catch on a small chrome plate. Open (the section
+ * shown), the lever hangs down off its hinge and the pilot lamp over it is lit; shut, the lever is folded flat across the
+ * keeper and the lamp is dark. ~1.1 KB a side. */
+const latch = (open: boolean) => {
+  const lamp = open ? "#c8f6ff" : "#22262e";
+  const lever = open
+    ? `<rect x="15.5" y="11" width="7" height="11" rx="2" fill="#000" fill-opacity=".55"/><rect x="15" y="10" width="7" height="11" rx="2" fill="url(#lv)" stroke="#000" stroke-opacity=".7"/><rect x="16.5" y="18" width="4" height="1" fill="#000" fill-opacity=".5"/>`
+    : `<rect x="11" y="13.5" width="15" height="6" rx="2" fill="#000" fill-opacity=".55"/><rect x="10" y="12.5" width="15" height="6" rx="2" fill="url(#lh)" stroke="#000" stroke-opacity=".7"/><rect x="11.5" y="15" width="1" height="1.5" fill="#000" fill-opacity=".5"/>`;
+  return dataUri(`<defs><linearGradient id="pl" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5a606c"/><stop offset=".5" stop-color="#262a32"/><stop offset="1" stop-color="#6a707c"/></linearGradient>
+    <linearGradient id="lv" x1="0" x2="1"><stop offset="0" stop-color="#f4f6fa"/><stop offset=".5" stop-color="#9aa0ac"/><stop offset="1" stop-color="#3a3e48"/></linearGradient>
+    <linearGradient id="lh" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f4f6fa"/><stop offset=".5" stop-color="#9aa0ac"/><stop offset="1" stop-color="#3a3e48"/></linearGradient></defs>
+    <rect x=".5" y=".5" width="35" height="23" rx="3" fill="url(#pl)" stroke="#000"/><rect x="2.5" y="2.5" width="31" height="19" rx="2" fill="#0d0f14" stroke="#000" stroke-opacity=".6"/>
+    <circle cx="5.5" cy="12" r="1.6" fill="#15171d" stroke="#000" stroke-opacity=".6"/><circle cx="30.5" cy="12" r="1.6" fill="#15171d" stroke="#000" stroke-opacity=".6"/>
+    <circle cx="28" cy="6.5" r="1.9" fill="${lamp}"${open ? ` stroke="#4de3ff" stroke-opacity=".45" stroke-width="2.4"` : ""}/>
+    <rect x="13" y="7" width="11" height="4" rx="1" fill="#2a2e36" stroke="#000"/><circle cx="18.5" cy="9" r="1.2" fill="#9aa0ac"/>${lever}`, 36, 24);
+};
+export const latchOpen = latch(true), latchShut = latch(false);
 
 /** Brushed black metal for the plate under each section's rows: fine horizontal streaks of noise. ~0.5 KB, tiled. */
 export const brushed = dataUri(`<filter id="b"><feTurbulence type="fractalNoise" baseFrequency=".004 1.4" numOctaves="2" seed="9" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .45 -.2"/></filter><rect width="240" height="60" filter="url(#b)"/>`, 240, 60);
