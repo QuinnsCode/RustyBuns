@@ -8,7 +8,7 @@ import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game
 import { clamp } from "@rustybuns/util";
 import { gear } from "@rustybuns/gear";
 import { gear as model, gearLook } from "@rustybuns/models/gear";
-import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, partner, pickUp, push, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";
+import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, type Item, newWorld, partner, pickUp, push, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";
 import * as cable from "./cables/cables.ts";
 import { cableView } from "./cables/draw.ts";
 import { connectorName } from "./cables/ends.ts";
@@ -261,6 +261,29 @@ readable(look);
 const faces = faceLook(look), dressed = new Map<string, Dressed>();
 const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(highlight);
+// The box a piece's model fills, in its own frame (unturned, at the origin): an outline that fits the folded stand's
+// thin pole, not its catalog crate. Worked out once per model; a stand raised is a new model, so it is measured again.
+const fits = new WeakMap<THREE.Object3D, { size: THREE.Vector3; at: THREE.Vector3 }>();
+function fitOf(i: Item): { size: THREE.Vector3; at: THREE.Vector3 } {
+  const m = meshes.get(i.key);
+  if (!m) { const [w, h, d] = dims(i); return { size: new THREE.Vector3(w, h, d), at: new THREE.Vector3() }; }
+  const had = fits.get(m);
+  if (had) return had;
+  const p = m.position.clone(), r = m.rotation.clone();
+  m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(m, true);
+  m.position.copy(p); m.rotation.copy(r); m.updateMatrixWorld(true);
+  const fit = { size: b.getSize(new THREE.Vector3()), at: new THREE.Vector3((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2) };
+  fits.set(m, fit);
+  return fit;
+}
+/** An outline (a unit box standing on its base) laid round a piece as its model fits, `pad` metres clear. */
+function outlineOn(line: THREE.Object3D, i: Item, pad: number) {
+  const { size, at } = fitOf(i), c = Math.cos(i.rot), s = Math.sin(i.rot);
+  line.position.set(i.x + at.x * c + at.z * s, i.y + at.y - pad / 2, i.z - at.x * s + at.z * c);
+  line.rotation.y = i.rot;
+  line.scale.set(size.x + pad, size.y + pad, size.z + pad);
+}
 let bar: BarView | ParkView | DesertView | null = null;
 let big: BiggerBarView | null = null;
 let gig: FirstGigView | null = null;
@@ -378,7 +401,7 @@ function draw() {
   // The jack panel you look at (or aim a cable at) lights up, the socket you'd plug into ringed in amber.
   for (const [key, d] of dressed) d.lit(key === jack?.owner || (!held && key === at?.key), key === jack?.owner ? jack.jack : undefined);
   highlight.visible = !!at && !held && !end && !jack;
-  if (highlight.visible && at) { const [w, h, d] = dims(at); highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
+  if (highlight.visible && at) outlineOn(highlight, at, 0.04);
   bar?.update();
   ar?.update();
   arena?.update();
@@ -391,13 +414,13 @@ function draw() {
   shoes.update(you.x, world.level.floorAt?.(you.x, you.z) ?? 0, you.z, you.yaw, stepSpeed(), 1 / 60);
   const next = phase === "play" && !festival ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
   // An empty right hand reaches for the piece that's next, at its middle.
-  const reach: [number, number, number] | undefined = tgt && tgt !== held ? [tgt.x, tgt.y + dims(tgt)[1] / 2, tgt.z] : undefined;
+  const reach: [number, number, number] | undefined = tgt && tgt !== held ? [tgt.x, tgt.y + fitOf(tgt).size.y / 2, tgt.z] : undefined;
   hands.update({ ...holding(), show: showArms, reach, low: handsLow }, world.t, stepSpeed());
   ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
   // With nothing to lift, a tape mark to carry a stand to is what the marker and the arrow point at.
   const mark = !tgt && next?.at ? next.at : null, bob = Math.sin(performance.now() / 260) * 0.05;
   marker.visible = !!tgt || !!mark;
-  if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + bob, tgt.z);
+  if (tgt) marker.position.set(tgt.x, tgt.y + fitOf(tgt).size.y + 0.25 + bob, tgt.z);
   else if (mark) marker.position.set(mark.x, (world.level.floorAt?.(mark.x, mark.z) ?? 0) + 1.95 + bob, mark.z);
   // Out of view, an arrow on the screen edge says which way to turn for it.
   const away = marker.visible ? camera.worldToLocal(marker.position.clone()) : null, ndc = marker.visible ? marker.position.clone().project(camera) : null;
@@ -411,8 +434,8 @@ function draw() {
   handsLow = !held && !end && !jack && (!!at || seen);
   goalLamp.intensity = seen ? 3 * pulse : 0;
   if (seen && tgt) {
-    const [w, h, d] = dims(tgt);
-    goalEdges.position.set(tgt.x, tgt.y, tgt.z); goalEdges.rotation.y = tgt.rot; goalEdges.scale.set(w + 0.08, h + 0.08, d + 0.08);
+    const { x: w, y: h, z: d } = fitOf(tgt).size;
+    outlineOn(goalEdges, tgt, 0.08);
     goalLine.opacity = pulse;
     goalPool.position.set(tgt.x, (world.level.floorAt?.(tgt.x, tgt.z) ?? 0) + 0.012, tgt.z); goalPool.scale.setScalar(Math.max(w, d) * 1.1 + 0.35);
     goalLamp.position.set(tgt.x, tgt.y + h + 0.6, tgt.z + 0.3);

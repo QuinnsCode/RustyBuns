@@ -44,10 +44,14 @@ const stands = (w: World) => w.items.filter((i) => i.gear === "stand-tripod" && 
 const over = (s: Item, i: Item) => s !== i && i.y > 0.9 && Math.hypot(s.x - i.x, s.z - i.z) < 0.45;
 const nearest = (w: World, list: Item[]) => list.sort((a, b) => Math.hypot(a.x - w.you.x, a.z - w.you.z) - Math.hypot(b.x - w.you.x, b.z - w.you.z))[0];
 const freeStand = (w: World) => nearest(w, stands(w).filter((s) => !w.items.some((i) => isTop(i) && over(s, i))));
-// Where the level tapes a spot for a stand, the stand goes there first: the nearest one not yet on its tape.
+// Where the level tapes a spot for a stand, the stand goes there first: the one nearest the door you came in by, not
+// nearest you, so the job stays the same stand as you walk until it is on its tape.
 const markOf = (w: World, key: string) => w.level.marks?.find((m) => m.key === key);
 const offMark = (w: World, i: Item) => { const m = markOf(w, i.key); return !!m && Math.hypot(i.x - m.x, i.z - m.z) > 0.5; };
-const strayStand = ({ w }: At) => nearest(w, stands(w).filter((s) => offMark(w, s)));
+const fromDoor = (w: World, i: Item) => Math.hypot(i.x - w.level.start.x, i.z - w.level.start.z);
+const strayStand = ({ w }: At) => stands(w).filter((s) => offMark(w, s)).sort((a, b) => fromDoor(w, a) - fromDoor(w, b))[0];
+/** A top in your hands whose own stand is still off its tape: that stand is the job, so the top waits. */
+const ownStray = (w: World, h: Item | null | undefined) => { const s = h && isTop(h) ? stands(w).find((x) => x.key === h.key.replace(/^top-/, "stand-")) : undefined; return s && offMark(w, s) ? s : undefined; };
 /** A stand by its key: stand-r -> stand R. */
 const standName = (key: string) => key.replace(/^stand-(\w+)$/, (_, s: string) => `stand ${s.toUpperCase()}`);
 /** The stand a top goes on: its own (TOP R on stand R) while that one is free, else the nearest free one. */
@@ -73,7 +77,7 @@ export function towardName(w: World, c: Cables, key: string): string {
   const i = w.items.find((x) => x.key === key), h = heldItem(w);
   if (!i) return "";
   const held = h && tapeLabel(h.key, h.gear), m = Math.max(1, Math.round(Math.hypot(i.x - w.you.x, i.z - w.you.z)));
-  const name = tapeLabel(i.key, i.gear) ?? (held && i.gear.startsWith("stand") ? `stand for ${held}` : markOf(w, key) ? standName(key) : callName(w, c, key));
+  const name = tapeLabel(i.key, i.gear) ?? (held && i.gear.startsWith("stand") && !offMark(w, i) ? `stand for ${held}` : markOf(w, key) ? standName(key) : callName(w, c, key));
   return `${name}, ${m} m`;
 }
 
@@ -82,7 +86,7 @@ const grabTop = (s: At) => { const t = bareTop(s)!; return `Grab ${tapeLabel(t.k
 
 /** Each step is done while its job doesn't apply: the first one that does is what to do next. */
 const FIRST_MINUTE: Step<At>[] = [
-  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : offMark(w, h) ? "Set it on its tape on the stage: F" : isTop(h) && freeStand(w) ? "Carry it to the stand: F sets it on" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? standFor(w, h)?.key : undefined; } },
+  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : offMark(w, h) ? "Set it on its tape on the stage: F" : ownStray(w, h) ? `Set ${tapeLabel(h.key, h.gear)} down: ${standName(ownStray(w, h)!.key)} goes on its tape first` : isTop(h) && freeStand(w) ? "Carry it to the stand: F sets it on" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? (ownStray(w, h) ?? standFor(w, h))?.key : undefined; } },
   { job: "Plug it in: look at a jack and press F", done: ({ c }) => !inHand(c) },
   { job: (s) => `Bring the ${callName(s.w, s.c, outdoors(s)!.key)} in`, done: (s) => !outdoors(s), key: (s) => outdoors(s)?.key },
   { job: (s) => `Take ${standName(strayStand(s)!.key)} to its tape on the stage: F`, done: (s) => !strayStand(s), key: (s) => strayStand(s)?.key },
@@ -94,7 +98,7 @@ const FIRST_MINUTE: Step<At>[] = [
 export function nextStep(w: World, c: Cables, on: Switches): Next | null {
   const at = { w, c, on }, n = nextOf(FIRST_MINUTE, at);
   if (!n) return null;
-  const h = heldItem(w), stray = n.key ? strayStand(at) : undefined;
+  const h = heldItem(w), stray = n.key ? ownStray(w, h) ?? strayStand(at) : undefined;
   // A stand off its tape (in your hands, or the one to take) goes to the tape, not onto another stand.
   const going = h && !n.key && offMark(w, h) ? h : stray?.key === n.key ? stray : undefined, mark = going && markOf(w, going.key);
   if (mark) return { text: n.job, ...(n.key ? { key: n.key } : {}), at: { x: mark.x, z: mark.z } };

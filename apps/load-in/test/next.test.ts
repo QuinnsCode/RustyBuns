@@ -55,6 +55,16 @@ test("in the dive bar the stands go to their tape on the stage, then the speaker
   const w = newWorld(DIVE_BAR), c = newCables(w), on = new Set<string>(), next = () => nextStep(w, c, on);
   // The stand nearest the door first, sent to its tape mark (the arrow names the tape), then the other.
   expect(next()).toEqual({ text: "Take stand R to its tape on the stage: F", key: "stand-r", at: { x: 1.7, z: 2.0 } });
+  // Walking up to stand L doesn't change the job: stand R stays it until it is on its tape.
+  walkWith(w, c, 0.7, 9.2);
+  expect(next()?.key).toBe("stand-r");
+  // A top lifted before its stand is up waits for it: the job is still stand R, to its tape.
+  walkWith(w, c, -0.4, 11.2);
+  w.you.yaw = 0;
+  expect(pickUp(w, "top-r")).toEqual({ ok: true });
+  expect(next()).toEqual({ text: "Set TOP R down: stand R goes on its tape first", key: "stand-r", at: { x: 1.7, z: 2.0 } });
+  expect(towardName(w, c, "stand-r")).toMatch(/^stand R, \d+ m$/);
+  expect(putDown(w)).toEqual({ ok: true });
   for (const [stand, x] of [["stand-r", 1.7], ["stand-l", -1.7]] as const) {
     const s = w.items.find((i) => i.key === stand)!;
     walkWith(w, c, s.x - 0.9, s.z);
