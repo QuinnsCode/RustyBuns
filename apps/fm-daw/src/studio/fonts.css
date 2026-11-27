@@ -1,0 +1,52 @@
+/* The jam room's fonts (#6420), shipped with the app in public/fonts (latin, woff2; licences in public/fonts/CREDITS.md):
+ the 20 on Settings > You, of which a browser only fetches the ones a page shows. --qs-head is headings and buttons
+ (Saira Condensed unless this viewer picked another, settings.ts wearFont); --qs-body, small text, stays Inter. */
+:root { --qs-head: "Saira Condensed"; --qs-body: "Inter"; }
+@font-face { font-family: "Saira Condensed"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/saira-condensed-500.woff2") format("woff2"); }
+@font-face { font-family: "Saira Condensed"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/saira-condensed-600.woff2") format("woff2"); }
+@font-face { font-family: "Saira Condensed"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/saira-condensed-700.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Condensed"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/barlow-condensed-500.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Condensed"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/barlow-condensed-600.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Condensed"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/barlow-condensed-700.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/space-grotesk-400.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/space-grotesk-400.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/space-grotesk-400.woff2") format("woff2"); }
+@font-face { font-family: "Oswald"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/oswald-400.woff2") format("woff2"); }
+@font-face { font-family: "Oswald"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/oswald-400.woff2") format("woff2"); }
+@font-face { font-family: "Oswald"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/oswald-400.woff2") format("woff2"); }
+@font-face { font-family: "Bebas Neue"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/bebas-neue-400.woff2") format("woff2"); }
+@font-face { font-family: "Anton"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/anton-400.woff2") format("woff2"); }
+@font-face { font-family: "Teko"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/teko-400.woff2") format("woff2"); }
+@font-face { font-family: "Teko"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/teko-400.woff2") format("woff2"); }
+@font-face { font-family: "Teko"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/teko-400.woff2") format("woff2"); }
+@font-face { font-family: "Rajdhani"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/rajdhani-500.woff2") format("woff2"); }
+@font-face { font-family: "Rajdhani"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/rajdhani-600.woff2") format("woff2"); }
+@font-face { font-family: "Rajdhani"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/rajdhani-700.woff2") format("woff2"); }
+@font-face { font-family: "Archivo Narrow"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/archivo-narrow-400.woff2") format("woff2"); }
+@font-face { font-family: "Archivo Narrow"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/archivo-narrow-400.woff2") format("woff2"); }
+@font-face { font-family: "Archivo Narrow"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/archivo-narrow-400.woff2") format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/chakra-petch-400.woff2") format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/chakra-petch-600.woff2") format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/chakra-petch-700.woff2") format("woff2"); }
+@font-face { font-family: "Orbitron"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/orbitron-500.woff2") format("woff2"); }
+@font-face { font-family: "Orbitron"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/orbitron-500.woff2") format("woff2"); }
+@font-face { font-family: "Orbitron"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/orbitron-500.woff2") format("woff2"); }
+@font-face { font-family: "Righteous"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/righteous-400.woff2") format("woff2"); }
+@font-face { font-family: "Bungee"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/bungee-400.woff2") format("woff2"); }
+@font-face { font-family: "Press Start 2P"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/press-start-2p-400.woff2") format("woff2"); }
+@font-face { font-family: "Space Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/space-mono-400.woff2") format("woff2"); }
+@font-face { font-family: "Space Mono"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/space-mono-700.woff2") format("woff2"); }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/dm-sans-400.woff2") format("woff2"); }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/dm-sans-400.woff2") format("woff2"); }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/dm-sans-400.woff2") format("woff2"); }
+@font-face { font-family: "Outfit"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/outfit-400.woff2") format("woff2"); }
+@font-face { font-family: "Outfit"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/outfit-400.woff2") format("woff2"); }
+@font-face { font-family: "Outfit"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/outfit-400.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/fraunces-400.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/fraunces-400.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/fraunces-400.woff2") format("woff2"); }
+@font-face { font-family: "Permanent Marker"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/permanent-marker-400.woff2") format("woff2"); }

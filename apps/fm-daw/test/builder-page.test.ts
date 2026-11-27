@@ -79,3 +79,33 @@ test.skipIf(!hasChrome)("Q Phase: the scope on GATE moves with the Rate knob, an
     expect((await state()).retest).toBeNull();
   } finally { await builder.close(); await amp.close(); }
 });
+
+// Build it: the fuzz's board drawn from its kit's Gerbers, top and bottom; Print fills a sheet with the schematic, the
+// board and your parts; the Gerbers zip holds the layers. Q Phase has no board files yet: no board, still a schematic.
+test.skipIf(!hasChrome)("Build it: the fuzz's board from its Gerbers, the print sheet with your parts, and a pedal with no kit", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 860 });
+  try {
+    await load(chrome.cdp, tab, `${vite.url}/builder.html`, 0);
+    const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
+    type Board = { kit: string; side: string; made: boolean; size: number[] | null; holes: number };
+    const board = async () => { await page("qbuilder.idle()"); return page<Board>("qbuilder.state().board"); };
+    await waitFor(tab, "Q Builder", "!!window.qbuilder && !!qbuilder.state().probe", 60_000);
+    await page("(localStorage.clear(), qbuilder.pick('fuzz'), qbuilder.swap(null, null))");
+
+    const top = await board();
+    expect(top).toMatchObject({ kit: "q-fuzz", side: "top", made: true, size: [58, 68] });
+    expect(await page<number>("document.querySelectorAll('.qb-mock .pcb-holes circle').length")).toBe(top.holes);
+    expect(await page<string | null>("qbuilder.side('bottom')")).toBe("bottom");
+
+    expect(await page<string>("qbuilder.swap('D3', 'germanium')")).toBe("");
+    expect(await page<string[]>("qbuilder.printSheet()")).toEqual(["Q Fuzz", "Schematic", "Circuit board", "Parts"]);
+    expect(await page<string>("document.querySelector('.qb-print .yours')?.textContent ?? ''")).toContain("1N34A");
+    const z = await page<{ name: string; files: string[] }>("qbuilder.gerbers()");
+    expect(z.name).toBe("q-fuzz-gerbers.zip");
+    expect(z.files).toEqual(expect.arrayContaining(["F_Cu.gbr", "B_Cu.gbr", "Edge_Cuts.gbr", "drill-L1-L2.drl"]));
+
+    await page("qbuilder.pick('phase')");
+    expect((await board()).made).toBe(false);
+    expect(await page<string[]>("qbuilder.printSheet()")).toEqual(["Q Phase", "Schematic"]);
+  } finally { await tab.close(); }
+});
