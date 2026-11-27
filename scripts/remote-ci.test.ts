@@ -3,7 +3,9 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, utimesSyn
 import { tmpdir } from "node:os";
 import { menu, readRuns } from "./builder-bar.ts";
 import { board, events, expected, GATHER, parseShot, view, type Shot, type SwarmQueue } from "./builder-board.ts";
-import { battery, ciJobs, cutOff, jobScript, load, main, outcome, parseJobs, passedFile, passes, plan, pool, recordPass, remoteScript, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
+import { runScoped } from "../packages/cli/src/lifecycle.ts";
+import { load } from "./remote-ci-run.ts";
+import { battery, ciJobs, cutOff, jobScript, main, outcome, parseJobs, passedFile, passes, plan, recordPass, remoteScript, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true";
 const DRAIN = (pct: number) => `Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t${pct}%; discharging; 3:10 remaining present: true`;
@@ -69,18 +71,6 @@ test("a pass is written down per commit, and reads as moved once the branch has 
   } finally {
     delete process.env.BUILDER_PASSED;
   }
-});
-
-test("the pool never runs more than the cap and returns the worst code", async () => {
-  let live = 0, peak = 0;
-  const worst = await pool([0, 1, 0, 2, 0, 0], 2, async (code) => {
-    peak = Math.max(peak, ++live);
-    await Bun.sleep(5);
-    live--;
-    return code;
-  });
-  expect(worst).toBe(2);
-  expect(peak).toBe(2);
 });
 
 // The builder is a folder of slot clones; "ssh" is a script that runs the command in that folder's home.
@@ -157,6 +147,42 @@ test("Bob's battery at 13% kills a running suite's whole tree, and it reads cut 
   expect([outcome(next.exitCode), next.stdout.toString()]).toEqual(["cut off", ""]);
 }, 15000);
 
+// An agent's harness SIGTERMs `bun run builder` mid-suite. Killing the local ssh doesn't end the suite on Bob (no tty),
+// so giving the slot back ends what still runs there first: the next claim never resets the slot under it (#6192).
+test("a SIGTERM mid-suite ends the suite on Bob, then gives the slot back", async () => {
+  const root = mkdtempSync(`${tmpdir()}/remote-ci-stop-`), work = `${root}/work`, home = `${root}/home`, builder = `${home}/builder`;
+  const id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  await Bun.write(`${work}/package.json`, `{"name":"w"}`);
+  await Bun.$`git init -q && git add -A && git commit -qm one`.cwd(work).env({ ...process.env, ...id });
+  await Bun.$`mkdir -p ${builder}/locks && git clone -q ${work} ${builder}/slot-1 && touch ${builder}/serving`;
+  // the fake "Bob" is a local shell: like the real one, it keeps running the suite when the run that sent it goes
+  const nap = `sleep ${(600 + Math.random()).toFixed(4)}`, ssh = `${root}/ssh`, pmset = `${root}/bin/pmset`;
+  await Bun.write(ssh, `#!/bin/sh\nshift\nexport PATH="${root}/bin:$PATH"\ncd "${home}" && exec sh -c "$*"\n`);
+  await Bun.write(pmset, `#!/bin/sh\necho "Now drawing from 'AC Power'"\n`);
+  chmodSync(ssh, 0o755);
+  chmodSync(pmset, 0o755);
+  await Bun.write(`${root}/rb/valve`, "off\n");
+  // anchored: the local `bun remote-ci.ts run . sh -c sleep …` names the nap too, and isn't the suite on "Bob"
+  const running = async () => (await Bun.$`pgrep -f ${`^${nap}`}`.quiet().nothrow().text()).split("\n").filter(Boolean);
+  const run = Bun.spawn(["bun", `${import.meta.dir}/remote-ci.ts`, "run", ".", "sh", "-c", nap], {
+    cwd: work, stdout: "ignore", stderr: "ignore",
+    env: { ...process.env, ...id, BUILDER_HOST: "max", BUILDER_SSH: ssh, GIT_SSH_VARIANT: "simple", RUSTYBUNS_HOME: `${root}/rb`, BUILDER_WHO: "byte" },
+  });
+  try {
+    for (let i = 0; !(await running()).length && i < 300; i++) await Bun.sleep(50);
+    expect(readdirSync(`${builder}/locks`)).toEqual(["slot-1"]);
+    run.kill("SIGTERM");
+    // runScoped answers 128 + the signal's number; the run's record reads 130 (stopped), which ends its tree on Bob
+    expect(await run.exited).toBe(143);
+    expect(await running()).toEqual([]);
+    expect(readdirSync(`${builder}/locks`)).toEqual([]);
+    expect(readRuns(builder).done.map((r) => [r.who, r.code])).toEqual([["byte", 130]]);
+  } finally {
+    run.kill("SIGKILL");
+    await Bun.$`pkill -f ${nap}`.quiet().nothrow();
+  }
+}, 30000);
+
 // A push packs what the slot's refs don't reach. Once a run's commit stays there, the next run one commit on sends
 // just that commit, not all the history since the slot was set up (seven 200 MB packs at once restarted the office Mac).
 test("after a run the slot keeps its commit, so the next push packs only what is new", async () => {
@@ -176,7 +202,7 @@ test("after a run the slot keeps its commit, so the next push packs only what is
   Object.assign(process.env, env, { GIT_SSH_VARIANT: "simple", RUSTYBUNS_HOME: `${root}/rb` });
   try {
     const two = await commit("big.txt", "x".repeat(1 << 20));
-    expect(await load({ host: "max", dir: `${root}/builder`, ssh: [ssh] }, "slot-1", two, work)).toBe(0);
+    expect(await runScoped(load({ host: "max", dir: `${root}/builder`, ssh: [ssh] }, "slot-1", two, work))).toBe(0);
     const three = await commit("c.txt", "c");
     const shown = (await Bun.$`git for-each-ref ${"--format=%(objectname)"}`.cwd(slot).text()).trim().split("\n");
     const packed = (await Bun.$`git rev-list --objects ${three} --not ${shown}`.cwd(work).text()).trim().split("\n");
@@ -184,6 +210,39 @@ test("after a run the slot keeps its commit, so the next push packs only what is
     expect(readdirSync(`${root}/rb`)).toEqual([]); // the push lock is given back
   } finally {
     process.env = saved;
+  }
+}, 30000);
+
+// An agent's harness times out while its run's push to Bob hangs, and SIGTERMs `bun run builder`: the push is stopped,
+// the push lock goes (or every later push on this Mac waits behind a dead one), and the slot goes back with its record.
+test("a SIGTERM mid-push gives back the push lock and the slot", async () => {
+  const root = mkdtempSync(`${tmpdir()}/remote-ci-term-`), work = `${root}/work`, home = `${root}/home`, builder = `${home}/builder`;
+  const id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  await Bun.write(`${work}/package.json`, `{"name":"w"}`);
+  await Bun.$`git init -q && git add -A && git commit -qm one`.cwd(work).env({ ...process.env, ...id });
+  await Bun.$`mkdir -p ${builder}/locks && git clone -q ${work} ${builder}/slot-1 && touch ${builder}/serving`;
+  // Bob answers every shell, but the push to his slot never finishes
+  const nap = `sleep ${(600 + Math.random()).toFixed(4)}`, ssh = `${root}/ssh`, pmset = `${root}/bin/pmset`;
+  await Bun.write(ssh, `#!/bin/sh\nshift\ncase "$*" in *git-receive-pack*) touch "${root}/pushing"; exec ${nap};; esac\nexport PATH="${root}/bin:$PATH"\ncd "${home}" && exec sh -c "$*"\n`);
+  await Bun.write(pmset, `#!/bin/sh\necho "Now drawing from 'AC Power'"\n`);
+  chmodSync(ssh, 0o755);
+  chmodSync(pmset, 0o755);
+  await Bun.write(`${root}/rb/valve`, "off\n");
+  const run = Bun.spawn(["bun", `${import.meta.dir}/remote-ci.ts`, "run", ".", "true"], {
+    cwd: work, stdout: "ignore", stderr: "ignore",
+    env: { ...process.env, ...id, BUILDER_HOST: "max", BUILDER_SSH: ssh, GIT_SSH_VARIANT: "simple", RUSTYBUNS_HOME: `${root}/rb`, BUILDER_WHO: "byte" },
+  });
+  try {
+    for (let i = 0; !(await Bun.file(`${root}/pushing`).exists()) && i < 200; i++) await Bun.sleep(50);
+    expect(readdirSync(`${builder}/locks`)).toEqual(["slot-1"]);
+    run.kill("SIGTERM");
+    expect(await run.exited).toBe(143);
+    expect(readdirSync(`${root}/rb`)).toEqual(["valve"]);
+    expect(readdirSync(`${builder}/locks`)).toEqual([]);
+    expect(readRuns(builder).done.map((r) => [r.who, r.code])).toEqual([["byte", 130]]);
+  } finally {
+    run.kill("SIGKILL");
+    await Bun.$`pkill -f ${nap}`.quiet().nothrow();
   }
 }, 30000);
 
