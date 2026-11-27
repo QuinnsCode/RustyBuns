@@ -9,8 +9,9 @@ import { addCommands, type Command, runCommand } from "@rustybuns/util/commands"
 import { check, field } from "@rustybuns/util/guard";
 import { connectSocket } from "@rustybuns/util/socket";
 import { Context, Effect, Layer, Queue, Schema, Stream } from "effect";
-import { type Page } from "./page.ts";
-import { decode, type FromPage, inputSchema, READ, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
+import { listing, type Page } from "./page.ts";
+import { decode, type FromPage, inputSchema, READ, READ_FILE, ReadFile, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
+import { SAID_KEY } from "./world.ts";
 
 export { Request };
 export const Call = Schema.Struct({ call: Schema.Number, tool: Schema.String, request: Request });
@@ -39,7 +40,6 @@ const replyOf = (id: number, r: unknown): FromPage =>
 
 /** The tools a person reaches in the Cmd+K palette too, with the one line it asks for first (when it takes one). */
 const PALETTE: Readonly<Record<string, { ask?: string }>> = {
-  page_set_profile: { ask: "The page's name" },
   page_set_backdrop: { ask: "A codeSplitter handle (empty takes it away)" },
   page_undo: {},
   page_reset: {},
@@ -50,16 +50,32 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   const online = yield* Queue.unbounded<boolean>();
   const waiting = new Map<number, (r: Report) => void>();
   let page = initial, next = 1;
+  // What the world's frame said since it last loaded (world.ts's reporter): its errors and blocked loads, newest last.
+  let said: string[] = [];
+  const heard = (e: MessageEvent) => {
+    const frame = document.querySelector("iframe.world");
+    if (!(frame instanceof HTMLIFrameElement) || e.source !== frame.contentWindow || field(e.data, SAID_KEY) !== true) return;
+    const kind = field(e.data, "kind"), text = String(field(e.data, "text") ?? "");
+    if (kind === "start") said = [];
+    else if (said.length < 20) said.push(`${kind === "blocked" ? "blocked" : "error"}: ${text}`);
+  };
+  addEventListener("message", heard);
+  // A write's answer is the world's files (path and size), not their text: the agent asks for a file when it needs it.
   const call = (tool: Tool, args: unknown) => {
     const request = decode(tool, args);
     const id = next++;
-    return new Promise<{ ok: boolean; error?: string; page: Page }>((done) => {
-      waiting.set(id, (r) => done(r.error === null ? { ok: true, page: r.page } : { ok: false, error: r.error, page: r.page }));
+    return new Promise<{ ok: boolean; error?: string; files: ReturnType<typeof listing> }>((done) => {
+      waiting.set(id, (r) => done(r.error === null ? { ok: true, files: listing(r.page) } : { ok: false, error: r.error, files: listing(r.page) }));
       Queue.offerUnsafe(queue, { call: id, tool: tool.name, request });
     });
   };
   const off = addCommands([
-    { ...READ, group: "Page", palette: false, execute: () => page },
+    { ...READ, group: "Page", palette: false, execute: () => ({ files: listing(page), ...(page.backdrop ? { backdrop: page.backdrop } : {}), said: said.length ? said : ["nothing: no errors since it loaded"] }) },
+    { ...READ_FILE, group: "Page", palette: false, execute: (args) => {
+      const { path } = Schema.decodeUnknownSync(ReadFile)(args);
+      const text = page.files[path];
+      return text === undefined ? { ok: false, error: `no file "${path}": the files are ${Object.keys(page.files).join(", ") || "none"}` } : { path, text };
+    } },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
   ]);
@@ -72,7 +88,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     onOpen: () => Queue.offerUnsafe(online, true),
     onClose: ({ tries }) => { Queue.offerUnsafe(online, false); return Math.min(10_000, 500 * 2 ** tries); },
   });
-  yield* Effect.addFinalizer(() => Effect.sync(() => { off(); link.close(); }));
+  yield* Effect.addFinalizer(() => Effect.sync(() => { off(); link.close(); removeEventListener("message", heard); }));
   return Agent.of({
     calls: Stream.fromQueue(queue),
     online: Stream.fromQueue(online),

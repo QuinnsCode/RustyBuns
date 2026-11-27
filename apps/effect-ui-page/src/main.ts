@@ -9,6 +9,7 @@ import { mountPalette } from "@rustybuns/util/palette";
 import { startCity } from "./city.ts";
 import { connectLines } from "./ProfilePage.ts";
 import { linksFor, prompt } from "./relay.ts";
+import { READY } from "./worlds.ts";
 import { ProfilePage } from "./ProfilePage.ts";
 import { ROOM } from "./tools.ts";
 
@@ -30,6 +31,9 @@ Layer.launch(Main).pipe(Effect.runFork);
 const copy = (text: string) => navigator.clipboard.writeText(text).then(() => "Copied", () => "The clipboard said no: copy it from the dock.");
 const claudeLine = connectLines(location.origin, room)[0]!.text;
 addCommands([
+  // The same buttons a person sees, on the landing and in the dock.
+  ...READY.map((w) => ({ name: `page_try_${w.name.toLowerCase().replaceAll(" ", "_")}`, title: `Try the ${w.name.toLowerCase()}`, group: "Try one", agent: false,
+    description: "Loads this ready-made world. Undo takes it back.", execute: () => document.querySelector<HTMLButtonElement>(`[data-try="${w.name}"]`)?.click() })),
   { name: "page_copy_claude_line", title: "Copy the Claude Code line", group: "Connect", agent: false, answers: true,
     description: "Puts this room's claude mcp add line on the clipboard.", execute: () => copy(claudeLine) },
   { name: "page_copy_prompt", title: "Copy the prompt for any AI", group: "Connect", agent: false, answers: true,
