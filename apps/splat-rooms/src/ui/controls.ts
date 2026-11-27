@@ -5,6 +5,7 @@ import { SKIN } from "./eqosys.ts";
 /**
  * The Controls sheet as the gadget watch's settings plate: riveted glass with a stamped hairline inside the edge, the
  * red-and-cream hatched trim along its top, a stencilled serial beside the title, and each section an inset panel.
+ * The title has its own emblem to match the menu's dial: a watch bezel in CSS (twelve cream ticks, a red pip at twelve, a cyan lamp).
  * A switch's row gives its words the width a slider's track would take, so "Toggle instead of hold" stays on one line.
  * The sheet's edge is the menu console's: a 1px cyan hairline and a soft outer glow, so both read as one device. Its top band
  * is the menu's Band drawn in CSS (red wedge, a second red slash, cream hatch) stamped SR-LAB · FIELD CONTROLS, and the close
@@ -12,7 +13,7 @@ import { SKIN } from "./eqosys.ts";
  * Each kit tab keeps its small gamepad, keyboard, mouse or phone icon beside its letter. The fold knobs are small, flat knurled
  * brass rims round a dark centre, stencilled FOLD and OPEN under them; an OFF rocker sits in a steel-grey housing with its
  * word readable, and a switch the game lacks keeps its brass housing, dimmed (no dashed edge).
- * Each section head is stamped: a red-and-cream tab on its top edge and a dim cream serial (SR-CTL · 01, 02...) by a CSS counter.
+ * Each section head is stamped: a red-and-cream tab on its top edge and a cream serial at the FOLD labels' brightness (SR-CTL · 01, 02...) by a CSS counter.
  * Red is kept for what is live: only the active kit's SR-KIT serial is red, and a folded section's tab is a thin cream line.
  * Faders run over an engraved scale (ten ticks, a longer one at the middle), and the Keyboard list's keys are dark-glass caps.
  */
@@ -26,6 +27,11 @@ repeating-linear-gradient(-55deg,rgb(239 228 201 / .3) 0 3px,transparent 3px 8px
 .ui-house .gc-close{background:linear-gradient(180deg,rgb(255 255 255 / .07),rgb(0 0 0 / .3)),var(--glass);border-color:rgb(92 214 239 / .35);color:var(--accent);
 box-shadow:inset 0 1px 0 rgb(255 255 255 / .1),inset 0 -2px 3px rgb(0 0 0 / .55),0 0 10px -4px rgb(92 214 239 / .6)}
 .gc-head h2{font:600 1.5rem/1 var(--silk);letter-spacing:.06em;text-transform:uppercase}
+.ui-house .gc-head h2::before{content:"";display:inline-block;vertical-align:middle;width:26px;height:26px;margin:-4px 10px 0 0;border-radius:50%;border:1px solid rgb(176 141 87 / .6);
+background:radial-gradient(circle,#e6fbff 0 1px,var(--accent) 1.5px 2.5px,transparent 3.5px),radial-gradient(circle at 50% 4px,var(--red) 0 1.6px,transparent 2.2px),
+radial-gradient(circle,#0a1014 0 7px,rgb(92 214 239 / .45) 7px 7.6px,transparent 8.2px),
+repeating-conic-gradient(rgb(239 228 201 / .7) 0 2deg,transparent 2deg 30deg) #141a1f;
+box-shadow:0 0 0 1px rgb(0 0 0 / .6),inset 0 1px 0 rgb(255 255 255 / .08),0 0 10px -4px rgb(92 214 239 / .6)}
 .gc-head h2::after{content:"SR-CTL · 0417";margin-left:12px;padding:2px 7px;vertical-align:middle;border:1px solid var(--oxide);border-radius:2px;
 font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0 0 0 / .3)}
 .ui-house .gc-sec{background:var(--wear),rgb(0 0 0 / .22);border-color:var(--oxide);box-shadow:inset 0 1px 4px rgb(0 0 0 / .5)}
@@ -34,9 +40,9 @@ font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0
 .ui-house .gc-keys dt{font-family:var(--mono);font-size:.85em;color:var(--accent)}
 .ui-house .gc-card label:has(>input[type=checkbox]){grid-template-columns:1fr auto}
 .ui-house .gc-card{counter-reset:gcsec}.ui-house .gc-sec{position:relative;counter-increment:gcsec}
-.ui-house .gc-sec::before{content:"";position:absolute;left:12px;top:0;width:34px;height:3px;background:var(--red);box-shadow:38px 0 0 -1px var(--cream)}
+.ui-house .gc-sec::before{content:"";position:absolute;left:12px;top:0;width:34px;height:3px;background:var(--red);box-shadow:38px 0 0 0 var(--cream)}
 .ui-house .gc-sec-h{font:600 1.02rem/1 var(--silk);letter-spacing:.07em;text-transform:uppercase}
-.ui-house .gc-sec-h::after{content:"SR-CTL \\00b7  " counter(gcsec,decimal-leading-zero);order:2;margin-left:auto;font:600 .6rem var(--mono);letter-spacing:.16em;color:var(--cream);opacity:.42}
+.ui-house .gc-sec-h::after{content:"SR-CTL \\00b7  " counter(gcsec,decimal-leading-zero);order:2;margin-left:auto;font:600 .6rem var(--mono);letter-spacing:.16em;color:var(--cream);opacity:.7}
 .ui-house .gc-chev{order:3;margin-left:10px}
 .ui-house .gc-card label:has(>input[type=range]){grid-template-columns:auto 1fr 3.5em}.ui-house .gc-card label:has(>input[type=range]) .gc-lab{white-space:nowrap}
 .ui-house .gc-card input[type=checkbox]{border-radius:4px;border-color:rgb(124 138 150 / .55);background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));box-shadow:inset 0 1px 3px rgb(0 0 0 / .7),inset 0 0 0 1px rgb(239 228 201 / .05)}
@@ -50,7 +56,7 @@ font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0
 .ui-house .gc-prof[data-slot="0"]::before{content:"Kit A"}.ui-house .gc-prof[data-slot="1"]::before{content:"Kit B"}
 .ui-house .gc-prof[data-slot="2"]::before{content:"Kit C"}.ui-house .gc-prof[data-slot="3"]::before{content:"Kit D"}
 .ui-house .gc-profiles{counter-reset:gckit}.ui-house .gc-prof{counter-increment:gckit}
-.ui-house .gc-prof::after{content:"SR-KIT · " counter(gckit,decimal-leading-zero);grid-row:2;grid-column:1/-1;justify-self:center;white-space:nowrap;margin-top:4px;font:800 .5rem/1 var(--mono);letter-spacing:.14em;color:var(--cream);opacity:.38}
+.ui-house .gc-prof::after{content:"SR-KIT · " counter(gckit,decimal-leading-zero);grid-row:2;grid-column:1/-1;justify-self:center;white-space:nowrap;margin-top:4px;font:800 .5rem/1 var(--mono);letter-spacing:.14em;color:var(--cream);opacity:.62}
 .ui-house .gc-prof[aria-pressed=true]::after{color:var(--red);opacity:.9}
 .ui-house .gc-sec.shut::before{height:2px;width:26px;background:rgb(239 228 201 / .3);box-shadow:none}
 .ui-house.gc-faders .gc-card label input[type=range]{background:linear-gradient(90deg,rgb(239 228 201 / .3) 0 1px,transparent 1px) 7px 100%/calc((100% - 14px) / 10) 4px repeat-x,
