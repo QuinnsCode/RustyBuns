@@ -12,12 +12,13 @@
 // deletes a worktree, branch or commit. The next `git status` in a deduped worktree is slow once.
 // `add` refuses a donor with changes to tracked files, a different volume, a disk that can't clone or too little space.
 // `du` can't see clones; the sizes here are APFS's own count of bytes a file shares with nothing.
+// Portable: this file and `cow-clone.ts` beside it need only Bun and git, so another repo can copy the pair
+// (notes/COW_WORKTREES.md). Keep them free of imports from this repo.
 import { execFileSync } from "node:child_process";
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { chmodSync, constants, copyFileSync, existsSync, lstatSync, readFileSync, realpathSync, renameSync, rmSync, statfsSync, statSync } from "node:fs";
 import path from "node:path";
-import { fillWorktree } from "../apps/agent-office/live/clone.ts";
-import { help } from "./help.ts";
+import { fillWorktree } from "./cow-clone.ts";
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["--no-optional-locks", ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 });
@@ -126,8 +127,11 @@ export function add(donor: string, to: string, commit: string): number {
 }
 
 if (import.meta.main) {
-  help(import.meta.path);
   const args = process.argv.slice(2);
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(readFileSync(import.meta.path, "utf8").split("\nimport ")[0]!.replace(/^#!.*\n/, "").replace(/^\/\/ ?/gm, ""));
+    process.exit(0);
+  }
   const at = args.indexOf("--from");
   const from = at >= 0 ? args.splice(at, 2)[1] : undefined;
   const donor = from ?? git(process.cwd(), "worktree", "list", "--porcelain").split("\n")[0]!.slice("worktree ".length);
