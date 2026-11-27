@@ -6,13 +6,15 @@ import { SKIN } from "./eqosys.ts";
  * The Controls sheet as the gadget watch's settings plate: riveted glass with a stamped hairline inside the edge, the
  * red-and-cream hatched trim along its top, a stencilled serial beside the title, and each section an inset panel.
  * A switch's row gives its words the width a slider's track would take, so "Toggle instead of hold" stays on one line.
- * Each kit tab keeps its small gamepad, keyboard, mouse or phone icon beside its letter. The fold knobs are stencilled FOLD and
- * OPEN under them, and a switch the game lacks keeps its brass housing, dimmed (no dashed edge).
+ * The sheet's edge is the menu console's: a 1px cyan hairline and a soft outer glow, so both read as one device.
+ * Each kit tab keeps its small gamepad, keyboard, mouse or phone icon beside its letter. The fold knobs are small, flat knurled
+ * brass rims round a dark centre, stencilled FOLD and OPEN under them; an OFF rocker sits in a steel-grey housing with its
+ * word readable, and a switch the game lacks keeps its brass housing, dimmed (no dashed edge).
  * Each section head is stamped: a red-and-cream tab on its top edge and a dim cream serial (SR-CTL · 01, 02...) by a CSS counter.
  * Red is kept for what is live: only the active kit's SR-KIT serial is red, and a folded section's tab is a thin cream line.
  * Faders run over an engraved scale (ten ticks, a longer one at the middle), and the Keyboard list's keys are dark-glass caps.
  */
-const LAB_CSS = `.ui-house .gc-card{box-shadow:var(--glow),0 30px 80px -30px #000;border-top:0;backdrop-filter:blur(8px);position:relative;padding-top:26px;
+const LAB_CSS = `.ui-house .gc-card{box-shadow:0 0 0 1px rgb(92 214 239 / .3),0 0 28px -6px rgb(92 214 239 / .55),0 30px 80px -30px #000;border-color:var(--edge-hi);border-top:0;backdrop-filter:blur(8px);position:relative;padding-top:26px;
 background:var(--rivets),var(--wear),var(--panel);outline:1px solid rgb(239 228 201 / .06);outline-offset:-5px}
 .ui-house .gc-card::before{content:"";position:absolute;left:0;right:0;top:0;height:7px;
 background:linear-gradient(100deg,var(--red) 0 132px,transparent 132px),repeating-linear-gradient(-55deg,rgb(239 228 201 / .45) 0 3px,transparent 3px 8px)}
@@ -30,9 +32,9 @@ font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0
 .ui-house .gc-sec-h::after{content:"SR-CTL \\00b7  " counter(gcsec,decimal-leading-zero);order:2;margin-left:auto;font:600 .6rem var(--mono);letter-spacing:.16em;color:var(--cream);opacity:.42}
 .ui-house .gc-chev{order:3;margin-left:10px}
 .ui-house .gc-card label:has(>input[type=range]){grid-template-columns:auto 1fr 3.5em}.ui-house .gc-card label:has(>input[type=range]) .gc-lab{white-space:nowrap}
-.ui-house .gc-card input[type=checkbox]{border-radius:4px;border-color:var(--oxide);background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));box-shadow:inset 0 1px 3px rgb(0 0 0 / .7),inset 0 0 0 1px rgb(239 228 201 / .05)}
+.ui-house .gc-card input[type=checkbox]{border-radius:4px;border-color:rgb(124 138 150 / .55);background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));box-shadow:inset 0 1px 3px rgb(0 0 0 / .7),inset 0 0 0 1px rgb(239 228 201 / .05)}
 .ui-house .gc-card input[type=checkbox]:checked{background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));border-color:rgb(92 214 239 / .7);box-shadow:0 0 10px -3px rgb(92 214 239 / .7),inset 0 1px 3px rgb(0 0 0 / .7)}
-.ui-house .gc-card input[type=checkbox]::before{content:"OFF";position:absolute;right:4px;top:50%;transform:translateY(-50%);font:800 7px/1 var(--mono);letter-spacing:.04em;color:rgb(147 161 173 / .55)}
+.ui-house .gc-card input[type=checkbox]::before{content:"OFF";position:absolute;right:4px;top:50%;transform:translateY(-50%);font:800 7px/1 var(--mono);letter-spacing:.04em;color:rgb(176 188 198 / .82)}
 .ui-house .gc-card input[type=checkbox]:checked::before{content:"ON";right:auto;left:5px;color:var(--cream);text-shadow:0 0 4px rgb(239 228 201 / .6)}
 .ui-house .gc-card label:has(>input:checked){box-shadow:inset 0 -1px 0 rgb(92 214 239 / .45)}
 .ui-house .gc-prof{font-size:0;display:grid;grid-template-columns:auto auto;justify-content:center;align-items:center;column-gap:5px;row-gap:0;line-height:1}
@@ -50,11 +52,11 @@ linear-gradient(90deg,transparent 50%,rgb(239 228 201 / .45) 50% calc(50% + 1px)
 .ui-house .gc-keys dt{justify-self:start;padding:3px 8px;line-height:1.25;border:1px solid rgb(239 228 201 / .14);border-radius:4px;
 background:linear-gradient(180deg,rgb(255 255 255 / .07),rgb(0 0 0 / .35)),rgb(8 14 18 / .85);box-shadow:inset 0 1px 0 rgb(255 255 255 / .06),0 1px 0 #000,0 0 8px -4px rgb(92 214 239 / .5)}
 .ui-house .gc-prof[aria-pressed=true]::before{color:var(--accent);text-shadow:0 0 8px rgb(92 214 239 / .5)}
-.ui-house .gc-fold{gap:14px;padding-bottom:12px}.ui-house .gc-fold .gc-icon{position:relative;overflow:visible;width:30px;height:30px;border-radius:50%;border-color:var(--oxide);color:#1a1208;
-background:radial-gradient(circle,#f1dcae 0 30%,#8a6a3c 31% 36%,transparent 37%),repeating-conic-gradient(#d8b77a 0 6deg,#4a3820 6deg 12deg);
-box-shadow:0 0 0 2px rgb(0 0 0 / .6),0 2px 4px #000}
-.ui-house .gc-fold .gc-icon:hover:not(:disabled){background:radial-gradient(circle,#f1dcae 0 30%,#8a6a3c 31% 36%,transparent 37%),repeating-conic-gradient(#e8c98c 0 6deg,#5a4426 6deg 12deg);box-shadow:var(--glow),0 2px 4px #000}
-.ui-house .gc-fold .gc-icon svg{width:12px;height:12px;position:relative}
+.ui-house .gc-fold{gap:14px;padding-bottom:12px}.ui-house .gc-fold .gc-icon{position:relative;overflow:visible;width:21px;height:21px;min-width:0;padding:0;border-radius:50%;border:1px solid rgb(176 141 87 / .55);color:#c9b48a;
+background:radial-gradient(circle,#11161b 0 58%,transparent 59%),repeating-conic-gradient(#8a7552 0 8deg,#3e3426 8deg 16deg);
+box-shadow:0 0 0 1px rgb(0 0 0 / .6),0 1px 2px #000}
+.ui-house .gc-fold .gc-icon:hover:not(:disabled){color:var(--accent);border-color:rgb(92 214 239 / .5);box-shadow:0 0 8px -2px rgb(92 214 239 / .6),0 1px 2px #000}
+.ui-house .gc-fold .gc-icon svg{width:10px;height:10px;position:relative}
 .ui-house .gc-fold .gc-icon::after{position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);font:800 .5rem/1 var(--mono);letter-spacing:.16em;color:var(--cream);opacity:.7}
 .ui-house .gc-fold [data-fold=collapse]::after{content:"FOLD"}.ui-house .gc-fold [data-fold=expand]::after{content:"OPEN"}
 .ui-house .gc-card label.gc-off input[type=checkbox]{border-style:solid;border-color:var(--oxide);background:linear-gradient(180deg,rgb(0 0 0 / .55),rgb(255 255 255 / .04));opacity:.45;filter:saturate(.4)}`;
