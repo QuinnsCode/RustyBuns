@@ -227,7 +227,7 @@ interface TubeOptions {
 }
 
 class Builder {
-  pos: number[] = []; idx: number[] = []; slot: number[] = []; bone: number[] = []; weight: number[] = []; tone: number[] = [];
+  pos: number[] = []; idx: number[] = []; slot: number[] = []; bone: number[] = []; weight: number[] = []; tone: number[] = []; grain: number[] = [];
   private v = new THREE.Vector3();
 
   private add(p: THREE.Vector3, y: number, ang: number, o: TubeOptions): number {
@@ -239,6 +239,7 @@ class Builder {
     if (o.m) q.applyMatrix4(o.m);
     const sk: Skin = typeof o.skin === "number" ? [o.skin, o.skin, 0] : o.skin(y, q);
     this.pos.push(q.x, q.y, q.z);
+    this.grain.push(q.x, q.y, q.z);
     this.slot.push(SLOTS.indexOf(slot));
     this.bone.push(sk[0], sk[1], 0, 0);
     this.weight.push(1 - sk[2], sk[2], 0, 0);
@@ -308,13 +309,15 @@ class Builder {
    * A grid of points, `rows` by `cols`, joined round (the last column meets the first) and open at the bottom: hair,
    * whose edge is the hairline and not a level ring.
    */
-  sheet(rows: number, cols: number, at: (i: number, j: number, out: THREE.Vector3) => void, slot: Slot | ((i: number, j: number) => Slot), skin: (p: THREE.Vector3) => Skin, tone?: (i: number, j: number) => [flush: number, shade: number]) {
-    const start = this.pos.length / 3, p = this.v;
+  sheet(rows: number, cols: number, at: (i: number, j: number, out: THREE.Vector3) => void, slot: Slot | ((i: number, j: number) => Slot), skin: (p: THREE.Vector3) => Skin, tone?: (i: number, j: number) => [flush: number, shade: number], grain?: (i: number, j: number, out: THREE.Vector3) => void) {
+    const start = this.pos.length / 3, p = this.v, gr = new THREE.Vector3();
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < cols; j++) {
         at(i, j, p);
         const sk = skin(p);
         this.pos.push(p.x, p.y, p.z);
+        if (grain) grain(i, j, gr); else gr.copy(p);
+        this.grain.push(gr.x, gr.y, gr.z);
         const t = tone?.(i, j);
         this.tone.push(t ? clamp01(t[0]) : 0, t ? clamp01(t[1]) : 0);
         this.slot.push(SLOTS.indexOf(typeof slot === "string" ? slot : slot(i, j)));
@@ -335,6 +338,8 @@ class Builder {
     g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(this.bone, 4));
     g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(this.weight, 4));
+    // where a point lies in the grain of what it is made of: its rest position, or for hair, round the head and up its column
+    g.setAttribute("grain", new THREE.Float32BufferAttribute(this.grain, 3));
     g.setIndex(this.idx);
     g.computeVertexNormals();
     g.userData.slots = Uint8Array.from(this.slot);
@@ -524,12 +529,23 @@ const SKULL: [number, number, number, number, number][] = [
   [-0.02, 0.071, 0.092, -0.092, 2.3], [0, 0.0735, 0.09, -0.1, 2.2], [0.025, 0.0755, 0.093, -0.103, 2.1], [0.05, 0.0765, 0.091, -0.1, 2],
 ];
 const CROWN = 0.067;
-/** Where hair starts, going round from the front of the head (0) to the back (pi): the height of the hairline there. */
+/**
+ * Where hair starts, going round from the front of the head (0) to the back (pi): the height of the hairline there
+ * (head scale 1, from the eye line). Across the forehead in a soft arc, a rounded corner at the temple, down in front
+ * of the ear to a sideburn, up and over the ear, then down behind it to the nape.
+ */
+const HAIRLINE: [a: number, y: number][] = [
+  [-0.3, 0.063], [0, 0.064], [0.45, 0.0625], [0.78, 0.0595], [0.95, 0.054], [1.07, 0.041], [1.17, 0.03], [1.27, 0.018],
+  [1.33, 0.004], [1.37, -0.017], [1.53, -0.02], [1.59, 0.006], [1.64, 0.024], [1.78, 0.03], [1.94, 0.024], [2.06, 0.005],
+  [2.25, -0.03], [2.5, -0.058], [Math.PI, -0.066], [Math.PI + 0.3, -0.066],
+];
 function hairline(a: number): number {
-  if (a < 0.9) return 0.064 - 0.012 * (a / 0.9) ** 2;
-  if (a < 1.35) return lerp(0.052, 0.012, (a - 0.9) / 0.45);          // the temple, down to the sideburn
-  if (a < 1.75) return lerp(0.012, -0.012, (a - 1.35) / 0.4);         // round the ear
-  return lerp(-0.012, -0.062, smooth(1.75, 2.4, a));                  // down to the nape
+  const k = clamp(HAIRLINE.findIndex(([x]) => x > a) - 1, 1, HAIRLINE.length - 3);
+  const [x0, y0] = HAIRLINE[k - 1]!, [x1, y1] = HAIRLINE[k]!, [x2, y2] = HAIRLINE[k + 1]!, [x3, y3] = HAIRLINE[k + 2]!;
+  // Catmull-Rom through the points, its tangents scaled for their uneven spacing
+  const t = clamp01((a - x1) / (x2 - x1)), h = x2 - x1, m1 = ((y2 - y0) / (x2 - x0)) * h, m2 = ((y3 - y1) / (x3 - x1)) * h;
+  const t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * y1 + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * y2 + (t3 - t2) * m2;
 }
 
 function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
@@ -678,12 +694,24 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
   if (fur) return;
   mouth(m, X, Y, hs, MY, MW, plump, mouthDent, surf, faceTone);
 
-  // Hair: a sheet over the skull that starts on the hairline, thin at its edge and full a finger above it. Long hair
-  // carries on down the back, behind the ears. A hat presses the top of it flat.
+  // Hair: a sheet over the skull that starts on the hairline. Its fine points (many more than the skull's) let the edge
+  // thin in over a few millimetres the way hair does: it lies almost on the skin there, and its colour is mostly the
+  // skin's, coming in to the hair's own as it gets thicker. How far a point is from the edge is measured across the
+  // hairline, not up its column, so the steep edges (the temple, the sideburn's front) thin in as the forehead does.
+  // Long hair carries on down the back, behind the ears. A hat presses the top of it flat.
   if (o.hair !== "bald") {
     const under = o.hat !== "none", long = o.hair === "long";
     const thick = o.hair === "curly" ? 0.022 : long ? 0.012 : 0.008;
-    const ROWS = 14, COLS = 36, TOP = 0.05 + CROWN, FALL = -0.25;
+    const ROWS = 22, COLS = 96, TOP = 0.05 + CROWN, FALL = -0.25;
+    const edgeAt = (a: number) => (long && a > 1.72 ? FALL : hairline(a));
+    /** How far (x, head scale 1) a point at this turn and height is above the hairline, across it. */
+    const fromEdge = (a: number, yy: number) => {
+      const slope = (edgeAt(a + 0.02) - edgeAt(a - 0.02)) / 0.04 / 0.075;   // height per arc length round the head
+      return (yy - edgeAt(a)) / Math.hypot(1, slope);
+    };
+    const near = new Float32Array(ROWS * COLS);
+    // rows close together at the hairline, where the hair thins in, and again at the crown, where the dome turns over
+    const rowT = (i: number) => (1 - Math.cos(Math.PI * (i / (ROWS - 1)) ** 1.3)) / 2;
     /** The point on the skull at this turn round it and this height (from the eye line, head scale 1). */
     const scalp = (u: number, yy: number, out: THREE.Vector3) => {
       const t = u + 0.5 * Math.cos(u), hang = long && yy < -0.02;
@@ -697,19 +725,28 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
       const u = (j / COLS) * Math.PI * 2;
       scalp(u, 0.02, tmp);
       const a = Math.abs(Math.atan2(tmp.x, tmp.z - z0));
-      return { u, a, lo: long && a > 1.72 ? FALL : hairline(a) };
+      // a hairline is never a clean line: each column starts a little higher or lower than its neighbours
+      return { u, a, lo: edgeAt(a) + 0.0008 * (hash(j * 1.7, 0.3, 3) - 0.5) };
     });
     m.sheet(ROWS, COLS, (i, j, p) => {
-      const { u, a, lo } = cols[j]!, t = (i / (ROWS - 1)) ** 1.6, yy = lerp(lo, TOP, t);
+      const { u, a, lo } = cols[j]!, yy = lerp(lo, TOP, rowT(i));
       scalp(u, yy, p);
-      const rise = smooth(0, 0.012, yy - lo);                                   // the edge of the hair: thin, then full
-      let grow = 0.0012 + thick * rise;
+      const edge = Math.max(0, fromEdge(a, yy) + 0.0008 * (hash(j * 1.7, 0.3, 3) - 0.5));
+      near[i * COLS + j] = edge + 0.0018 * (hash(i * 5.1, j * 2.3, 4) - 0.5);
+      // the edge of the hair: on the skin, then full a few millimetres in; over the ears and down the sideburns it stays
+      // short, as hair cut close there does
+      const rise = smooth(0, 0.016, edge), sides = long ? 1 : lerp(0.12, 1, smooth(0, 0.055, yy));
+      let grow = 0.0004 + 0.0008 * smooth(0, 0.003, edge) + thick * rise * sides;
       if (o.hair === "curly") grow += rise * 0.016 * hash(i * 7.3, j * 3.1, 1);
       if (o.hair === "short") grow += rise * 0.007 * smooth(0.03, 0.09, yy) * smooth(1.7, 0.5, a);   // more on top, swept up at the front
       if (long) grow += rise * 0.006 * smooth(0.02, -0.1, yy);
       if (under && yy > 0.024) grow = Math.min(grow, 0.003);
       p.add(out.set(p.x, (p.y - eyeY) * 0.6, p.z - z0 + 0.005 * hs).setLength(grow * hs));
-    }, "hair", (p) => (p.y < d.chin ? blend(B.chest, B.head, d.chin - 0.12 * hs, d.chin, p.y) : [B.head, B.head, 0]));
+    }, "hair", (p) => (p.y < d.chin ? blend(B.chest, B.head, d.chin - 0.12 * hs, d.chin, p.y) : [B.head, B.head, 0]),
+    // hair's tone is how thin it is (the skin's colour showing through) and how deep in shadow
+    (i, j) => [1 - smooth(0, 0.0065, near[i * COLS + j]!), 0],
+    // its grain runs up each column, from the hairline over the top of the head (and down the back for long hair)
+    (i, j, g) => { const { u, lo } = cols[j]!; g.set(0.075 * hs * Math.cos(u), Y(lerp(lo, TOP, rowT(i))), 0.075 * hs * Math.sin(u)); });
   }
   hat(m, d, o.hat, ctl);
 }
@@ -944,12 +981,13 @@ const meshes = new Map<string, { geo: THREE.BufferGeometry; dims: Dims }>();
 const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
 material.onBeforeCompile = (shader) => {
   shader.vertexShader = shader.vertexShader
-    .replace("#include <common>", "#include <common>\nattribute float surface;\nvarying float vSurface;\nvarying vec3 vRest;")
-    .replace("#include <begin_vertex>", "#include <begin_vertex>\nvSurface = surface;\nvRest = position;");
+    .replace("#include <common>", "#include <common>\nattribute float surface;\nvarying float vSurface;\nvarying vec3 vRest;\nattribute vec3 grain;\nvarying vec3 vGrain;")
+    .replace("#include <begin_vertex>", "#include <begin_vertex>\nvSurface = surface;\nvRest = position;\nvGrain = grain;");
   shader.fragmentShader = shader.fragmentShader
     .replace("#include <common>", `#include <common>
 varying float vSurface;
 varying vec3 vRest;
+varying vec3 vGrain;
 float hHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float hNoise(vec3 x) {
   vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -971,8 +1009,8 @@ hPore = mix(0.5, hNoise(vRest * 1700.0) * 0.5 + hNoise(vRest.yzx * 2900.0) * 0.5
 float hSpeck = smoothstep(0.62, 0.74, hNoise(vRest * 610.0) * hNoise(vRest.zxy * 470.0 + 3.1) * 1.7) * hMid;
 // skin: blotches that shift it redder or paler, and pores that speckle it
 diffuseColor.rgb *= mix(vec3(1.0), vec3(1.0 + (hBlotch - 0.5) * 0.12, 1.0 + (hBlotch - 0.5) * 0.4, 1.0 + (hBlotch - 0.5) * 0.46) * (0.93 + hPore * 0.14) * (1.0 - 0.13 * hSpeck), hSkin);
-// hair: strands, long the way it falls
-float hStrand = mix(0.5, hNoise(vRest * vec3(520.0, 28.0, 520.0)), hMid) * 0.65 + hNoise(vRest * vec3(160.0, 9.0, 160.0)) * 0.35;
+// hair: strands, long the way it grows (its grain is round the head in x and z, and up from the hairline in y)
+float hStrand = mix(0.5, hNoise(vGrain * vec3(520.0, 28.0, 520.0)), hMid) * 0.65 + hNoise(vGrain * vec3(160.0, 9.0, 160.0)) * 0.35;
 diffuseColor.rgb *= mix(1.0, 0.62 + hStrand * 0.8, hHair);
 // cloth: a weave
 float hWeave = mix(0.5, hNoise(vRest * 900.0), hFine);
@@ -1006,7 +1044,7 @@ export function human(build: Build | BuildName, outfit: Outfit, palette: Palette
   const d = made.dims;
   // The mesh's shape, bones and weights are shared; its colours are its own.
   const geo = new THREE.BufferGeometry();
-  for (const name of ["position", "normal", "skinIndex", "skinWeight", "surface"]) geo.setAttribute(name, made.geo.getAttribute(name));
+  for (const name of ["position", "normal", "skinIndex", "skinWeight", "surface", "grain"]) geo.setAttribute(name, made.geo.getAttribute(name));
   geo.setIndex(made.geo.getIndex());
   const slots: Uint8Array = made.geo.userData.slots, tone: Float32Array = made.geo.userData.tone;
   geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(slots.length * 3), 3));
@@ -1030,11 +1068,13 @@ export function human(build: Build | BuildName, outfit: Outfit, palette: Palette
   const paint = (p: Palette) => {
     const col = geo.getAttribute("color") as THREE.BufferAttribute, c = new THREE.Color();
     const rgb = SLOTS.map((s) => { c.set(p[s] ?? (s === "iris" ? eye : undefined) ?? DEFAULT_PALETTE[s]); return [c.r, c.g, c.b] as const; });
-    const skin = SLOTS.indexOf("skin");
+    const skin = SLOTS.indexOf("skin"), hair = SLOTS.indexOf("hair"), [sr, sg, sb] = rgb[skin]!;
     for (let i = 0; i < slots.length; i++) {
       const [r, g, bl] = rgb[slots[i]!]!, flush = tone[i * 2]! * 0.55, lit = 1 - 0.42 * tone[i * 2 + 1]!;
       // flushed skin keeps its red and loses green and blue; shaded skin goes darker and a little warmer
       if (slots[i] === skin) col.setXYZ(i, r * lerp(1, 1.06, flush) * lit, g * lerp(1, 0.66, flush) * lit * lit, bl * lerp(1, 0.64, flush) * lit * lit);
+      // thin hair is the skin under it, darkened a little by the few hairs there
+      else if (slots[i] === hair) { const th = tone[i * 2]! * 0.9; col.setXYZ(i, lerp(r, sr * 0.9, th), lerp(g, sg * 0.88, th), lerp(bl, sb * 0.88, th)); }
       else col.setXYZ(i, r, g, bl);
     }
     col.needsUpdate = true;
