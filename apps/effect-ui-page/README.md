@@ -12,8 +12,11 @@ cd apps/effect-ui-page
 bun run dev              # http://127.0.0.1:4799
 ```
 
-Open the page. It gives itself a room (`/r/<room>` in the address bar) and the Connect box beside it says how to reach
-it, with a copy button for each:
+Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
+city: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
+pictures of what that line does. When your AI's first change arrives, the landing gives way to your page; "Skip to the
+page" does it by hand. A room this browser already kept opens straight on its page. The dock beside it says how to
+reach the room, with a copy button for each:
 
 - **Paste into any agent.** "Copy the prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
   T3 Code. They tell the agent to call the page's tools with `curl`, so there's nothing to install or configure.
