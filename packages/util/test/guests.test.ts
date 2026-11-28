@@ -39,12 +39,12 @@ test("invite, join, bring friends, block and revoke: who did what, and the ranks
   run("lin", { t: "invite", role: "guest" }, "AGAIN");
   expect(act(l, "max", { t: "join", code: "AGAIN", name: "Max" }, T)).toEqual({ ok: false, why: "You can't come in here." });
 
-  // taking Lin off with everyone they brought takes their open invites too
+  // taking Lin off with everyone they brought takes their open invites with them, nobody else's
   run("ada", { t: "invite", role: "guest" }, "OPEN1");
   run("kim", { t: "join", code: "AGAIN", name: "Kim" });
   run("grace", { t: "revoke", who: "lin", all: true });
   expect(Object.keys(l.guests)).toEqual(["grace"]);
-  expect(l.invites.map((i) => i.code)).toEqual(["OPEN1"]);
+  expect(l.invites.map((i) => i.code)).toEqual(["MODS1", "FRIEND", "OPEN1"]);
 
   // the owner takes the mod role away: Grace lands on the lowest role and loses her powers
   run("ada", { t: "roles", roles: l.roles.filter((r) => r.id !== "mod") });
