@@ -70,6 +70,8 @@ test.skipIf(!hasChrome)("someone new: the demo picker offers four apps, an agent
     await until(tab, "!!window.qdoor");
     // every lane's way in is on its card, on the screen
     const { starts } = await tab.eval<{ starts: { lane: string; href: string; shown: boolean }[] }>("qdoor.starts()");
+    // Learn's card says more is coming, on a line that is no link
+    expect(await tab.eval<unknown>("qdoor.starts().soon")).toEqual([{ lane: "learn", say: "… soon", links: 0 }]);
     expect(starts).toEqual(SECTORS.map((s) => expect.objectContaining({ lane: s.id, href: s.start.href, shown: true })));
     // not sure: the pill under the title opens four demos, each an app's own first step
     await tab.eval("qdoor.demo()");
