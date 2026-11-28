@@ -312,7 +312,7 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
     // Who they blocked, and anyone's block on them.
     gone("blocks"), gone("blocks", "blocked_id"),
     // The events they own (QOLLAB.md "Events"), with those events' RSVPs and tickets used; then their own RSVPs elsewhere.
-    ...["event_rsvps", "event_scans"].map((t) => conf.DB.prepare(`DELETE FROM ${t} WHERE event_id IN (SELECT id FROM events WHERE owner_id = ?)`).bind(userId)),
+    ...["event_rsvps", "event_scans", "event_pictures"].map((t) => conf.DB.prepare(`DELETE FROM ${t} WHERE event_id IN (SELECT id FROM events WHERE owner_id = ?)`).bind(userId)),
     gone("events", "owner_id"), gone("event_rsvps"), gone("event_scans"),
     conf.DB.prepare("UPDATE event_scans SET by_id = '' WHERE by_id = ?").bind(userId),
     gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"), gone("token_cuts"), gone("avatars"),

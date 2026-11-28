@@ -7,13 +7,14 @@ import { btn } from "./Glass.tsx";
 /** What a form's post came back with, in words. */
 const SAID: Record<string, string> = {
   coming: "You're on the list.", cancelled: "Sorry you can't make it. Your RSVP is gone.", joined: "You're on the crew.", invited: "Invite link made: it's below.",
+  uninvited: "Invite link cancelled.", cantuninvite: "You can't cancel that invite.",
   full: "Sorry, this event is full: the cap is reached.", noplus: "There's no room left for a plus-one.", invite: "This event is invite only. Ask the host for an invite link.",
   blocked: "The host isn't taking an RSVP from this account.", list: "The guest list is full.", busy: "Lots of people at once. Try again.", cantinvite: "You can't make that invite.", gone: "This event is gone.",
 };
-const GOOD = new Set(["coming", "cancelled", "joined", "invited"]);
+const GOOD = new Set(["coming", "cancelled", "joined", "invited", "uninvited"]);
 
 /** In UTC from here; the page's script turns each into the reader's own time. */
-const Time = ({ at }: { at: number }) => (
+export const Time = ({ at }: { at: number }) => (
   <time dateTime={new Date(at).toISOString()} data-local>
     {new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(at)} UTC
   </time>
@@ -51,7 +52,9 @@ export function EventPage({ v }: { v: EventView }) {
   const { event: e, host } = v, path = `/e/${e.id}`, w = e.when;
   return (
     <>
-      <figure className="card mut" style={{ margin: "0 0 1rem", minHeight: "9rem", display: "grid", placeItems: "center" }}>A picture goes here</figure>
+      {v.picture
+        ? <img src={v.picture} alt="" style={{ display: "block", width: "100%", maxHeight: "24rem", objectFit: "cover", borderRadius: 10, margin: "0 0 1rem" }} />
+        : <figure className="card mut" style={{ margin: "0 0 1rem", minHeight: "9rem", display: "grid", placeItems: "center" }}>A picture goes here</figure>}
       <h1>{e.name}</h1>
       <p className="mut">{[e.line, `Hosted by ${e.host}`].filter(Boolean).join(" · ")}</p>
       {v.said && SAID[v.said] && <p role="status" className={GOOD.has(v.said) ? undefined : "bad"}>{SAID[v.said]}</p>}
@@ -84,11 +87,12 @@ export function EventPage({ v }: { v: EventView }) {
       )}
       <h2>Share</h2>
       <section className="card"><Qr svg={v.qr} label="QR code for this page" /><p><a href={v.url}>{v.url}</a></p></section>
-      {(host.owner || host.door || host.roles.length > 0) && (
+      {(host.owner || host.door || host.manage || host.roles.length > 0 || host.links.length > 0) && (
         <>
           <h2 id="host">Hosting</h2>
           <section className="card">
             <p className="row">
+              {host.manage && <a className={btn()} href={`${path}/host`}>Change it and manage guests</a>}
               {host.door && <a className={btn(true)} href={`${path}/door`}>Door mode</a>}
               {host.owner && <a className={btn()} href={`${path}/list.csv`}>Download the guest list (CSV)</a>}
             </p>
@@ -98,7 +102,12 @@ export function EventPage({ v }: { v: EventView }) {
                 <button className={btn()} type="submit">Make an invite link</button>
               </form>
             )}
-            <div className="list">{host.links.map((l) => <div key={l.url}><b>{l.role}</b><a href={l.url} style={{ overflowWrap: "anywhere" }}>{l.url}</a></div>)}</div>
+            <div className="list">{host.links.map((l) => (
+              <div key={l.url}>
+                <b>{l.role}</b><a className="grow" href={l.url} style={{ overflowWrap: "anywhere" }}>{l.url}</a>
+                <form method="post" action={`${path}/guest`}><input type="hidden" name="t" value="uninvite" /><input type="hidden" name="code" value={l.code} /><button className={btn()} type="submit">Cancel link</button></form>
+              </div>
+            ))}</div>
             {host.owner && <p className="row">{["Invite emails", "Reminder emails", "Thank-you emails"].map((n) => <button key={n} className={btn()} type="button" disabled>{n}: coming soon</button>)}</p>}
           </section>
         </>
