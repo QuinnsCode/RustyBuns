@@ -273,8 +273,13 @@ Artifacts needs the Workers Paid plan. Its [price](https://developers.cloudflare
 2026-11-27: 10,000 operations and 1 GB-month free each month, then $0.15 per 1,000 operations and $0.50 per GB-month.
 A commit is about one to two operations (the push, plus reads at 100 to 1 and a token at 5 to 1), and a repo costs
 only what it stores. git keeps every version, so what a room stores only grows (1 GB a repo at most). What limits
-one room: a push each 10 seconds at most, and 5 uploads in a row then one each half minute. Nothing limits the number
-of rooms.
+one room: a push each 10 seconds at most, and 5 uploads in a row then one each half minute.
+
+The number of rooms has no limit, so what all of them together put into Artifacts does (`src/budget.ts`): 100 MB a day
+and 5 GB ever, $2.50 a month of storage at most ($2 if the account's free GB is all its own). The `Galaxy` object keeps the count, of bytes as sent plus 4 KB a push.
+Past either, an upload is refused with a 507 that says why, and a changed world is not pushed: it stays in its Room's
+storage and opens as before. No repo is ever deleted, since a world is kept for good, and the count never goes down:
+once it is full, the owner raises `ALL_BYTES`. The limits cover stored bytes, not operations.
 The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 
 ## How it's put together
@@ -310,11 +315,11 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
   moves (each to the same and touching plots only) and the wire guards both ends import. `src/edge/galaxy.ts` runs it
   in a Durable Object; `scripts/dev.ts` runs it in memory. `src/saved.ts`: a room's saved world, the same way.
   `src/keep.ts`: a room's Artifacts repo, written by codeSplitter's git push (`apps/codesplitter/src/git.ts`).
-  `src/files.ts`: the files routes.
+  `src/files.ts`: the files routes. `src/budget.ts`: what all rooms together may store.
   `src/galaxyView.ts`: walking and the players in the page. `src/land3d.ts`: the one 3D scene (three.js, loaded when
   the galaxy opens), and `src/air.ts` its sky, light, bloom, weather, smoke and cars. `src/land.ts`: a plot's land and
   mood as data, and what is left out of it.
-- `test/keep.test.ts`: a world and a model pushed to a local Artifacts repo and read back.
+- `test/keep.test.ts`: a world and a model pushed to a local Artifacts repo and read back, and the storage limits.
 - `test/galaxy.test.ts`: two people walking the galaxy in headless Chrome against the dev server.
   `test/land.test.ts`: what a world's frame may put in the shared space.
 

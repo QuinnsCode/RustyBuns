@@ -17,6 +17,7 @@ import about from "../about.html";
 import index from "../index.html";
 import { Galaxy, type FromGalaxy, type Hub, joined, left, memoryKv, walked, type Walker } from "../src/galaxy.ts";
 import { fromPage, linksFor, Relay } from "../src/relay.ts";
+import { Budget } from "../src/budget.ts";
 import { fileBucket, filesHttp } from "../src/files.ts";
 import { KEEP_AFTER_MS, Saved } from "../src/saved.ts";
 import { pictureBucket, pictureHttp, type Pictures, withCard } from "../src/share.ts";
@@ -37,6 +38,8 @@ for (const s of ["SIGINT", "SIGTERM"] as const) process.once(s, () => process.ex
 const artifacts = new LocalArtifacts(repoDir, "agentworld");
 const git = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (req) => gitHttp(req, [artifacts]) });
 artifacts.remoteBase = `http://127.0.0.1:${git.port}`;
+// The Galaxy's count of what has been stored, for every room.
+const budget = new Budget(memoryKv());
 const rooms = new Map<string, { relay: Relay; saved: Saved; pages: ServerWebSocket<Tag>[]; pictures: Pictures; uploads: ReturnType<typeof pictureBucket>; files: ReturnType<typeof fileBucket> }>();
 const roomFor = (id: string) => {
   let r = rooms.get(id);
@@ -47,7 +50,7 @@ const roomFor = (id: string) => {
     // The Durable Object's alarm: one timer at a time.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const later = () => { timer ??= setTimeout(() => { timer = undefined; void saved.keep().catch((e: unknown) => console.warn(`keeping ${id}: ${e}`)); }, KEEP_AFTER_MS); };
-    const saved: Saved = new Saved(memoryKv(), { repos: artifacts, later });
+    const saved: Saved = new Saved(memoryKv(), { repos: artifacts, spend: budget.spend, later });
     r = { pages, pictures, uploads: pictureBucket(), files: fileBucket(), saved, relay: new Relay(() => { const p = pages.at(-1); return p ? (frame) => p.send(frame) : null; }) };
     rooms.set(id, r);
   }
@@ -71,7 +74,7 @@ const roomHttp = (req: Request, room: string, rest: string) => {
   if (rest === "/picture") return pictureHttp(req, r.pictures, r.uploads);
   if (rest === "/world") return r.saved.http(req);
   if (rest === "/made") return r.saved.http(req, true);
-  if (rest === "/files" || rest.startsWith("/files/")) return filesHttp(req, artifacts, r.files, room, rest);
+  if (rest === "/files" || rest.startsWith("/files/")) return filesHttp(req, artifacts, budget.spend, r.files, room, rest);
   return r.relay.http(req, rest, linksFor(new URL(req.url).origin, room));
 };
 

@@ -6,7 +6,8 @@
 //
 // Live sets (src/listen.ts) check in here too: one live set at a time per DJ key (held on a lease, so a set whose
 // Durable Object crashed frees itself), and a monthly allowance of free set-hours per DJ key hash and per address
-// hash, counted by calendar month (UTC). When a set ends, its usage record lands here, so the limits can be set from
+// hash, counted by calendar month (UTC). A set that is live holds its whole planned length against its address, so
+// several DJ keys there can't each start on the same hours; when it ends, only the time it ran counts. When a set ends, its usage record lands here, so the limits can be set from
 // real averages (GET /usage).
 import { arr, bool, int, num, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { json, readJson } from "@rustybuns/util/http";
@@ -74,7 +75,9 @@ interface Ctx {
 }
 interface Env { MAX_ROOMS?: string; MAX_SESHES?: string; FREE_SET_HOURS?: string }
 
-const LIVE = rec(obj({ set: str(10), until: num(0, 1e15) }), 1e6);
+/** A live set: its link, when its lease runs out, its address hash and planned length (absent on one saved before them). */
+const LIVE_SET = obj({ set: str(10), until: num(0, 1e15), ip: opt(HASH), ms: opt(num(0, 1e9)) });
+const LIVE = rec(LIVE_SET, 1e6);
 const listPrefix = (l: List) => (l === "full" ? "s:" : `w:${l}:`);
 const listCount = (l: List) => (l === "full" ? "signups" : `signups:${l}`);
 const EMPTY_TOTAL: MonthTotal = { sets: 0, hours: 0, chunks: 0, ears: 0, peakEars: 0, byLimit: 0 };
@@ -84,8 +87,8 @@ export default class Lobby {
   private rooms = new Map<string, number>();
   /** Every sesh still kept, with when someone last came in. */
   private kept = new Map<string, number>();
-  /** DJ key hashes live now: their set's link and when the lease runs out. */
-  private live = new Map<string, { set: string; until: number }>();
+  /** DJ key hashes live now. */
+  private live = new Map<string, Of<typeof LIVE_SET>>();
   private max: number;
   private maxKept: number;
   private freeHours: number;
@@ -118,11 +121,14 @@ export default class Lobby {
     if (had && had.set !== g.set) return { ok: false, why: "one" as const, n: 1 };
     const month = monthOf(g.at);
     await this.turnMonth(month);
-    const usedH = Math.max(await this.used(month, "d", g.dj), await this.used(month, "i", g.ip));
+    // what the address's other live sets may still run to (this DJ's own entry is the set being asked about again)
+    let heldMs = 0;
+    for (const [dj, l] of this.live) if (dj !== g.dj && l.ip === g.ip) heldMs += l.ms ?? 0;
+    const usedH = Math.max(await this.used(month, "d", g.dj), await this.used(month, "i", g.ip) + heldMs / HOUR_MS);
     const leftMs = (this.freeHours - usedH) * HOUR_MS;
     if (leftMs <= 0) return { ok: false, why: "month" as const, n: this.freeHours };
     const byMonth = leftMs < g.setMs, endAt = g.at + (byMonth ? leftMs : g.setMs);
-    this.live.set(g.dj, { set: g.set, until: endAt + LIVE_SLACK_MS });
+    this.live.set(g.dj, { set: g.set, until: endAt + LIVE_SLACK_MS, ip: g.ip, ms: endAt - g.at });
     await this.ctx.storage.put("live", Object.fromEntries(this.live));
     return { ok: true, endAt, endWhy: byMonth ? "month" as const : "hours" as const, n: byMonth ? this.freeHours : g.setMs / HOUR_MS };
   }
