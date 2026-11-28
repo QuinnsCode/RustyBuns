@@ -8,10 +8,11 @@
 //   (GET /api/galaxy/picture/<id>); an empty plot is open land, with a sign next to you.
 // - The page saves its world to the server after each change that lands (PUT /api/r/<room>/world).
 // ProfilePage's Model says whether the galaxy is up (its button, Cmd+K and window.agentGalaxy all send the same
-// message); this layer comes up when the page shows `[data-galaxy="on"]` and goes when it doesn't.
+// message); this layer is the mount of the page's `[data-galaxy="on"]` element (ShowGalaxy), up as long as it is.
 import { check } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { Mount } from "@effect/ui";
 import { Effect, Option, Queue, Schema } from "effect";
 import { currentPage, unsavedKey, watchPage } from "./agent.ts";
 import { COMMON_CITY } from "./commonCity.ts";
@@ -455,6 +456,10 @@ function unmount() {
   s.layer.remove();
 }
 
+/** The page's galaxy element: the layer goes up with it and comes down with its Scope, when the element goes. */
+export const ShowGalaxy = Mount.make("ShowGalaxy", { args: { room: Schema.String } }, (_host, { room }) =>
+  Effect.acquireRelease(Effect.sync(() => mount(room)), () => Effect.sync(unmount)).pipe(Effect.andThen(Effect.never)));
+
 const until = async (ok: () => boolean, ms = 10_000) => {
   for (const end = Date.now() + ms; !ok(); await new Promise((r) => setTimeout(r, 30))) if (Date.now() > end) throw new Error("the galaxy didn't come up");
 };
@@ -478,7 +483,7 @@ export function galaxyState() {
   };
 }
 
-/** Agent Galaxy's layer for this room: it follows ProfilePage's galaxy mode, keeps the room's world saved on the server,
+/** Agent Galaxy for this room: it keeps the room's world saved on the server, gets the galaxy ready ahead of a press,
  *  and puts `window.agentGalaxy` up for tests and the probe. */
 export function startGalaxy(room: string) {
   home = room;
@@ -486,9 +491,6 @@ export function startGalaxy(room: string) {
   addEventListener("pagehide", letGo);
   watchPage(() => { if (myPlot) forget(myPlot); });
   const app = document.getElementById("app") ?? document.body;
-  const follow = () => { const on = document.querySelector('[data-galaxy="on"]') !== null; if (on && !g) mount(room); else if (!on && g) unmount(); };
-  new MutationObserver(follow).observe(app, { childList: true, subtree: true });
-  follow();
   // About to press Galaxy (a pointer over it, focus on it, a finger on it): get it ready. A world already made when the
   // page opens gets it ready a moment after, when the browser is idle.
   const toward = (e: Event) => { if (e.target instanceof Element && e.target.closest("[data-galaxy-tile]")) void preloadGalaxy(); };
