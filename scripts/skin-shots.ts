@@ -1,6 +1,6 @@
 // Shots of every eqosys surface in each skin, for a round of the skin climb (#4274): the house look, Two Fronts, Mythic
 // Masters and Skate Tech Park, at phone (390x844, 2x) and desktop (1024x700) size, plus the account chip close up at 1x
-// and 3x so the badge's punched hole can be compared across screens. JPEGs land in the folder you name.
+// and 3x so the badge can be compared across screens. JPEGs land in the folder you name.
 //
 //   bun scripts/skin-shots.ts packages/util/docs/shots-2026-11-15-round9 before
 import { mkdirSync } from "node:fs";
