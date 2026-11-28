@@ -19,7 +19,7 @@ export interface Tool { name: string; title: string; description: string; schema
 const HOW = [
   "The frame opens index.html, which loads your other files by <script src> and <link rel=stylesheet>; modules import each other as \"./name.js\".",
   `Libraries: pinned versions from ${LIBRARY_HOSTS.map((h) => h.slice("https://".length)).join(", ")}.`,
-  "A module may import \"@world/kit\" (three.js ready-made, plot 100x100 around 0): world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass,color}), sky(day|night|dusk), weather(rain|snow|fog|clear), water({y,x,z,width,depth}), trees(n), cactus(n), rocks(n), lights(), lamp({x,y,z,color}), onPlayer(cb), every(f), heightAt(x,z), THREE.",
+  "A module may import \"@world/kit\" (three.js ready-made, plot 200x200 around 0; kit worlds stand in 3D among neighbours): world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass,color}), sky(day|night|dusk), weather(rain|snow|fog|clear), water({y,x,z,width,depth}), trees(n), cactus(n), rocks(n), lights(), lamp({x,y,z,color}), onPlayer(cb), every(f), heightAt(x,z), THREE.",
   "Sealed: no fetch, sockets, storage or forms; draw images and sounds in code or data: URLs.",
   `Limits: ${FILE_MAX / 1000}k characters a file, ${WORLD_MAX / 1000}k and ${FILES_MAX} files a world.`,
 ].join(" ");
