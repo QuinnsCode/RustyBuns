@@ -3,13 +3,15 @@
 // local dev server and the page all import it. The frames between the relay and the page are here too.
 import { arr, bool, obj, opt, raw, int, str, type Of } from "@rustybuns/util/guard";
 import type { Hints, InputSchema } from "@rustybuns/util/commands";
-import { Schema } from "effect";
-import { Build, EditFile, EditWorld, FILE_MAX, FILES_MAX, Path, Reset, SetBackdrop, WORLD_MAX, WriteFile } from "./page.ts";
+import { Schema, SchemaIssue } from "effect";
+import { Build, EditFile, EditWorld, FILE_MAX, FILES_MAX, Path, plain, Reset, SetBackdrop, WORLD_MAX, WriteFile } from "./page.ts";
 import { LIBRARY_HOSTS } from "./world.ts";
 
 export const Undo = Schema.TaggedStruct("Undo", {});
 /** A few words on what the agent is doing, for the page to show: no file changes, nothing to undo. */
-export const Status = Schema.TaggedStruct("Status", { text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)) });
+export const Status = Schema.TaggedStruct("Status", {
+  text: plain("a few words, 80 characters at most, like adding a pond", (says) => Schema.isMinLength(1, says), (says) => Schema.isMaxLength(80, says)),
+});
 /** What a call asks the page for: an action on the page, undo (which needs the page's history), or a status line. */
 export const Request = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset, Build, EditWorld, Undo, Status]);
 export type Request = typeof Request.Type;
@@ -64,7 +66,7 @@ export const BUILD_TOOLS: readonly Tool[] = [
 export const Checked = obj({ ok: bool(), errors: arr(str(2000), 40) });
 export type Checked = Of<typeof Checked>;
 
-export const ReadFile = Schema.Struct({ path: Path });
+const ReadFile = Schema.Struct({ path: Path });
 export const READ_FILE = {
   name: "page_read_file", title: "Read a file",
   description: "One file's whole text.",
@@ -81,9 +83,21 @@ export const inputSchema = (schema: Tagged): InputSchema => {
   return { type: "object", properties: Object.fromEntries(objects(s.properties)), ...(required.length ? { required } : {}) };
 };
 
+const issues = SchemaIssue.makeFormatterStandardSchemaV1();
+/** The value as the schema reads it, or a thrown error an agent can act on: `path: a file name like world.js`. */
+const read = <T>(schema: Schema.Decoder<T>, value: unknown): T => {
+  try { return Schema.decodeUnknownSync(schema)(value); }
+  catch (e) {
+    if (!Schema.isSchemaError(e)) throw e;
+    throw new Error(issues(e.issue).issues.map((i) => `${i.path?.join(".")}: ${i.message}`).join("; "));
+  }
+};
+
 /** Check a tool's arguments: the request it makes, or a thrown error that says what was wrong. */
 export const decode = (tool: Tool, args: unknown): Request =>
-  Schema.decodeUnknownSync(Request)({ ...(typeof args === "object" && args !== null ? args : {}), _tag: tool.schema.fields._tag.schema.literal });
+  read(Request, { ...(typeof args === "object" && args !== null ? args : {}), _tag: tool.schema.fields._tag.schema.literal });
+/** The same check for page_read_file, which asks for nothing to change. */
+export const decodeReadFile = (args: unknown) => read(ReadFile, args);
 
 /** Every tool as an agent is told of it: name, title, description, inputSchema and annotations. */
 export const listTools = () => [READ, READ_FILE, ...TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: inputSchema(t.schema), annotations: t.hints ?? {} }))];

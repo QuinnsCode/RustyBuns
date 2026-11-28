@@ -3,16 +3,27 @@
 // three.js scene; what keeps it safe is the frame, not a short list of things it may say. The Schemas check every
 // write before it lands (a file name, text only, a size) and tell the agent what to send. `apply` is the only way the
 // world changes: pure, no DOM, no Effect runtime.
-import { Schema } from "effect";
+import { Schema, type SchemaAST } from "effect";
 import { STARTER_FILES } from "./starter.ts";
 
+/** A string whose refusal is these words, whether it fails a check, isn't text or is missing (`decode` in tools.ts
+ * puts the field's name in front). */
+export const plain = (message: string, ...checks: ((says: { message: string }) => SchemaAST.Check<string>)[]) =>
+  checks.reduce((s, check) => s.check(check({ message })), Schema.String.annotate({ message })).pipe(Schema.annotateKey({ messageMissingKey: message }));
+
 /** A file of the world: a plain name or one folder deep (`world.js`, `lib/noise.js`), a text type. */
-export const Path = Schema.String.check(Schema.isPattern(/^([a-z0-9][a-z0-9_-]{0,40}\/)?[a-z0-9][a-z0-9._-]{0,60}\.(html|js|mjs|css|json|svg|txt|glsl)$/i));
+export const Path = plain("a file name like world.js or lib/noise.js: one folder deep at most, text types only",
+  (says) => Schema.isPattern(/^([a-z0-9][a-z0-9_-]{0,40}\/)?[a-z0-9][a-z0-9._-]{0,60}\.(html|js|mjs|css|json|svg|txt|glsl)$/i, says));
 /** One file's text, and the whole world's: a page's worth, so a save fits the browser and a reply fits the socket. */
 export const FILE_MAX = 100_000, WORLD_MAX = 400_000, FILES_MAX = 30;
-const Text = Schema.String.check(Schema.isMaxLength(FILE_MAX));
+const A_FILE = `a file is text, ${FILE_MAX.toLocaleString("en")} characters at most`;
+const Text = plain(A_FILE, (says) => Schema.isMaxLength(FILE_MAX, says));
+const Find = plain(`the exact text to replace, like sky("day"): 1 to ${FILE_MAX.toLocaleString("en")} characters`,
+  (says) => Schema.isMinLength(1, says), (says) => Schema.isMaxLength(FILE_MAX, says));
+const Code = plain(`world.js's whole code, like import { world } from "@world/kit": 1 to ${FILE_MAX.toLocaleString("en")} characters`,
+  (says) => Schema.isMinLength(1, says), (says) => Schema.isMaxLength(FILE_MAX, says));
 /** A codeSplitter handle, or "" for none. */
-const Handle = Schema.String.check(Schema.isPattern(/^([A-Za-z0-9][A-Za-z0-9_-]{0,38})?$/));
+const Handle = plain('a codeSplitter handle like ada, or "" for none', (says) => Schema.isPattern(/^([A-Za-z0-9][A-Za-z0-9_-]{0,38})?$/, says));
 
 /** Where a backdrop comes from: codeSplitter serves each person's page (their public `page` repo) in a sandbox there. */
 export const CODESPLITTER = "https://codesplitter.notryanquinn.workers.dev";
@@ -28,14 +39,14 @@ export type Page = typeof Page.Type;
 
 // What an agent (or a person, for undo and reset) can do to the world. Each case is one tool's arguments.
 export const WriteFile = Schema.TaggedStruct("WriteFile", { path: Path, text: Text });
-export const EditFile = Schema.TaggedStruct("EditFile", { path: Path, find: Text.check(Schema.isMinLength(1)), replace: Text });
+export const EditFile = Schema.TaggedStruct("EditFile", { path: Path, find: Find, replace: Text });
 export const SetBackdrop = Schema.TaggedStruct("SetBackdrop", { codesplitter: Handle });
 export const Reset = Schema.TaggedStruct("Reset", {});
 
 /** world_build: world.js is this module, and index.html opens it. */
-export const Build = Schema.TaggedStruct("Build", { code: Text.check(Schema.isMinLength(1)) });
+export const Build = Schema.TaggedStruct("Build", { code: Code });
 /** world_edit: EditFile on world.js. */
-export const EditWorld = Schema.TaggedStruct("EditWorld", { find: Text.check(Schema.isMinLength(1)), replace: Text });
+export const EditWorld = Schema.TaggedStruct("EditWorld", { find: Find, replace: Text });
 
 export const Action = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset, Build, EditWorld]);
 export type Action = typeof Action.Type;

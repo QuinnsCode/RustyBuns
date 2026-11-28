@@ -2,7 +2,7 @@ import { HtmlLocator, HtmlScene } from "@effect/ui/html/testing";
 import { Locator, Story } from "@effect/ui/testing";
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { decode, inputSchema, type Request, TOOLS } from "../src/tools.ts";
+import { BUILD_TOOLS, decode, decodeReadFile, inputSchema, type Request, TOOLS } from "../src/tools.ts";
 import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
 import { worldDoc, WORLD_CSP } from "../src/world.ts";
 import { step, termLines, connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
@@ -25,6 +25,20 @@ describe("an agent's write", () => {
     ]) expect(() => decode(tool("page_write_file"), args)).toThrow();
     expect(() => decode(tool("page_set_backdrop"), { codesplitter: "../me/../admin" })).toThrow();
     expect(inputSchema(tool("page_write_file").schema).required).toEqual(["path", "text"]);
+  });
+
+  test("bounces with the field's name and a good value, not the pattern", () => {
+    for (const [name, args, why] of [
+      ["page_write_file", { path: "../secrets", text: "" }, "path: a file name like world.js"],
+      ["page_write_file", { path: "world.js", text: "x".repeat(FILE_MAX + 1) }, "text: a file is text, 100,000 characters at most"],
+      ["page_edit_file", { path: "world.js", replace: "" }, 'find: the exact text to replace, like sky("day")'],
+      ["page_set_backdrop", { codesplitter: "../me" }, 'codesplitter: a codeSplitter handle like ada, or "" for none'],
+      ["page_status", { text: "" }, "text: a few words, 80 characters at most"],
+    ] as const) expect(() => decode(tool(name), args)).toThrow(why);
+    const door = (name: string) => BUILD_TOOLS.find((t) => t.name === name)!;
+    expect(() => decode(door("world_build"), {})).toThrow("code: world.js's whole code");
+    expect(() => decode(door("world_edit"), { find: "", replace: "" })).toThrow('find: the exact text to replace');
+    expect(() => decodeReadFile({})).toThrow("path: a file name like world.js");
   });
 
   test("adds, replaces and takes away files, and says when the world is full", () => {

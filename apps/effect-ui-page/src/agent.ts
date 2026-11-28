@@ -11,7 +11,7 @@ import { connectSocket } from "@rustybuns/util/socket";
 import { Context, Effect, Layer, Queue, Schema, Stream } from "effect";
 import { changed, checked, fileRead, looked } from "./answers.ts";
 import type { Page } from "./page.ts";
-import { BUILD_TOOLS, decode, type FromPage, inputSchema, READ, READ_FILE, ReadFile, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
+import { BUILD_TOOLS, decode, decodeReadFile, type FromPage, inputSchema, READ, READ_FILE, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
 import { SAID_KEY, worldDoc } from "./world.ts";
 
 export { Request };
@@ -131,7 +131,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
       if (from === "agent") Queue.offerUnsafe(seen, "read");
       return looked(page, said);
     } },
-    { ...READ_FILE, group: "Page", palette: false, execute: (args) => fileRead(page, Schema.decodeUnknownSync(ReadFile)(args).path) },
+    { ...READ_FILE, group: "Page", palette: false, execute: (args) => fileRead(page, decodeReadFile(args).path) },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
     ...BUILD_TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
