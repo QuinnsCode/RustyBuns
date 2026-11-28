@@ -30,6 +30,7 @@ import { floorAt, propBlocks, thingBox, wallPieces, type Side, type Spot, type S
 import { inFootprint } from "./gear-wall.ts";
 import { MATERIALS, type Material } from "./sound.ts";
 import { ALL_LIGHTS, pickGraphics, qualityOf, type Graphics, type Quality, type Running } from "./graphics.ts";
+import type { StageLights } from "./stage-lights.ts";
 
 export type { Quality };
 /** Kept per browser: the knobs as JSON (an older visit kept "low" or "high" here, which still reads). */
@@ -49,10 +50,18 @@ export function saveGraphics(g: Graphics) { try { localStorage.setItem(KEY, JSON
 interface Painted { map: THREE.Texture; bump?: THREE.Texture; rough?: THREE.Texture; metres: number }
 type Paint = (g: CanvasRenderingContext2D, n: number, rnd: () => number, base: THREE.Color) => void;
 
+/** With no GPU, Chrome rasters a 2D canvas through the same software GL as the room: the desert floor's grains took 8 s
+ *  of a room's load there, and every other page on that GL waited behind them (#6555). There they're painted on the CPU. */
+let paintOnCpu = false;
+/** Where the room's textures are painted, from the renderer they're for: call it before the room is built. */
+export function paintFor(renderer: THREE.WebGLRenderer) {
+  const gl = renderer.getContext(), info = gl.getExtension("WEBGL_debug_renderer_info");
+  paintOnCpu = /swiftshader|llvmpipe|software/i.test(String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : ""));
+}
 function canvasTex(n: number, draw: (g: CanvasRenderingContext2D) => void, color: boolean, tall = n): THREE.CanvasTexture {
   const c = document.createElement("canvas");
   c.width = n; c.height = tall;
-  const g = c.getContext("2d");
+  const g = c.getContext("2d", paintOnCpu ? { willReadFrequently: true } : undefined);
   if (!g) throw new Error("no 2d canvas");
   draw(g);
   const t = new THREE.CanvasTexture(c);
@@ -1652,7 +1661,7 @@ export function practicals(def: StudioDef): [number, number][] {
 export interface LookState { quality: Quality; graphics?: Graphics; running?: Running & { level: number }; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" | "none" }
 
 /** The renderer set up for one room: call `render` every frame and `resize` with the canvas. */
-export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality }
+export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality; /** The light desk's colour and lasers, where the room has a truss. */ stage?(l: StageLights): void }
 
 export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, g: Graphics): Look {
   const quality = qualityOf(g), high = quality === "high", full = g.shadows === "full";
@@ -1871,6 +1880,7 @@ export function runningLook(look: Look, renderer: THREE.WebGLRenderer, g: Graphi
       look.render(cam);
     },
     resize(w, h) { size = [w, h]; look.resize(w, h); },
+    stage: (l) => look.stage?.(l),
     run(r, level) {
       if (r.scale !== now.scale) { renderer.setPixelRatio(Math.min(r.scale, devicePixelRatio)); look.resize(...size); }
       // frozen, the cans' shadow maps stop being drawn every frame: what stands still keeps its shadow, and no shader recompiles

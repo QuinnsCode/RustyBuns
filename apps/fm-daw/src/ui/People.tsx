@@ -12,10 +12,11 @@ import { CANS, leaders, playTracks, type Can, type GrantClient, type GrantServer
 import type { Floor } from "../project.ts";
 import { Icon } from "./Chat.tsx";
 
-const WORD: Record<Can, string> = { play: "Play", edit: "Edit", mix: "Mix", lead: "Lead" };
+const WORD: Record<Can, string> = { play: "Play", edit: "Edit", mix: "Mix", lights: "Lights", speak: "Speak", lead: "Lead" };
 const TIP: Record<Can, string> = {
   play: "Play into the room: notes, takes and the studio's gear (off, pick the tracks they may play)", edit: "Edit the groove: notes, sounds, tempo and loops",
-  mix: "Work the desk: mutes, solos, EQ, space and squash", lead: "Lead: grant the others, hold the floor, set the code",
+  mix: "Work the desk: mutes, solos, EQ, space and squash",
+  lights: "Run the room's light desk", speak: "Their mic into the room, and the chat (everything off is listen only)", lead: "Lead: grant the others, hold the floor, set the code",
 };
 
 export function People(props: {

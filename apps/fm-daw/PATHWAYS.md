@@ -99,6 +99,9 @@ test set (`src/studio/walk-set.ts`) on that page alone, so a client walks the si
 `qrooms.event(walk?)` gives the link; `qjam.state().pa.sources` is the same list as `qrooms.pa().sources`. The journey
 is `test/event.test.ts`.
 
+**Being there** (#6535): an event's room starts on Hold, the host grants each person instruments, console, lights, speak or
+nothing, and everyone hears the performer's set on the room's PA (`test/event-world.test.ts`).
+
 **Join** (#6551): the front door's Event start forks **Host | Join**. Join takes that room's link or its code (the `room=`
 name; a party's code also follows its host's scene) and lands the guest in the room (`src/join.ts`,
 `test/event-join-journey.test.ts`). **A set prepped at home** is in the decks' library at the event on the same browser
