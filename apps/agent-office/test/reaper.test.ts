@@ -1,8 +1,8 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { endWorker, OLD_ORPHAN_S, parseEtime, parseHeavy, parseSwap, processes, type Proc, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
+import { end, endWorker, OLD_ORPHAN_S, parseEtime, parseHeavy, parseSwap, processes, type Proc, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
 import { WORKTREES } from "../live/sweep.ts";
 
 setDefaultTimeout(30_000);
@@ -36,6 +36,18 @@ test("sending a worker home ends what runs in each of its worktrees, subfolders 
   expect(await endWorker([mine, mineToo])).toBe(3);
   expect([alive(dev), alive(vite), alive(api), alive(theirs)]).toEqual([false, false, false, true]);
   process.kill(theirs, "SIGKILL"); // else it is a deskless orphan for the reaper below
+});
+
+test("a process that is gone before the CONT reaches it still counts as ended", async () => {
+  const pid = leave(tree("quill-9"));
+  const kill = process.kill.bind(process);
+  // hold the CONT until init has reaped it, as a busy machine sometimes does (#6589)
+  const slow = spyOn(process, "kill").mockImplementation((p, signal) => {
+    if (signal === "SIGCONT") for (const t0 = Date.now(); alive(p) && Date.now() - t0 < 5000;) Bun.sleepSync(5);
+    return kill(p, signal);
+  });
+  try { expect(await end([pid])).toBe(1); } finally { slow.mockRestore(); }
+  expect(alive(pid)).toBe(false);
 });
 
 test("sending home a worker with no worktree ends what its session started, not what others left in the checkout", async () => {
