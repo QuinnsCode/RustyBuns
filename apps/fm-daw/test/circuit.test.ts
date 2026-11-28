@@ -40,12 +40,12 @@ test("each orderable pedal board (circuits/q-*.tsx) plays like its voicing at th
   // The sim's op-amps never clip; on a TL072 or TL074 each is a lettered unit.
   const units = (chip: string, letters: string) => [...letters].map((l) => chip + l);
   const phaseOps = [...units("U1", "ABCD"), ...units("U2", "AB")];
-  const wahBox = (supply: string, ledR: string, more: string[] = []) => ({ ...box(supply, ledR, more), linear: units("U1", "ABC"), values: coupled("C5") });
   // Two more of the box's parts are taken out where they would be most of the difference. The cap that brings the
   // guitar to the bias turns the phase a few degrees at 220 Hz (more under a dark LDR): made so big it is a wire.
   const coupled = (cap: string) => ({ [cap]: 1 });
   // The Level pot and its cap put Q Germ 4% and Q Octave 18% off (Octave mostly in phase): made so big it draws nothing.
   const unloaded = { RV2: 1e8 };
+  const wahBox = (supply: string, ledR: string, more: string[] = []) => ({ ...box(supply, ledR, more), linear: units("U1", "ABC"), values: coupled("C5") });
   const play = (net: Netlist, ctl?: [string, number]) => {
     const c = new Circuit(net, SR);
     if (ctl) c.setCtl(...ctl);
