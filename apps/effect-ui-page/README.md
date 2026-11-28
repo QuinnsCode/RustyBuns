@@ -126,7 +126,7 @@ four characters a token (`scripts/mcp-session.ts`, the same session code as code
 |---|---|---|
 | Before: three.js by hand, whole files resent | 682 | 4,473 |
 | After: `@world/kit` and `page_edit_file` | 612 | 2,119 |
-| The kit's building blocks in the tool text (this PR) | 702 | 2,135 |
+| The kit's building blocks in the tool text, with `page_status` (#6495) in the list | 781 | 2,136 |
 
 `test/tokens.test.ts` fails when the session passes the budget in `test/tokens.json`. A change that earns more tokens
 raises it there, in the same PR. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
