@@ -16,7 +16,7 @@ import { BODY_HZ } from "./jam.ts";
 import { roomLand, thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
 import { crossover, type Crossover } from "./crossover-audio.ts";
-import { heardBands, rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
+import { heardBands, placed, rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
 
 /** Metres a second, indoors (out of doors the field's air sets it: roomField). */
 export const SOUND_SPEED = 343;
@@ -254,6 +254,8 @@ export class PaRoom {
   /** The rig's preset (what the bands are heard against) and the bands as set. */
   private preset: ChannelDsp[] = [];
   private set: readonly ChannelDsp[] = [];
+  /** How far the sub stands in front of the tops (the crossover lesson's), metres. */
+  private ahead = 0;
 
   constructor(private ctx: BaseAudioContext, def: StudioDef, to: AudioNode) {
     this.input = new GainNode(ctx);
@@ -320,7 +322,12 @@ export class PaRoom {
   /** The rig's crossover bands as they're set (null indoors). */
   bands(): readonly ChannelDsp[] | null { return this.xo ? this.set : null; }
   /** Set the crossover's bands (an amp's DSP moved), heard against the preset. False indoors, where there's no rig. */
-  setBands(bands: readonly ChannelDsp[]): boolean { if (!this.xo) return false; this.set = bands; this.xo.set(heardBands(bands, this.preset)); return true; }
+  setBands(bands: readonly ChannelDsp[]): boolean { if (!this.xo) return false; this.set = bands; this.play(); return true; }
+  /** How far the sub stands in front of the tops, metres. */
+  subAheadM(): number { return this.ahead; }
+  /** Stand the sub `metres` in front of the tops: it is heard that much early until its delay takes it back. */
+  setSubAhead(metres: number) { this.ahead = metres; this.play(); }
+  private play() { this.xo?.set(heardBands(placed(this.set, this.ahead), this.preset)); }
 
   /** The speakers as you hear them now, for the harness. */
   state() {

@@ -84,7 +84,9 @@ import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
 import { paBoxes, PaRoom, paSpeakers, rigStacks, roomLevel, roomRig } from "./pa-room.ts";
-import { crossoverCommands, crossoverState, setCrossover, type CrossoverDeps } from "./crossover-commands.ts";
+import { crossoverCommands, crossoverState, resetCrossover, setCrossover, type CrossoverDeps } from "./crossover-commands.ts";
+import { crossoverPanel } from "@rustybuns/gear/crossover-panel";
+import { CROSSOVER_STEPS } from "@rustybuns/gear/crossover-lesson";
 import { rigCrossover } from "@rustybuns/gear/crossover";
 import { playWalkSet } from "./walk-set.ts";
 import { stageModel } from "./stage-model.ts";
@@ -111,6 +113,8 @@ import { LanternsHere } from "./lanterns.ts";
 import { Dust } from "./dust.ts";
 import { gear as gearModel } from "@rustybuns/models/gear";
 import { SKIN } from "../guest-list.ts";
+import { mountShow } from "./show.ts";
+import { masterOp } from "../remote/remote.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -816,7 +820,18 @@ function record(peer?: number, pick?: number) {
 const deskFeed = new DeskFeed((m) => out?.send(m));
 const atWall = new GearHands(def, (op) => net?.studio(op));
 /** The setup lessons at the gear wall (lessons.ts): started from the ? card, shown at the top left as you go. */
-const lessons = new Lessons(atWall);
+const lessons = new Lessons(atWall, {
+  rig: () => (def.outdoor ? roomRig(def).id : null),
+  bands: () => xo.bands(), set: (bands) => xo.set(bands),
+  subAheadM: () => xo.subAheadM(), setSubAhead: (m) => xo.setSubAhead(m),
+  reset: () => void resetCrossover(xo),
+});
+/** Start a setup lesson; the crossover's opens its plot to work at. */
+function learn(id: string) {
+  const a = lessons.start(id, jam);
+  if (a.ok && id === "crossover") xoPanel.toggle(true);
+  return say(a);
+}
 const lessonCard = mountLessonCard($("hud"), lessons);
 let lessonTick = 0, lessonMark: Mark | null = null;
 /** Your lesson as the room last heard it (class.ts): said when it changes, and again when someone new comes in. */
@@ -1053,8 +1068,29 @@ const xo: CrossoverDeps = {
   preset: () => (def.outdoor ? rigCrossover(roomRig(def).id) : []),
   bands: () => paRoom?.bands() ?? null,
   set: (bands) => paRoom?.setBands(bands) ?? false,
+  subAheadM: () => paRoom?.subAheadM() ?? 0,
+  setSubAhead: (m) => paRoom?.setSubAhead(m),
+  panel: (open) => xoPanel.toggle(open),
 };
+const xoPanel = crossoverPanel(document.body, {
+  preset: () => xo.preset(), bands: () => xo.bands(), set: (bands) => void xo.set(bands),
+  subAheadM: () => xo.subAheadM(), reset: () => void resetCrossover(xo),
+}, {
+  // a narrow screen has no room for the panel beside the lesson card: the steps go in the panel
+  steps: () => (innerWidth < 840 && lessons.on === "crossover" ? CROSSOVER_STEPS : null),
+  onToggle: (open) => { if (open) document.exitPointerLock?.(); else if (phase === "play") lock(); },
+});
 addCommands(crossoverCommands(xo));
+// the show desk (#6474): the room's lights as DMX fixtures, driven by its faders, Cmd+K, WebMCP, MIDI, OSC, and OBS
+const streamView = new URLSearchParams(location.search).get("view") === "stream";
+const show = here ? mountShow({
+  scene, stream: streamView,
+  master: { value: () => project.master ?? 0, set: (db) => { if (!may(player).mix) return "The console isn't yours: the leader grants it"; player.edit(masterOp(db)); return null; } },
+  lesson: (id) => { if (id === null) { lessons.leave(); return null; } const a = say(lessons.start(id, jam)); return a.ok ? null : a.why; },
+  say: (text) => { flash = { text, until: performance.now() + 2500 }; },
+  onOpen: () => { document.exitPointerLock?.(); },
+}) : null;
+if (show) { addCommands(show.commands); $("show-open").addEventListener("click", () => show.open()); }
 mountPalette({ button: true, placeholder: "Sit, stand, graphics…" });
 // Tab, seated: the track's lane over the room (lane.tsx), its edits over the sesh as the player's
 lane = mountLane({
@@ -1173,7 +1209,7 @@ decksBtn.addEventListener("click", () => void openDecks());
 const help = mountHelp({
   parent: $("hud").parentElement ?? document.body, hint: $("hint"), seat: () => spotOf(jam, jam.me.seat)?.kind ?? null,
   onToggle: (open) => { if (open) document.exitPointerLock?.(); else if (phase === "play") lock(); },
-  learn: (id) => void say(lessons.start(id, jam)),
+  learn: (id) => void learn(id),
 });
 settings = mountSettings({
   owner,
@@ -1812,7 +1848,7 @@ function frame(now: number) {
   $("cross").hidden = jam.me.cam !== "first" && !atWall.wants(jam);
   $("hint").textContent = now < flash.until ? flash.text : away() ? "Click to look around. Esc: the menu" : roomTubes.note() ?? hint();
   help.frame(phase === "play");
-  if (++lessonTick % 6 === 0) { lessonCard.frame(); lessonMark = lessons.state()?.mark ?? null; sayLesson(); classCard.frame(); }   // a few times a second: the steps read the whole patch
+  if (++lessonTick % 6 === 0) { lessonCard.frame(); xoPanel.frame(); lessonMark = lessons.state()?.mark ?? null; sayLesson(); classCard.frame(); }   // a few times a second: the steps read the whole patch
   gearScene.mark(lessonMark && markAt(atWall.room, lessonMark), t);   // every frame: it follows a box in your hands
   watch.frame();
   const stepped = stepWords(watch.state().level);
@@ -1826,10 +1862,14 @@ if (here) requestAnimationFrame(frame); // the front door has no room to draw or
 // the menu's lists are sideways rows of cards, like the studios: a wheel or a drag scrolls them, touch swipes
 for (const id of ["rooms", "invites", "friends"]) { $(id).classList.add("cards"); sideways($(id)); }
 menu();
+// ?view=stream, an OBS browser source: the room alone, no menu and no mouse (show.css hides the page's own parts)
+if (here && streamView) { phase = "play"; if (jam.me.cam !== "first") toggleCam(jam); menu(); void startAudio(); }
 
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
+  /** The show desk (show.ts): drive and learn controls, feed it a controller's bytes, connect the bridge or OBS. */
+  show: () => show,
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, viewHeld, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
@@ -1864,7 +1904,7 @@ const harness = {
   /** A box on the wall's floor in studio metres (x, z), to walk up to. */
   gearAt: (id: string) => atWall.at(id),
   /** A setup lesson (lessons.ts): start one (guitar, voice, pa; the PA one brings its kit), null leaves it; then the lesson as it stands and the ones finished. */
-  lesson: (id?: string | null) => { const a = id === null ? (lessons.leave(), { ok: true }) : id ? say(lessons.start(id, jam)) : { ok: true }; lessonCard.frame(); const lesson = lessons.state(); lessonMark = lesson?.mark ?? null; return { ...a, lesson, finished: [...lessons.finished], marker: lessonMark && markAt(atWall.room, lessonMark) }; },
+  lesson: (id?: string | null) => { const a = id === null ? (lessons.leave(), { ok: true }) : id ? learn(id) : { ok: true }; lessonCard.frame(); const lesson = lessons.state(); lessonMark = lesson?.mark ?? null; return { ...a, lesson, finished: [...lessons.finished], marker: lessonMark && markAt(atWall.room, lessonMark) }; },
   /** The class card (L, class.ts): open or close it (left out: as it is); then whether it's open and the class as this page heard it. */
   class: (open?: boolean) => { if (open !== undefined) classCard.toggle(open); sayLesson(); classCard.frame(); return { open: classCard.open, class: classOf(jam, myLine) }; },
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
