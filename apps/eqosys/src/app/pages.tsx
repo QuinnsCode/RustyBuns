@@ -892,6 +892,10 @@ export const Privacy = () => (
       <li>Visits to eqosys and the Q sites are counted by a code made from the address and browser that changes every day, so nobody is
         followed from one day to the next and no address is kept. The counts go after 30 days.</li>
     </ul>
+    <h2>Games other studios made</h2>
+    <p>A game another studio made, once you sign in to it, can reach that studio's own space, if you are in it, and none of your other spaces.
+      In that space it can do what you can: read the channels you see, your direct messages and files there, and, if you run it, invite and
+      remove people, delete and download its history.</p>
     <h2>Where it lives</h2>
     <p>On Cloudflare (Workers, D1 and Durable Objects), which runs eqosys for us. Each person also has a vault: the key their cloud saves are
       locked with, and a record of what they agreed to and asked for. If you first signed in from the EU, the EEA, the UK or Switzerland,

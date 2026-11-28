@@ -708,7 +708,9 @@ Each with a test.
 
 ### Still open
 
-- #6227: any app's token, a studio's listed game included, opens all of a person's spaces. The owner's call.
+- #6227: any app's token, a studio's listed game included, opens all of a person's spaces. The owner's call. Since fixed (#6349):
+  a listed game opens only its own studio's space (`studio-space.test.ts`), and LIBRARY.md and the privacy page say what it can do
+  there.
 - #6228: a modified client that closes its party socket stays in the party's voice room, off the member list.
 - #6229: leads no verifier settled (Qlave relaying a peer's `server-mute`, and smaller ones).
 
