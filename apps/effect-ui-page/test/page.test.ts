@@ -136,7 +136,9 @@ test("the step strip follows the agent: read, status, write, and a clean load is
       .expect(now("Writing the code")).toExist()
       .subscription("seen", PageMessage.Saw({ what: "start" }))
       .subscription("seen", PageMessage.Saw({ what: "loaded" }))
-      .expect(now("Your world is up")).toExist();
+      .expect(now("Your world is up")).toExist()
+      // Up after the AI's write: the page saves the world as made.
+      .resolve(MarkMade, PageMessage.MadeWorld({ made: true }));
     // A status changes no file and leaves nothing to undo.
     const story = yield* Story.make(ProfilePageNoDeps, props);
     story.send(call(1, { _tag: "Status", text: "Asking about the weather" }));
