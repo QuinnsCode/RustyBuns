@@ -80,6 +80,8 @@ function startBattle(w: World, kind: typeof ui.kind) {
   show("battle");
   // Your wings start selected, so a first play works at once.
   if (w.mode === "flagship") for (const g of wingsOf(w, fl.id)) ui.sel.add(g.id);
+  // A level with no wings aboard: the ship is what you fly.
+  if (w.mode === "flagship" && !ui.sel.size) ui.sel.add(fl.id);
   else for (const s of w.ships) if (s.side === "navy" && s.auto) ui.sel.add(s.id);
   const first = w.ships.find((s) => s.side === "rim" && s.kind === "carrier" && visible(w, s.side, s.id)) ?? w.ships.find((s) => s.side === "rim" && visible(w, s.side, s.id));
   if (first) ui.target = first.id;
@@ -556,7 +558,7 @@ function drawHud(w: World) {
     for (const b of document.querySelectorAll<HTMLButtonElement>("#orders [data-buy]")) b.disabled = f.supply.navy < BUY[b.dataset.buy as Buy] || (b.dataset.buy === "sensors" && f.tier.navy > 0);
     const pb = document.querySelector<HTMLButtonElement>('#orders [data-act="ping"]');
     if (pb) pb.disabled = w.t < f.ping.ready || !w.ships.some((s) => !s.dead && s.side === "navy" && s.kind === "sensor");
-    html += `<div class="card points"><b>Strongpoints</b>${f.points.map((p) => `<span class="pt ${p.owner ?? "none"}" title="${esc(p.name)}: ${p.owner === "navy" ? "ours" : p.owner === "rim" ? "the Compact's" : "nobody's"}">${esc(p.name)}${bar((p.hold + 1) / 2, "hold")}</span>`).join("")}${f.heldSince ? `<small>All held: ${Math.max(0, Math.ceil(60 - (w.t - f.heldSince)))} s to win</small>` : ""}</div>`;
+    if (f.points.length) html += `<div class="card points"><b>Strongpoints</b>${f.points.map((p) => `<span class="pt ${p.owner ?? "none"}" title="${esc(p.name)}: ${p.owner === "navy" ? "ours" : p.owner === "rim" ? "the Compact's" : "nobody's"}">${esc(p.name)}${bar((p.hold + 1) / 2, "hold")}</span>`).join("")}${f.heldSince ? `<small>All held: ${Math.max(0, Math.ceil(60 - (w.t - f.heldSince)))} s to win</small>` : ""}</div>`;
   }
   const p = w.planet, t = ship(w, ui.target);
   html += `<div class="card world"><b>${esc(p.name)} base</b>${bar(p.base / p.baseMax, "hl")}<small>${w.ships.some((s) => s.kind === "station" && !s.dead && s.side === "rim") ? "under the bastion's shield" : "open to the sky"}</small></div>`;
@@ -611,6 +613,9 @@ function overlay(w: World): Overlay {
     const s = w.ships.find((s) => s.id === id), r = s ? HULL[s.kind].r : 60;
     o.rings.push({ x: g.x, z: g.z, r: r * 1.4, color: 0x7a4a24 }); o.lines.push({ x1: g.x - r, z1: g.z, x2: g.x + r, z2: g.z, color: 0x7a4a24 });
   }
+  // A point one of your ships has to reach (a level's relay or gate), drawn as a double ring.
+  const goal = w.goal?.escort;
+  if (goal) for (const k of [1, 0.6]) o.rings.push({ x: goal.x, z: goal.z, r: goal.r * k, color: 0x7dffb0 });
   // The lane's mouth, always.
   o.rings.push({ x: w.lane.x, z: w.lane.z, r: 320, color: 0x6a5acd });
   // A ping going out: the ring of its reach.

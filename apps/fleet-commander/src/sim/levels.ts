@@ -69,6 +69,9 @@ const rimAir = (w: World) => w.wings.some((g) => g.side === "rim" && g.state ===
 
 // ---------------------------------------------------------------- the levels
 
+/** Slingshot's gate: where the destroyer has to be before the clock runs out. */
+const GATE = { x: 2600, z: 300, r: 200 };
+
 export const LEVELS: Level[] = [
   {
     id: "torpedo-run", name: "Torpedo Run", stars: 1,
@@ -139,8 +142,30 @@ export const LEVELS: Level[] = [
     },
   },
   {
+    id: "slingshot", name: "Slingshot", stars: 2,
+    teaches: "A well is a drive. Pick your destroyer (F) and right-drag a route low round the planet's rim: straight there is too slow.",
+    build: (seed) => {
+      const w = level(seed, 290, "loss", "The gate closed with us outside it.", { name: "Thessaly", x: 9000, z: 0, r: 420, base: 9000 });
+      const f = (w.field = newField(4500, 3000, 0));
+      f.wells.push({ kind: "planet", name: "Vael", x: 0, z: 0, core: 420, r: 1800, pull: 14 });
+      const fl = navy(w, [], { x: -2600, z: 300 });
+      w.goal!.escort = { ship: fl.id, ...GATE, why: "Through the gate with it closing behind us." };
+      // A picket far off the route: with no Compact hull left on the board, the battle would be won at once.
+      rim(w, "corvette", "Free Wind", 3600, -2800, { auto: false });
+      sensors(w);
+      say(w, "navy", "Helm", "The gate past Vael closes in under five minutes. We have no wings aboard, only the drive.");
+      return w;
+    },
+    plan: (w) => {
+      const fl = flagship(w)!;
+      if (fl.order.k === "move") return;
+      const via = [150, 120, 90, 60, 30].map((a) => ({ x: Math.cos((a * Math.PI) / 180) * 700, z: Math.sin((a * Math.PI) / 180) * 700 }));
+      fl.order = { k: "move", x: GATE.x, z: GATE.z, via };
+    },
+  },
+  {
     id: "into-the-rift", name: "Into the Rift", stars: 3,
-    teaches: "Rifts hide hulls from everything but scouts. Send the scouts in (3) before you send the guns.",
+    teaches: "Rifts hide hulls from everything but scouts. Yours wait at the start: send them in (1) before you send the guns.",
     build: (seed) => {
       const w = level(seed, 360, "loss", "The relay never came to us.");
       const f = (w.field = newField(4500, 3000, 0));
@@ -148,9 +173,12 @@ export const LEVELS: Level[] = [
       f.veils.push({ kind: "rift", x: 800, z: 0, r: 900, depth: 1 });
       f.points.push({ id: w.nextId++, name: "Drowned Relay", x: 800, z: 0, r: 500, owner: "rim", hold: -1 });
       navy(w, ["scout", "bomber", "bomber", "escort", "interceptor"], { x: -2600, z: 0 });
-      // An ambush in the rift: it waits at its post and chases only what it sees close by.
-      rim(w, "cruiser", "Ember Tithe", 700, 150, { post: true, wings: ["escort"] });
-      rim(w, "bulwark", "Deepwell", 950, -200, { post: true });
+      // The scouts hold at the start until sent: riding along, they would see into the rift without being asked.
+      for (const g of myWings(w)) if (g.role === "scout") g.order = { k: "patrol", x: -2600, z: 0 };
+      // An ambush posted round the relay, far enough off that it fires from the dark: each waits at its post.
+      rim(w, "cruiser", "Ember Tithe", 650, 600, { post: true });
+      rim(w, "bulwark", "Deepwell", 1050, -550, { post: true });
+      rim(w, "cruiser", "Unbowed", 1350, 250, { post: true });
       // Mines across the rift's mouth: only what sees into the rift can shoot them down.
       for (let i = 0; i < 9; i++) { const a = Math.PI * (0.6 + (i / 8) * 0.8); f.mines.push({ id: w.nextId++, side: "rim", x: 800 + Math.cos(a) * 650, z: Math.sin(a) * 650, dead: false }); }
       sensors(w);
@@ -161,7 +189,7 @@ export const LEVELS: Level[] = [
       const f = w.field!, fl = flagship(w)!;
       // The scouts ride ahead into the rift; the guns follow and go for whatever the scouts light up.
       const scouts = myWings(w).find((g) => g.role === "scout");
-      if (scouts && scouts.order.k !== "patrol") scouts.order = { k: "patrol", x: 650, z: 0 };
+      if (scouts && (scouts.order.k !== "patrol" || scouts.order.x !== 650)) scouts.order = { k: "patrol", x: 650, z: 0 };
       const seen = rimShips(w).find((s) => f.sees.navy.has(s.id));
       if (seen) { strike(w, "torpedo-run", seen); if (fl.order.k !== "engage" || fl.order.target !== seen.id) fl.order = { k: "engage", target: seen.id, broadside: true }; }
       else if (w.t > 12 && fl.order.k !== "move") fl.order = { k: "move", x: 800, z: 0 };
@@ -172,14 +200,14 @@ export const LEVELS: Level[] = [
     teaches: "Their help comes through the lane. Park the interdictor on it (Shift+G) and it drops out dazed, shields down.",
     build: (seed) => {
       const w = level(seed, 360, "loss", "The Compact holds the system. We pull back.");
-      navy(w, ["interceptor", "bomber", "bomber", "escort"]);
+      navy(w, ["interceptor", "bomber", "bomber", "escort"], undefined, 0.5);
       const fr = addShip(w, "navy", "frigate", "Warden", -1250, 320, 0, false);
       fr.order = { k: "hold" };
       w.lane = { x: -100, z: 1250 };
       rim(w, "corvette", "Free Wind", 700, -200, { wings: ["interceptor"] });
       w.waves = [
-        { at: 45, done: false, ships: [{ kind: "cruiser", wings: ["bomber"] }, { kind: "cruiser", wings: ["escort"] }] },
-        { at: 110, done: false, ships: [{ kind: "carrier", wings: ["bomber", "interceptor"] }, { kind: "cruiser", wings: ["bomber"] }] },
+        { at: 45, done: false, ships: [{ kind: "cruiser", wings: ["bomber"] }, { kind: "cruiser", wings: ["escort"] }, { kind: "cruiser", wings: ["bomber"] }] },
+        { at: 110, done: false, ships: [{ kind: "carrier", wings: ["bomber", "interceptor"] }, { kind: "cruiser", wings: ["bomber"] }, { kind: "cruiser", wings: ["bomber"] }] },
       ];
       say(w, "navy", "Sensors", "The lane to the south is warm. Two waves inbound, the first in forty-five seconds.");
       return w;
@@ -192,7 +220,7 @@ export const LEVELS: Level[] = [
       const byNear = rimShips(w).sort((a, b) => Math.hypot(a.x - fl.x, a.z - fl.z) - Math.hypot(b.x - fl.x, b.z - fl.z));
       const near = byNear[0];
       if (near && fl.order.k !== "engage") fl.order = { k: "engage", target: near.id, broadside: true };
-      const dazed = byNear.find((s) => s.stunUntil > w.t);
+      const dazed = rimShips(w).find((s) => s.stunUntil > w.t);
       if (dazed && bombersFree(w)) runPlay(w, "torpedo-run", myWings(w), dazed.id);
       else strike(w, "torpedo-run", near);
     },
