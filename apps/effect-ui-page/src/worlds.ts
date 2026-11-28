@@ -1,7 +1,7 @@
 // Worlds already written, for a person to try before any AI is connected: one click loads one, as an undoable change.
 // Each has one thing to ask an AI next. Plain strings: these are the files, drawn on a 2D canvas with no libraries.
 import { FISH_TANK_FILES } from "./fish-tank.ts";
-import { STARTER_FILES } from "./starter.ts";
+import { RAIN_CITY_FILES } from "./rain-city.ts";
 
 const index = (title: string, back: string) => `<!doctype html>
 <html lang="en">
@@ -48,11 +48,10 @@ function draw(t, W, H) {
 }
 ${FRAME}`;
 
-
 export interface Ready { readonly name: string; readonly ask: string; readonly files: Readonly<Record<string, string>> }
 
 export const READY: readonly Ready[] = [
-  { name: "Rainy city", ask: "make it a thunderstorm with lightning", files: STARTER_FILES },
+  { name: "Rainy city", ask: "make it a thunderstorm with lightning", files: RAIN_CITY_FILES },
   { name: "Solar system", ask: "give the big planet rings and add a comet", files: { "index.html": index("Solar system", "#05060f"), "world.js": solar } },
   { name: "Fish tank", ask: "add a shark that cruises the tank and makes the other fish scatter", files: FISH_TANK_FILES },
 ];

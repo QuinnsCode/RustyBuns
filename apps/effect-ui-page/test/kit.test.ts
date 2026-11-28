@@ -48,9 +48,9 @@ beforeAll(async () => {
 afterAll(() => { chrome?.stop(); server?.kill(); });
 
 test("page_edit_file changes one place and the world reloads with it; two matches are refused with the count", async () => {
-  expect(await call("page_edit_file", { path: "world.js", find: "const PX = 3,", replace: `console.error("edited");\nconst PX = 3,` })).toMatchObject({ ok: true });
+  expect(await call("page_edit_file", { path: "world.js", find: "let W, H, S, stars, seed;", replace: `console.error("edited");\nlet W, H, S, stars, seed;` })).toMatchObject({ ok: true });
   await heard("edited");
-  const twice = await call("page_edit_file", { path: "world.js", find: "requestAnimationFrame(draw)", replace: "" });
+  const twice = await call("page_edit_file", { path: "world.js", find: "requestAnimationFrame(frame)", replace: "" });
   expect(twice.error).toContain("matches 2 places in world.js");
   // Undo takes an edit back like any other change.
   expect(await call("page_undo")).toMatchObject({ ok: true });
