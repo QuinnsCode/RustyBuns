@@ -48,7 +48,7 @@ agent writes, and the console lists its calls. A step strip there shows where yo
 AI is here (its first `page_read`), Asking you about your world (a `page_status`), Writing the code (its first write),
 Your world is up (the frame loaded with no errors after a write). The AI asks you three things in its own chat (the
 ground, what is on it, the weather) before it writes; the page never asks. A new room starts with a night desert
-(`src/starter.ts`) to change or throw away.
+(`src/starter.ts`, built with `@world/kit`, so it stands in 3D in the galaxy) to change or throw away.
 
 | Tool | Does |
 |---|---|
@@ -118,6 +118,7 @@ four characters a token (`scripts/mcp-session.ts`, the same session code as code
 |---|---|---|
 | Before: three.js by hand, whole files resent | 682 | 4,473 |
 | After: `@world/kit` and `page_edit_file` | 612 | 2,119 |
+| Now: the starter desert written with the kit too | 701 | 1,530 |
 
 `test/tokens.test.ts` fails when the session passes the budget in `test/tokens.json`. A change that earns more tokens
 raises it there, in the same PR. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
