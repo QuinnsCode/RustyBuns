@@ -291,7 +291,7 @@ const until = async (ok: () => boolean, ms = 10_000) => {
 /** What a test or the probe asks: in the galaxy or not, your plot and spot, the plots and players on your plot and the
  *  eight around it, what the plot you stand on is, and what each plot in the scene shows (land, picture, town, open). */
 export function galaxyState() {
-  if (!g) return { in: false, ready: false, error: null, me: null, plot: null, pos: null, plots: [], players: [], live: null, shows: {} };
+  if (!g) return { in: false, ready: false, error: null, me: null, plot: null, pos: null, plots: [], players: [], live: null, shows: {}, air: null };
   const s = g;
   return {
     in: true, ready: s.me !== null, error: s.error, me: s.me, plot: { ...s.plot }, pos: { ...s.pos },
@@ -299,6 +299,7 @@ export function galaxyState() {
     players: visible(s).map((p) => ({ ...p })),
     live: { ...s.live, files: s.live.files.map((f) => ({ ...f })) },
     shows: s.scene?.shows() ?? {},
+    air: s.scene?.air() ?? null,
   };
 }
 

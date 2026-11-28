@@ -1,9 +1,11 @@
 // Agent Galaxy's one 3D scene: every plot's land butted straight against the next, with no streets or fences, people as
 // simple shapes, and a cloud over everything but your own land that lifts as you arrive. A plot shows its land as shapes
-// (land.ts), else its picture laid on the ground, else bare grass. Loaded only when the galaxy is opened (three.js).
+// (land.ts), else its picture laid on the ground, else bare grass. The sky, light, fog and weather blend to the mood of
+// whichever land you stand on, and lights bloom (air.ts). Loaded only when the galaxy is opened (three.js).
 import { field } from "@rustybuns/util/guard";
 import * as THREE from "three";
-import { isGround, type Land, landFrom, PLOT } from "./land.ts";
+import { airs, effects } from "./air.ts";
+import { DAY, isGround, type Land, landFrom, type Mood, type Part, PLOT } from "./land.ts";
 import type { Page } from "./page.ts";
 import { SAID_KEY, worldDoc } from "./world.ts";
 
@@ -49,7 +51,7 @@ export type Content =
 
 export interface Person { id: string; color: string; x: number; z: number; me: boolean }
 
-const SKY = "#a9d4f5", GRASS = "#7fae62";
+const GRASS = "#6f9e45";
 const mat = (color: string, opacity = 1) => new THREE.MeshStandardMaterial({ color, flatShading: true, side: THREE.DoubleSide, transparent: opacity < 1, opacity });
 const mesh = (g: THREE.BufferGeometry, color: string, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(g, mat(color)); m.position.set(x, y, z); return m; };
 const flat = (material: THREE.Material, y = 0) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(PLOT, PLOT).rotateX(-Math.PI / 2), material); m.position.y = y; return m; };
@@ -64,22 +66,34 @@ function painted(w: number, h: number, draw: (c: CanvasRenderingContext2D) => vo
   return t;
 }
 
+/** A part's look: smooth where its corners are shared, glowing if it says so; a see-through glow adds its light (a wet
+ *  street's shine). */
+function look({ c, o = 1, e = 0 }: Part) {
+  const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, side: THREE.DoubleSide, transparent: o < 1, opacity: o });
+  if (e) { m.emissive.set(c); m.emissiveIntensity = e; }
+  if (o < 1 && e) { m.blending = THREE.AdditiveBlending; m.depthWrite = false; }
+  return m;
+}
+
 function shapes(land: Land) {
   const group = new THREE.Group(), grounds: THREE.Mesh[] = [];
   for (const part of land.parts) {
     const g = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(part.p, 3));
     if (part.i) g.setIndex(part.i);
     g.computeVertexNormals();
-    const material = mat(part.c, part.o ?? 1);
+    const material = look(part);
+    // Lights and glass cast no shadow, and neither does a meadow of tiny copies.
+    const casts = !part.e && (part.o ?? 1) === 1 && !(part.m && part.m.length / 16 > 400);
+    let m: THREE.Mesh;
     if (part.m) {
       const many = new THREE.InstancedMesh(g, material, part.m.length / 16), one = new THREE.Matrix4();
       for (let i = 0; i < many.count; i++) many.setMatrixAt(i, one.fromArray(part.m, i * 16));
-      group.add(many);
-    } else {
-      const m = new THREE.Mesh(g, material);
-      group.add(m);
-      if (isGround(part)) grounds.push(m);
-    }
+      m = many;
+    } else m = new THREE.Mesh(g, material);
+    m.castShadow = casts;
+    m.receiveShadow = true;
+    group.add(m);
+    if (!part.m && isGround(part)) grounds.push(m);
   }
   // A world that put no ground down gets grass, so there is never a hole between neighbours.
   if (!grounds.length) group.add(flat(mat(GRASS), -0.05));
@@ -105,7 +119,15 @@ function town() {
 /** Open land, with the invite sign on the ones next to you. */
 function open(sign: boolean) {
   const group = new THREE.Group();
-  group.add(flat(mat("#b9a874")));
+  group.add(flat(mat("#8aa85a")));
+  const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(0.5, 2, 4).translate(0, 0.9, 0), mat("#6f9440"), 500), one = new THREE.Object3D();
+  for (let i = 0; i < tufts.count; i++) {
+    one.position.set(((i * 73.31) % 194) - 97, 0, ((i * i * 7.77 + i * 31.7) % 194) - 97);
+    one.scale.setScalar(0.6 + ((i * 13) % 9) / 10);
+    one.updateMatrix();
+    tufts.setMatrixAt(i, one.matrix);
+  }
+  group.add(tufts);
   if (!sign) return group;
   const board = new THREE.Sprite(new THREE.SpriteMaterial({ map: painted(512, 160, (c) => {
     c.fillStyle = "#8a5a33"; c.fillRect(0, 0, 512, 160);
@@ -126,17 +148,11 @@ const dispose = (o: THREE.Object3D) => o.traverse((c) => {
 });
 
 export function scene3d(canvas: HTMLCanvasElement) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(SKY);
-  scene.fog = new THREE.Fog(SKY, 320, 760);
-  const camera = new THREE.PerspectiveCamera(55, 1, 1, 2000);
-  const sun = new THREE.DirectionalLight("#fff1d6", 1.5);
-  sun.position.set(60, 90, 30);
-  scene.add(new THREE.HemisphereLight("#eef4ff", "#5a5030", 1.5), sun);
+  const camera = new THREE.PerspectiveCamera(55, 1, 1, 2400);
+  const air = airs(canvas, scene, camera);
 
-  const plots = new Map<string, { at: THREE.Group; shows: string; grounds: THREE.Mesh[] }>();
+  const plots = new Map<string, { at: THREE.Group; shows: string; grounds: THREE.Mesh[]; mood: Mood; live: ((t: number) => void) | null }>();
   const people = new Map<string, THREE.Group>();
 
   // The cloud: soft puffs laid around your own land.
@@ -196,13 +212,18 @@ export function scene3d(canvas: HTMLCanvasElement) {
         // No picture yet (404) leaves the grass.
         new THREE.TextureLoader().load(content.url, (t) => { t.colorSpace = THREE.SRGBColorSpace; material.map = t; material.color.set("#ffffff"); material.needsUpdate = true; });
       }
+      const mood = (content.kind === "land" && content.land.mood) || DAY;
+      const live = effects(mood);
+      if (live) at.add(live.group);
       scene.add(at);
-      plots.set(k, { at, shows, grounds });
+      plots.set(k, { at, shows, grounds, mood, live: live?.tick ?? null });
     },
     shows: () => Object.fromEntries([...plots].map(([k, v]) => [k, v.shows.split(":")[0]!])),
+    /** The weather you are in (the mood of the land you stand on) and how fast the last frames came. */
+    air: () => air.now(),
     /** Draw: everyone where they are (in plots), under the cloud over `home` at lift 0, behind you at lift 1. */
     draw(w: number, h: number, folk: readonly Person[], cam: { x: number; z: number }, home: { x: number; y: number }, lift: number) {
-      if (size !== `${w}x${h}`) { size = `${w}x${h}`; renderer.setSize(w, h, false); camera.aspect = w / h || 1; camera.updateProjectionMatrix(); }
+      if (size !== `${w}x${h}`) { size = `${w}x${h}`; air.size(w, h); camera.aspect = w / h || 1; camera.fov = camera.aspect < 1 ? 66 : 55; camera.updateProjectionMatrix(); }
       const e = lift * lift * (3 - 2 * lift), mix = (a: number, b: number) => a + (b - a) * e;
       const hx = (home.x + 0.5) * PLOT, hz = (home.y + 0.5) * PLOT;
       clouds.position.set(hx, e * 130, hz);
@@ -220,14 +241,17 @@ export function scene3d(canvas: HTMLCanvasElement) {
       const x = cam.x * PLOT, z = cam.z * PLOT, y = heightAt(x, z);
       // A tall screen stands further back, so as much land is across it.
       const back = 1 / Math.min(1, Math.max(0.6, camera.aspect));
-      camera.position.set(mix(hx, x), mix(215 * back, y + 24 * back), mix(hz + 215 * back, z + 42 * back));
-      camera.lookAt(mix(hx, x), mix(0, y + 4), mix(hz + 8, z - 12));
-      renderer.render(scene, camera);
+      camera.position.set(mix(hx, x), mix(215 * back, y + 17 * back), mix(hz + 215 * back, z + 36 * back));
+      camera.lookAt(mix(hx, x), mix(0, y + 6), mix(hz + 8, z - 12));
+      // Above the cloud it is your own land's air; down on the ground, that of the land under your feet.
+      const under = e < 0.5 ? `${home.x},${home.y}` : `${Math.floor(x / PLOT)},${Math.floor(z / PLOT)}`;
+      const t = performance.now() / 1000;
+      for (const plot of plots.values()) if (plot.at.visible) plot.live?.(t);
+      air.draw(plots.get(under)?.mood ?? DAY, new THREE.Vector3(x, y, z), e);
     },
     dispose() {
       dispose(scene);
-      renderer.dispose();
-      renderer.forceContextLoss();
+      air.dispose();
     },
   };
 }

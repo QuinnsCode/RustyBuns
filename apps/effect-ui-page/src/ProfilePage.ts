@@ -9,11 +9,12 @@ import { Command, Component, Subscription, UiSchema } from "@effect/ui";
 import { Html } from "@effect/ui/html";
 import { Effect, Queue, Schema, Stream } from "effect";
 import { Agent, Call, type Request, Seen } from "./agent.ts";
-import { apply, backdropUrl, Page } from "./page.ts";
+import { apply, backdropUrl, Page, starter } from "./page.ts";
 import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
 import { listTools } from "./tools.ts";
 import { worldDoc } from "./world.ts";
+import { LANDS } from "./lands.ts";
 import { READY } from "./worlds.ts";
 import { galaxyAsks } from "./galaxyView.ts";
 import { galaxyLock, lockLine } from "./lock.ts";
@@ -21,6 +22,8 @@ import { galaxyLock, lockLine } from "./lock.ts";
 export const PageMessage = UiSchema.TaggedEnum({
   ReceivedAgentCall: { call: Call },
   ClickedTry: { name: Schema.String },
+  /** A new person's one tap: which land their world starts as, or "" to keep the desert. */
+  ClickedLand: { name: Schema.String },
   ClickedUndo: {},
   ClickedReset: {},
   ClickedFull: {},
@@ -95,6 +98,8 @@ const Model = Schema.Struct({
   explain: Schema.Boolean,
   /** "Create your world" found no eqosys to sign in with (local dev). */
   noSignIn: Schema.Boolean,
+  /** A new person said to keep the desert, so the land picker stays away. */
+  picked: Schema.Boolean,
   /** How far the agent has got, for the step strip: it is here, it asked, it wrote, the frame since its last load. */
   steps: Schema.Struct({ here: Schema.Boolean, asked: Schema.Boolean, wrote: Schema.Boolean, clean: Schema.Boolean, up: Schema.Boolean }),
   /** The agent's last page_status. */
@@ -135,6 +140,10 @@ const asked = (m: typeof PageMessage.Type): [number, string, Asked] | null => {
     case "ClickedTry": {
       const w = READY.find((r) => r.name === m.name);
       return w ? [0, `${w.name} (you)`, { _tag: "Load", files: w.files }] : null;
+    }
+    case "ClickedLand": {
+      const l = LANDS.find((r) => r.name === m.name);
+      return l ? [0, `${l.name} (you)`, { _tag: "Load", files: l.files }] : null;
     }
     // A status shows its words in the terminal.
     case "ReceivedAgentCall": return [m.call.call, m.call.request._tag === "Status" ? `${m.call.tool} "${m.call.request.text}"` : m.call.tool, m.call.request];
@@ -198,6 +207,7 @@ const ICONS = {
   key: ["m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4", "m21 2-9.6 9.6", "M7.5 10a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z"],
   undo: ["M3 7v6h6", "M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"],
   reset: ["M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5"],
+  hill: ["m3 20 5-9 4 6 3-4 6 7Z", "M17 4a2 2 0 1 0 0 4 2 2 0 1 0 0-4Z"],
   city: ["M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z", "M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2", "M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2", "M10 6h4", "M10 10h4", "M10 14h4", "M10 18h4"],
   orbit: ["M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z", "M19 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z", "M5 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z", "M10.4 21.9a10 10 0 0 0 9.94-15.42", "M13.5 2.1a10 10 0 0 0-9.84 15.42"],
   fish: ["M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.47-3.44 6-7 6s-7.56-2.53-8.5-6Z", "M18 12v.5", "M16 17.93a9.77 9.77 0 0 1 0-11.86", "M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"],
@@ -323,6 +333,15 @@ const worldTiles = Def.fragment((h, on: string | undefined) => h.div.class("tile
       .on("click", PageMessage.ClickedTry({ name: w.name })).children(icon(h, name), says);
   })));
 
+/** "Pick your land": two big buttons for a new person, and a small way to keep the desert. */
+const PICTURES: Readonly<Record<string, Icon>> = { "Hill village": "hill", "Neon city": "city" };
+const landPicker = Def.fragment((h) => h.div.class("pick").attrs({ role: "group", "aria-label": "Pick your land" }).children(
+  h.b("Pick your land"),
+  ...LANDS.map((l) => h.button.key(l.name).class("pick-land", l.name === "Neon city" ? "neon" : "hill").attrs({ type: "button", "data-land": l.name })
+    .on("click", PageMessage.ClickedLand({ name: l.name })).children(icon(h, PICTURES[l.name] ?? "city"), l.name)),
+  h.button.attr("type", "button").class("pick-keep").on("click", PageMessage.ClickedLand({ name: "" })).children("Keep the desert"),
+));
+
 /** Export GIF: its own button, which shows how far along it is. */
 const exportButton = Def.fragment((h, gif: GifState) => h.button.attr("type", "button").class("tile", "export").disabled(gif.busy)
   .attrs({ "aria-label": gif.busy ? gif.says : "Export GIF", title: "Export GIF: three seconds of your world" })
@@ -373,7 +392,7 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
 
 export const ProfilePageNoDeps = Def.make({
   init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,
-    explain: false, noSignIn: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
+    explain: false, noSignIn: false, picked: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
   update: ($, message) => {
     switch (message._tag) {
       case "ChangedRelay": return $.evolve({ online: message.online });
@@ -384,6 +403,10 @@ export const ProfilePageNoDeps = Def.make({
       case "ClickedLeaveLanding": return $.evolve({ landing: false });
       case "ClickedExplain": return $.evolve({ explain: !$.model.explain });
       case "ClickedCreate": return $.run(CreateWorld.make({ room: $.props.room }));
+      case "ClickedLand": {
+        if (message.name === "") return $.evolve({ picked: true });
+        break;
+      }
       case "CreatedWorld": return message.went === "here" ? $.evolve({ landing: false }) : $.evolve({ noSignIn: message.went === "off" });
       case "Saw": {
         // The frame's word on its last load: up once it loaded with no error after the agent's write.
@@ -416,7 +439,7 @@ export const ProfilePageNoDeps = Def.make({
     const landing = model.landing && !((call > 0 || r._tag === "Load") && error === null);
     // An agent's call says it is here; its page_status that it is asking; its first write that lands that it is writing.
     const s = model.steps;
-    const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || (r._tag === "WriteFile" && error === null) } : s;
+    const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || ((r._tag === "WriteFile" || r._tag === "EditFile") && error === null) } : s;
     return $.set({ ...model, landing, steps, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
       .run(ReportPage.make({ call, error, page: model.page }));
   },
@@ -433,7 +456,7 @@ export const ProfilePageNoDeps = Def.make({
     // Cmd+K and window.agentGalaxy ask for the galaxy here, so every door goes through the same two messages.
     Subscription.make("galaxy", Stream.fromQueue(galaxyAsks).pipe(Stream.map((on) => (on ? PageMessage.ClickedGalaxy() : PageMessage.ClickedBack())))),
   ],
-  view: (h, { page, past, log, online, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status, made }) => {
+  view: (h, { page, past, log, online, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status, made, picked }) => {
     const { room, origin, who } = h.props;
     const locked = lockLine(who !== null, made);
     // The map is drawn by galaxyView.ts in its own layer over the page; here only the way back.
@@ -446,6 +469,8 @@ export const ProfilePageNoDeps = Def.make({
     const failed = [{ what: "prompt", text: promptText }, { what: "ask", text: on?.ask ?? "" }, ...connectLines(origin, room)]
       .find((c) => copied === `failed: ${c.what}`)?.text;
     const doc = worldDoc(page);
+    // A signed-in person whose world is still the untouched starter: one tap says what it starts as.
+    const choose = who !== null && !picked && !made && Object.keys(page.files).length === Object.keys(starter.files).length && Object.entries(starter.files).every(([path, text]) => page.files[path] === text);
     return h.div.class("shell", full && "full").children(
       // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
       page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
@@ -459,6 +484,7 @@ export const ProfilePageNoDeps = Def.make({
         // Put away (Hide, or ?full on the link), the console leaves one small button to bring it back.
         full && h.button.attr("type", "button").class("full-toggle").attr("title", "Show the console").on("click", PageMessage.ClickedFull()).children("Show"),
       ),
+      choose && landPicker(h),
       // The console: a terminal window in the middle, over the world, until Hide puts it away. Its title bar, the
       // step strip, then what happened as a command line shows it (left) beside the buttons (right).
       !full && h.aside.class("dock").attr("aria-label", "Console").children(
