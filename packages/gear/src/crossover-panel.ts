@@ -107,7 +107,7 @@ export function crossoverPanel(parent: HTMLElement, host: PanelHost, o: { steps?
     get open() { return !box.hidden; },
     /** Take it off the page (the venue left). */
     dispose() { box.remove(); },
-    toggle(open = box.hidden) {
+    toggle(open = box.hidden !== false) {
       box.hidden = !open;
       if (open) panel.frame();
       o.onToggle?.(open);
