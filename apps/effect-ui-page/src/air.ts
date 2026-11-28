@@ -106,10 +106,23 @@ export function effects(mood: Mood): { group: THREE.Group; tick: (t: number) => 
   return { group, tick: (t) => { for (const move of moves) move(calm() ? 0 : t); } };
 }
 
+/** Whether this browser draws 3D on its processor (no usable GPU): bloom and shadows would freeze it. */
+function software() {
+  const gl = document.createElement("canvas").getContext("webgl2");
+  if (!gl) return true;
+  const info = gl.getExtension("WEBGL_debug_renderer_info");
+  const name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  gl.getExtension("WEBGL_lose_context")?.loseContext();
+  return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+}
+
 /** The renderer, sky, lights and bloom. `draw` blends them toward `want` and draws one frame. */
 export function airs(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-  let ratio = Math.min(1.5, devicePixelRatio || 1);
+  // How much to leave out: 0 nothing, 1 sharpness, 2 shadows too, 3 bloom too. Without a GPU it starts there.
+  const slowest = software();
+  let level = slowest ? 3 : 0;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !slowest, powerPreference: "high-performance" });
+  const sharp = () => [Math.min(1.5, devicePixelRatio || 1), 1, 1, 0.6][level]!;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -127,7 +140,7 @@ export function airs(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THRE
   const fog = new THREE.Fog(DAY.fog, DAY.near, DAY.far);
   scene.fog = fog;
   const hemi = new THREE.HemisphereLight(), sun = new THREE.DirectionalLight();
-  sun.castShadow = true;
+  sun.castShadow = level < 2;
   sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.6;
@@ -144,9 +157,9 @@ export function airs(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THRE
 
   let last = 0, wide = 1, tall = 1, weather: Mood["weather"] = "clear", fps = 60, slow = 0;
   const resize = () => {
-    renderer.setPixelRatio(ratio);
+    renderer.setPixelRatio(sharp());
     renderer.setSize(wide, tall, false);
-    composer.setPixelRatio(ratio);
+    composer.setPixelRatio(sharp());
     composer.setSize(wide, tall);
   };
   return {
@@ -165,7 +178,10 @@ export function airs(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THRE
     now: () => ({ weather, fps: Math.round(fps), top: `#${now.top.getHexString()}`, bloom: Math.round(num.bloom * 100) / 100 }),
     /** One frame, `at` being where you stand and `down` how far under the cloud you have come (0 to 1). */
     draw(want: Mood, at: THREE.Vector3, down: number) {
-      const ms = performance.now(), took = last ? (ms - last) / 1000 : 0, dt = Math.min(0.1, took);
+      const ms = performance.now();
+      // On the processor, ten pictures a second leaves the page free to answer.
+      if (slowest && last && ms - last < 100) return false;
+      const took = last ? (ms - last) / 1000 : 0, dt = Math.min(0.1, took);
       // The first frame takes the mood as it is; after that it blends.
       const k = last ? Math.min(1, dt * 1.6) : 1;
       last = ms;
@@ -187,15 +203,18 @@ export function airs(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THRE
       bloom.strength = num.bloom;
       bloom.threshold = 0.9;
       sky.step(want.weather, at, dt, ms / 1000);
-      composer.render();
-      // A device that can't keep up gives up sharpness first, then shadows.
-      if (took > 0 && took < 0.5) fps += (1 / took - fps) * 0.05;
-      slow = fps < 33 ? slow + dt : 0;
-      if (slow > 2) {
+      if (level < 3) composer.render();
+      else renderer.render(scene, camera);
+      // A device that can't keep up gives up sharpness first, then shadows, then bloom. A gap of seconds is a hidden tab.
+      if (took > 0 && took < 2) fps += (1 / took - fps) * Math.min(0.5, took * 2);
+      slow = fps < 33 && took < 2 ? slow + took : 0;
+      if (slow > 1.5 && level < 3) {
         slow = 0;
-        if (ratio > 1) { ratio = 1; resize(); }
-        else if (sun.castShadow) sun.castShadow = false;
+        level++;
+        sun.castShadow = level < 2;
+        resize();
       }
+      return true;
     },
     dispose() {
       sky.dispose();

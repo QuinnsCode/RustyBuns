@@ -122,6 +122,8 @@ function town() {
 function open(sign: boolean) {
   const group = new THREE.Group();
   group.add(flat(mat("#8aa85a")));
+  // Tufts only on the open plots next to you: dozens more lie out in the haze.
+  if (!sign) return group;
   const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(0.5, 2, 4).translate(0, 0.9, 0), mat("#6f9440"), 500), one = new THREE.Object3D();
   for (let i = 0; i < tufts.count; i++) {
     one.position.set(((i * 73.31) % 194) - 97, 0, ((i * i * 7.77 + i * 31.7) % 194) - 97);
@@ -130,7 +132,6 @@ function open(sign: boolean) {
     tufts.setMatrixAt(i, one.matrix);
   }
   group.add(tufts);
-  if (!sign) return group;
   const board = new THREE.Sprite(new THREE.SpriteMaterial({ map: painted(512, 160, (c) => {
     c.fillStyle = "#8a5a33"; c.fillRect(0, 0, 512, 160);
     c.fillStyle = "#fff4e0"; c.font = "600 46px system-ui, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
@@ -288,9 +289,8 @@ export function scene3d(canvas: HTMLCanvasElement) {
       camera.position.set(me.position.x, me.position.y + 3.6 + far * 0.22, me.position.z + far);
       camera.lookAt(me.position.x, me.position.y + 3.6, me.position.z);
       camera.setViewOffset(w, h, 0, building / 2, w, h);
-      air.draw(plots.get(`${Math.floor(x / PLOT)},${Math.floor(z / PLOT)}`)?.mood ?? DAY, me.position, 1);
       // Again over the top, so nothing a world built can stand in front of it.
-      air.over(SELF);
+      if (air.draw(plots.get(`${Math.floor(x / PLOT)},${Math.floor(z / PLOT)}`)?.mood ?? DAY, me.position, 1)) air.over(SELF);
     },
     dispose() {
       dispose(scene);

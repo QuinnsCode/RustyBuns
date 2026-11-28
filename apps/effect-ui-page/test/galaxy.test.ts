@@ -146,6 +146,9 @@ describe("two rooms in Agent Galaxy", () => {
   });
 
   test("a new person picks a land with one tap, their AI changes it, and its weather is a visitor's too", async () => {
+    // A and B stand aside meanwhile: CI draws every 3D page on its processor.
+    await a.leave();
+    await b.leave();
     const room = roomName("c"), tab = await openTab(chrome.cdp, { w: 390, h: 844 }, false, true);
     await load(chrome.cdp, tab, `${base}/r/${room}`, 0);
     await waitFor(tab, "the galaxy handle", "!!window.agentGalaxy");
@@ -156,15 +159,17 @@ describe("two rooms in Agent Galaxy", () => {
     await waitFor(tab, "the picker gone", `!document.querySelector("[data-land]")`, 15_000);
     // An edit counts as the AI's write: the world is made.
     expect(await tab.eval<boolean>(`__commands.run("page_edit_file", { path: "world.js", find: "flyers(9)", replace: "flyers(8)" }).then((r) => r.ok)`)).toBe(true);
-    await waitFor(tab, "the world made", `!document.querySelector("[data-galaxy-lock]")`, 45_000);
+    await waitFor(tab, "the world made", `!document.querySelector("[data-galaxy-lock]")`, 90_000);
     const mine = (await tab.eval<Galaxy>("agentGalaxy.enter()")).me!;
     await waitFor(tab, "rain on my own land", `agentGalaxy.state().air?.weather === "rain"`, 45_000, "agentGalaxy.state().air");
+    await tab.eval("agentGalaxy.leave().then(() => 1)");
     // B walks over from its own plot, and back again for the tests after this one.
-    const from = (await b.state()).plot!;
+    const from = (await b.enter()).plot!;
     await b.walk(mine.x - from.x, mine.y - from.y);
     await waitFor(b.tab, "the visitor in the rain", `agentGalaxy.state().shows["${mine.x},${mine.y}"] === "land" && agentGalaxy.state().air.weather === "rain"`, 45_000, "agentGalaxy.state().air");
     await b.walk(from.x - mine.x, from.y - mine.y);
     await tab.close();
+    await a.enter();
   });
 
   test("a world built with the kit stands in 3D, for its owner and for a neighbour's next visit", async () => {
