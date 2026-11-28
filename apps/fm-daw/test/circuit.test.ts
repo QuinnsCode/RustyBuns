@@ -11,12 +11,19 @@ import { AMPS, DEFAULT_ROOM, PEDALS, RIGS, buildRig, tremHz } from "../src/circu
 import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";
-import { boardToNetlist, readBoard } from "../src/circuit/tscircuit.ts";
-import { opticalComp } from "../src/circuit/effects.ts";
+import { boardToNetlist, readBoard, type BoardOptions } from "../src/circuit/tscircuit.ts";
+import { envelopeWah, germaniumAt, germaniumFuzz, octaveUp, opticalComp, opticalTremolo, phaser, vibe, wah } from "../src/circuit/effects.ts";
 import qDist from "../circuits/q-dist.circuit.json";
 import qDrive from "../circuits/q-drive.circuit.json";
+import qEnvelope from "../circuits/q-envelope.circuit.json";
 import qFuzz from "../circuits/q-fuzz.circuit.json";
+import qGerm from "../circuits/q-germ.circuit.json";
+import qOctave from "../circuits/q-octave.circuit.json";
+import qPhase from "../circuits/q-phase.circuit.json";
 import qSqueeze from "../circuits/q-squeeze.circuit.json";
+import qTrem from "../circuits/q-trem.circuit.json";
+import qVibe from "../circuits/q-vibe.circuit.json";
+import qWah from "../circuits/q-wah.circuit.json";
 
 setDefaultTimeout(60_000); // solves every circuit board's netlist sample by sample
 const SR = 48000;
@@ -25,15 +32,30 @@ const sine = (hz: number, seconds: number, amp = 1) => Float32Array.from({ lengt
 const inRange = (what: string, v: number, lo: number, hi: number) => expect([what, v >= lo && v <= hi ? "in range" : v]).toEqual([what, "in range"]);
 const peak = (b: Float32Array, from = 0) => { let p = 0; for (let i = from; i < b.length; i++) p = Math.max(p, Math.abs(b[i])); return p; };
 
-test("each orderable pedal board (circuits/q-*.tsx) plays like its voicing at every Drive", () => {
+test("each orderable pedal board (circuits/q-*.tsx) plays like its voicing at three turns", () => {
   // The 9 V rail and the 4.5 V bias are ground to the signal; jacks, footswitch, LED and supply diode are the box.
   const box = (supply: string, ledR: string, more: string[] = []) => ({ acGround: ["V9", "VREF"], leaveOut: ["J1", "J2", "J3", "J4", "LED1", ledR, supply, ...more] });
-  const play = (net: Netlist) => {
-    const c = new Circuit(net, SR), rest = c.settle(0);
+  // The parts a control moves: each of `names`, `hi` ohms at control 0 to `lo` at 1.
+  const held = (names: string[], ctl: string, hi: number, lo: number) => Object.fromEntries(names.map((n) => [n, { ctl, hi, lo }]));
+  // The sim's op-amps never clip; on a TL072 or TL074 each is a lettered unit.
+  const units = (chip: string, letters: string) => [...letters].map((l) => chip + l);
+  const phaseOps = [...units("U1", "ABCD"), ...units("U2", "AB")];
+  const wahBox = (supply: string, ledR: string, more: string[] = []) => ({ ...box(supply, ledR, more), linear: units("U1", "ABC"), values: coupled("C5") });
+  // Two more of the box's parts are taken out where they would be most of the difference. The cap that brings the
+  // guitar to the bias turns the phase a few degrees at 220 Hz (more under a dark LDR): made so big it is a wire.
+  const coupled = (cap: string) => ({ [cap]: 1 });
+  // The Level pot and its cap put Q Germ 4% and Q Octave 18% off (Octave mostly in phase): made so big it draws nothing.
+  const unloaded = { RV2: 1e8 };
+  const play = (net: Netlist, ctl?: [string, number]) => {
+    const c = new Circuit(net, SR);
+    if (ctl) c.setCtl(...ctl);
+    const rest = c.settle(0);
     return Float32Array.from({ length: SR / 2 }, (_, i) => c.step(0.2 * Math.sin((2 * Math.PI * 220 * i) / SR)) - rest);
   };
-  // Each pedal: its board, the box's own parts, and the voicing with the Drive pot (RV1) turned to t.
-  for (const [name, board, read, voicing] of [
+  // Each pedal: its board, how it is read, the voicing at turn t, and what t turns: the first pot (RV1) unless the row
+  // names the control that moves a part, or its own board options.
+  const pot = (t: number): BoardOptions => ({ knobs: { RV1: t } });
+  const rows: [string, unknown, BoardOptions, (t: number) => Netlist, (string | ((t: number) => BoardOptions))?][] = [
     // 51k + a 500k pot.
     ["Q Drive", qDrive, box("D3", "R8"), (t: number) => overdrive(t)],
     // 10k + a 200k pot: the sim's one Drive resistor.
@@ -44,14 +66,38 @@ test("each orderable pedal board (circuits/q-*.tsx) plays like its voicing at ev
     // (C2, R5, D1, Q1, R6) is the board's envelope follower: the sim's "led" Mod, off its board.
     ["Q Squeeze", qSqueeze, { ...box("D2", "R10", ["C2", "R5", "D1", "Q1", "R6"]), moved: { U2: { ctl: "led", hi: 2e6, lo: 300 } } },
       (t: number) => opticalComp(Math.sqrt((t * 250) / 300))],
-  ] as const) {
-    expect(() => boardToNetlist(board)).toThrow("a chip the simulator doesn't know");
+    // Turned over for its PNPs: the sim's ground is the board's 9 V, so the supply goes on V9. Its one sim knob is the
+    // room's warmth; the Fuzz rheostat is held at 0 Ω, where the board is the sim's.
+    ["Q Germ", qGerm, { leaveOut: box("D1", "R11").leaveOut, supplies: { V9: 9 }, values: unloaded }, (t) => germaniumFuzz(5 + 50 * t),
+      (t) => ({ ...germaniumAt(5 + 50 * t), knobs: { RV1: 0 } })],
+    // 10k + a 100k pot: the sim's one Fuzz resistor, 10k + 200k by fuzz squared.
+    ["Q Octave", qOctave, { ...box("D5", "R11"), linear: ["U1B"], values: unloaded }, (t) => octaveUp(Math.sqrt(t / 2))],
+    // The LFO (U2C, U2D, C6, R20 to R22, RV1) and what brings it to the gates (R23, R24, RT1): the sim's "gate" Mod.
+    ["Q Phase", qPhase, { ...box("D1", "R14", ["C6", "R20", "R21", "R22", "R23", "R24", "RT1", "RV1"]), linear: phaseOps, values: coupled("C5"), moved: held(["Q1", "Q2", "Q3", "Q4"], "gate", 40e3, 2.5e3) },
+      () => phaser(), "gate"],
+    // The LFO and the lamp it drives: the sim's "lamp" Mod.
+    ["Q Vibe", qVibe, { ...box("D1", "R22", ["C6", "R14", "R15", "R16", "R17", "Q1", "R18", "LED2", "RV1"]), linear: phaseOps, values: coupled("C5"), moved: held(["LDR1", "LDR2", "LDR3", "LDR4"], "lamp", 250e3, 4e3) },
+      () => vibe(), "lamp"],
+    // The LFO and the vactrol's LED driver: the sim's "led" Mod.
+    ["Q Trem", qTrem, { ...box("D1", "R11", ["U3", "C2", "R3", "R4", "R5", "R6", "Q1", "R7", "RV1"]), linear: ["U1"], values: coupled("C1"), moved: held(["U2"], "led", 1e6, 600) },
+      () => opticalTremolo(), "led"],
+    // The treadle pot runs backwards to the heel-to-toe turn, as the sim's does.
+    ["Q Wah", qWah, wahBox("D1", "R11"), (t) => wah(t), (t) => ({ knobs: { RV1: (1 - t) ** 2 } })],
+    // The envelope follower (C6, R8, R11, RV1, C7, R9, D1, Q1, R10; U1D is its amp): the sim's "foot" Mod.
+    ["Q Envelope", qEnvelope, { ...wahBox("D2", "R14", ["C6", "R8", "R11", "C7", "R9", "D1", "Q1", "R10", "RV1"]), moved: held(["U4"], "foot", 220e3, 100) },
+      () => envelopeWah(), "foot"],
+  ];
+  for (const [name, board, read, voicing, turn = pot] of rows) {
+    // As it comes the board doesn't read: its jacks, or its photocells, are nothing the sim knows.
+    expect(() => boardToNetlist(board)).toThrow();
     for (const t of [0, 0.5, 1]) {
-      const sim = play(voicing(t)), built = play(boardToNetlist(board, { ...read, knobs: { RV1: t, RV2: 1 } }));
+      const ctl: [string, number] | undefined = typeof turn === "string" ? [turn, t] : undefined;
+      const turned = typeof turn === "string" ? {} : turn(t);
+      const sim = play(voicing(t), ctl), built = play(boardToNetlist(board, { ...read, ...turned, knobs: { ...turned.knobs, RV2: 1 } }), ctl);
       let diff = 0;
       for (let i = SR / 4; i < sim.length; i++) diff = Math.max(diff, Math.abs(sim[i] - built[i]));
-      // What is left is the Level pot and its 1 µF cap loading the tone node.
-      inRange(`${name}, Drive pot at ${t}: off the voicing by`, diff / peak(sim, SR / 4), 0, 0.03);
+      // What is left is mostly the Level pot and its 1 µF cap loading the tone node.
+      inRange(`${name}, turned to ${t}: off the voicing by`, diff / peak(sim, SR / 4), 0, 0.03);
     }
   }
 });
