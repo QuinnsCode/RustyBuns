@@ -8,7 +8,9 @@
 import { Command, Component, Subscription, UiSchema } from "@effect/ui";
 import { Html } from "@effect/ui/html";
 import { Effect, Queue, Schema, Stream } from "effect";
+import { runCommand } from "@rustybuns/util/commands";
 import { Agent, Call, type Request, Seen } from "./agent.ts";
+import { NOTE_MAX } from "./answers.ts";
 import { apply, backdropUrl, Page, starter } from "./page.ts";
 import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
@@ -34,6 +36,11 @@ export const PageMessage = UiSchema.TaggedEnum({
   ClickedLeaveLanding: {},
   CompletedReportPage: {},
   ChangedRelay: { online: Schema.Boolean },
+  TypedNote: { value: Schema.String },
+  SubmittedNote: {},
+  CompletedSendNote: {},
+  /** What is waiting for the agent, and what a reply to it just took (agent.ts). */
+  ChangedNote: { waiting: Schema.String, sent: Schema.String },
   ClickedCopy: { what: Schema.String, text: Schema.String },
   CompletedCopy: { what: Schema.String },
   FailedCopy: { what: Schema.String },
@@ -70,6 +77,10 @@ export const MarkMade = Command.make("agentworld/MarkMade", { args: { room: Sche
 export const ExportGif = Command.make("agentworld/ExportGif", { args: { room: Schema.String } }, ({ room }) =>
   Effect.promise(() => exportGif(room)).pipe(Effect.as(PageMessage.CompletedExportGif())));
 
+/** Leave a note for the agent, by the same command Cmd+K runs. */
+export const SendNote = Command.make("agentworld/SendNote", { args: { text: Schema.String } }, ({ text }) =>
+  Effect.promise(() => runCommand("page_send_note", { text }, "palette")).pipe(Effect.as(PageMessage.CompletedSendNote())));
+
 /** Put text on the clipboard. */
 export const CopyText = Command.make("agentworld/CopyText", { args: { what: Schema.String, text: Schema.String } }, ({ what, text }) =>
   Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(Effect.match({
@@ -95,6 +106,8 @@ const Model = Schema.Struct({
   page: Page, past: Schema.Array(Page), log: Schema.Array(Logged),
   /** The relay is connected: agents in a terminal can reach the page. */
   online: Schema.Boolean,
+  /** The note box: what is typed, and what waits for the agent's next call. */
+  draft: Schema.String, waiting: Schema.String,
   /** What the last copy button put on the clipboard ("failed: ..." when it couldn't). */
   copied: Schema.NullOr(Schema.String),
   /** Export GIF: running or not, and what it last said. */
@@ -176,7 +189,7 @@ export const connectLines = (origin: string, room: string) => {
  *  `ok` done, `>` a call (the agent's or yours), `!!` something went wrong, `->` your turn (always the last line). */
 type Line = readonly ["cmd" | "dim" | "ok" | "call" | "bad" | "you", string];
 
-/** What the person has to do in their own agent (nothing can be typed here), or null while it is busy. */
+/** What the person has to do in their own agent (a note typed here waits for its next call), or null while it is busy. */
 const yourTurn = (online: boolean, s: Model["steps"]): string | null =>
   !online ? null : s.up ? "to change it, type what you want into your agent" : !s.here ? "waiting for you: paste the prompt into your agent"
     : !s.wrote ? "waiting for you: type what you want into your agent" : null;
@@ -396,11 +409,16 @@ const landingView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: s
   explain && deepView(h), explain && footView(h)));
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,
+  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, draft: "", waiting: "", copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,
     explain: false, noSignIn: false, picked: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
   update: ($, message) => {
     switch (message._tag) {
       case "ChangedRelay": return $.evolve({ online: message.online });
+      case "TypedNote": return $.evolve({ draft: message.value });
+      case "SubmittedNote": return $.model.draft.trim() ? $.set({ ...$.model, draft: "" }).run(SendNote.make({ text: $.model.draft })) : $.model;
+      case "CompletedSendNote": return $.model;
+      case "ChangedNote": return $.evolve({ waiting: message.waiting,
+        log: message.sent ? [{ call: 0, tool: `your agent got your note "${message.sent}"`, error: null }, ...$.model.log].slice(0, LOG) : $.model.log });
       case "ClickedCopy": return $.run(CopyText.make({ what: message.what, text: message.text }));
       case "CompletedCopy": return $.evolve({ copied: message.what });
       case "FailedCopy": return $.evolve({ copied: `failed: ${message.what}` });
@@ -458,6 +476,8 @@ export const ProfilePageNoDeps = Def.make({
       Stream.map((call) => PageMessage.ReceivedAgentCall({ call })))),
     Subscription.make("relay", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).online; })).pipe(
       Stream.changes, Stream.map((online) => PageMessage.ChangedRelay({ online })))),
+    Subscription.make("notes", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).notes; })).pipe(
+      Stream.map((note) => PageMessage.ChangedNote(note)))),
     Subscription.make("seen", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).seen; })).pipe(
       Stream.map((what) => PageMessage.Saw({ what })))),
     Subscription.make("gif", Stream.callback<GifState>((queue) => Effect.acquireRelease(
@@ -466,7 +486,7 @@ export const ProfilePageNoDeps = Def.make({
     // Cmd+K and window.agentGalaxy ask for the galaxy here, so every door goes through the same two messages.
     Subscription.make("galaxy", Stream.fromQueue(galaxyAsks).pipe(Stream.map((on) => (on ? PageMessage.ClickedGalaxy() : PageMessage.ClickedBack())))),
   ],
-  view: (h, { page, past, log, online, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status, made, picked }) => {
+  view: (h, { page, past, log, online, draft, waiting, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status, made, picked }) => {
     const { room, origin, who } = h.props;
     const locked = lockLine(who !== null, made);
     // The map is drawn by galaxyView.ts in its own layer over the page; here only the way back.
@@ -530,6 +550,14 @@ export const ProfilePageNoDeps = Def.make({
                 .on("click", PageMessage.ClickedCopy({ what: c.what, text: c.text })).children(icon(h, copied === c.what ? "check" : "plug"), short))),
             // Only when the clipboard says no is there a line to read: the one to select by hand.
             failed !== undefined && h.p.class("by-hand").attr("role", "alert").children("Select and copy:", h.code(failed)),
+            // Once your agent is here: a note it picks up with the reply to its next call.
+            steps.here && h.form.class("note").key("note").on("submit", PageMessage.SubmittedNote()).children(
+              h.input.attrs({ "aria-label": "A note to your agent", placeholder: "Send your agent a note", maxlength: String(NOTE_MAX), autocomplete: "off" })
+                .value(draft).on("input", ({ value }) => PageMessage.TypedNote({ value })),
+              h.button.attr("type", "submit").children("Send"),
+            ),
+            steps.here && h.p.class("note-says").key("note-says").attr("role", "status").children(
+              waiting ? `Waiting for its next step: "${waiting}". If it has stopped, say anything in its chat.` : "It reads this with its next step."),
             h.h3.class("or").children("Do something cool"),
             h.div.class("tiles", "acts").children(
               h.button.attr("type", "button").class("tile").attr("aria-label", "Undo").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children(icon(h, "undo"), "Undo"),
