@@ -57,9 +57,13 @@ import { addCommands } from "@rustybuns/util/commands";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
 import { bassReach, bassSynth, keysKind, keysSynth, madeKind, seedOf } from "./gear-models.ts";
+import { mountSeatBar, type SeatState } from "./seat-bar.ts";
+import { designDesk } from "./design-desk.ts";
+import { DESK_REACH, deskPlace } from "./design-place.ts";
+import { BoardRig, newBoard } from "../amp/board-rig.ts";
 import { baleSeat } from "./bales.ts";
-import { withKeysVoice } from "./keys-voice.ts";
-import { POLY_KINDS } from "@rustybuns/models/polysynth";
+import { KEYS_VOICES, voiceKind, withKeysVoice } from "./keys-voice.ts";
+import { POLY_KINDS, type PolyKind } from "@rustybuns/models/polysynth";
 import { monoSteal, withMonoBass } from "./mono-bass.ts";
 import { Overlay, bendEvent, keyMap } from "./overlay.ts";
 import { TouchControls, touchScreen } from "./touch.ts";
@@ -93,7 +97,7 @@ import { NightAir } from "./night-air.ts";
 import { turnWheels } from "@rustybuns/models/monosynth";
 import { Dancers } from "./dancers.ts";
 import { RoomTubes } from "../dj/room-tube.ts";
-import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
+import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag, boardSettings } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
 import { mountHelp } from "./help.ts";
 import { mountLessonCard } from "./lesson-card.ts";
@@ -259,6 +263,23 @@ const played = new Map<string, { keys?: Keys; kit?: Kit }>();
 const moving: THREE.Object3D[] = [];
 /** Each keyboard's case by spot id: its pitch and mod wheels turn as the one sitting there moves theirs. */
 const wheeled = new Map<string, THREE.Object3D>();
+/** The keys seat's instruments built so far, by family: switching between piano and synth swaps them over. */
+const keysStands = new Map<PolyKind, { in: THREE.Object3D; group: THREE.Object3D; keys: Keys }>();
+/** The instrument standing there takes the sound the keys track has now. */
+function dressKeys() {
+  const kind = keysSpot && voiceKind(project.tracks[trackFor(keysSpot, project)]?.params), shown = [...keysStands.values()].find((k) => k.group.parent);
+  if (!keysSpot || !kind || !shown || keysStands.get(kind) === shown) return;
+  let next = keysStands.get(kind);
+  if (!next) {
+    const { synth, keys } = keysSynth(keysSpot, kind);
+    synth.group.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    keysStands.set(kind, next = { in: shown.in, group: synth.group, keys });
+  }
+  shown.in.remove(shown.group);
+  next.in.add(next.group);
+  played.set(keysSpot.id, { keys: next.keys });
+  wheeled.set(keysSpot.id, next.group);
+}
 /** A spot's instrument or furniture, and its seat. */
 function thing(s: Spot): THREE.Group {
   const g = new THREE.Group(), b = thingBox(s), t = s.thing, m = std(t.color);
@@ -331,6 +352,7 @@ function thing(s: Spot): THREE.Group {
     inFront.add(synth.group);
     played.set(s.id, { keys });
     wheeled.set(s.id, synth.group);
+    if (s === keysSpot) keysStands.set(synth.kind, { in: inFront, group: synth.group, keys });
   } else if (s.kind === "booth") {
     tube(0.012, v(0, 0.03, 0), v(0, t.h, 0), blackSteel);
     put(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.03, 24), blackSteel), 0, 0.015, 0);
@@ -641,11 +663,28 @@ const plugged = new Map<number, number>();
 /** Whose of those is a voice from the booth's mic, not a guitar; and what yours is while it's in. */
 const mics = new Set<number>();
 let myInput: Input = "guitar";
+// your board (amp/board-rig.ts), kept in this browser: it plays your guitar once you've plugged in by its symbol
+const BOARD = "qollab-studio:board";
+let myBoard: BoardRig = (() => {
+  try { return check(BoardRig, JSON.parse(localStorage.getItem(BOARD) ?? "null")) ?? newBoard(); } catch { return newBoard(); }
+})();
+let onBoard = false;
+/** The boards of the guitars coming in, by peer. */
+const peerBoards = new Map<number, BoardRig>();
+/** What your guitar's live line says: its track, whether it's a mic, and your board. */
+const guitarLive = (): Live => ({ t: "guitar", track: myGuitar, mic: myInput === "mic" || undefined, rig: myInput === "guitar" && onBoard ? myBoard : undefined });
+/** Why the last try at an input didn't go, shown under the symbols until one does. */
+let refused = "";
 /** How far behind each guitar coming in is, ms (null: connecting, "failed": no way through), asked once a second. */
 let lags = new Map<number, Lag>();
-/** I, or the room page's button: plug your guitar (the computer's audio input) in, or pull it out. */
-async function guitar() {
+/**
+ * I, or the room page's button: plug your guitar (the computer's audio input) in, or pull it out. With `want` (the
+ * symbols, seat-bar.ts) that input goes in, in place of the other, or comes out if it's the one in.
+ */
+async function guitar(want?: Input): Promise<void> {
+  if (myGuitar !== null && want && want !== myInput) await guitar();
   if (myGuitar !== null) {
+    onBoard = false;
     guitars?.unplug(); myGuitar = null; live({ t: "guitar", track: null }); deskSync(); recorder.unplugged(0);
     out?.send({ t: "send", on: false, inLatency: 0 }); mySource?.disconnect(); mySource = null;
     opusOut?.close(); opusOut = null;
@@ -655,11 +694,16 @@ async function guitar() {
   await startAudio();
   if (!guitars) return;
   // standing in the vocal booth it's the mic, anywhere else your guitar: the same line either way
-  const seat = spotOf(jam, jam.me.seat), input = inputAt(seat?.kind);
+  const seat = spotOf(jam, jam.me.seat), input = want ?? inputAt(seat?.kind);
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: capture(input) });
-  } catch (e) { return void say({ ok: false, why: `No ${input}: ${(e as Error).message}` }); }
+  } catch (e) {
+    refused = (e as Error).name === "NotAllowedError" ? `Your browser refused the ${input === "mic" ? "mic" : "audio input"}. Allow the microphone for this site (by the address bar), then press again` : `No ${input}: ${(e as Error).message}`;
+    return void say({ ok: false, why: refused });
+  }
+  refused = "";
+  onBoard = want === "guitar";
   const track = inputTrack(input, project, seat && seat.kind !== "drums" ? trackFor(seat, project) : -1);
   myInput = input;
   await guitars.plugIn(stream);
@@ -673,7 +717,7 @@ async function guitar() {
     const got: MediaTrackSettings & { latency?: number } = stream.getAudioTracks()[0]?.getSettings() ?? {};
     out.send({ t: "send", on: true, inLatency: (got.latency ?? 0) + out.ctx.baseLatency });
   }
-  live({ t: "guitar", track, mic: input === "mic" || undefined });
+  live(guitarLive());
   if (input === "mic") return void say({ ok: false, why: "Your mic is in, straight to everyone. Headphones keep the band out of it. I pulls it out" });
   say({ ok: false, why: track >= 0 ? `Your guitar is in, through ${project.tracks[track].name}'s amp. I pulls it out` : "Your guitar is in, straight (no track has an amp). I pulls it out" });
 }
@@ -718,13 +762,14 @@ function hearGuitars() {
   callStrips(project, heardPlayers(), calls).forEach((strip, i) => guitars?.desk(calls[i].key, strip));
   // a guitar cabled through the gear wall to a cab plays through that chain, from the cab, for everyone in the sesh
   const rig = atWall.rig();
-  if (myGuitar !== null) { guitars.set("me", rig?.settings ?? guitarSettings(project.tracks[myGuitar]?.amp)); if (rig) guitars.place("me", ...rig.at); }
+  if (myGuitar !== null && onBoard && myInput === "guitar") { guitars.set("me", boardSettings(myBoard)); guitars.place("me", jam.me.x, jam.me.z); }
+  else if (myGuitar !== null) { guitars.set("me", rig?.settings ?? guitarSettings(project.tracks[myGuitar]?.amp)); if (rig) guitars.place("me", ...rig.at); }
   for (const [peer, track] of plugged) {
-    const o = jam.others.get(peer);
-    guitars.set(peer, rig?.settings ?? guitarSettings(project.tracks[track]?.amp));
+    const o = jam.others.get(peer), own = peerBoards.get(peer), wall = own ? null : rig;
+    guitars.set(peer, own ? boardSettings(own) : wall?.settings ?? guitarSettings(project.tracks[track]?.amp));
     // a loop late or at the desk their guitar comes in stamped slices (the audio thread plays it); the call is for "now"
     guitars.level(peer, callLevel(peer));
-    if (rig) guitars.place(peer, ...rig.at); else if (o) guitars.place(peer, o.at[0], o.at[1]);
+    if (wall) guitars.place(peer, ...wall.at); else if (o) guitars.place(peer, o.at[0], o.at[1]);
   }
 }
 /** The sound wall in the gear corner: the sesh's case and cables on this machine's own thread, heard from its Q Out. */
@@ -741,7 +786,7 @@ setInterval(() => { if (guitars && plugged.size) void guitars.lags().then((l) =>
 // ---- the sesh ----
 let net: Net | null = null;
 const live = (e: Live) => net?.live(e);
-function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (myGuitar !== null) live({ t: "guitar", track: myGuitar, mic: myInput === "mic" || undefined }); if (myLine.id || myLine.finished.length) live(myLine); if (myPa) live({ t: "pa", on: true, name: myPa.name }); }
+function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (myGuitar !== null) live(guitarLive()); if (myLine.id || myLine.finished.length) live(myLine); if (myPa) live({ t: "pa", on: true, name: myPa.name }); }
 function onLive(from: number, e: Live) {
   // the booth: what's on someone's decks, or a press on yours
   if (e.t === "deck") { if (decks) decks.heard(from, e); else booth.heard(from, e, performance.now(), false); return; }
@@ -761,7 +806,13 @@ function onLive(from: number, e: Live) {
   if (e.t === "guitar") {
     far.heard(from, e); deskSync();
     if (e.track === null) { plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.stopHearing(from); recorder.unplugged(from); }
-    else { plugged.set(from, e.track); if (e.mic) mics.add(from); else mics.delete(from); guitars?.ask(from); }
+    else {
+      const had = plugged.has(from);
+      plugged.set(from, e.track); if (e.mic) mics.add(from); else mics.delete(from);
+      if (e.rig) peerBoards.set(from, e.rig); else peerBoards.delete(from);
+      // a change to their board says it again: the call is already up
+      if (had) hearGuitars(); else guitars?.ask(from);
+    }
     return;
   }
   if (e.t === "pa") { if (e.on) paOn.set(from, e.name ?? ""); else paOn.delete(from); pa?.heardSay(from, e.on, e.name); return; }
@@ -984,7 +1035,7 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); dressKeys(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); }
 /** The sesh's built room: kept for this sesh, and walked into again when it isn't the one standing here. */
 function keepBuilt(p: Project) {
   if (!here) return;
@@ -1041,6 +1092,41 @@ function rigOver(p: Project) {
 }
 /** What the crew is doing while the tops move. */
 const TOPS_MOVE: Record<Tops, string> = { subs: "Stacking the tops on the subs", pole: "Putting the tops up on poles", stands: "Setting the tops on their stands" };
+
+// ---- the symbols where you sit or stand (seat-bar.ts), and the Design desk (design-desk.ts) ----
+const deskAt = deskPlace(def);
+scene.add(designDesk(deskAt));
+const atDesign = () => !jam.me.seat && Math.hypot(jam.me.x - deskAt.x, jam.me.z - deskAt.z) <= DESK_REACH;
+/** The keys seat's sound between the piano and the synth, for the whole sesh. */
+function switchKeys() {
+  if (!keysSpot) return;
+  if (!may(player).play) return void say({ ok: false, why: "Listen only: the leader hasn't let you play. H raises your hand" });
+  const track = trackFor(keysSpot, project), now = voiceKind(project.tracks[track]?.params);
+  if (track < 0) return;
+  player.edit({ t: "voice", track, params: KEYS_VOICES[now === "tine-ep" ? "wood-poly" : "tine-ep"].slice() });
+}
+function setBoard(b: BoardRig) {
+  myBoard = b;
+  try { localStorage.setItem(BOARD, JSON.stringify(b)); } catch { /* no storage: the board lasts this visit */ }
+  if (myGuitar === null || myInput !== "guitar") return;
+  onBoard = true;
+  live(guitarLive());
+  hearGuitars();
+}
+function seatState(): SeatState {
+  const sat = !!keysSpot && jam.me.seat === keysSpot.id, kind = sat ? voiceKind(project.tracks[trackFor(keysSpot, project)]?.params) : null;
+  return { keys: sat ? (kind === "tine-ep" || kind === "fm-slab" ? "piano" : "synth") : null, input: myGuitar === null ? null : myInput, refused, board: myBoard, design: atDesign() };
+}
+const seatBar = mountSeatBar(document.body, seatState, { keys: switchKeys, plug: (input) => void guitar(input), board: setBoard });
+/** `: let go of the mouse for the symbols, and back again. */
+function freeMouse() {
+  if (viewHeld) return lock();
+  viewHeld = true;
+  document.exitPointerLock?.();
+}
+addCommands([
+  { group: "Studio", name: "studio_design_desk", title: "Design desk", description: "Open the Design desk's choice (event space, sound design, speaker stack); walks you up to it", execute: () => { freeMouse(); releaseAll(); stand(jam); jam.me.x = deskAt.x; jam.me.z = deskAt.z; seatBar.sync(true); seatBar.design(); return "The Design desk is open"; } },
+]);
 
 // ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----
 const rights: Rights = { floor: null, grants: null, me: null, asked: null };
@@ -1390,6 +1476,8 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyH") return raise();
   if (code === "KeyJ" && !jam.me.seat) return void openDecks();
   if (code === "KeyI") return void guitar();
+  if (code === "Backquote") return freeMouse();
+  if (code === "KeyE" && atDesign() && !nearSpot(jam)) { freeMouse(); return seatBar.design(); }
   if (code === "KeyR") return record();
   if (code === "KeyP") return playGroove(!transport.playing);
   if (code === "KeyC") return void setListen();
@@ -1443,6 +1531,7 @@ document.addEventListener("keydown", (e) => {
   if (phase !== "play") return;
   if (lane?.isOpen()) return lane.close();
   if (desk.isOpen()) return desk.close();
+  if (seatBar.isOpen()) return seatBar.close();
   // the mouse was let go some other way (tabbing away): Esc now is the menu
   if (!locked() && $("modules").hidden) { phase = "menu"; releaseAll(); menu(); }
 }, true);
@@ -1665,7 +1754,7 @@ $("share").addEventListener("click", () => {
   void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: shareLink() }).catch(() => {});
 });
 
-function menu() { decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play" || !!settings?.isOpen(); door(); people(); invites(); if (phase === "menu") void refreshHub(); }
+function menu() { if (phase !== "play") seatBar.sync(false); decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play" || !!settings?.isOpen(); door(); people(); invites(); if (phase === "menu") void refreshHub(); }
 /** The room has a password and turned this page away for it (world.ts locked): the entry panel asks for it. */
 function gated() { return !!here && status.state === "full" && (status.full === "code" || status.full === "tries"); }
 /** Enter with the password typed: kept in this browser for this room (net.ts saveCode), and the page knocks again with it. */
@@ -1715,7 +1804,7 @@ function hint(): string {
     return `At ${s.label}. Space stands up, V camera, P the groove`;
   }
   const near = nearSpot(jam), gear = atWall.hint(jam);
-  return gear || lit.hint(jam) || (near ? `E or click: sit at ${near.label}` : "");
+  return gear || lit.hint(jam) || (near ? `E or click: sit at ${near.label}` : atDesign() ? "E: the Design desk" : "");
 }
 
 /** The notes sounding at a spot, as `track:midi`: whoever sits there holds them. */
@@ -1844,6 +1933,7 @@ function frame(now: number) {
   $("cross").hidden = jam.me.cam !== "first" && !atWall.wants(jam);
   $("hint").textContent = now < flash.until ? flash.text : away() ? "Click to look around. Esc: the menu" : roomTubes.note() ?? hint();
   help.frame(phase === "play");
+  seatBar.sync(phase === "play" && !desk.isOpen() && !decks?.isOpen() && !lane?.isOpen() && !help.isOpen());
   if (++lessonTick % 6 === 0) { lessonCard.frame(); xoPanel.frame(); lessonMark = lessons.state()?.mark ?? null; sayLesson(); classCard.frame(); }   // a few times a second: the steps read the whole patch
   gearScene.mark(lessonMark && markAt(atWall.room, lessonMark), t);   // every frame: it follows a box in your hands
   watch.frame();
@@ -1990,6 +2080,8 @@ const harness = {
     } else if (on === false && myPa) await playToRoom(null);
     return { mine: myPa?.name ?? null, on: Object.fromEntries(paOn), ...(pa?.state() ?? { playing: false, live: [], calls: [] }), speakers: paRoom?.state() ?? [] };
   },
+  /** The symbols' state, and where the Design desk stands. */
+  seat: () => ({ ...seatState(), onBoard, desk: deskAt, boards: Object.fromEntries(peerBoards), voice: keysSpot ? voiceKind(project.tracks[trackFor(keysSpot, project)]?.params) : null }),
   guitars: () => ({ mine: myGuitar, input: myGuitar === null ? null : myInput, in: Object.fromEntries(plugged), mics: [...mics], calls: guitars?.state() ?? [], lags: Object.fromEntries(lags) }),
   /** Rec (R): record a player's input (0 you) as a take, onto `pick` if you lead; again lands it. Then what Rec is doing. */
   rec: (peer?: number, pick?: number) => { record(peer, pick); return harness.recording(); },

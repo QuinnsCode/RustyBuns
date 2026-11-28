@@ -1,0 +1,21 @@
+/* The symbols where you sit or stand (seat-bar.ts): the room's HUD look, over the 3D, top middle. */
+#seat { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 31; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100vw - 20px); }
+#seat[hidden], #seat-panel[hidden], #seat-note[hidden] { display: none; }
+#seat button, #seat a { background: rgba(21, 23, 27, 0.86); color: #f4f1ea; border: 1px solid #3a3e45; border-radius: 10px; font: 600 13px var(--q-thin); cursor: pointer; text-decoration: none; }
+#seat button[aria-pressed="true"] { background: #f4f1ea; color: #15171b; border-color: #f4f1ea; }
+#seat-bar { display: flex; align-items: center; gap: 6px; }
+#seat-bar button { width: 46px; height: 46px; display: grid; place-items: center; padding: 0; }
+#seat kbd { font: 600 13px/1 var(--q-thin); padding: 4px 7px; border-radius: 5px; background: #f4f1ea; color: #15171b; }
+#seat-note { margin: 0; max-width: 340px; padding: 8px 12px; border-radius: 10px; background: rgba(21, 23, 27, 0.92); border: 1px solid #ff6b4a; color: #f4f1ea; font-size: 13px; text-align: center; }
+#seat-panel { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px; border-radius: 14px; background: rgba(21, 23, 27, 0.92); border: 1px solid #3a3e45; color: #f4f1ea; max-width: 100%; max-height: calc(100vh - 210px); overflow: auto; box-sizing: border-box; }
+.seat-chain, .seat-list, .seat-cards { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
+.seat-pedal { display: grid; grid-template-columns: 1fr auto; gap: 4px; align-items: center; width: 116px; padding: 6px; border-radius: 10px; background: #23262c; border: 1px solid #3a3e45; }
+.seat-pedal[data-looped] { border-color: #ff6b4a; }
+.seat-pedal b { display: flex; gap: 4px; align-items: center; font: 600 13px var(--q-thin); cursor: grab; touch-action: none; user-select: none; white-space: nowrap; }
+.seat-pedal input { grid-column: 1 / -1; grid-row: 2; width: 100%; margin: 0; }
+.seat-pedal button { grid-column: 2; grid-row: 1; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; }
+.seat-chain > button { width: 44px; height: 44px; display: grid; place-items: center; padding: 0; }
+.seat-list button { padding: 8px 10px; }
+.seat-cards button, .seat-cards a { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px; min-width: 96px; }
+.seat-how { display: flex; gap: 5px; align-items: center; margin: 0; color: #a9adb4; font-size: 12px; }
+@media (max-width: 520px) { #seat { top: 108px; } .seat-pedal { width: 100px; } .seat-cards button, .seat-cards a { min-width: 78px; font-size: 12px; } .seat-cards svg { max-width: 62px; } }
