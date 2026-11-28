@@ -12,6 +12,6 @@ export const SESSION: readonly Ask[] = [
   { name: "page_edit_file", args: { path: "index.html", find: `<script src="world.js">`, replace: `<script type="module" src="world.js">` } },
   { name: "page_write_file", args: { path: "world.js", text: WORLD } },
   { name: "page_read", args: {} },
-  { name: "page_edit_file", args: { path: "world.js", find: "world({ orbit: 0.05 })", replace: "world({ orbit: 0.05, distance: 170 })" } },
+  { name: "page_edit_file", args: { path: "world.js", find: `sky("night")`, replace: `sky("dusk")` } },
   { name: "page_read", args: {} },
 ];

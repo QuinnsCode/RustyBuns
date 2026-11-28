@@ -74,7 +74,8 @@ What keeps it safe, in short:
 ### `@world/kit`
 
 A world's module can `import { world, ground, sky } from "@world/kit"` instead of writing the same three.js each
-time (`src/kit.ts`, three.js 0.170.0 from esm.sh). The plot is 100 units square around 0.
+time (`src/kit.ts`, three.js 0.170.0 from esm.sh). The plot is `SIZE` units square around 0 (x west to east, z north
+to south); the building blocks size themselves by it, never by a fixed number.
 
 | Call | Gives |
 |---|---|
@@ -87,18 +88,35 @@ time (`src/kit.ts`, three.js 0.170.0 from esm.sh). The plot is 100 units square 
 | `every(f)`, `THREE` | Run `f(t, dt)` each frame; three.js for anything else |
 | `onPlayer(cb)` | `cb(player, at)` when the page says a visitor is walking the plot (`{ agent_page: true, player: { x, z } \| null }`, 0 to 1). A world reacts to them and never draws them |
 
-`test/fixtures/rain-city.js` is a whole rainy neon city by a river in about 30 lines of it.
+The building blocks: one call each, so a world an AI imagines is about 30 lines. Each is ordinary three.js meshes in the
+kit's scene, so anything that hands the scene's shapes on carries them too. Things drawn as text are cubes, one mesh a colour.
+
+| Call | Gives |
+|---|---|
+| `box({ x, y, z, w, h, d, color })` | A box on the ground (or at `y`) |
+| `voxels(layers, palette, { x, y, z, size })` | A thing drawn as text: layers from the bottom up, each rows north to south, one letter a cube (`.` is empty) |
+| `sprite(rows, palette, { x, y, z, size, fps })` | A pixel picture from text rows, standing up and turning to face the camera; `[rows, rows]` animates |
+| `building({ x, z, w, d, h, color, windows, roof })` | A house or a tower, `roof` `peak` or `flat`; its windows light up under a night or dusk sky |
+| `streets({ width, color, line })` | A crossroads through the middle that stops short of the edges (nothing sits between neighbours). Returns the four blocks `{ x, z, w, d }` to build on |
+| `path(points, { width, color })` | A path through `[[x, z], ...]` |
+| `sign(text, { x, z, size, turn })` | A wooden sign with pixel letters the kit draws itself (A to Z, 0 to 9, `. , ! ? ' - : /`, `\n`), 60 characters, readable from both sides |
+| `creature({ sprite or voxels, palette, area, speed, wander, flee, follow })` | Something alive that roams its area, runs from a visitor within `flee`, or comes to one within `follow` |
+| `near(x, z, radius, onEnter, onLeave)` | Something that happens when a visitor walks up, and when they walk away |
+| `block(x, z, w, d)` | Nobody walks there: a 32 by 32 grid over the plot, posted to the page as `{ agent_page_world: true, kind: "solid", grid }` (1024 of `0` and `1`, north row first). Buildings, tall boxes and voxels mark their own; the middle of each edge stays open |
+
+`test/fixtures/rain-city.js` is a whole rainy neon town by a river in 20 lines of it: streets, lit buildings, a sign and a cat.
 
 ### What a world costs in tokens
 
 A fixed "build me a world" session (`test/session.ts`: `page_read`, read the starter's two files, write a small rainy
-city, look, one fix, look) counted with the instructions and tool list once, each call's arguments and each reply, at
+town, look, one fix, look) counted with the instructions and tool list once, each call's arguments and each reply, at
 four characters a token (`scripts/mcp-session.ts`, the same session code as codeSplitter's `tool-tokens.ts`):
 
 | | Tool list and instructions | Whole session |
 |---|---|---|
 | Before: three.js by hand, whole files resent | 682 | 4,473 |
 | After: `@world/kit` and `page_edit_file` | 612 | 2,119 |
+| The kit's building blocks in the tool text (this PR) | 702 | 2,135 |
 
 `test/tokens.test.ts` fails when the session passes the budget in `test/tokens.json`. A change that earns more tokens
 raises it there, in the same PR. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.

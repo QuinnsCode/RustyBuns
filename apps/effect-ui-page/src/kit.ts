@@ -2,6 +2,11 @@
 // world.ts puts it in the frame's import map as a data: URL, so it runs sealed like the world's own code. One call
 // each for the scene and camera, ground, sky, weather, water, trees, cactus, rocks, lights, and where a visitor is
 // walking (the page's `{ agent_page: true, player }` message). A world never draws the player.
+// The building blocks (box, voxels, sprite, building, streets, path, sign, creature, near, block) are one call each,
+// so a world an AI imagines is about 30 lines. Each is ordinary meshes in the kit's scene, sized by SIZE (never a
+// fixed plot size), so whatever hands the scene's shapes on carries them too. Things drawn as text (voxels, sprites,
+// a sign's letters) are cubes, one mesh a colour. `block` keeps a 32 by 32 grid of where nobody can stand and posts it
+// to the page (`{ agent_page_world: true, kind: "solid", grid }`); buildings and tall boxes mark their own.
 
 export const KIT = `
 import * as THREE from "https://esm.sh/three@0.170.0";
@@ -192,6 +197,210 @@ export function onPlayer(cb) {
     if (typeof p?.x !== "number" || typeof p?.z !== "number") return;
     const x = (p.x - 0.5) * SIZE, z = (p.z - 0.5) * SIZE;
     cb({ x: p.x, z: p.z }, { x, y: height(x, z), z });
+  });
+}
+
+// ---------- building blocks: each one call, ordinary meshes in the kit's scene ----------
+
+const BOX = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+const onGround = (x, z, y) => (typeof y === "number" ? y : height(x, z));
+// One letter (or digit) a cube or a pixel; "." and " " are empty.
+const colours = (palette) => Object.fromEntries(Object.entries(palette ?? {}).filter(([k]) => k.length === 1 && k !== "." && k !== " "));
+// Cubes of one colour as one mesh in group g: each spot is [x, y, z, w, h, d], standing on y.
+function cubes(g, color, spots, material = mat(color)) {
+  if (!spots.length) return;
+  const m = new THREE.InstancedMesh(BOX, material, spots.length), o = new THREE.Object3D();
+  spots.forEach(([x, y, z, w, h, d], n) => { o.position.set(x, y, z); o.scale.set(w, h, d); o.updateMatrix(); m.setMatrixAt(n, o.matrix); });
+  g.add(m);
+}
+
+const N = 32, CELL = SIZE / N, solid = new Uint8Array(N * N);
+const cellOf = (v) => Math.max(0, Math.min(N - 1, Math.floor((v + SIZE / 2) / CELL)));
+const blocked = (x, z) => Math.abs(x) >= SIZE / 2 || Math.abs(z) >= SIZE / 2 || solid[cellOf(z) * N + cellOf(x)] === 1;
+let solidDue = 0;
+/** Nobody walks into the w by d rectangle around x, z (a 32 by 32 grid, posted to the page). Buildings and tall boxes do this themselves. */
+export function block(x, z, w = CELL, d = CELL) {
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const cx = -SIZE / 2 + (i + 0.5) * CELL, cz = -SIZE / 2 + (j + 0.5) * CELL;
+    if (Math.abs(cx - x) <= w / 2 && Math.abs(cz - z) <= d / 2) solid[j * N + i] = 1;
+  }
+  solid[cellOf(z) * N + cellOf(x)] = 1;
+  solidDue ||= setTimeout(() => {
+    solidDue = 0;
+    // The middle of each edge stays open, so nobody can wall a neighbour out.
+    for (let i = 12; i < 20; i++) for (const j of [0, 1, N - 2, N - 1]) { solid[j * N + i] = 0; solid[i * N + j] = 0; }
+    try { parent.postMessage({ agent_page_world: true, kind: "solid", grid: Array.from(solid).join("") }, "*"); } catch {}
+  }, 30);
+}
+
+/** A box standing at x, z (on the ground unless y is given). Blocks the way when 2 or more tall. */
+export function box({ x = 0, y, z = 0, w = 4, h = 4, d = 4, color = "#b08d63" } = {}) {
+  const m = add(new THREE.Mesh(BOX, mat(color)));
+  m.scale.set(w, h, d);
+  m.position.set(x, onGround(x, z, y), z);
+  if (h >= 2 && typeof y !== "number") block(x, z, w, d);
+  return m;
+}
+
+/** A thing drawn as text: layers from the bottom up, each rows north to south, one letter a cube west to east, coloured by palette. */
+export function voxels(layers, palette, { x = 0, y, z = 0, size = 1, block: stops = true } = {}) {
+  const g = new THREE.Group(), pal = colours(palette), at = {};
+  const rows = Math.max(1, ...layers.map((l) => l.length)), cols = Math.max(1, ...layers.flatMap((l) => l.map((r) => r.length)));
+  layers.forEach((layer, k) => layer.forEach((row, j) => [...row].forEach((ch, i) => {
+    if (pal[ch]) (at[ch] ??= []).push([(i - (cols - 1) / 2) * size, k * size, (j - (rows - 1) / 2) * size, size, size, size]);
+  })));
+  for (const [ch, spots] of Object.entries(at)) cubes(g, pal[ch], spots);
+  g.position.set(x, onGround(x, z, y), z);
+  if (stops && layers.length * size >= 2 && typeof y !== "number") block(x, z, cols * size, rows * size);
+  return add(g);
+}
+
+/** A pixel picture standing up, turning to face the camera: text rows, one letter a pixel. Two sets of rows animate. */
+export function sprite(rows, palette, { x = 0, y, z = 0, size = 0.5, fps = 3 } = {}) {
+  const sets = (Array.isArray(rows[0]) ? rows : [rows]).slice(0, 2), pal = colours(palette), g = new THREE.Group();
+  const shown = sets.map((set) => {
+    const f = new THREE.Group(), at = {}, cols = Math.max(1, ...set.map((r) => r.length));
+    set.forEach((row, j) => [...row].forEach((ch, i) => {
+      if (pal[ch]) (at[ch] ??= []).push([(i - (cols - 1) / 2) * size, (set.length - 1 - j) * size, 0, size, size, size * 0.4]);
+    }));
+    for (const [ch, spots] of Object.entries(at)) cubes(f, pal[ch], spots);
+    g.add(f);
+    return f;
+  });
+  shown.forEach((f, n) => (f.visible = n === 0));
+  g.position.set(x, onGround(x, z, y), z);
+  every((t) => {
+    const c = world().camera.position;
+    g.rotation.y = Math.atan2(c.x - g.position.x, c.z - g.position.z);
+    shown.forEach((f, n) => (f.visible = n === Math.floor(t * fps) % shown.length));
+  });
+  return add(g);
+}
+
+const BUILT = ["#e9d9b4", "#c96f4a", "#5b8fb0", "#d9b44a", "#9fb59a", "#b98fb0"];
+const LIT = mat("#9fb4c8", { emissive: "#ffcf6a", emissiveIntensity: 0 }), UNLIT = mat("#5c6878");
+/** A building on the ground: windows that light up under a night or dusk sky, roof "peak" or "flat". Blocks its footprint. */
+export function building({ x = 0, z = 0, w = 12, d = 10, h = 10, color, windows = true, roof = "peak", roofColor = "#8c3b2e" } = {}) {
+  const g = new THREE.Group(), body = new THREE.Mesh(BOX, mat(color ?? BUILT[Math.floor(rnd() * BUILT.length)]));
+  body.scale.set(w, h, d);
+  const top = roof === "flat" ? new THREE.Mesh(BOX, mat(roofColor))
+    : new THREE.Mesh(new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0), mat(roofColor));
+  if (roof === "flat") top.scale.set(w + 0.6, 0.6, d + 0.6); else top.scale.set(w * 1.1, Math.min(w, d) * 0.55, d * 1.1);
+  top.position.y = h;
+  g.add(body, top);
+  if (windows) {
+    // A pane on each side, a floor every 3.5 units, seven in ten lit.
+    const lit = [], dark = [];
+    for (let y = 2; y + 1.6 <= h - 0.5; y += 3.5) {
+      for (let n = Math.max(1, Math.floor((w - 1) / 3)), c = 0; c < n; c++) for (const s of [1, -1]) (rnd() < 0.7 ? lit : dark).push([-w / 2 + (c + 0.5) * (w / n), y, (s * d) / 2, 1.3, 1.6, 0.2]);
+      for (let n = Math.max(1, Math.floor((d - 1) / 3)), c = 0; c < n; c++) for (const s of [1, -1]) (rnd() < 0.7 ? lit : dark).push([(s * w) / 2, y, -d / 2 + (c + 0.5) * (d / n), 0.2, 1.6, 1.3]);
+    }
+    cubes(g, null, lit, LIT);
+    cubes(g, null, dark, UNLIT);
+  }
+  g.position.set(x, height(x, z), z);
+  block(x, z, w, d);
+  return add(g);
+}
+// Windows glow when the sky is dark: sky() sets the scene's background, so this follows whatever it was set to.
+every(() => {
+  const b = made?.scene.background;
+  LIT.emissiveIntensity = b?.isColor && b.r + b.g + b.b < 1.2 ? 1.3 : 0;
+});
+
+const slab = (x, z, w, d, color, t = 0.12, turn = 0) => {
+  const m = add(new THREE.Mesh(BOX, mat(color)));
+  m.scale.set(w, t, d);
+  m.position.set(x, height(x, z), z);
+  m.rotation.y = turn;
+  return m;
+};
+/** A crossroads through the middle that stops short of the edges (nothing sits between neighbours): two blocks by two.
+ *  Returns the four blocks as { x, z, w, d } to build on. For flat ground. */
+export function streets({ width = SIZE / 10, color = "#4a4c56", line = "#e8d58a" } = {}) {
+  const run = SIZE * 0.88, half = width / 2, dash = SIZE / 40;
+  slab(0, 0, width, run, color); slab(0, 0, run, width, color);
+  for (let t = -run / 2 + dash; t < run / 2 - dash; t += dash * 2.4) if (Math.abs(t) > half + dash) { slab(t, 0, dash, 0.5, line, 0.16); slab(0, t, 0.5, dash, line, 0.16); }
+  const side = (SIZE / 2 + half) / 2, w = SIZE / 2 - half - SIZE * 0.06;
+  return [-1, 1].flatMap((i) => [-1, 1].map((j) => ({ x: i * side, z: j * side, w, d: w })));
+}
+/** A path through points [[x, z], ...], { width, color }. */
+export function path(points, { width = 3, color = "#c8b48a" } = {}) {
+  for (let i = 0; i + 1 < points.length; i++) {
+    const [ax, az] = points[i], [bx, bz] = points[i + 1];
+    slab((ax + bx) / 2, (az + bz) / 2, Math.hypot(bx - ax, bz - az) + width, width, color, 0.1, -Math.atan2(bz - az, bx - ax));
+  }
+}
+
+// 3 by 5 pixel letters: each is its character, then 15 bits from the top row down.
+const FONT = Object.fromEntries(("A010101111101101 B110101110101110 C011100100100011 D110101101101110 E111100110100111 F111100110100100 G011100101101011 " +
+  "H101101111101101 I111010010010111 J001001001101010 K101101110101101 L100100100100111 M101111111101101 N110101101101101 O010101101101010 " +
+  "P110101110100100 Q010101101110011 R110101110101101 S011100010001110 T111010010010010 U101101101101111 V101101101101010 W101101111111101 " +
+  "X101101010101101 Y101101010010010 Z111001010100111 0111101101101111 1010110010010111 2110001010100111 3110001010001110 4101101111001001 " +
+  "5111100110001110 6011100111101111 7111001010010010 8111101111101111 9111101111001110 .000000000000010 ,000000000010100 !010010010000010 " +
+  "?110001010000010 '010010000000000 -000000111000000 :000010000010000 /001001010100100").split(" ").map((s) => [s[0], s.slice(1)]));
+
+/** A wooden sign with pixel letters (A to Z, 0 to 9, . , ! ? ' - : /, "\\n" a new line, 60 at most), facing south unless turned (radians). */
+export function sign(text, { x = 0, z = 0, size = 0.45, turn = 0, board = "#8a5a33", ink = "#fff4e0" } = {}) {
+  const lines = String(text).slice(0, 60).toUpperCase().split("\\n").slice(0, 4).map((l) => l.slice(0, 24));
+  const cols = Math.max(1, ...lines.map((l) => l.length)), W = (cols * 4 + 3) * size, B = (lines.length * 6 + 3) * size, leg = 6 * size;
+  const g = new THREE.Group(), letters = [];
+  cubes(g, "#4b2e18", [[-W / 2 + 2.5 * size, 0, 0, 2 * size, leg, 2 * size], [W / 2 - 2.5 * size, 0, 0, 2 * size, leg, 2 * size]]);
+  cubes(g, board, [[0, leg, 0, W, B, size]]);
+  // Each lit pixel on both faces, the back one mirrored, so it reads from either side.
+  lines.forEach((line, l) => [...line].forEach((ch, i) => {
+    const bits = FONT[ch];
+    if (bits) for (let b = 0; b < 15; b++) if (bits[b] === "1") {
+      const px = -W / 2 + (2 + i * 4 + (b % 3) + 0.5) * size, py = leg + B - (2 + l * 6 + Math.floor(b / 3) + 1) * size;
+      letters.push([px, py, size * 0.55, size, size, size * 0.2], [-px, py, -size * 0.55, size, size, size * 0.2]);
+    }
+  }));
+  cubes(g, ink, letters);
+  g.position.set(x, height(x, z), z);
+  g.rotation.y = turn;
+  return add(g);
+}
+
+// Where the visitor is on this plot, in world units, or null: for creatures and near().
+let viewer = null;
+addEventListener("message", (e) => {
+  if (e.source !== parent || e.data?.agent_page !== true || !("player" in e.data)) return;
+  const p = e.data.player;
+  viewer = typeof p?.x === "number" && typeof p?.z === "number" ? { x: (p.x - 0.5) * SIZE, z: (p.z - 0.5) * SIZE } : null;
+});
+
+/** Something alive on the ground: { sprite: rows, palette } or { voxels: layers, palette }, in area [x0, z0, x1, z1].
+ *  wander: roams; flee: runs from the visitor this close; follow: comes to the visitor this close. */
+export function creature({ sprite: rows, voxels: layers, palette, size, x, z, area = [-0.4 * SIZE, -0.4 * SIZE, 0.4 * SIZE, 0.4 * SIZE], speed = 6, wander = true, flee = 0, follow = 0 } = {}) {
+  let s = Math.floor(rnd() * 2147483646) + 1;
+  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const pick = () => [area[0] + r() * (area[2] - area[0]), area[1] + r() * (area[3] - area[1])];
+  const [x0, z0] = typeof x === "number" && typeof z === "number" ? [x, z] : pick();
+  const body = layers ? voxels(layers, palette, { x: x0, z: z0, size: size ?? 0.6, block: false }) : sprite(rows ?? ["#"], palette ?? { "#": "#ffffff" }, { x: x0, z: z0, size: size ?? 0.5 });
+  const me = { x: x0, z: z0 };
+  let to = pick(), rest = 0;
+  every((t, dt) => {
+    const d = viewer ? Math.hypot(viewer.x - me.x, viewer.z - me.z) : Infinity;
+    let gx = to[0] - me.x, gz = to[1] - me.z, v = speed;
+    if (flee && d < flee) { gx = me.x - viewer.x; gz = me.z - viewer.z; v = speed * 1.8; }
+    else if (follow && d < follow) { if (d < 4) return; gx = viewer.x - me.x; gz = viewer.z - me.z; }
+    else if (!wander) return;
+    else if (Math.hypot(gx, gz) < 1) { if ((rest -= dt) > 0) return; rest = 0.5 + r() * 2; to = pick(); return; }
+    const l = Math.hypot(gx, gz) || 1, nx = me.x + (gx / l) * v * dt, nz = me.z + (gz / l) * v * dt;
+    if (blocked(nx, nz) || nx < area[0] - 8 || nx > area[2] + 8 || nz < area[1] - 8 || nz > area[3] + 8) { to = pick(); return; }
+    me.x = nx; me.z = nz;
+    body.position.set(nx, height(nx, nz) + Math.abs(Math.sin(t * 12)) * 0.3, nz);
+    if (layers) body.rotation.y = Math.atan2(gx, gz);
+  });
+  return body;
+}
+
+/** onEnter() when the visitor walks within radius of x, z; onLeave() when they walk away. */
+export function near(x, z, radius, onEnter, onLeave) {
+  let inside = false;
+  every(() => {
+    const now = viewer !== null && Math.hypot(viewer.x - x, viewer.z - z) <= radius;
+    if (now !== inside) { inside = now; (now ? onEnter : onLeave)?.(); }
   });
 }
 `;
