@@ -18,8 +18,9 @@
 // expression, --url <http://...> to use a server already running instead of starting one, --shot <file.png>.
 // --before-after <dir> (#5909) shoots the app twice, as `--base` (default origin/main) has it and as the working tree
 // has it, and writes before.png, after.png and before-after.html (both side by side, one file) there. The base copy
-// is the app's own folder only: packages/ and node_modules are the working tree's. A PR that changes how an app looks
-// publishes the html as an artifact and links it under "Before / after" in its body.
+// is the app's own folder only: packages/ and node_modules are the working tree's. With --push (#5951) the PNGs also go
+// to the shots branch of the private manual-run repo (scripts/pr-shots.ts), and it prints the "Before / after" markdown a
+// PR that changes how an app looks pastes into its body.
 // The expression is the body of an async function: `await` and statements work, and its last expression (or a `return`) is the answer.
 import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -27,6 +28,7 @@ import { esc } from "../packages/util/src/index.ts";
 import { launchChrome, load, openTab, startVite } from "./chrome.ts";
 import { help } from "./help.ts";
 import { appDir } from "./app-dirs.ts";
+import { pushShots, shotsMarkdown } from "./pr-shots.ts";
 
 /** Each game's handle on `window`, the expression for its state, and the rest of what the handle does. */
 export const HANDLES: Record<string, { state: string; does: string }> = {
@@ -55,7 +57,7 @@ export const HANDLES: Record<string, { state: string; does: string }> = {
   "fleet-commander": { state: "fleetCommander.state()", does: "the screen (menu | battle | sector | report), the battle (t, outcome, focus, planet base, rim temper/doctrine/intent, every ship and wing with its order, stats) and the campaign sector. quick(seed), armada(seed), campaign(), go(world), refit(); select(...ids), mark(id), play(torpedo-run | pincer | hammer-anvil | screen | hunt | feint | recall), stance(attack | neutral | defend), formation(tight | screen | loose), flagship(broadside | rake | hold), lane(), orderAt(x, z), draw([[x, z], ...], join) (a drawn route, what a right-drag does), power(foresight | trance | voice), run(seconds), look(holo | cinema), pause(on) (the harness only; players cannot pause), camera(x, z, dist) (stops riding the flagship). Orders to wings land 2 s later (state().battle.radio counts them) unless voice is up. The Theater (top-down RTS in the fog): theater(seed), ping(), buy(scout | interceptor | bomber | escort | sensors), box(x1, y1, x2, y2) (screen-pixel selection box); state().battle.field has supply, strongpoints, sees (Compact ids in sight), known (last seen) and mines. Jump: /?battle=theater|quick|armada|campaign&seed=n&look=cinema. Hulls built from their drawing sheets (src/view/sheets.ts) on a turntable: /ships.html?ship=destroyer|cruiser (or cruiser~exploded, cruiser~<piece>, cruiser~far)&view=three|top|side|front|below|stern; there fleetShips.state() (sheets, pieces, meshes, triangles) and fleetShips.show(id, view)" },
 };
 
-export interface Probe { app?: string; path: string; js?: string; size: { w: number; h: number }; mobile: boolean; settle: number; url?: string; shot?: string; list: boolean; pair?: string; base: string }
+export interface Probe { app?: string; path: string; js?: string; size: { w: number; h: number }; mobile: boolean; settle: number; url?: string; shot?: string; list: boolean; pair?: string; push?: boolean; base: string }
 
 /** The arguments: the app (a folder under apps/), then a path (starts with / or ?), then flags. */
 export function parse(argv: string[]): Probe {
@@ -68,6 +70,7 @@ export function parse(argv: string[]): Probe {
     else if (a === "--url") p.url = next();
     else if (a === "--shot") p.shot = next();
     else if (a === "--before-after") p.pair = next();
+    else if (a === "--push") p.push = true;
     else if (a === "--base") p.base = next();
     else if (a === "--settle") p.settle = Number(next()) || 3000;
     else if (a === "--mobile") { p.mobile = true; p.size = { w: 390, h: 844 }; }
@@ -145,8 +148,9 @@ if (import.meta.main) {
   help(import.meta.path);
   const p = parse(process.argv.slice(2));
   if (p.list) { console.log(listLines(p.app).join("\n")); process.exit(0); }
-  if (!p.app && !p.url) { console.error("usage: bun run probe <app> [path] [--js <expr> | --cmd name '{json}'] [--shot <file.png>] [--size WxH] [--mobile] [--settle <ms>] [--url <url>] | --list"); process.exit(2); }
+  if (!p.app && !p.url) { console.error("usage: bun run probe <app> [path] [--js <expr> | --cmd name '{json}'] [--shot <file.png>] [--before-after <dir> [--push]] [--size WxH] [--mobile] [--settle <ms>] [--url <url>] | --list"); process.exit(2); }
   if (p.pair && !p.app) { console.error("--before-after needs an app: it starts the app twice, once as --base has it"); process.exit(2); }
+  if (p.push && !p.pair) { console.error("--push goes with --before-after <dir>"); process.exit(2); }
   const root = resolve(import.meta.dir, "..");
   // a page's audio runs without a click (a probe has no gesture to give), so a music app's clock moves
   const chrome = await launchChrome(["--autoplay-policy=no-user-gesture-required"]);
@@ -185,6 +189,13 @@ if (import.meta.main) {
       const after = await onVite(resolve(root, appDir(p.app!, root)), join(out, "after.png"));
       await Bun.write(join(out, "before-after.html"), pairHtml({ app: p.app!, path: p.path, base: p.base, before, after: after! }));
       console.log(`side by side: ${join(out, "before-after.html")}`);
+      if (p.push) {
+        const files = [...(before ? ["before.png"] : []), "after.png"].map((f) => join(out, f));
+        const head = Bun.spawnSync(["git", "-C", root, "rev-parse", "--short", "HEAD"]).stdout.toString().trim();
+        const folder = `${p.app}/${new Date().toISOString().replace(/\D/g, "")}-${head}`;
+        pushShots(files, folder);
+        console.log(`for the PR body:\n\n${shotsMarkdown(folder, files)}`);
+      }
     } else if (p.url) await look(p.url.replace(/\/?$/, "/"), p.shot);
     else await onVite(resolve(root, appDir(p.app!, root)), p.shot);
   } finally { chrome.stop(); }
