@@ -8,8 +8,6 @@ export const SESSION: readonly Ask[] = [
   { name: "page_read", args: {} },
   { name: "page_read_file", args: { path: "index.html" } },
   { name: "page_read_file", args: { path: "world.js" } },
-  // The kit is a module, so the starter's script tag needs one changed line.
-  { name: "page_edit_file", args: { path: "index.html", find: `<script src="world.js">`, replace: `<script type="module" src="world.js">` } },
   { name: "page_write_file", args: { path: "world.js", text: WORLD } },
   { name: "page_read", args: {} },
   { name: "page_edit_file", args: { path: "world.js", find: "world({ orbit: 0.05 })", replace: "world({ orbit: 0.05, distance: 170 })" } },

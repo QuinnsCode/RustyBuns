@@ -48,9 +48,9 @@ beforeAll(async () => {
 afterAll(() => { chrome?.stop(); server?.kill(); });
 
 test("page_edit_file changes one place and the world reloads with it; two matches are refused with the count", async () => {
-  expect(await call("page_edit_file", { path: "world.js", find: "let W, H, S, stars, seed;", replace: `console.error("edited");\nlet W, H, S, stars, seed;` })).toMatchObject({ ok: true });
+  expect(await call("page_edit_file", { path: "world.js", find: `sky("night");`, replace: `sky("night");\nconsole.error("edited");` })).toMatchObject({ ok: true });
   await heard("edited");
-  const twice = await call("page_edit_file", { path: "world.js", find: "requestAnimationFrame(frame)", replace: "" });
+  const twice = await call("page_edit_file", { path: "world.js", find: "size: [", replace: "" });
   expect(twice.error).toContain("matches 2 places in world.js");
   // Undo takes an edit back like any other change.
   expect(await call("page_undo")).toMatchObject({ ok: true });
@@ -58,7 +58,6 @@ test("page_edit_file changes one place and the world reloads with it; two matche
 });
 
 test("a world written with @world/kit runs in the sealed frame with no errors and hears a visitor walk", async () => {
-  await call("page_edit_file", { path: "index.html", find: `<script src="world.js">`, replace: `<script type="module" src="world.js">` });
   // Its own lines, plus two that report back: one after frames were drawn, one on a visitor.
   const probe = `\nimport { onPlayer, every } from "@world/kit";\nonPlayer((p, at) => console.error("visitor " + JSON.stringify([p, at && [at.x, at.z]])));\nlet n = 0;\nevery(() => { if (++n === 5) console.error("drew"); });\n`;
   expect(await call("page_write_file", { path: "world.js", text: WORLD + probe })).toMatchObject({ ok: true });
