@@ -93,7 +93,7 @@ What keeps it safe, in short:
 ### `@world/kit`
 
 A world's module can `import { world, ground, sky } from "@world/kit"` instead of writing the same three.js each
-time (`src/kit.ts`, three.js 0.170.0 from esm.sh). The plot is 100 units square around 0.
+time (`src/kit.ts`, three.js 0.170.0 from esm.sh). The plot is 200 units square around 0, and hills level off at its edges.
 
 | Call | Gives |
 |---|---|
@@ -130,27 +130,27 @@ bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 
 ### Agent Galaxy
 
-Every world is a plot on one shared map, and it opens once your world is made: you are signed in, and your AI's write
+Every world is a plot of land in one shared space, and the galaxy opens once your world is made: you are signed in, and your AI's write
 loaded with no errors (the step strip's "Your world is up"), which the page saves on the server
 (`POST /api/r/<room>/made`). Until then the Galaxy tile has a lock and one line under it ("Sign in and make your world
 first", or "Make your world first"), and Cmd+K and `agentGalaxy.enter()` say the same; the server answers a claim with
 no token 401 and one for a world not yet made 409. A ready-made world from Try one now doesn't count. A plot is a
 person's (`eq:<sub>`, the token's checked against eqosys's keys, `src/who.ts`), one each, on their world's room.
 
-**Agent Galaxy** (the Galaxy tile in the console, or Cmd+K) puts the console away and zooms
-out: plots touch edge to edge as one ground, seen from above at an angle, and you are a small character the camera
-follows. Walk with WASD or the arrow keys (a touch stick on a phone), straight across from one plot into the next.
-**Back to my world** brings the console back.
+Everyone's land in one 3D space, like rural neighbours: plots touch edge to edge with no streets or fences. **Agent
+Galaxy** (the Galaxy tile in the console, or Cmd+K) shows your own land under cloud, then the cloud lifts and you are a
+simple shape on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
+neighbour's. **Back to my world** brings the console back.
 
-- The plot you stand on runs live, in the same sealed frame as always: your own world, the common city in the middle
-  (`src/commonCity.ts`, ours, nobody's), or a neighbour's world as their room last saved it. A neighbour's world is
-  read-only to you: no tool and no undo reach it. Only one world runs at a time; every other plot shows its latest
-  picture (`GET /api/r/<room>/picture`), or desert until it has one.
+- A world built with `@world/kit` stands there in 3D: its ground, water, trees, rocks and its own meshes. Each world
+  hands over shapes and colours only, from a hidden sealed frame, and a neighbour's code never runs in the shared
+  space. Anything reaching past its own plot is left out. Skies, rain, stars and animation stay home.
+- A world without the kit (a flat canvas drawing, say) shows its latest picture laid on its ground.
+- The middle plot is the common town. Empty plots are open land, with a sign next to you: "Invite someone to build
+  here". Every third cell of the spiral stays free for invites (the invite link and sign-in come next).
 - Your page saves your world to the server a second after each change that lands (`PUT /api/r/<room>/world`, checked
-  with the same Schema and limits as a write), so a neighbour who walks in runs what you see.
-- Empty plots are desert with a sign, "Invite someone to build here". Every third cell of the spiral stays free for
-  invites (the invite link itself comes next).
-- You see the other characters on your plot and the ones touching it. They have a colour and no name.
+  with the same Schema and limits as a write), so your neighbours see what you built.
+- You see the other people on your plot and the ones touching it. They have a colour and no name.
 - The map never sends a room's link: a plot is known by a one-way hash of it, since the link is the room's key.
 
 From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()` and `walk(dx, dz)`:
@@ -197,10 +197,11 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 - `src/galaxy.ts`: Agent Galaxy with no platform in it: the spiral, `claim`, the plots around a point, the players'
   moves (each to the same and touching plots only) and the wire guards both ends import. `src/edge/galaxy.ts` runs it
   in a Durable Object; `scripts/dev.ts` runs it in memory. `src/saved.ts`: a room's saved world, the same way.
-  `src/galaxyView.ts`: the map in the page, on a plain 2D canvas.
+  `src/galaxyView.ts`: walking and the players in the page. `src/land3d.ts`: the one 3D scene (three.js, loaded when
+  the galaxy opens). `src/land.ts`: a plot's land as data, and what is left out of it.
 - `test/galaxy.test.ts`: two people walking the galaxy in headless Chrome against the dev server.
-  `test/world.test.ts`: one world per person, the claim's 401 and 409, refused tokens, and the lock in the page,
-  against a stand-in eqosys (`test/eqosys-kit.ts`).
+  `test/land.test.ts`: what a world's frame may put in the shared space.
+
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
   `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a
   missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview and Export

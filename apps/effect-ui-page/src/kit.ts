@@ -3,12 +3,16 @@
 // each for the scene and camera, ground, sky, weather, water, trees, cactus, rocks, lights, and where a visitor is
 // walking (the page's `{ agent_page: true, player }` message). A world never draws the player.
 
+import { PLOT } from "./land.ts";
+
 export const KIT = `
 import * as THREE from "https://esm.sh/three@0.170.0";
 export { THREE };
 
 /** The plot is SIZE units square, centred on 0: x west to east, z north to south, y up. */
-export const SIZE = 100;
+export const SIZE = ${PLOT};
+// Hills come down to level at the property line, so one plot's ground meets the next with no step.
+const level = (x, z) => Math.max(0, Math.min(1, (SIZE / 2 - Math.max(Math.abs(x), Math.abs(z))) / 24));
 const frames = [];
 let made = null, height = () => 0, wet = () => false, seed = 7, sun, fill, falling = null;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -16,9 +20,9 @@ const between = (a, b) => a + rnd() * (b - a);
 const mat = (color, more) => new THREE.MeshStandardMaterial({ color, flatShading: true, ...more });
 
 /** The scene, a 2.5D camera (from above at an angle), the renderer, resizing and the loop. orbit: radians a second. */
-export function world({ orbit = 0, distance = 140, angle = 38 } = {}) {
+export function world({ orbit = 0, distance = 280, angle = 38 } = {}) {
   if (made) return made;
-  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, 1, 1, 900);
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, 1, 1, 1800);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   document.body.style.cssText += ";margin:0;overflow:hidden";
@@ -27,7 +31,7 @@ export function world({ orbit = 0, distance = 140, angle = 38 } = {}) {
   document.body.prepend(renderer.domElement);
   fill = new THREE.HemisphereLight("#dfe8ff", "#404030", 1.2);
   sun = new THREE.DirectionalLight("#fff4e0", 1.6);
-  sun.position.set(40, 70, 25);
+  sun.position.set(80, 140, 50);
   scene.add(fill, sun);
   made = { THREE, scene, camera, renderer };
   let w = 0, h = 0, last = 0;
@@ -71,17 +75,17 @@ const SHAPES = {
 /** type: "flat", "dunes", "hills" or "grass". */
 export function ground({ type = "flat", color } = {}) {
   const [usual, shape] = SHAPES[type] ?? SHAPES.flat;
-  height = shape;
-  const g = new THREE.PlaneGeometry(SIZE, SIZE, 80, 80).rotateX(-Math.PI / 2), p = g.attributes.position;
+  height = (x, z) => shape(x, z) * level(x, z);
+  const g = new THREE.PlaneGeometry(SIZE, SIZE, 100, 100).rotateX(-Math.PI / 2), p = g.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, height(p.getX(i), p.getZ(i)));
   g.computeVertexNormals();
   const m = add(new THREE.Mesh(g, mat(color ?? usual)));
-  if (type === "grass") scatter(900, new THREE.ConeGeometry(0.18, 0.9, 4).translate(0, 0.45, 0), mat(color ?? usual), {});
+  if (type === "grass") scatter(2800, new THREE.ConeGeometry(0.18, 0.9, 4).translate(0, 0.45, 0), mat(color ?? usual), {});
   return m;
 }
 
 // n copies of one shape on the ground, never in water. area: [x0, z0, x1, z1].
-function scatter(n, geometry, material, { area = [-46, -46, 46, 46], size = [0.7, 1.4] }) {
+function scatter(n, geometry, material, { area = [-94, -94, 94, 94], size = [0.7, 1.4] }) {
   const mesh = new THREE.InstancedMesh(geometry, material, n), o = new THREE.Object3D();
   let put = 0;
   for (let i = 0; i < n * 4 && put < n; i++) {
@@ -144,18 +148,18 @@ export function sky(type = "day") {
   const { scene } = world();
   const [back, strength, soft, color] = SKIES[type] ?? SKIES.day;
   scene.background = new THREE.Color(back);
-  scene.fog = new THREE.Fog(back, 160, 420);
+  scene.fog = new THREE.Fog(back, 320, 840);
   lights({ sun: strength, fill: soft, color });
   const ball = (r, c, x, y, z) => add(new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), new THREE.MeshBasicMaterial({ color: c, fog: false }))).position.set(x, y, z);
-  if (type === "dusk") ball(14, "#ffd27a", -190, 30, -240);
+  if (type === "dusk") ball(28, "#ffd27a", -380, 60, -480);
   if (type !== "night") return;
-  ball(9, "#f4f1dd", -150, 75, -230);
+  ball(18, "#f4f1dd", -300, 150, -460);
   const at = [];
   for (let i = 0; i < 900; i++) {
     const a = rnd() * 6.3, b = between(-0.2, 1.4);
-    at.push(Math.cos(a) * Math.cos(b) * 320, Math.sin(b) * 320, Math.sin(a) * Math.cos(b) * 320);
+    at.push(Math.cos(a) * Math.cos(b) * 640, Math.sin(b) * 640, Math.sin(a) * Math.cos(b) * 640);
   }
-  add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(at, 3)), new THREE.PointsMaterial({ color: "#dfe6ff", size: 1.4, fog: false })));
+  add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(at, 3)), new THREE.PointsMaterial({ color: "#dfe6ff", size: 2.8, fog: false })));
 }
 
 /** "rain", "snow", "fog" or "clear". Call after sky. */
@@ -163,11 +167,11 @@ export function weather(type = "clear") {
   const { scene } = world();
   if (falling) scene.remove(falling.points);
   falling = null;
-  if (type === "fog") scene.fog = new THREE.Fog(scene.background?.isColor ? scene.background : "#aab4c4", 80, 220);
-  else if (scene.fog) { scene.fog.near = 160; scene.fog.far = 420; }
+  if (type === "fog") scene.fog = new THREE.Fog(scene.background?.isColor ? scene.background : "#aab4c4", 160, 440);
+  else if (scene.fog) { scene.fog.near = 320; scene.fog.far = 840; }
   if (type !== "rain" && type !== "snow") return;
-  const snow = type === "snow", n = snow ? 1800 : 3000, at = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) at.set([between(-60, 60), between(0, 55), between(-60, 60)], i * 3);
+  const snow = type === "snow", n = snow ? 5000 : 8000, at = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) at.set([between(-110, 110), between(0, 55), between(-110, 110)], i * 3);
   const g = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(at, 3));
   falling = { at, speed: snow ? 6 : 42, drift: snow ? 2 : 0, points: add(new THREE.Points(g, new THREE.PointsMaterial({ color: snow ? "#ffffff" : "#a9c4ff", size: snow ? 0.6 : 0.3, transparent: true, opacity: 0.75 }))) };
 }
@@ -194,4 +198,34 @@ export function onPlayer(cb) {
     cb({ x: p.x, z: p.z }, { x, y: height(x, z), z });
   });
 }
+
+// Agent Galaxy asks for the land as shapes (land.ts): corners, faces, colours and where copies stand. Data only,
+// nothing of this world's code goes with it. Skies, stars, rain and the sun and moon stay home.
+addEventListener("message", (e) => {
+  if (e.source !== parent || e.data?.agent_page !== true || e.data.ask !== "land" || !made) return;
+  const parts = [], to = (n) => (v) => Math.round(v * n) / n;
+  made.scene.updateMatrixWorld(true);
+  made.scene.traverseVisible((o) => {
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    const at = o.isMesh && o.geometry.attributes.position;
+    if (!at || !m?.color || m.fog === false || at.count > 20000 || parts.length >= 300) return;
+    const p = [], v = new THREE.Vector3();
+    for (let i = 0; i < at.count; i++) {
+      v.fromBufferAttribute(at, i);
+      if (!o.isInstancedMesh) v.applyMatrix4(o.matrixWorld);
+      p.push(v.x, v.y, v.z);
+    }
+    let copies;
+    if (o.isInstancedMesh) {
+      const one = new THREE.Matrix4();
+      copies = [];
+      for (let i = 0; i < Math.min(o.count, 3000); i++) {
+        o.getMatrixAt(i, one);
+        copies.push(...one.premultiply(o.matrixWorld).elements.map(to(1000)));
+      }
+    }
+    parts.push({ p: p.map(to(100)), i: o.geometry.index ? Array.from(o.geometry.index.array) : undefined, c: "#" + m.color.getHexString(), o: m.transparent ? m.opacity : undefined, m: copies });
+  });
+  parent.postMessage({ agent_page_world: true, kind: "land", land: { parts } }, "*");
+});
 `;

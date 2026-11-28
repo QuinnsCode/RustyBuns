@@ -27,6 +27,7 @@ interface Galaxy {
   plots: { x: number; y: number; id: string | null; empty: boolean; city: boolean; mine: boolean }[];
   players: { id: string; x: number; y: number; px: number; pz: number }[];
   live: { kind: string; id: string | null; files: { path: string; bytes: number }[] } | null;
+  shows: Record<string, string>;
 }
 
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -56,7 +57,7 @@ async function open(cdp: Cdp, room: string, who: string) {
   await waitFor(tab, "the world made", `!document.querySelector("[data-galaxy-lock]")`, 15_000);
   const until = (what: string, expr: string) => waitFor(tab, what, expr, 15_000, "agentGalaxy.state()", 50);
   return {
-    room, page, until,
+    room, tab, page, until,
     enter: () => page<Galaxy>("agentGalaxy.enter()"),
     leave: () => page<Galaxy>("agentGalaxy.leave()"),
     walk: (dx: number, dz: number) => page<Galaxy>(`agentGalaxy.walk(${dx}, ${dz})`),
@@ -121,6 +122,21 @@ describe("two rooms in Agent Galaxy", () => {
     expect(s.live).toMatchObject({ kind: "neighbour", id: meA.id });
     expect(s.live!.files.map((f) => f.path)).toContain("a.js");
     expect([...a.errors(), ...b.errors()]).toEqual([]);
+  });
+
+  test("a world built with the kit stands in 3D, for its owner and for a neighbour's next visit", async () => {
+    await a.page(`__commands.run("page_write_file", { path: "a.js", text: 'import { ground, trees } from "@world/kit"; ground({ type: "hills" }); trees(20);' })`);
+    await a.page(`__commands.run("page_write_file", { path: "index.html", text: '<!doctype html><script type="module" src="a.js"></script>' })`);
+    for (let i = 0; i < 100; i++) {
+      const saved = await fetch(`${base}/api/r/${a.room}/world`).then((r) => (r.ok ? r.json() : null));
+      if (saved?.files?.["index.html"]?.includes("a.js")) break;
+      await Bun.sleep(100);
+    }
+    const plot = `agentGalaxy.state().shows["${meA.x},${meA.y}"] === "land"`;
+    await waitFor(a.tab, "A's own land as shapes", plot, 45_000, "agentGalaxy.state()");
+    await b.leave();
+    await b.enter();
+    await waitFor(b.tab, "A's land from B's plot", plot, 45_000, "agentGalaxy.state()");
   });
 });
 

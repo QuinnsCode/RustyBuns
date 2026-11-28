@@ -445,6 +445,7 @@ export const ProfilePageNoDeps = Def.make({
     const lines = connectLines(origin, room).map((c) => [c, c.what === "Claude Code" ? "Claude" : c.what] as const);
     const failed = [{ what: "prompt", text: promptText }, { what: "ask", text: on?.ask ?? "" }, ...connectLines(origin, room)]
       .find((c) => copied === `failed: ${c.what}`)?.text;
+    const doc = worldDoc(page);
     return h.div.class("shell", full && "full").children(
       // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
       page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
@@ -452,7 +453,9 @@ export const ProfilePageNoDeps = Def.make({
       }),
       h.main.class("page", page.backdrop && "over").children(
         // The world the agent wrote, sealed: scripts run in an opaque origin, with no reach into this page.
-        h.iframe.class("world").attrs({ srcdoc: worldDoc(page), sandbox: "allow-scripts allow-pointer-lock", referrerpolicy: "no-referrer", title: "Your world", allow: "fullscreen" }),
+        // A changed world gets a fresh frame (keyed by its document): Chrome can drop a new srcdoc set while the last
+        // one is still loading, which left the old world on screen after an agent's quick first write.
+        h.iframe.class("world").key(doc).attrs({ srcdoc: doc, sandbox: "allow-scripts allow-pointer-lock", referrerpolicy: "no-referrer", title: "Your world", allow: "fullscreen" }),
         // Put away (Hide, or ?full on the link), the console leaves one small button to bring it back.
         full && h.button.attr("type", "button").class("full-toggle").attr("title", "Show the console").on("click", PageMessage.ClickedFull()).children("Show"),
       ),
