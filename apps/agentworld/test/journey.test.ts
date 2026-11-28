@@ -51,6 +51,7 @@ test("landing to world to galaxy: one bright next step on each screen, and the g
   await pointAt(tab);
   await Bun.sleep(1500);
   expect(await galaxyFetches(tab)).toEqual([]);
+  expect([...eqosys.unlocked]).toEqual([]);
 
   // The AI: looks, says what it's doing, then changes the starter with one edit (no whole-file write).
   await waitFor(tab, "the relay", `!!document.querySelector(".live.on")`, 20_000);
@@ -69,6 +70,9 @@ test("landing to world to galaxy: one bright next step on each screen, and the g
   // The focus goes on from Copy to the Galaxy tile, the next step.
   await waitFor(tab, "the Galaxy tile focused", `document.activeElement?.matches("[data-galaxy-tile].next")`);
   expect(await tab.eval<string>(`document.querySelector(".strip .next").textContent`)).toBe("Next: open the galaxy");
+  // Made, it is kept on the eqosys account, and eqosys's toast says so.
+  await waitFor(tab, "the achievement toast", `document.querySelector(".eq-toasts")?.textContent.includes("world-builder")`);
+  expect([...eqosys.unlocked]).toEqual(["played", "world-builder"]);
   expect(await tab.eval<boolean>(`document.querySelector(".dock button.big").classList.contains("quiet")`)).toBe(true);
 
   // Pointing at it gets the galaxy ready. Not signed for your land yet, so no plot is claimed, but three.js, the scene

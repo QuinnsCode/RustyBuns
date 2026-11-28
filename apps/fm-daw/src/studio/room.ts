@@ -2,7 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
-import { banks, heightMap, highest, type Bank, type GeneratorId, type Ground, type HeightMap, type SystemId, type Terrain, type TopsOn } from "@rustybuns/gear";
+import { banks, heightMap, highest, type Bank, type GeneratorId, type Ground, type HeightMap, type Row, type SystemId, type Terrain, type TopsOn } from "@rustybuns/gear";
 import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
@@ -91,10 +91,10 @@ export type { SystemId };
 /** The PA part of a rig, indoors or out: its stacks, which rig they are, and whether they play mono. */
 export type RoomPa = Pick<Outdoor, "stacks" | "rig" | "mono" | "tops">;
 export interface Outdoor {
-  /** Each stack is one column of the rig's boxes. Columns closer than STACK_CLUSTER_M stand as one block (a side of the
+  /** Each stack is one column of the rig's boxes, or its own `rows` of them (a premade's). Columns closer than STACK_CLUSTER_M stand as one block (a side of the
    *  floor); `splay` turns that column's top boxes a little off its yaw, so a side's two tops fan out across the floor; `pins`
    *  are a line array's pins, bottom box up (radians down from level, @rustybuns/gear LINE_PINS when left out). */
-  stacks: { at: [number, number]; yaw: number; splay?: number; pins?: number[] }[];
+  stacks: { at: [number, number]; yaw: number; splay?: number; pins?: number[]; rows?: Row[] }[];
   /** The sub block in the middle, between the sides: the rig's sub box `wide` across and `high` up, its front facing yaw's way. */
   subs?: { at: [number, number]; yaw: number; wide: number; high: number };
   /** The DJ's booth monitors: a mid-high horn on a tripod stand at each end of the decks, aimed at the DJ. */

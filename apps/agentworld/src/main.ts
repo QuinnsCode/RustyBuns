@@ -16,7 +16,7 @@ import { READY } from "./worlds.ts";
 import { ProfilePage } from "./ProfilePage.ts";
 import { ROOM } from "./tools.ts";
 import { getJson } from "@rustybuns/util/http";
-import { backFromSignIn, login, mine } from "./account.ts";
+import { backFromSignIn, login, mine, worldBuilder } from "./account.ts";
 import { galaxyLock, lockLine } from "./lock.ts";
 import { Made } from "./saved.ts";
 import { startGalaxy } from "./galaxyView.ts";
@@ -42,6 +42,8 @@ const local = kept ? Option.getOrNull(Schema.decodeUnknownOption(Schema.fromJson
 const initial = (unsent ? local ?? fromServer : fromServer ?? local) ?? starter;
 const who = login()?.name ?? null;
 galaxyLock.why = lockLine(who !== null, made);
+// A world made before this sign-in (or before the achievement was there) still counts: yours only, not a shared link's.
+if (who && made && room === mine()) void worldBuilder();
 
 // Before the page mounts, so the first world's load is seen.
 startPictures(room);

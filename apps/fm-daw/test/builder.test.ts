@@ -1,7 +1,8 @@
 // Q Builder's remake (#6021): your parts written into the board, read back, play the riff as your board does, and the
 // tscircuit source carries the same parts. The page's journey is builder-page.test.ts.
 import { expect, test } from "bun:test";
-import { builderPedal, editNets, parseValue, play, remakeJson, remakeTsx, retest, scopeNets, theRiff, type Edit } from "../src/circuit/builder.ts";
+import { builderPedal, editNets, parseValue, play, remakeJson, remakeTsx, retest, scopeNets, theRiff } from "../src/circuit/builder.ts";
+import type { Edit } from "../src/circuit/edits.ts";
 import { readBoard } from "../src/circuit/tscircuit.ts";
 
 // Half a second of the riff is enough to tell boards apart, at a fifth of the work.

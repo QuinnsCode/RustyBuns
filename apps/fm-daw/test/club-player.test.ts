@@ -27,10 +27,11 @@ test.skipIf(!hasChrome)("a night on the club players: scratch, nudge, CD mode, c
   const centre = (sel: string) => page<{ x: number; y: number; r: number }>(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, r: b.width / 2 }; })()`);
   const deck = () => page<Deck>("qdecks.state().decks[0]");
   const player = () => page<Player>("qdecks.state().players[0]");
-  /** Grab deck A's wheel at `at` of its radius, drag `turns` round (negative: anticlockwise, back), let go. */
-  const drag = async (at: number, turns: number, during?: () => Promise<void>) => {
+  /** Grab deck A's wheel at `at` of its radius, drag `turns` round (negative: anticlockwise, back), let go; `down` runs with the hand on it, before it moves. */
+  const drag = async (at: number, turns: number, during?: () => Promise<void>, down?: () => Promise<void>) => {
     const w = await centre(".dj-a .dj-wheel"), steps = 16, r = w.r * at, a0 = -Math.PI / 2;
     await mouse("mousePressed", w.x + Math.cos(a0) * r, w.y + Math.sin(a0) * r);
+    await down?.();
     for (let i = 1; i <= steps; i++) { const a = a0 + (turns * 2 * Math.PI * i) / steps; await mouse("mouseMoved", w.x + Math.cos(a) * r, w.y + Math.sin(a) * r); await Bun.sleep(10); }
     await during?.();
     await mouse("mouseReleased", w.x + Math.cos(a0 + turns * 2 * Math.PI) * r, w.y + Math.sin(a0 + turns * 2 * Math.PI) * r);
@@ -46,8 +47,8 @@ test.skipIf(!hasChrome)("a night on the club players: scratch, nudge, CD mode, c
 
   // VINYL: the hand on the platter stops the track and drags it back a quarter turn (0.45 s); let go, it plays on
   let held: Deck | null = null, heldBy: Player | null = null, before = 0;
-  before = (await deck()).pos;
-  await drag(0.4, -0.25, async () => { held = await deck(); heldBy = await player(); });
+  // measured from where the hand stopped it: read any earlier, a slow runner's playhead has moved on by the touch
+  await drag(0.4, -0.25, async () => { held = await deck(); heldBy = await player(); }, async () => { before = (await deck()).pos; });
   expect(held!.playing).toBe(false);
   expect(heldBy!.touched).toBe(true);
   expect(held!.pos).toBeLessThan(before - 0.3);
