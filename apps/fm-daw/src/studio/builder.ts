@@ -3,15 +3,15 @@
 // out through a wall, a booth sticking out of the room. An edit is data (checked by `Edit`), so a sesh or an agent's
 // tool can send them like the room's other ops later.
 import { arr, Bad, bool, check, int, nul, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
-import { PROP_KINDS, propBlocks, propBox, thingBox, type Prop, type Side, type Spot, type SpotKind, type StudioDef, type Venue, type Wall } from "./room.ts";
+import { inStage, onStage, PROP_KINDS, propBlocks, propBox, stageCorners, STAGE_SIZE, thingBox, type Prop, type Side, type Spot, type SpotKind, type StudioDef, type Venue, type Wall } from "./room.ts";
 import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { GENERATOR_IDS, GROUNDS, MAX_PIN, PREMADES, SYSTEM_IDS, SYSTEMS, type GeneratorId, type Ground, type SystemId } from "@rustybuns/gear";
+import { GENERATOR_IDS, GROUNDS, isTop, MAX_PIN, PREMADES, SYSTEM_IDS, SYSTEMS, type Row, type GeneratorId, type Ground, type SystemId } from "@rustybuns/gear";
 
 
-export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
+export const SIZE = { w: [2, 200], d: [2, 150], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
 export const MAX_WALLS = 32;
 export const MAX_PANELS = 12;
@@ -25,12 +25,12 @@ const SIDES = ["front", "back", "left", "right"] as const;
 const KINDS = ["keys", "drums", "bass", "desk", "booth", "couch", "dj"] as const satisfies readonly SpotKind[];
 const ID = str(32, { re: /^[a-z0-9][a-z0-9-]*$/ });
 const MAT = oneOf(MATERIAL_IDS);
-const XZ = (v: unknown): [number, number] => { const [x, z] = arr(num(-25, 25), 2, { min: 2 })(v); return [x, z]; };
+const XZ = (v: unknown): [number, number] => { const [x, z] = arr(num(-100, 100), 2, { min: 2 })(v); return [x, z]; };
 const COLOR = str(9, { re: /^#[0-9a-f]{6}$/i });
 /** A line array's pins, bottom box up: radians down from level. */
 const PINS = arr(num(0, MAX_PIN), 3, { min: 1 });
 /** The boxes a stack's own rows can be made of: the premades' and the rigs' (each has a model to draw). */
-const BOXES = [...new Set([...PREMADES.flatMap((p) => p.rows.map((r) => r.box)), ...Object.values(SYSTEMS).flatMap((s) => s.stack)])];
+export const BOXES = [...new Set([...PREMADES.flatMap((p) => p.rows.map((r) => r.box)), ...Object.values(SYSTEMS).flatMap((s) => s.stack)])];
 const ROWS = arr(obj({ box: oneOf(BOXES), across: int(1, 4) }), 8, { min: 1 });
 /** A rig's stacks, indoors or out (room.ts Outdoor stacks). */
 const STACKS = arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)), pins: opt(PINS), rows: opt(ROWS) }), MAX_STACKS);
@@ -107,6 +107,7 @@ export const Studio: Guard<StudioDef> = obj({
   bass: opt(oneOf(["mono", "box"] as const)),
   keys: opt(oneOf(POLY_KINDS)),
   venue: opt(VENUE),
+  stage: opt(obj({ at: XZ, yaw: num(-7, 7), w: num(STAGE_SIZE.w[0], STAGE_SIZE.w[1]), d: num(STAGE_SIZE.d[0], STAGE_SIZE.d[1]) })),
   pa: opt(obj({ stacks: STACKS, rig: opt(oneOf(SYSTEM_IDS)), mono: opt(bool()) })),
   outdoor: opt(obj({
     stacks: STACKS,
@@ -195,9 +196,10 @@ export type Edit =
   | { t: "window"; side: Side; along: number }
   | { t: "moveDoor"; at: [number, number] }
   | { t: "instruments"; keys?: (typeof POLY_KINDS)[number]; bass?: "mono" | "box"; rig?: SystemId }
-  | { t: "stack"; at: [number, number]; yaw?: number }
+  | { t: "stage"; at: [number, number]; yaw: number; w: number; d: number }
+  | { t: "stack"; at: [number, number]; yaw?: number; rows?: Row[] }
   | { t: "premade"; id: string }
-  | { t: "moveStack"; index: number; at: [number, number] }
+  | { t: "moveStack"; index: number; at: [number, number]; yaw?: number }
   | { t: "aimStack"; index: number; yaw?: number; splay?: number; pins?: number[] }
   | { t: "unstack"; index: number }
   | { t: "generator"; set: GeneratorId | "auto" }
@@ -230,12 +232,13 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("moveProp"), index: int(0, MAX_PROPS - 1), at: XZ }),
   obj({ t: tag("turnProp"), index: int(0, MAX_PROPS - 1), by: int(-7, 7) }),
   obj({ t: tag("unprop"), index: int(0, MAX_PROPS - 1) }),
-  obj({ t: tag("window"), side: oneOf(SIDES), along: num(-25, 25) }),
+  obj({ t: tag("window"), side: oneOf(SIDES), along: num(-100, 100) }),
   obj({ t: tag("moveDoor"), at: XZ }),
   obj({ t: tag("instruments"), keys: opt(oneOf(POLY_KINDS)), bass: opt(oneOf(["mono", "box"] as const)), rig: opt(oneOf(SYSTEM_IDS)) }),
-  obj({ t: tag("stack"), at: XZ, yaw: opt(num(-7, 7)) }),
+  obj({ t: tag("stack"), at: XZ, yaw: opt(num(-7, 7)), rows: opt(ROWS) }),
   obj({ t: tag("premade"), id: oneOf(PREMADES.map((p) => p.id)) }),
-  obj({ t: tag("moveStack"), index: int(0, MAX_STACKS - 1), at: XZ }),
+  obj({ t: tag("moveStack"), index: int(0, MAX_STACKS - 1), at: XZ, yaw: opt(num(-7, 7)) }),
+  obj({ t: tag("stage"), at: XZ, yaw: num(-7, 7), w: num(STAGE_SIZE.w[0], STAGE_SIZE.w[1]), d: num(STAGE_SIZE.d[0], STAGE_SIZE.d[1]) }),
   obj({ t: tag("aimStack"), index: int(0, MAX_STACKS - 1), yaw: opt(num(-7, 7)), splay: opt(num(-1, 1)), pins: opt(PINS) }),
   obj({ t: tag("unstack"), index: int(0, MAX_STACKS - 1) }),
   obj({ t: tag("generator"), set: oneOf([...GENERATOR_IDS, "auto"] as const) }),
@@ -313,9 +316,33 @@ export function problems(def: StudioDef): string[] {
     if (Math.hypot(a.at[0] - b.at[0], a.at[1] - b.at[1]) < SEAT_ROOM) out.push(`${a.id} and ${b.id} are on top of each other`);
   }
   if (!inRoom(def.door.at, WALL_ROOM)) out.push("the way in is outside the room");
-  (def.outdoor ?? def.pa)?.stacks.forEach((st, i) => { if (!inRoom(st.at, 0.5)) out.push(`stack ${i + 1} is off the ground`); });
+  (def.outdoor ?? def.pa)?.stacks.forEach((st, i) => {
+    if (!inRoom(st.at, 0.5)) out.push(`stack ${i + 1} is off the ground`);
+    else if (def.stage && inStage(def.stage, st.at[0], st.at[1], 0.3)) out.push(`stack ${i + 1} is inside the stage`);
+  });
+  if (def.stage && !stageCorners(def.stage).every((p) => inRoom(p, 0))) out.push("the stage sticks out of the arena");
   out.push(...gearProblems(def));
   return out;
+}
+
+/** With a stage down, the gear wall and the way in go where neither is in the other's way: a corner and a side of the
+ *  arena that leave nothing wrong (the front corners first, behind the crowd). Left as they are when none does. */
+function clearOfStage(def: StudioDef) {
+  const { w, d } = def.size, was = { gear: def.gear, door: def.door };
+  const corners = [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const;
+  const doors: [number, number][] = [[0, d / 2 - 0.5], [0, -d / 2 + 0.5], [w / 2 - 0.5, 0], [-w / 2 + 0.5, 0]];
+  for (const [kx, kz] of corners) {
+    // the gear wall's footprint, pushed into that corner
+    const fp = footprint({ ...def, gear: { at: [0, 0], yaw: 0 } }), xs = fp.map((p) => p[0]), zs = fp.map((p) => p[1]);
+    const at: [number, number] = [kx > 0 ? w / 2 - 0.05 - Math.max(...xs) : -w / 2 + 0.05 - Math.min(...xs), kz > 0 ? d / 2 - 0.05 - Math.max(...zs) : -d / 2 + 0.05 - Math.min(...zs)];
+    for (const door of doors) {
+      def.gear = { at, yaw: 0 };
+      def.door = { at: door, yaw: was.door.yaw };
+      const clash = def.stage && footprint(def).some(([x, z]) => inStage(def.stage!, x, z, 0));
+      if (!clash && !gearProblems(def).length) return;
+    }
+  }
+  def.gear = was.gear; def.door = was.door;
 }
 
 /** What is in the gear wall's way: the room's walls, a seat or what it plays, furniture you walk round, the way in. */
@@ -496,19 +523,31 @@ export function edit(def: StudioDef, e: Edit): Built {
       if (e.t === "stack") {
         if (out.stacks.length >= MAX_STACKS) return no(`a rig is at most ${MAX_STACKS} stacks`);
         // facing the floor's middle unless told, and the same boxes as the stack before it
-        const rows = out.stacks[out.stacks.length - 1]?.rows;
+        const rows = e.rows ?? out.stacks[out.stacks.length - 1]?.rows;
+        // a stack given its own boxes brings their rig (the first one: a build's rig is one rig)
+        if (e.rows && !out.rig) { const top = e.rows.map((r) => r.box).findLast(isTop); const rig = SYSTEM_IDS.find((id) => top && SYSTEMS[id].stack.includes(top)); if (rig) out.rig = rig; }
         out.stacks.push({ at: e.at, yaw: e.yaw ?? Math.atan2(-e.at[0], -e.at[1]), ...(rows ? { rows: rows.map((r) => ({ ...r })) } : {}) });
         break;
       }
       const st = out.stacks[e.index];
       if (!st) return no("there is no such stack");
-      if (e.t === "moveStack") st.at = e.at;
+      if (e.t === "moveStack") { st.at = e.at; if (e.yaw !== undefined) st.yaw = Math.atan2(Math.sin(e.yaw), Math.cos(e.yaw)); }
       else if (e.t === "unstack") out.stacks.splice(e.index, 1);
       else {
         if (e.yaw !== undefined) st.yaw = Math.atan2(Math.sin(e.yaw), Math.cos(e.yaw));
         if (e.splay !== undefined) st.splay = e.splay;
         if (e.pins) st.pins = e.pins;
       }
+      break;
+    }
+    case "stage": {
+      // one piece: deck, roof, lights and the booth, the decks (the "dj" spot) standing on it
+      const yaw = Math.atan2(Math.sin(e.yaw), Math.cos(e.yaw));
+      next.stage = { at: e.at, yaw, w: e.w, d: e.d };
+      const dj = newSpot("dj", "dj", onStage(next.stage, 0, -e.d / 2 + Math.max(0.6, e.d * 0.25)));
+      dj.yaw = Math.atan2(Math.sin(yaw + Math.PI), Math.cos(yaw + Math.PI));
+      next.spots = [...next.spots.filter((x) => x.id !== "dj"), dj];
+      clearOfStage(next);
       break;
     }
     case "generator": {
