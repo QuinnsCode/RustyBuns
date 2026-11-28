@@ -6,6 +6,7 @@ import { sign, STUDIOS_MAX, type Handoff, type StudioRole } from "@rustybuns/uti
 import { hubErase, hubOuts, OUT_BATCH } from "./qollab/hub.ts";
 import { partyOf } from "./qollab/party.ts";
 import { send } from "./qollab/qlave.ts";
+import { leaveLists } from "./qollab/rsvp.ts";
 import { SPACES_EVER, spaceOf, spacesOfAny } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
 import { SOLE_OWNED, studioErase } from "./studios.ts";
@@ -300,6 +301,8 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   // they hosted on /erase). Three tries, best effort: a voice room is gone when its last person leaves, so it must not keep an account.
   if (joined.length || seats.results.length) for (let i = 0; i < 3 && await send(conf, iss, { t: "erase", sub: userId }) === "retry"; i++);
   await revokeApple(conf, userId);
+  // Every event list they are on forgets them (qollab/rsvp.ts).
+  await leaveLists(conf, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
     ...studioErase(conf, userId),
@@ -308,8 +311,10 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
     conf.DB.prepare("DELETE FROM reactions WHERE ref IN (SELECT 'post:' || id FROM posts WHERE user_id = ?)").bind(userId), gone("posts"), gone("reactions"),
     // Who they blocked, and anyone's block on them.
     gone("blocks"), gone("blocks", "blocked_id"),
-    // The events they own (QOLLAB.md "Events").
-    gone("events", "owner_id"),
+    // The events they own (QOLLAB.md "Events"), with those events' RSVPs and tickets used; then their own RSVPs elsewhere.
+    ...["event_rsvps", "event_scans"].map((t) => conf.DB.prepare(`DELETE FROM ${t} WHERE event_id IN (SELECT id FROM events WHERE owner_id = ?)`).bind(userId)),
+    gone("events", "owner_id"), gone("event_rsvps"), gone("event_scans"),
+    conf.DB.prepare("UPDATE event_scans SET by_id = '' WHERE by_id = ?").bind(userId),
     gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"), gone("token_cuts"), gone("avatars"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),

@@ -14,7 +14,10 @@ import { mountShelf, type ShelfItem } from "./front-shelf.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "./account.ts";
 import { SKIN } from "./guest-list.ts";
-import { CHAIN, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type Sector, type SectorId } from "./paths.ts";
+import { CHAIN, DEMOS, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type Sector, type SectorId } from "./paths.ts";
+import { addCommands } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
+import { check, obj, str } from "@rustybuns/util/guard";
 import { followTheme } from "./ui/theme.ts";
 import { loadFont, wearFont } from "./studio/font-pick.ts";
 
@@ -57,9 +60,15 @@ const appsOf = (id: SectorId) => PATHS.filter((p) => p.sector === id);
 const appList = (id: SectorId) => {
   const ul = document.createElement("ul");
   ul.className = "apps";
+  // the lane's one way in for someone new, ahead of its apps
+  const start = SECTORS.find((s) => s.id === id)!.start, first = document.createElement("li"), link = document.createElement("a");
+  first.className = "start";
+  link.href = start.href; link.dataset.start = id; link.innerHTML = iconSvg(start.icon, 18); link.append(start.say);
+  first.append(link); ul.append(first);
   for (const p of appsOf(id)) {
     const li = document.createElement("li"), a = document.createElement("a");
-    a.href = p.href; a.dataset.app = p.id; a.textContent = p.name;
+    a.href = p.href; a.dataset.app = p.id; a.textContent = p.name; a.title = p.does;
+    li.insertAdjacentHTML("afterbegin", iconSvg(p.icon, 18));
     const feat = document.createElement("span");
     feat.className = "feat"; // a lane with one app has the room to give each feature its own line
     feat.textContent = appsOf(id).length === 1 ? p.features.replaceAll(" · ", "\n") : p.features;
@@ -186,6 +195,44 @@ const drawChips = (note?: string) => { for (const c of chips) eq.accountChip(c, 
 drawChips();
 void eq.finishSignIn().then((back) => { if (back) drawChips(back.error); }); // back from eqosys with ?code=&state=
 
+// "Not sure? Try a demo": one button under the title, four things that make a sound in one click, or no thanks
+const demo = document.querySelector<HTMLDialogElement>("#demo")!;
+for (const d of DEMOS) {
+  const p = pathOf(d.path), a = document.createElement("a");
+  a.href = p.href; a.dataset.demo = d.id; a.title = p.does;
+  a.innerHTML = iconSvg(p.icon, 34); a.append(d.say);
+  demo.querySelector(".picks")!.append(a);
+}
+document.getElementById("demo-ask")!.addEventListener("click", () => demo.showModal());
+demo.addEventListener("click", (e) => { if (e.target === demo) demo.close(); }); // a click on the dark around it
+
+/** What the door offers, in words: each lane, its way in and its apps, and the demos. What an agent reads first. */
+const offers = () => ({
+  what: "Qollab Studio's front door. Three lanes: Learn (how to set gear up), Studio (make music and plan the sound), Event (play it live with people).",
+  signedIn: !!eq.login(),
+  lanes: SECTORS.map((s) => ({
+    id: s.id, word: s.word, for: s.line, start: { say: s.start.say, href: s.start.href },
+    apps: appsOf(s.id).map((p) => ({ id: p.id, name: p.name, does: p.does, href: p.href, needsSignIn: p.signIn })),
+  })),
+  demos: DEMOS.map((d) => ({ id: d.id, say: d.say, href: pathOf(d.path).href })),
+});
+const Pick = obj({ id: str(40) });
+/** Goes where `id` names (an app, a lane's way in, or a demo), or says what the ids are. */
+const openById = (args: unknown) => {
+  const id = check(Pick, args)?.id ?? "";
+  const href = PATHS.find((p) => p.id === id)?.href ?? SECTORS.find((s) => s.id === id)?.start.href ?? DEMOS.map((d) => ({ ...d, href: pathOf(d.path).href })).find((d) => d.id === id)?.href;
+  if (!href) return { ok: false, why: `No "${id}" here.`, ids: [...SECTORS.map((s) => s.id), ...PATHS.map((p) => p.id), ...DEMOS.map((d) => d.id)] };
+  location.assign(href);
+  return { ok: true, href };
+};
+addCommands([
+  { name: "qdoor_offers", title: "What can I do here?", group: "Qollab Studio", description: "The front door in words: the three lanes (Learn, Studio, Event), each lane's way in for someone new, its apps (what each does, its address, whether it asks for a sign-in) and the one-click demos. Read this first, match it to what the person wants, then call qdoor_open.", annotations: { readOnlyHint: true }, execute: offers },
+  { name: "qdoor_open", title: "Open…", group: "Qollab Studio", ask: "learn, studio, event, an app or a demo", description: "Go to a lane's way in (learn, studio, event), an app (planner, daw, instruments, amps, builder, speakers, playground) or a demo (beat, mix, amp, stage) by its id from qdoor_offers. Studio's way in is a room of your own, sat at the keys.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, execute: openById },
+  { name: "qdoor_demo", title: "Not sure? Try a demo", group: "Qollab Studio", description: "Opens the demo picker a person sees: four things that make a sound in one click.", agent: false, execute: () => demo.showModal() },
+  ...SECTORS.map((s) => ({ name: `qdoor_${s.id}`, title: `${s.word}: ${s.start.say.toLowerCase()}`, group: "Start", description: `${s.word}'s way in.`, agent: false, execute: () => location.assign(s.start.href) })),
+]);
+mountPalette({ button: true, placeholder: "Learn, Studio, Event…" });
+
 declare global { interface Window { qdoor: typeof harness } }
 const harness = {
   /** Each card as drawn: its path, the word it sits under, its name, where it goes, whether its name sits on one line, and the page's overflow. */
@@ -215,6 +262,13 @@ const harness = {
   }),
   /** Scrolls to a lane's shelf (learn, studio or event), or back up to the field with null, as its button or tab does. */
   lane: (id: SectorId | null) => go(id),
+  /** Each lane's way in on its field card, and the demo picker: open or not, and its picks. */
+  starts: () => ({
+    starts: [...document.querySelectorAll<HTMLAnchorElement>(".lane a[data-start]")].map((a) => ({ lane: a.dataset.start, say: a.textContent, href: a.getAttribute("href"), shown: a.checkVisibility({ visibilityProperty: true }) })),
+    demo: { open: demo.open, picks: [...demo.querySelectorAll<HTMLAnchorElement>("a[data-demo]")].map((a) => ({ id: a.dataset.demo, say: a.textContent, href: a.getAttribute("href") })) },
+  }),
+  /** Opens the demo picker, as its button under the title does. */
+  demo: () => document.getElementById("demo-ask")!.click(),
   /** Walks through a path's door, as a click on its card. */
   open: (id: PathId) => list.querySelector<HTMLAnchorElement>(`a[data-path="${id}"]`)?.click(),
   /** The open lane's shelf: each thing, whether it is on the screen, picked (nearest the middle) and drawn. */

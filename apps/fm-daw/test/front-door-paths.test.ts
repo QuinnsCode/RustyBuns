@@ -1,10 +1,10 @@
 // Qollab Studio's front door (#5860), signed out: through each card under LEARN, STUDIO and EVENT to its first step (only the
 // Playground and The Event ask to sign in), and from there the way back home, in headless Chrome over CDP (scripts/chrome.ts). The door itself at phone
 // and desktop sizes is front-door.test.ts.
-import { setDefaultTimeout, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
-import { DOOR, PATHS, type PathId } from "../src/paths.ts";
+import { DEMOS, DOOR, PATHS, SECTORS, type PathId } from "../src/paths.ts";
 
 // the gear room and the jam room are 3D scenes, drawn in software on CI's runners
 setDefaultTimeout(300_000); // walks each of nine cards in headless Chrome
@@ -59,5 +59,33 @@ test.skipIf(!hasChrome)("each card opens on its first step and leads back", asyn
       await tab.eval(`document.querySelector(${JSON.stringify(FIRST[p.id].back)}).click()`);
       await until(tab, `location.pathname === ${JSON.stringify(DOOR)} && !!window.qdoor`);
     }
+  } finally { await tab.close(); }
+});
+
+test.skipIf(!hasChrome)("someone new: the demo picker offers four apps, an agent reads the door in words, and Studio's start sits them at the keys", async () => {
+  const tab = await openTab(chrome.cdp, { w: 375, h: 740 }, true);
+  try {
+    await load(chrome.cdp, tab, `${vite.url}${DOOR.slice(1)}`, 0);
+    await tab.eval(`localStorage.setItem("qollab-studio:quality", "low")`);
+    await until(tab, "!!window.qdoor");
+    // every lane's way in is on its card, on the screen
+    const { starts } = await tab.eval<{ starts: { lane: string; href: string; shown: boolean }[] }>("qdoor.starts()");
+    expect(starts).toEqual(SECTORS.map((s) => expect.objectContaining({ lane: s.id, href: s.start.href, shown: true })));
+    // not sure: the pill under the title opens four demos, each an app's own first step
+    await tab.eval("qdoor.demo()");
+    const { demo } = await tab.eval<{ demo: { open: boolean; picks: { id: string; href: string }[] } }>("qdoor.starts()");
+    expect(demo.open).toBe(true);
+    expect(demo.picks.map((d) => [d.id, d.href])).toEqual(DEMOS.map((d) => [d.id, PATHS.find((p) => p.id === d.path)!.href]));
+    await tab.eval("document.querySelector('#demo .no').click()");
+    expect(await tab.eval<boolean>("qdoor.starts().demo.open")).toBe(false);
+    // an agent's first read names the lanes and where each starts; an id nothing has is answered with the ids
+    const offers = await tab.eval<{ lanes: { id: string; start: { href: string }; apps: { id: string }[] }[] }>("window.__commands.run('qdoor_offers')");
+    expect(offers.lanes.map((l) => [l.id, l.start.href, l.apps.length])).toEqual(SECTORS.map((s) => [s.id, s.start.href, PATHS.filter((p) => p.sector === s.id).length]));
+    expect(await tab.eval<{ ok: boolean; ids: string[] }>("window.__commands.run('qdoor_open', { id: 'tuba' })")).toMatchObject({ ok: false, ids: expect.arrayContaining(["studio", "daw", "mix"]) });
+    // Studio's start: a room of your own with no form, and Enter sits you at the keys
+    await tab.eval(`document.querySelector('.lane a[data-start="studio"]').click()`);
+    await until(tab, `location.pathname === "/jam.html" && new URLSearchParams(location.search).get("sit") === "keys" && !!window.qjam && !!document.getElementById("play")`);
+    await tab.eval("document.getElementById('play').click()");
+    await until(tab, `qjam.state().phase === "play" && qjam.state().you.seat === "keys"`);
   } finally { await tab.close(); }
 });

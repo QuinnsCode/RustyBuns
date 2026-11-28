@@ -1,8 +1,10 @@
 // The files beside a room's world, kept in its Artifacts repo (keep.ts): a player's .glb first. An agent puts one
 // with curl (`PUT /api/r/<room>/files/hero.glb`) and anyone with the room's link may list and read them; the link is
-// the key, as for the tools. Small on purpose: git keeps every version, and Artifacts bills what is stored.
+// the key, as for the tools. Small on purpose: git keeps every version, and Artifacts bills what is stored, so an upload
+// is also counted against what the whole app may store (budget.ts).
 import { json } from "@rustybuns/util/http";
 import { TokenBucket } from "@rustybuns/util/limits";
+import type { Spend } from "./budget.ts";
 import { keepFile, keptFile, keptFiles, type Repos } from "./keep.ts";
 import { MODEL_NAME } from "./world.ts";
 
@@ -12,7 +14,7 @@ export const FILE_BYTES = 4 * 1024 * 1024, ROOM_FILES = 8;
 export const fileBucket = () => new TokenBucket(1 / 30, 5, Date.now());
 
 /** A request to `/api/r/<room>/files<rest>`; `repos` is null where there is no Artifacts. */
-export async function filesHttp(req: Request, repos: Repos | null, bucket: TokenBucket, room: string, rest: string): Promise<Response> {
+export async function filesHttp(req: Request, repos: Repos | null, spend: Spend, bucket: TokenBucket, room: string, rest: string): Promise<Response> {
   if (!repos) return json({ error: "this server keeps no files" }, 501);
   const name = rest.slice("/files/".length);
   if (!name) {
@@ -40,6 +42,8 @@ export async function filesHttp(req: Request, repos: Repos | null, bucket: Token
   if (bytes.length > FILE_BYTES) return tooBig();
   if (new TextDecoder().decode(bytes.subarray(0, 4)) !== "glTF") return json({ error: "that isn't a binary glTF (.glb): send its bytes with --data-binary @file.glb" }, 400);
   if (!had.includes(name) && had.length >= ROOM_FILES) return json({ error: `a room keeps ${ROOM_FILES} files at most: DELETE one first` }, 413);
+  const refused = await spend(bytes.length);
+  if (refused) return json({ error: refused }, 507);
   await keepFile(repos, room, name, bytes);
   return json({ ok: true, name, bytes: bytes.length });
 }

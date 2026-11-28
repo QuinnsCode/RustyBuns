@@ -39,6 +39,7 @@ Then paste this into that repo's `AGENTS.md` or `CLAUDE.md`:
 | `dedupe` | yes | refuses (it measures with APFS) | refuses |
 
 - `add` leaves the new worktree on a detached commit, so make a branch in it before working.
+- `dedupe` leaves files with uncommitted changes as they are, and skips a worktree that is locked or in use.
 - The donor is the repo's main checkout unless you pass `--from <dir>`.
 - Only tracked files are cloned. Build caches are not, and Bun already clones `node_modules` from its own cache on macOS.
 - Git LFS has not been tried. For LFS files alone, `git lfs dedup` is the built-in way.
