@@ -10,8 +10,10 @@
 // - A plot is a person's: signed in through eqosys (who.ts), `eq:<sub>`. Each person has one world, the first room
 //   they signed in from (POST /api/me/world), and claims a plot for it once that world is made (lock.ts): the AI's
 //   write loaded clean and the page saved it (POST /api/r/<room>/made). Nothing sent out names the person or the room.
-// - Players are name-less characters with a colour, a plot and a spot on it. A move goes only to players on the same
-//   or a touching plot.
+// - Players are name-less robots with a plot and a spot on it. A move goes only to players on the same or a touching
+//   plot.
+// - A person's robot is a pick from fixed lists (Look), never free text or a colour of their own. It is kept for them
+//   (GET and PUT /api/galaxy/robot) and goes with their player to those near.
 import { sha256 } from "@rustybuns/util/bytes";
 import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { json, readJson } from "@rustybuns/util/http";
@@ -68,12 +70,34 @@ export const RoomBody = obj({ room: str(32, { re: ROOM }) });
 export const MyWorld = obj({ room: str(32, { re: ROOM }) });
 export type MyWorld = Of<typeof MyWorld>;
 
-/** A player: a colour, a plot, and a spot on it (0 to 1 across, x west to east, z north to south). */
-export const Walker = obj({ id: str(32), color: str(24), x: Coord, y: Coord, px: num(0, 1), pz: num(0, 1) });
+/** A robot's paints (a Look names one by its place here) and the shapes each part comes in. */
+export const PAINTS = ["#ff4f8b", "#2cc6d6", "#ffb02e", "#7ccf4a", "#9a7bff", "#e9eef5", "#e0533a", "#4a5568"] as const;
+export const PARTS = {
+  head: ["box", "dome", "screen"],
+  eyes: ["two", "visor", "one"],
+  top: ["antenna", "propeller", "ears"],
+  feet: ["wheels", "legs", "hover"],
+} as const;
+export const Look = obj({ paint: int(0, PAINTS.length - 1), head: oneOf(PARTS.head), eyes: oneOf(PARTS.eyes), top: oneOf(PARTS.top), feet: oneOf(PARTS.feet) });
+export type Look = Of<typeof Look>;
+/** The robot someone has before they build one, from their plot's id: the same on every screen. */
+export function lookOf(id: string): Look {
+  const n = parseInt(id.slice(0, 6), 16) || 0;
+  const pick = <T>(list: readonly T[], by: number) => list[Math.floor(n / by) % list.length]!;
+  return { paint: n % PAINTS.length, head: pick(PARTS.head, 8), eyes: pick(PARTS.eyes, 24), top: pick(PARTS.top, 72), feet: pick(PARTS.feet, 216) };
+}
+/** GET and PUT /api/galaxy/robot answer: your robot, or null when you haven't built one. PUT sends { look }. */
+export const Robot = obj({ look: nul(Look) });
+export type Robot = Of<typeof Robot>;
+export const RobotBody = obj({ look: Look });
+
+/** A player: a robot, a plot, and a spot on it (0 to 1 across, x west to east, z north to south). */
+export const Walker = obj({ id: str(32), look: Look, x: Coord, y: Coord, px: num(0, 1), pz: num(0, 1) });
 export type Walker = Of<typeof Walker>;
-/** The page to the galaxy: where its player is now. */
-export const ToGalaxy = obj({ t: oneOf(["at"]), x: Coord, y: Coord, px: num(0, 1), pz: num(0, 1) });
-export type ToGalaxy = Of<typeof ToGalaxy>;
+/** The page to the galaxy: where its player is now, or the robot it now is. */
+export const ToAt = obj({ t: oneOf(["at"]), x: Coord, y: Coord, px: num(0, 1), pz: num(0, 1) });
+export const ToLook = obj({ t: oneOf(["look"]), look: Look });
+export type ToGalaxy = Of<typeof ToAt> | Of<typeof ToLook>;
 /** The galaxy to a page: everyone near you (after you join or change plot), one player who moved, or one who left. */
 export const FromGalaxy = obj({ t: oneOf(["players", "player", "gone"]), players: opt(arr(Walker, 200)), player: opt(Walker), id: opt(str(32)) });
 export type FromGalaxy = Of<typeof FromGalaxy>;
@@ -103,8 +127,6 @@ const Cell = obj({ owner: str(210), room: str(32, { re: ROOM }), id: str(32) });
 
 /** The id the map knows a room's plot by: a one-way hash, so the map never hands out a room's link. */
 export const plotId = async (room: string) => (await sha256(`agent-page-plot:${room}`)).slice(0, 16);
-/** A player's colour, from their id: the same on every screen. */
-export const colorOf = (id: string) => `hsl(${parseInt(id.slice(0, 6), 16) % 360} 85% 62%)`;
 const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1;
 
 export class Galaxy {
@@ -127,6 +149,18 @@ export class Galaxy {
   mine(owner: string): Promise<Claimed | null> { return this.plotAt(`o:${owner}`); }
   /** The plot this room's world sits on, or null. */
   plotOf(room: string): Promise<Claimed | null> { return this.plotAt(`r:${room}`); }
+
+  /** The robot this person built, or null. */
+  async robotOf(person: string): Promise<Look | null> {
+    return check(Look, (await this.kv.get([`l:${person}`])).get(`l:${person}`));
+  }
+
+  /** The robot of whoever holds this room's plot. */
+  private async robotOn(room: string): Promise<Look | null> {
+    const n = (await this.kv.get([`r:${room}`])).get(`r:${room}`);
+    const cell = typeof n === "number" ? check(Cell, (await this.kv.get([`c:${n}`])).get(`c:${n}`)) : null;
+    return cell ? this.robotOf(cell.owner) : null;
+  }
 
   /** This person's world: the room kept for them, or null when they have none yet. */
   async worldOf(person: string): Promise<string | null> {
@@ -190,7 +224,7 @@ export class Galaxy {
     if (!ROOM.test(room)) return json({ error: "which room? ?room=<room>" }, 400);
     const plot = await this.plotOf(room);
     if (!plot) return json({ error: "claim a plot first: POST /api/galaxy/claim" }, 409);
-    return { id: plot.id, color: colorOf(plot.id), x: plot.x, y: plot.y, px: 0.5, pz: 0.5 };
+    return { id: plot.id, look: (await this.robotOn(room)) ?? lookOf(plot.id), x: plot.x, y: plot.y, px: 0.5, pz: 0.5 };
   }
 
   /** The galaxy's doors, `rest` being the path after /api/galaxy. `forward` reaches a room's own doors (its picture
@@ -210,6 +244,16 @@ export class Galaxy {
       const body = await readJson(req, RoomBody);
       if (!body) return json({ error: "send { room }: the room this browser is in" }, 400);
       return json({ room: await this.myWorld(person, body.room) } satisfies MyWorld);
+    }
+    if (rest === "/robot" && (req.method === "GET" || req.method === "PUT")) {
+      if (req.method === "PUT" && !fromPage(req)) return json({ error: "only this site's page may change your robot" }, 403);
+      const person = await this.who(req);
+      if (!person) return json({ error: "Sign in with eqosys first: your robot is kept for your account." }, 401);
+      if (req.method === "GET") return json({ look: await this.robotOf(person) } satisfies Robot);
+      const body = await readJson(req, RobotBody);
+      if (!body) return json({ error: "send { look }: a robot's parts" }, 400);
+      await this.kv.put({ [`l:${person}`]: body.look });
+      return json({ look: body.look } satisfies Robot);
     }
     if (rest === "/claim" && req.method === "POST") {
       if (!fromPage(req)) return json({ error: "only this site's page may claim a plot" }, 403);
@@ -250,13 +294,13 @@ export function joined<S>(hub: Hub<S>, s: S, p: Walker) {
   for (const o of others) if (near(o.p, p)) hub.send(o.s, { t: "player", player: p });
 }
 
-/** A frame from a player: checked, kept, and sent on to the players on the same or a touching plot (the old plot's
+/** A frame from a player, its new spot or its new robot: checked, kept, and sent on to the players on the same or a touching plot (the old plot's
  *  too, so they see them go). One who changed plot hears who is near the new one. */
 export function walked<S>(hub: Hub<S>, s: S, raw: unknown) {
-  const m = check(ToGalaxy, raw);
-  const me = m && hub.list().find((e) => e.s === s);
-  if (!m || !me) return;
-  const p: Walker = { ...me.p, x: m.x, y: m.y, px: m.px, pz: m.pz };
+  const at = check(ToAt, raw), dressed = at ? null : check(ToLook, raw);
+  const me = (at || dressed) && hub.list().find((e) => e.s === s);
+  if (!me) return;
+  const p: Walker = at ? { ...me.p, x: at.x, y: at.y, px: at.px, pz: at.pz } : { ...me.p, look: dressed!.look };
   hub.save(s, p);
   const others = hub.list().filter((e) => e.s !== s && e.p.id !== p.id);
   for (const o of others) if (near(o.p, p) || near(o.p, me.p)) hub.send(o.s, { t: "player", player: p });

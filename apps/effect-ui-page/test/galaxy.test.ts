@@ -28,6 +28,7 @@ interface Galaxy {
   players: { id: string; x: number; y: number; px: number; pz: number }[];
   live: { kind: string; id: string | null; files: { path: string; bytes: number }[] } | null;
   shows: Record<string, string>;
+  look: { paint: number; head: string; eyes: string; top: string; feet: string } | null; building: boolean;
 }
 
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -98,6 +99,25 @@ describe("two rooms in Agent Galaxy", () => {
     await a.until("B moved", `agentGalaxy.state().players.some((p) => p.id === ${JSON.stringify(meB.id)} && Math.abs(p.px - 0.7) < 0.01)`);
   });
 
+  test("a robot is built with picture buttons, seen by a neighbour, and kept for next time", async () => {
+    // Neither has built one, so the builder came up by itself once the cloud lifted.
+    await a.until("A's builder", "agentGalaxy.state().building");
+    const press = (...names: string[]) => a.page(`${JSON.stringify(names)}.forEach((n) => document.querySelector('.robot-shop button[aria-label="' + n + '"]').click())`);
+    await press("Green paint", "Dome head", "One big eye", "Propeller", "Hover");
+    const built = { paint: 3, head: "dome", eyes: "one", top: "propeller", feet: "hover" };
+    await b.until("A's robot on B's screen", `agentGalaxy.state().players.some((p) => p.id === ${JSON.stringify(meA.id)} && p.look.paint === 3 && p.look.feet === "hover")`);
+    await press("Done");
+    expect(await a.state()).toMatchObject({ building: false, look: built });
+    await a.leave();
+    expect(await a.enter()).toMatchObject({ look: built });
+    await a.until("the cloud gone again", "(await new Promise((r) => setTimeout(r, 3000)), true)");
+    expect((await a.state()).building).toBe(false);
+    // The button brings it back.
+    await a.page(`document.querySelector(".galaxy-robot").click()`);
+    expect((await a.state()).building).toBe(true);
+    await press("Done");
+  });
+
   test("walking east off your plot lands you on the west edge of the plot next door", async () => {
     const s = await a.walk(0.6, 0);
     expect(s.plot).toEqual({ x: meA.x + 1, y: meA.y });
@@ -147,6 +167,8 @@ test("a page from another site can't claim a plot, save a room's world or open a
   const save = await fetch(`${base}/api/r/evilroom0001/world`, { method: "PUT", headers: evil, body: JSON.stringify({ files: { "index.html": "<p>hi" } }) });
   expect(save.status).toBe(403);
   expect((await fetch(`${base}/api/r/evilroom0001/world`)).status).toBe(404);
+  const dress = await fetch(`${base}/api/galaxy/robot`, { method: "PUT", headers: evil, body: JSON.stringify({ look: { paint: 0, head: "box", eyes: "two", top: "ears", feet: "legs" } }) });
+  expect(dress.status).toBe(403);
   const socket = await fetch(`${base}/api/galaxy/socket?room=evilroom0001`, { headers: { ...evil, upgrade: "websocket", connection: "upgrade" } });
   expect(socket.status).toBe(403);
 });

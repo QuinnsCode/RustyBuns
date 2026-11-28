@@ -262,3 +262,18 @@ button:disabled { opacity: .5; cursor: default; }
 @media (pointer: coarse) { .galaxy-stick { display: block; } .galaxy-hint { display: none; } }
 .galaxy-back { position: fixed; top: 56px; left: 14px; z-index: 21; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #fff; background: rgba(8, 8, 24, .8); border-color: rgba(255, 255, 255, .3); }
 @media (min-width: 700px) { .galaxy-back { top: 12px; } }
+/* Your robot (robotShop.ts): the button that opens the builder, and its rows of picture buttons along the bottom. */
+.galaxy-layer svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.galaxy-robot { position: absolute; top: 56px; right: 14px; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 50%; color: #fff; background: rgba(8, 8, 24, .8); border: 1px solid rgba(255, 255, 255, .3); cursor: pointer; }
+@media (min-width: 700px) { .galaxy-robot { top: 12px; } }
+.galaxy-layer.building :is(.galaxy-robot, .galaxy-hint, .galaxy-stick) { display: none; }
+.robot-shop { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); box-sizing: border-box; width: min(440px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; padding: 12px; display: grid; gap: 8px; border-radius: 22px; background: rgba(16, 14, 28, .86); backdrop-filter: blur(10px); }
+@media (max-width: 560px) { .robot-shop { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 48px); } }
+.robot-row { display: flex; justify-content: center; gap: 8px; }
+.robot-row.paints { flex-wrap: wrap; gap: 6px; }
+.robot-shop button { width: 52px; height: 42px; padding: 0; display: grid; place-items: center; border: 3px solid transparent; border-radius: 12px; color: #fff7ea; background: rgba(255, 255, 255, .1); cursor: pointer; }
+.robot-shop button[aria-pressed="true"] { background: #ffd58a; color: #231a10; }
+.robot-row.paints button { width: 36px; height: 36px; border-radius: 50%; }
+.robot-row.paints button[aria-pressed="true"] { border-color: #fff; box-shadow: 0 0 0 2px #231a10 inset; }
+.robot-shop button.robot-done { justify-self: center; width: 120px; background: #2f8f52; }
+.robot-shop button:focus-visible, .galaxy-robot:focus-visible { outline: 2px solid #ffd58a; outline-offset: 2px; }
