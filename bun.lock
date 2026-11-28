@@ -45,6 +45,20 @@
         "three": "0.186.1",
       },
     },
+    "apps/agentworld": {
+      "name": "agentworld",
+      "version": "0.0.1",
+      "dependencies": {
+        "@effect/ui": "https://pkg.pr.new/Effect-TS/ui/@effect/ui@a0d7578",
+        "@rustybuns/util": "^0.1.12",
+        "effect": "4.1.4",
+        "three": "^0.180.0",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "^0.1.12",
+        "@types/three": "^0.180.0",
+      },
+    },
     "apps/alien-disc-golf": {
       "name": "alien-disc-golf",
       "version": "0.0.1",
@@ -243,20 +257,6 @@
       "devDependencies": {
         "@rustybuns/cli": "^0.1.12",
         "vite": "^6.4.4",
-      },
-    },
-    "apps/effect-ui-page": {
-      "name": "effect-ui-page",
-      "version": "0.0.1",
-      "dependencies": {
-        "@effect/ui": "https://pkg.pr.new/Effect-TS/ui/@effect/ui@a0d7578",
-        "@rustybuns/util": "^0.1.12",
-        "effect": "4.1.4",
-        "three": "^0.180.0",
-      },
-      "devDependencies": {
-        "@rustybuns/cli": "^0.1.12",
-        "@types/three": "^0.180.0",
       },
     },
     "apps/eqosys": {
@@ -2882,6 +2882,8 @@
 
     "agentkeepalive": ["agentkeepalive@4.6.0", "", { "dependencies": { "humanize-ms": "^1.2.1" } }, "sha512-kja8j7PjmncONqaTsB8fQ+wE2mSU2DJ9D4XKoJ5PFWIdRMa6SLSN1ff4mOr4jCbfRSsxR4keIiySJU0N9T5hIQ=="],
 
+    "agentworld": ["agentworld@workspace:apps/agentworld"],
+
     "ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
     "ajv-formats": ["ajv-formats@3.0.1", "", { "dependencies": { "ajv": "^8.0.0" } }, "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ=="],
@@ -3273,8 +3275,6 @@
     "ee-first": ["ee-first@1.1.1", "", {}, "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="],
 
     "effect": ["effect@4.1.4", "", {}, "sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ=="],
-
-    "effect-ui-page": ["effect-ui-page@workspace:apps/effect-ui-page"],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.433", "", {}, "sha512-5lCAbyZBjtmUt/RAGHRqrL2q0oEFRThDAsZHHDn9XHa89Qw7gMYOeSicBTy+AHfvo0r6vwsZvqNJTQIQy1BLzA=="],
 

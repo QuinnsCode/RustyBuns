@@ -1,6 +1,6 @@
 // One agent's session with an MCP server, and what it costs: the instructions and tool list (once), then each call's
 // arguments and reply. apps/codesplitter/scripts/tool-tokens.ts counts it with Claude's count_tokens against a live
-// server; apps/effect-ui-page/test/tokens.test.ts counts it with `estimate` (no key, no network) and holds a budget.
+// server; apps/agentworld/test/tokens.test.ts counts it with `estimate` (no key, no network) and holds a budget.
 import { arr, obj, opt, raw, str } from "../packages/util/src/guard.ts";
 
 const Schema = obj({ type: opt(str(20)), properties: opt(raw), required: opt(arr(str(200), 200)) });

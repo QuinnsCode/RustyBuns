@@ -33,10 +33,10 @@ export const PAGE_REPO = "page";
 /** Where a page may load libraries from: pinned versions are the author's job. */
 export const LIBRARY_HOSTS = ["https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://unpkg.com", "https://esm.sh"];
 
-/** Sites that may show a profile page in a frame besides codeSplitter itself: the Agent Page (apps/effect-ui-page),
+/** Sites that may show a profile page in a frame besides codeSplitter itself: Agent World (apps/agentworld),
  *  deployed and on this machine, which puts someone's page behind theirs. The page is public and runs in an opaque
  *  sandbox with no session, so a frame elsewhere sees nothing it couldn't fetch. */
-export const PAGE_FRAMERS = ["https://agent-page.notryanquinn.workers.dev", "http://127.0.0.1:*", "http://localhost:*"];
+export const PAGE_FRAMERS = ["https://agentworld.notryanquinn.workers.dev", "http://127.0.0.1:*", "http://localhost:*"];
 
 /** A page loads images and media from outside only when its index.html says so with this tag; visitors are told. */
 export const OUTSIDE_MEDIA = /<meta\s+name=["']codesplitter-outside-media["']\s+content=["']allow["']\s*\/?>/i;

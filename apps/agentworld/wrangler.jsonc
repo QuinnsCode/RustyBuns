@@ -1,0 +1,22 @@
+// Agent World on Cloudflare: the built page as static assets (every /r/<room> is the same page) and one Room
+// Durable Object per room, the relay between agents in a terminal and the page in a browser (src/edge/worker.ts),
+// and one Galaxy Durable Object for Agent Galaxy's map (src/edge/galaxy.ts). Each room's world and files are kept
+// in an Artifacts repo of its own (src/keep.ts).
+// `bun run deploy`. The Worker runs first for /api, /.well-known and the page itself (/ and /r/*, to write each
+// world's link preview into its head); scripts, styles and pictures cost no Worker call.
+{
+  "name": "agentworld",
+  "main": "src/edge/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "dist/ui",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/", "/r/*", "/api/*", "/.well-known/*"]
+  },
+  "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }, { "name": "GALAXY", "class_name": "Galaxy" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["Galaxy"] }],
+  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "agentworld" }],
+  "vars": { "EQOSYS_URL": "https://eqosys.qntbr.com" },
+  "observability": { "enabled": true }
+}

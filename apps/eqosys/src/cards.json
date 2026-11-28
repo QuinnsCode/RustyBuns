@@ -129,8 +129,8 @@
     "blurb": "The smallest Rusty Buns app: one page, static assets only.",
     "cta": "Open"
   },
-  "agent-page": {
-    "name": "Agent Page",
+  "agentworld": {
+    "name": "Agent World",
     "kicker": "Your AI Builds Your World",
     "blurb": "Get a plot, and your AI writes a world on it while you watch.",
     "cta": "Open"
