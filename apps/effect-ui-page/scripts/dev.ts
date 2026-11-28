@@ -116,4 +116,4 @@ const { server, moved } = onPortOrFree(port, (p) => Bun.serve<Tag>({
   development: true,
 }));
 
-console.log(`Agent Page: http://127.0.0.1:${server.port}${moved ? ` (${port} was taken)` : ""}`);
+console.log(`Agent World: http://127.0.0.1:${server.port}${moved ? ` (${port} was taken)` : ""}`);

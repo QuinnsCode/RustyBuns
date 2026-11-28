@@ -15,7 +15,7 @@ import { READY } from "./worlds.ts";
 import { ProfilePage } from "./ProfilePage.ts";
 import { ROOM } from "./tools.ts";
 import { getJson } from "@rustybuns/util/http";
-import { backFromSignIn, login } from "./account.ts";
+import { backFromSignIn, login, mine } from "./account.ts";
 import { galaxyLock, lockLine } from "./lock.ts";
 import { Made } from "./saved.ts";
 import { startGalaxy } from "./galaxyView.ts";
@@ -24,7 +24,9 @@ const newRoom = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b)
 
 // Back from signing in with eqosys (account.ts): the person's own world opens, landing passed.
 const back = location.pathname === "/" ? await backFromSignIn() : null;
-const here = back ?? location.pathname.match(/^\/r\/([^/]+)\/?$/)?.[1];
+// Signed in already and back at the root: straight to your world, no landing.
+const returning = location.pathname === "/" && back === null && login() ? mine() : null;
+const here = back ?? returning ?? location.pathname.match(/^\/r\/([^/]+)\/?$/)?.[1];
 const room = here && ROOM.test(here) ? here : newRoom();
 if (location.pathname !== `/r/${room}`) history.replaceState(null, "", `/r/${room}${location.search}`);
 
@@ -43,14 +45,40 @@ galaxyLock.why = lockLine(who !== null, made);
 // Before the page mounts, so the first world's load is seen.
 startPictures(room);
 
-const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, initial, full: new URLSearchParams(location.search).has("full"), landing: kept === null && fromServer === null && back === null, who, made }, document.getElementById("app")!)
+const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, initial, full: new URLSearchParams(location.search).has("full"), landing: kept === null && fromServer === null && back === null && returning === null, who, made }, document.getElementById("app")!)
   .pipe(Layer.provide(agent(room, initial)));
 
 Layer.launch(Main).pipe(Effect.runFork);
 const galaxy = startGalaxy(room);
 
+// Back from signing in, the next step has the focus: Pick your land when it is up (a new world), else Copy prompt,
+// so one press copies.
+if (back !== null) {
+  const focus = () => { const b = document.querySelector<HTMLButtonElement>(".pick [data-land]") ?? document.querySelector<HTMLButtonElement>(".dock button.big"); b?.focus({ preventScroll: true }); return b !== null; };
+  if (!focus()) { const o = new MutationObserver(() => { if (focus()) o.disconnect(); }); o.observe(document.getElementById("app")!, { childList: true, subtree: true }); }
+  // Your land picked: the picker goes, and Copy prompt is next.
+  let picking = document.querySelector(".pick") !== null;
+  const picked = new MutationObserver(() => {
+    const now = document.querySelector(".pick") !== null;
+    if (picking && !now && (document.activeElement === document.body || !document.activeElement)) document.querySelector<HTMLButtonElement>(".dock button.big")?.focus({ preventScroll: true });
+    picking = now;
+    if (document.querySelector("[data-galaxy-tile].next")) picked.disconnect();
+  });
+  picked.observe(document.getElementById("app")!, { childList: true, subtree: true });
+  // Still there when your world is made: the focus goes on to the Galaxy tile, the next step.
+  const on = new MutationObserver(() => {
+    const tile = document.querySelector<HTMLButtonElement>("[data-galaxy-tile].next");
+    if (!tile) return;
+    on.disconnect();
+    // Only from Copy, or from nothing (the body): never away from something else you were using.
+    const at = document.activeElement;
+    if (!at || at === document.body || at.matches(".dock button.big")) tile.focus({ preventScroll: true });
+  });
+  on.observe(document.getElementById("app")!, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+}
+
 // Cmd+K: the page's own tools (agent.ts puts them up) and, for a person only, the two lines that connect an AI.
-const copy = (text: string) => navigator.clipboard.writeText(text).then(() => "Copied", () => "The clipboard said no: copy it from the dock.");
+const copy = (text: string) => navigator.clipboard.writeText(text).then(() => "Copied", () => "The clipboard said no: copy it from the console.");
 const claudeLine = connectLines(location.origin, room)[0]!.text;
 addCommands([
   // The same buttons a person sees, on the landing and in the dock.
@@ -64,7 +92,7 @@ addCommands([
     description: "Records three seconds of the world and downloads an animated GIF.", execute: () => exportGif(room) },
   // The dock's Agent Galaxy button and window.agentGalaxy.enter() send the same message.
   { name: "page_galaxy", title: "Agent Galaxy", group: "Galaxy", agent: false,
-    description: "Zoom out to the map of everyone's worlds and walk it as your robot, once your world is made.", answers: true,
+    description: "Walk the galaxy as your robot: your land next to everyone's, once your world is made.", answers: true,
     execute: () => galaxyLock.why ?? void galaxy.enter() },
   { name: "page_sign", title: "Sign for your land", group: "Galaxy", agent: false, answers: true,
     description: "Your signature, standing as a sign on your land for neighbours to see. Opens the pad, again too.",
@@ -73,7 +101,7 @@ addCommands([
     description: "Build your robot, the body you walk the galaxy in: its paint, head, eyes, top and feet.",
     execute: () => galaxyLock.why ?? void galaxy.robot() },
   { name: "page_galaxy_back", title: "Back to my world", group: "Galaxy", agent: false,
-    description: "Leave the galaxy map and go back to your own world and the dock.", execute: () => { void galaxy.leave(); } },
+    description: "Leave the galaxy and go back to your world and its console.", execute: () => { void galaxy.leave(); } },
 ]);
 mountPalette({ button: true, placeholder: "What should the page do?" });
 

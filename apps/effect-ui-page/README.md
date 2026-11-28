@@ -1,4 +1,4 @@
-# Agent Page
+# Agent World
 
 > **What it proves:** a world any coding agent writes while you watch (Claude Code, Codex, opencode, T3 Code, or a
 > browser agent with WebMCP), the way codeSplitter's profile page works: the agent writes real code (a canvas city, a
@@ -12,7 +12,8 @@ cd apps/effect-ui-page
 bun run dev              # http://127.0.0.1:4799
 ```
 
-How it goes, as the landing's **What is Agent World?** card says it:
+The pitch, as the landing says it: **Your agent builds your world. Then you walk the galaxy everyone built.** Three
+steps: Connect your agent, Ask for your world, Walk the galaxy. How it goes:
 
 1. See how it works: try a ready-made world, no AI needed.
 2. Make an account with eqosys: your world follows you to any browser.
@@ -20,15 +21,16 @@ How it goes, as the landing's **What is Agent World?** card says it:
 4. Then the galaxy opens: your world joins one big map you can walk.
 
 Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
-city. Two cards at the top: **What is Agent World?** opens a short explainer in place, and **Create your world**
+city, all of it on one screen with no scrolling: the sign, the pitch, the four parts it's built from (Effect
+UI, WebMCP, Cloudflare Artifacts, Effect), the three steps as pictures, and one bright button. **Create your world**
 signs you in with eqosys and opens your world: the server keeps one per account (`POST /api/me/world`), the room you
 first signed in from, so signing in on another browser lands you in the same world, its files from the server. Signed
 in already, it goes straight there, and where eqosys can't be reached (local dev) it says so in one line. Signed out,
-everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Below them: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
-pictures of what that line does. Three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
+everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Under it, three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
 one click with no AI connected, on the landing, in the console and in Cmd+K, each with one thing to ask your AI next.
 When your AI first reads the page or changes it, the landing gives way to your world; "Skip to the page" does it by
-hand. A room this browser already kept opens straight on its page. The console is a terminal window in the middle of
+hand. Connecting your AI is in the console, where it is the next step. **How it's built** opens the longer story under
+the landing. A room this browser already kept opens straight on its page. The console is a terminal window in the middle of
 the screen (**Hide** puts it away, **Show** brings it back): on the left what happened, the way a command line shows it
 (connecting to the relay, connected, waiting for your AI, each call and how it went); on the right pictures and
 buttons: Copy, Paste, Watch across the top, then a button for each way in:
@@ -53,8 +55,12 @@ buttons: Copy, Paste, Watch across the top, then a button for each way in:
 
 Then ask for a world: "make me a rainy neon city in three.js, slowly orbiting". The world reloads with each file the
 agent writes, and the console lists its calls. A step strip there shows where your AI is: Waiting for your AI, Your
-AI is here (its first `page_read`), Asking you about your world (a `page_status`), Writing the code (its first write),
-Your world is up (the frame loaded with no errors after a write). The AI asks you three things in its own chat (the
+AI is here (its first `page_read`), Asking you about your world (a `page_status`), Writing the code (its first write
+or edit), Your world is up (the frame loaded with no errors after a write or an edit). Under it, one line says what
+happens next ("Next: open the galaxy"). Each screen has one bright control, the next step: Create your world on the
+landing; back from signing in, Copy prompt, already focused so one press copies; once your world is up, the Galaxy
+tile, with one short glow (none when the system asks for less motion), which takes the focus on from Copy. Signed in
+already, the site's root opens your world, not the landing. The AI asks you three things in its own chat (the
 ground, what is on it, the weather) before it writes; the page never asks. A new room starts with a night desert
 (`src/starter.ts`, built with `@world/kit`, so it stands in 3D in the galaxy) to change or throw away. A signed-in
 person whose world is still that desert is asked to **Pick your land**: **Hill village** (round-doored mound homes,
@@ -79,7 +85,7 @@ link opens with the console put away.
 
 **Pictures.** A moment after the world loads with no errors, the page takes a picture of its largest `<canvas>` and
 keeps it on the room, at `GET <room>/picture` (the `/api/r/<room>` link). Share your `/r/<room>` link and the preview
-shows that picture; a room with none shows the Agent Page sign. A world with no canvas has no picture of its own.
+shows that picture; a room with none shows the Agent World sign. A world with no canvas has no picture of its own.
 **Export GIF** (in the console and in Cmd+K) records three seconds of the canvas and downloads them as an animated GIF,
 `<room>.gif`. Keep the tab in front while it records. The file's name is the room's key, so rename it before you pass it
 on.
@@ -171,7 +177,7 @@ bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 
 ### Agent Galaxy
 
-Every world is a plot of land in one shared space, and the galaxy opens once your world is made: you are signed in, and your AI's write
+Every world is a plot of land in one shared space, and the galaxy opens once your world is made: you are signed in, and your AI's write or edit
 loaded with no errors (the step strip's "Your world is up"), which the page saves on the server
 (`POST /api/r/<room>/made`). Until then the Galaxy tile has a lock and one line under it ("Sign in and make your world
 first", or "Make your world first"), and Cmd+K and `agentGalaxy.enter()` say the same; the server answers a claim with
@@ -182,6 +188,14 @@ Everyone's land in one 3D space, like rural neighbours: plots touch edge to edge
 Galaxy** (the Galaxy tile in the console, or Cmd+K) shows your own land under cloud, then the cloud lifts and you are a
 robot on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
 neighbour's. **Back to my world** brings the console back.
+
+The galaxy is ready before you press it: pointing at the Galaxy tile (hover, keyboard focus or a finger on it), and
+a moment after your world is made, the page loads three.js and, once you have signed for your land, claims your plot,
+fetches the plots around you and your robot, reads your land and your neighbours' (before you have signed, your own
+land only), and builds the scene on a canvas nobody sees yet, a little at a time when the browser
+is idle. The click then shows it and lifts the cloud. Never for a signed-out person or a locked tile, never twice, and
+let go if you leave the page. `agentGalaxy.state().preload` says how far it got (`none`, `warming`, `ready`, `used`)
+and whose lands are read. Signed out, the locked tile is the way to sign in.
 
 - A world built with `@world/kit` stands there in 3D: its ground, water, trees, rocks and its own meshes, with what
   glows. It also brings its mood: sky colours, fog, sun, bloom, rain, snow or fireflies, chimney smoke and flying cars.

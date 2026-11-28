@@ -12,7 +12,7 @@ export async function fakeEqosys() {
   let url = "", next: Person | null = null, n = 0;
   const codes = new Map<string, Person>(), refreshes = new Map<string, Person>();
   const handoff = (p: Person, app: string) => ({ user: p, app, source: app, access: ["member"] });
-  /** A token for `p`: for Agent Page unless `app` says another, signed `at` (now by default; it lasts ten minutes). */
+  /** A token for `p`: for Agent World unless `app` says another, signed `at` (now by default; it lasts ten minutes). */
   const token = async (p: Person, o: { app?: string; at?: number } = {}) => (await sign(signer, url, handoff(p, o.app ?? "agent-page"), o.at ?? Date.now()))!;
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET, POST, OPTIONS" };
   const reply = (v: unknown, status = 200) => Response.json(v, { status, headers: cors });
@@ -53,7 +53,7 @@ export async function fakeEqosys() {
 /** A page on the landing presses "Create your world" with eqosys at `eqosys`, signed in there as whoever it names,
  *  and comes back on `/r/<world>`: the room it answers. */
 export async function signIn(tab: Tab, eqosys: string): Promise<string> {
-  await tab.eval(`localStorage.setItem("agent-page.eqosys", ${JSON.stringify(eqosys)}), document.querySelector(".l-card.c-pink").click()`);
+  await tab.eval(`localStorage.setItem("agent-page.eqosys", ${JSON.stringify(eqosys)}), document.querySelector(".l-create").click()`);
   await waitFor(tab, "back from signing in", `location.pathname.startsWith("/r/") && !!window.agentGalaxy && !!document.querySelector(".dock")`, 30_000);
   return tab.eval<string>(`location.pathname.slice(3)`);
 }

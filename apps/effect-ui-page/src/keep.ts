@@ -42,7 +42,7 @@ async function under(repo: Repo, dir: string): Promise<string[]> {
 async function commit(repos: Repos, room: string, changes: Record<string, Change>, message: string) {
   let repo = await find(repos, room);
   if (!repo) {
-    await repos.create(room, { description: "An Agent Page room", setDefaultBranch: "main" }).catch((e: unknown) => { if (!/ALREADY_EXISTS|already exists/i.test(String(e))) throw e; });
+    await repos.create(room, { description: "An Agent World room", setDefaultBranch: "main" }).catch((e: unknown) => { if (!/ALREADY_EXISTS|already exists/i.test(String(e))) throw e; });
     repo = await repos.get(room);
   }
   const { remote } = await repo.info();

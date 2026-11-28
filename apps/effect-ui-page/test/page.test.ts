@@ -183,12 +183,15 @@ test("the Galaxy is locked until your world is made: a ready-made world doesn't 
     expect([s.model.made, s.model.galaxy]).toEqual([true, true]);
   })));
 
-test("What is Agent World? opens in place on the landing and closes again", () =>
+test("the landing is one screen: the three steps and Create your world; How it's built opens under it and closes again", () =>
   run(Effect.gen(function* () {
     const s = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, landing: true });
-    const card = HtmlLocator.role("button", { name: /What is Agent World/ });
-    s.click(card).expect(HtmlLocator.role("region", { name: "What is Agent World?" })).toExist()
-      .click(card).expect(HtmlLocator.role("region", { name: "What is Agent World?" })).toBeAbsent();
+    const how = HtmlLocator.role("button", { name: "How it's built" });
+    for (const says of ["Connect your agent", "Ask for your world", "Walk the galaxy"]) s.expect(Locator.text(says)).toExist();
+    s.expect(HtmlLocator.role("button", { name: /Create your world/ })).toExist()
+      .expect(HtmlLocator.role("region", { name: "How it's built" })).toBeAbsent()
+      .click(how).expect(HtmlLocator.role("region", { name: "How it's built" })).toExist()
+      .click(how).expect(HtmlLocator.role("region", { name: "How it's built" })).toBeAbsent();
   })));
 
 test("Create your world signs in, or says in one line that it can't, and Skip to the page still works", () =>
@@ -220,17 +223,9 @@ test("a person tries a ready-made world from the landing, no AI connected, and U
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
   })));
 
-test("a fresh room lands on the landing: Copy copies its Claude Code line, and the AI's first write brings up the world", () =>
+test("a fresh room lands on the landing, and the AI's first write brings up the world", () =>
   run(Effect.gen(function* () {
-    const fresh = { ...props, landing: true };
-    const s = yield* HtmlScene.make(ProfilePageNoDeps, fresh);
-    s.expect(Locator.text("How it works")).toExist();
-    s.expect(Locator.text("How it's built")).toExist();
-    s.click(HtmlLocator.role("button", { name: "Copy" }))
-      .expectExact(CopyText);
-    expect(s.pending[0]!.command.args).toMatchObject({ text: connectLines(props.origin, props.room)[0]!.text });
-    s.resolve(CopyText, PageMessage.CompletedCopy({ what: "Claude Code" })).expect(HtmlLocator.role("button", { name: "Copied" })).toExist();
-    const story = yield* Story.make(ProfilePageNoDeps, fresh);
+    const story = yield* Story.make(ProfilePageNoDeps, { ...props, landing: true });
     story.send(PageMessage.ReceivedAgentCall(write("world.js", "// mine")));
     expect(story.model.landing).toBe(false);
     story.resolve(ReportPage, PageMessage.CompletedReportPage());

@@ -142,7 +142,7 @@ button:disabled { opacity: .5; cursor: default; }
 .landing {
   --night: #05060f; --l-ink: #e9ecf8; --l-dim: #9aa0c4; --pink: #ff3d8b; --cyan: #21e6ff; --amber: #ffb547; --violet: #a67bff;
   --glass: rgba(8, 8, 24, .66); --l-body: "Martian Mono", ui-monospace, Menlo, monospace; --l-display: "Audiowide", "Arial Black", system-ui, sans-serif;
-  position: relative; isolation: isolate; min-height: 100vh; display: grid; grid-template-rows: 1fr auto;
+  position: relative; isolation: isolate; min-height: 100vh; min-height: 100dvh; display: grid;
   color: var(--l-ink); font: 200 14px/1.55 var(--l-body); color-scheme: dark;
 }
 .landing::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(90deg, rgba(5,6,15,.86) 0%, rgba(5,6,15,.55) 42%, rgba(5,6,15,0) 70%), linear-gradient(0deg, rgba(5,6,15,.8), rgba(5,6,15,0) 34%); }
@@ -157,34 +157,19 @@ button:disabled { opacity: .5; cursor: default; }
 .l-signs { display: flex; flex-wrap: wrap; gap: 10px; }
 .l-chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px 7px 10px; border-radius: 999px; background: var(--glass); backdrop-filter: blur(8px); border: 1px solid color-mix(in srgb, var(--c) 70%, transparent); color: var(--c); font: 400 12px var(--l-body); letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 0 14px color-mix(in srgb, var(--c) 35%, transparent), inset 0 0 10px color-mix(in srgb, var(--c) 18%, transparent); }
 .l-i { display: inline-block; width: 16px; height: 16px; flex: none; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; filter: drop-shadow(0 0 4px currentColor); }
-.l-bar { width: min(760px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, .14); }
-.l-bar code { min-width: 0; overflow-x: auto; white-space: nowrap; font: 400 12.5px var(--l-body); color: var(--amber); scrollbar-width: none; }
-.landing button.l-go { font: 600 13px var(--l-body); letter-spacing: .08em; text-transform: uppercase; padding: 10px 18px; border-radius: 10px; border: 0; color: var(--night); background: var(--pink); box-shadow: 0 0 18px var(--pink); }
 .landing button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
 .l-alt, .l-wait { margin: 0; font-size: 12.5px; color: var(--l-dim); }
 .landing .l-alt button, .landing .l-skip { font: inherit; color: var(--cyan); background: none; border: 0; padding: 0; border-radius: 0; text-decoration: underline dotted; }
-.l-wait { line-height: 1.9; }
-.l-skip { margin-left: 8px; }
-.l-blink { display: inline-block; vertical-align: middle; margin-right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 8px var(--amber); }
-.l-wait.on .l-blink { background: #3dffa8; box-shadow: 0 0 10px #3dffa8; animation: l-blink 1.4s ease-in-out infinite; }
-@keyframes l-blink { 50% { opacity: .3; } }
-.l-how { margin: 0 clamp(12px, 3vw, 28px) clamp(12px, 3vw, 28px); padding: 16px clamp(14px, 2vw, 22px) 14px; border-radius: 16px; background: var(--glass); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.1); display: grid; gap: 12px; }
-.l-how h2 { margin: 0; font: 400 12px var(--l-body); letter-spacing: .16em; text-transform: uppercase; color: var(--l-dim); }
-.l-how h2 b { color: var(--l-ink); font-weight: 600; }
-.l-steps { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-.l-wire { position: absolute; left: 12%; right: 12%; top: 26px; height: 2px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.28) 0 5px, transparent 5px 10px); }
+.l-steps { position: relative; list-style: none; margin: 4px 0; padding: 0; width: min(640px, 100%); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.l-wire { position: absolute; left: 17%; right: 17%; top: 26px; height: 2px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.28) 0 5px, transparent 5px 10px); }
 .l-spark { position: absolute; top: -4px; left: 0; width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 8px #fff, 0 0 18px var(--cyan); animation: l-run 4s linear infinite; }
 @keyframes l-run { to { left: calc(100% - 10px); } }
 .l-step { position: relative; display: grid; justify-items: center; text-align: center; gap: 6px; min-width: 0; }
 .l-dot { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; background: #0b0a1e; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 70%, transparent); box-shadow: 0 0 16px color-mix(in srgb, var(--c) 40%, transparent); }
 .l-dot .l-i { width: 24px; height: 24px; }
 .l-step b { font: 600 12.5px var(--l-body); }
-.l-step span { font-size: 11.5px; color: var(--l-dim); }
-.l-step .l-tag { font: 400 10.5px var(--l-body); letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
-.l-say { margin: 0; font-size: 12.5px; text-align: center; }
-.l-say em { font-style: normal; color: var(--amber); }
-@media (prefers-reduced-motion: reduce) { .l-sign, .l-spark, .l-wait.on .l-blink { animation: none; } .l-spark { left: calc(50% - 5px); } }
-@media (max-width: 640px) { .l-sign { display: none; } .l-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 18px; } .l-wire { display: none; } }
+@media (prefers-reduced-motion: reduce) { .l-sign, .l-spark { animation: none; } .l-spark { left: calc(50% - 5px); } }
+@media (max-width: 640px) { .l-sign { display: none; } }
 
 /* The Cmd+K palette (@rustybuns/util/palette) in the night city's colors. */
 :root { --rb-pal-bg: #0b0a1e; --rb-pal-fg: #e9ecf8; --rb-pal-muted: #9aa0c4; --rb-pal-line: rgba(255,255,255,.12); --rb-pal-hover: rgba(33,230,255,.12); --rb-pal-accent: #ff3d8b; --rb-pal-scrim: rgba(5,6,15,.6); --rb-pal-font: "Martian Mono", ui-monospace, Menlo, monospace; }
@@ -233,20 +218,6 @@ button:disabled { opacity: .5; cursor: default; }
 .landing .tries button { font: 600 14px var(--l-body); color: #fff; padding: 11px 18px; border-radius: 12px; cursor: pointer; background: #14122e; border: 1px solid var(--cyan); box-shadow: 0 0 14px color-mix(in srgb, var(--cyan) 35%, transparent); }
 .landing .tries button:hover { background: #221f4a; }
 
-/* Agent World's two cards at the top of the landing: what it is (opens in place), and signing in for your own world. */
-.l-cards { width: min(760px, 100%); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.landing button.l-card { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 12px; text-align: left; padding: 12px 16px; border-radius: 14px; cursor: pointer; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); color: var(--l-ink); font: 200 12px/1.4 var(--l-body); box-shadow: 0 0 16px color-mix(in srgb, var(--c) 22%, transparent); }
-.landing button.l-card:hover { background: rgba(20, 18, 46, .8); }
-.l-card .l-i { grid-row: span 2; width: 22px; height: 22px; color: var(--c); }
-.l-card b { font: 600 14px var(--l-body); color: var(--c); }
-.l-card span { color: var(--l-dim); }
-.l-explain { grid-column: 1 / -1; padding: 14px 16px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, .14); }
-.l-explain p, .l-explain ol { margin: 0; font-size: 13px; max-width: 64ch; }
-.l-explain ol { padding-left: 20px; }
-.l-explain li + li { margin-top: 4px; }
-.l-explain p + p { margin-top: 6px; color: var(--l-dim); }
-.l-cards > .l-alt { grid-column: 1 / -1; }
-@media (max-width: 520px) { .l-cards { grid-template-columns: 1fr; } }
 /* Agent Galaxy (galaxyView.ts): the 3D land in its own layer over the page. */
 .galaxy-back .l-i { filter: none; }
 .galaxy-layer { position: fixed; inset: 0; z-index: 20; overflow: hidden; background: #a9d4f5; color: #e9ecf8; touch-action: none; user-select: none; }
@@ -261,6 +232,25 @@ button:disabled { opacity: .5; cursor: default; }
 @media (pointer: coarse) { .galaxy-stick { display: block; } .galaxy-hint { display: none; } }
 .galaxy-back { position: fixed; top: 56px; left: 14px; z-index: 21; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #fff; background: rgba(8, 8, 24, .8); border-color: rgba(255, 255, 255, .3); }
 @media (min-width: 700px) { .galaxy-back { top: 12px; } }
+
+/* One bright control a screen, and it is the next step (#6487): Create your world on the landing; Copy prompt in the
+   console until your AI is here; the Galaxy tile once your world is made, with one short glow. The rest is quieter. */
+.strip .next { margin: 8px 0 0; font-size: 12px; color: var(--t-ink); }
+.dock button.big.quiet { background: var(--t-panel); border-color: var(--t-line); color: var(--t-ink); font-size: 14px; padding: 10px; }
+.dock .tile.next { border-color: var(--t-call); color: #fff; background: color-mix(in srgb, var(--t-call) 16%, var(--t-panel)); animation: g-glow 1.4s ease-out 1; }
+.dock .tile.next .l-i { color: var(--t-call); }
+@keyframes g-glow { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--t-call) 70%, transparent); } 60% { box-shadow: 0 0 22px 6px color-mix(in srgb, var(--t-call) 45%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .dock .tile.next { animation: none; } }
+/* A phone: the strip is its icons and the one step it is on, so the console's buttons fit on the screen. */
+@media (max-width: 720px) {
+  .strip ol { display: flex; }
+  .strip li { flex: none; flex-direction: row; padding: 6px; }
+  .strip li:not(.now) span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .strip li.now { flex: 1; min-width: 0; justify-content: flex-start; text-align: left; }
+  .term-out { min-height: 0; max-height: 18vh; }
+  .term-side { gap: 10px; }
+  .dock .go { display: none; }
+}
 /* Your robot (robotShop.ts): the button that opens the builder, and its rows of picture buttons along the bottom. */
 .galaxy-layer svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .galaxy-robot { position: absolute; top: 56px; right: 14px; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 50%; color: #fff; background: rgba(8, 8, 24, .8); border: 1px solid rgba(255, 255, 255, .3); cursor: pointer; }
@@ -305,3 +295,22 @@ button:disabled { opacity: .5; cursor: default; }
 .pick-land.neon { background: linear-gradient(#0b0824, #5a1d6e 70%, #ff2e97); }
 .pick-land .l-i { width: 34px; height: 34px; }
 .pick-keep { grid-column: 1 / -1; padding: 6px; background: none; color: #b9bdd8; text-decoration: underline; }
+
+/* The landing's one bright button, the ready-made worlds beside it, and the small row under them. */
+.landing button.l-create { display: inline-flex; align-items: center; gap: 10px; font: 600 clamp(15px, 1.5vw, 18px) var(--l-body); letter-spacing: .04em; padding: 14px 26px; border-radius: 14px; border: 0; cursor: pointer; color: var(--night); background: var(--pink); box-shadow: 0 0 28px color-mix(in srgb, var(--pink) 60%, transparent); }
+.landing button.l-create:hover { background: color-mix(in srgb, var(--pink) 85%, #fff); }
+.landing button.l-create .l-i { width: 20px; height: 20px; filter: none; }
+.l-go-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.l-who { font-size: 12px; color: var(--l-dim); }
+.l-try { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.l-foot { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; font-size: 12px; color: var(--l-dim); }
+.l-foot .l-keys { margin: 0; }
+@media (max-width: 640px) {
+  .l-stage { gap: 14px; padding-top: 24px; }
+  .l-dot { width: 44px; height: 44px; border-radius: 12px; }
+  .l-step b { font-size: 11px; }
+  .l-signs { gap: 6px; }
+  .l-chip { padding: 5px 10px 5px 8px; font-size: 10.5px; }
+  .landing button.l-create { width: 100%; justify-content: center; }
+}
+@media (pointer: coarse) { .l-foot .l-keys { display: none; } }

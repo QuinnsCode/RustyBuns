@@ -1,4 +1,4 @@
-// Agent Page on Cloudflare: the built page as static assets (every /r/<room> is the same page), and one Room Durable
+// Agent World on Cloudflare: the built page as static assets (every /r/<room> is the same page), and one Room Durable
 // Object per room that relays agents' calls to the page open in someone's browser (../relay.ts). /api/r/<room>/socket
 // is the page's socket; /tools and /mcp are the agents' doors; /picture and the page's link preview are share.ts;
 // /world is the room's saved world and /made marks it made (../saved.ts), each change kept in the room's Artifacts

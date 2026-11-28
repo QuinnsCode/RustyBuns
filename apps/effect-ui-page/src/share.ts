@@ -46,7 +46,7 @@ export async function withCard(page: Response, url: URL, has: (room: string) => 
   const image = room && ROOM.test(room) && await has(room) ? `/api/r/${room}/picture` : DEFAULT_PICTURE;
   const meta = (key: "property" | "name", name: string, content: string) => `<meta ${key}="${name}" content="${esc(content)}">`;
   const tags = [
-    meta("property", "og:title", "Agent Page"),
+    meta("property", "og:title", "Agent World"),
     meta("property", "og:description", "Your AI writes your world. You watch it light up."),
     meta("property", "og:image", `${url.origin}${image}`),
     meta("name", "twitter:card", "summary_large_image"),

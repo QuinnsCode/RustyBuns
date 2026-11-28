@@ -1,4 +1,4 @@
-// Agent Page on Cloudflare: the built page as static assets (every /r/<room> is the same page) and one Room
+// Agent World on Cloudflare: the built page as static assets (every /r/<room> is the same page) and one Room
 // Durable Object per room, the relay between agents in a terminal and the page in a browser (src/edge/worker.ts),
 // and one Galaxy Durable Object for Agent Galaxy's map (src/edge/galaxy.ts). Each room's world and files are kept
 // in an Artifacts repo of its own (src/keep.ts).

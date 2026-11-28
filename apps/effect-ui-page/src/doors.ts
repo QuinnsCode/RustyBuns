@@ -11,7 +11,7 @@ export const kitSheet = () => `world.js is a ${ABOUT}\n${LIBRARIES}\n`;
 /** SKILL.md for one room: `curl -s <api>/skill.md`. */
 export const skill = (api: string) => `---
 name: agent-page
-description: Build or change my live Agent Page world.
+description: Build or change my live Agent World.
 ---
 world.js is a ${ABOUT}
 Build, replies {ok,errors}:
