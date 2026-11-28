@@ -25,14 +25,15 @@ import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, PREMADES, rowsSize, speedOfSound, stackRows, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
 import { arrivals, paBoxes, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
-import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, linkEvent, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
-import { partySync } from "./party-sync.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, linkEvent, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, PartiesReply, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { accountSync } from "./account-sync.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { events, type Event } from "@rustybuns/util/events";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
 import { SKIN } from "../guest-list.ts";
 import { mountLessonCard } from "./lesson-card.ts";
 import { askedFor, PageLesson } from "./page-lesson.ts";
+import { mountStage } from "./stage-page.ts";
 import { PLAN_LESSON, PLAN_ROOM } from "./plan-lesson.ts";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
@@ -48,7 +49,7 @@ let room: StudioDef = openScene(parties)?.studio ?? yours() ?? structuredClone(R
 // once the account answers; until then, and signed out, they are this browser's alone.
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
 const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
-const sync = partySync(location.origin, token);
+const sync = accountSync<PartiesReply, typeof parties>(`${location.origin}/parties`, PartiesReply, token);
 let owner: string | null = null;
 let picked: string | undefined = room.spots[0]?.id;
 let why = "";
@@ -95,7 +96,7 @@ function undo(back = true) {
   return true;
 }
 window.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z" || e.target instanceof HTMLInputElement) return;
+  if (stage.on() || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z" || e.target instanceof HTMLInputElement) return;
   e.preventDefault();
   undo(!e.shiftKey);
 });
@@ -217,7 +218,7 @@ function render() {
   renderPa();
   renderEdit();
   renderTools();
-  if (view === "3d") build?.show(room, picked, walls, showMap ? paHeat() : null);
+  if (view === "3d" && !stage.on()) build?.show(room, picked, walls, showMap ? paHeat() : null);
   lessonCard?.frame();
 }
 
@@ -251,6 +252,33 @@ if (build) build.venue.onLand = (src, land) => {
   if (v?.src !== src || v.land) return;
   if (parties.open ? partyDo(setVenue(parties, { ...v, land })) : apply({ t: "venue", venue: { ...v, land } })) render();
 };
+// The Stage Builder (stage-page.ts, #6053): a screen of its own over this page, borrowing the 3D view. It keeps its own
+// builds, so the party that was open waits, closed, till it is.
+let partyWas: string | undefined;
+const stage = mountStage({
+  view: () => build,
+  canvas,
+  token,
+  signedIn: eq.ready,
+  opening: () => { partyWas = parties.open; if (partyWas) partyDo(open(parties, undefined)); },
+  closed: () => { if (partyWas && parties.parties.some((p) => p.id === partyWas)) partyDo(open(parties, partyWas)); else render(); },
+  // Open as event, from a locked-in build: its own party (the same one next time), live, and the builder's left as it was
+  event: (def) => {
+    const shut = { ...parties, open: undefined };
+    const had = shut.parties.find((p) => p.name === def.name && p.scenes.some((s) => JSON.stringify(s.studio) === JSON.stringify(def)));
+    const made = had ? goLive(shut, had.id) : openAsEvent(shut, def.name, def);
+    if (!made.ok) return { why: made.why };
+    parties = made.store;
+    const link = eventLink(false);
+    parties = { ...parties, open: undefined };
+    save();
+    if (!link) return { why: "The Event couldn't be opened" };
+    window.open(link, "_blank", "noopener");
+    return { link };
+  },
+});
+$("stage-plus").addEventListener("click", (e) => { if (e.currentTarget instanceof HTMLElement) stage.plus(e.currentTarget); });
+
 /** Walls snap to a 25 cm grid, seats and booths to 10 cm. */
 const quarter = (v: number) => Math.round(v * 4) / 4;
 const tenth = (v: number) => Math.round(v * 10) / 10;
@@ -290,6 +318,7 @@ let tap: PointerEvent | null = null;
 const spread = () => { const [a, b] = [...touches.values()]; return a && b ? { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null; };
 
 function down(e: PointerEvent) {
+  if (stage.on()) return;
   if (view === "3d" && e.pointerType === "touch") {
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (touches.size === 2) { pinch = spread(); tap = null; drag = null; drawing = null; build?.drawing(null); $("measure").hidden = true; return; }
@@ -370,6 +399,7 @@ function act(e: PointerEvent) {
   try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* a pointer that already left */ }
 }
 function move(e: PointerEvent) {
+  if (stage.on()) return;
   if (touches.has(e.pointerId)) {
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const now = spread();
@@ -409,6 +439,7 @@ function move(e: PointerEvent) {
   }
 }
 function up(e?: PointerEvent) {
+  if (stage.on()) return;
   if (e) touches.delete(e.pointerId);
   if (tap && e && tap.pointerId === e.pointerId && !pinch) { const t = tap; tap = null; act(t); return; }
   if (pinch) { if (touches.size < 2) pinch = null; return; }
@@ -435,7 +466,7 @@ for (const surface of [plan, canvas] as Element[]) {
   surface.addEventListener("pointercancel", (e) => up(e as PointerEvent));
 }
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-canvas.addEventListener("wheel", (e) => { e.preventDefault(); build?.zoomAt(Math.exp(e.deltaY * 0.0012), build.toRoom(e)); }, { passive: false });
+canvas.addEventListener("wheel", (e) => { if (stage.on()) return; e.preventDefault(); build?.zoomAt(Math.exp(e.deltaY * 0.0012), build.toRoom(e)); }, { passive: false });
 
 const SOFA_ICON = `<path d="M20 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v3"/><path d="M2 16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z"/><path d="M4 18v2"/><path d="M20 18v2"/><path d="M12 4v9"/>`;
 /** Furnish the room in one go (builder.ts furnish), one step to undo. */
@@ -911,7 +942,8 @@ const lesson = new PageLesson(PLAN_LESSON, () => ({ def: room, map: paMap(), lis
 });
 lessonCard = mountLessonCard(document.body, lesson, { float: true, done: "Done. The plan is yours: walk in to hear it, or keep changing it", offer: { title: PLAN_LESSON.title, start: () => lesson.start() } });
 
-declare global { interface Window { qrooms: typeof harness } }
+declare global { interface Window { qrooms: typeof harness; qstage: typeof stage.harness } }
+window.qstage = stage.harness;
 const harness = {
   state: () => ({
     room: room.id, name: room.name, preset: preset()?.id ?? null, picked, why,

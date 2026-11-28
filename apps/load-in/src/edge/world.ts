@@ -41,6 +41,7 @@ export class World {
     if (m.t === "pose") this.crew.pose(who.id, m);
     else if (m.t === "drop") this.crew.drop(who.id, m);
     else if (m.t === "switch") this.crew.throw(who.id, m);
+    else if (m.t === "amps") this.crew.dial(who.id, m);
     else if (m.t === "decks") this.crew.spin(who.id, m, Date.now());
     else if (m.t === "dj") {
       const got = this.crew.seat(who.id, m.take);

@@ -102,13 +102,13 @@ export const isMuted = (g: Grants, who: string | undefined) => !!who && !!g.mute
 /** A track's params that belong to the desk, not the patch: its level, pan, sends, its own hi- and low-cut and its sidechain. */
 export const MIX_PARAMS: readonly number[] = [P.GAIN, P.PAN, P.SEND, P.SEND2, P.HICUT, P.LOCUT, P.DUCK_FROM, P.DUCK];
 
-/** What an edit needs: the studio is lead; the desk (mutes, solos, EQ, amps, levels, sends, space and squash, the room's level) is mix; the rest of the groove is edit. */
+/** What an edit needs: the studio is lead; the desk (mutes, solos, EQ, amps, the PA's crossover, levels, sends, space and squash, the room's level) is mix; the rest of the groove is edit. */
 export function opNeeds(op: Op): Can {
   // the studio moves everyone in the sesh: the leader's call
   if (op.t === "studio" || op.t === "rig" || op.t === "setup") return "lead";
   if (op.t === "lights") return "lights";
   if (op.t === "param" && MIX_PARAMS.includes(op.i)) return "mix";
-  if (op.t === "track" || op.t === "eq" || op.t === "eqAuto" || op.t === "eqPhase" || op.t === "amp" || op.t === "desk") return "mix";
+  if (op.t === "track" || op.t === "eq" || op.t === "eqAuto" || op.t === "eqPhase" || op.t === "amp" || op.t === "desk" || op.t === "crossover") return "mix";
   if (op.t === "global" && op.bpm === undefined && op.swing === undefined && op.bars === undefined) return "mix";
   return "edit";
 }

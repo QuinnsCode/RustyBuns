@@ -6,9 +6,9 @@
 // box's LED. No op-amp, so the box powers none.
 //
 // What the sim hears: C1, Q1, R1, Q2, R2, R3, R4, R5, C2, C3, R6, R7. RV1 is the
-// Fuzz pot, a rheostat between Q2's emitter and C2: turned full up it is 0 and the
-// board is the sim's. C2 is the sim's 20 µF; a 22 µF does the same. Warm is the room, not a knob: germanium leaks more as it
-// warms, so the same pedal is spitty in a cold garage and smooth on a hot stage.
+// Fuzz pot, a rheostat between Q2's emitter (pin3) and C2 (the wiper, tied to pin1):
+// turned full up it is 0 and the board is the sim's. C2 is the sim's 20 µF; a 22 µF does the same. Warm is the
+// room, not a knob: germanium leaks more as it warms, so the same pedal is spitty in a cold garage and smooth on a hot stage.
 //
 // Sockets: the cap C3. Germanium AC128s vary, so buy a few and keep the pair that
 // sounds best; their legs go in TO-92 spaced holes.
@@ -47,9 +47,9 @@ export default qBox({
     <trace from=".R4 > .pin2" to=".Q1 > .base" />
     <trace from=".R5 > .pin1" to=".Q2 > .emitter" />
     <trace from=".R5 > .pin2" to="net.V9" />
-    <trace from=".RV1 > .pin1" to=".Q2 > .emitter" />
+    <trace from=".RV1 > .pin1" to=".C2 > .pin2" />
     <trace from=".RV1 > .pin2" to=".C2 > .pin2" />
-    <trace from=".RV1 > .pin3" to=".C2 > .pin2" />
+    <trace from=".RV1 > .pin3" to=".Q2 > .emitter" />
     <trace from=".C2 > .pin1" to="net.V9" />
     <trace from=".C3 > .pin1" to="net.Q2_C" />
     <trace from=".C3 > .pin2" to=".R6 > .pin1" />

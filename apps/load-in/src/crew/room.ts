@@ -1,7 +1,8 @@
 // A crew's room: who is here, where each one stands, who holds what, and where gear was last set down. Pure, so the
 // Durable Object (edge/world.ts), the page (crew/online.ts) and the tests share the rules. Each player walks their own
 // body and the room relays it; what the room decides is the hands: one person a piece, or two on something heavy.
-import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { readChannels, type ChannelDsp } from "@rustybuns/gear/crossover";
+import { Bad, arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 
 /** Players in one crew. */
 export const MAX_CREW = 6;
@@ -56,13 +57,22 @@ export type DecksMsg = Of<typeof DecksMsg>;
 /** The decks as the room keeps them: the DJ's last word, when it came on the room's clock (ms), and a count. */
 export const Spun = obj({ n: int(1, 1e9), at: num(0, 1e15), ...deckSet() });
 export type Spun = Of<typeof Spun>;
-export type Sent = PoseMsg | GrabMsg | DropMsg | EndMsg | SwitchMsg | DjMsg | DecksMsg;
+const channels = (v: unknown): ChannelDsp[] => { const c = readChannels(v); if (!c) throw new Bad("amp channels"); return c; };
+const ampsSet = () => ({ rig: key, bands: channels, subAheadM: num(0, 10) });
+/** The amps' DSP as you set it (the desert's crossover): which rig's, each channel, and how far the sub stands in front. */
+export const AmpsMsg = obj({ t: oneOf(["amps"]), ...ampsSet() });
+export type AmpsMsg = Of<typeof AmpsMsg>;
+/** The amps as the room keeps them: the last hand's word, who it was, and a count. */
+export const Dialled = obj({ n: int(1, 1e9), by: str(200), ...ampsSet() });
+export type Dialled = Of<typeof Dialled>;
+export type Sent = PoseMsg | GrabMsg | DropMsg | EndMsg | SwitchMsg | DjMsg | DecksMsg | AmpsMsg;
 /** Whether an end says all it needs to: the jack it is in, or where it lies. */
 export const whole = (e: WireEnd) => (e.at === "plug" ? !!e.plug : e.at === "loose" ? e.x !== undefined && e.y !== undefined && e.z !== undefined : true);
 
 /** A message off the wire, or null if it isn't one. */
 export function readSent(raw: unknown): Sent | null {
-  const t = check(obj({ t: oneOf(["pose", "grab", "drop", "end", "switch", "dj", "decks"]) }), raw)?.t;
+  const t = check(obj({ t: oneOf(["pose", "grab", "drop", "end", "switch", "dj", "decks", "amps"]) }), raw)?.t;
+  if (t === "amps") return check(AmpsMsg, raw);
   if (t === "dj") return check(DjMsg, raw);
   if (t === "decks") return check(DecksMsg, raw);
   if (t === "switch") return check(SwitchMsg, raw);
@@ -93,7 +103,9 @@ export type Thrown = Of<typeof Thrown>;
 const KEPT = { placed: 500, cables: 100, switches: 500 };
 const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, KEPT.placed), cables: arr(Wire, KEPT.cables), switches: arr(Thrown, KEPT.switches),
   /** Who is on the decks (their id and name), the decks as last set, and the room's clock now (ms). */
-  dj: nul(str(200)), djName: str(200, { min: 0 }), decks: opt(Spun), clock: num(0, 1e15) });
+  dj: nul(str(200)), djName: str(200, { min: 0 }), decks: opt(Spun), clock: num(0, 1e15),
+  /** The amps' DSP, once anyone has opened it. */
+  amps: opt(Dialled) });
 const RefusedMsg = obj({ t: oneOf(["refused"]), key, why: str(200) });
 export type ServerMsg = Of<typeof ViewMsg> | Of<typeof RefusedMsg>;
 /** The room's message read on the page. */
@@ -109,6 +121,7 @@ export class Crew {
   private switches = new Map<string, Thrown>();
   private dj: string | null = null;
   private spun: Spun | undefined;
+  private amps: Dialled | undefined;
   private placed = new Map<string, Placed>();
   private wires = new Map<string, Wire>();
 
@@ -214,6 +227,12 @@ export class Crew {
     this.switches.set(m.key, { key: m.key, n: (this.switches.get(m.key)?.n ?? 0) + 1, on: m.on });
   }
 
+  /** Set the amps' DSP: one rack for the crew, and the last hand on it wins. */
+  dial(id: string, m: AmpsMsg) {
+    if (!this.mates.has(id)) return;
+    this.amps = { n: (this.amps?.n ?? 0) + 1, by: id, rig: m.rig, bands: m.bands, subAheadM: m.subAheadM };
+  }
+
   private letGo(id: string, k: string) {
     const rest = (this.hands.get(k) ?? []).filter((h) => h !== id);
     if (rest.length) this.hands.set(k, rest); else this.hands.delete(k);
@@ -222,6 +241,6 @@ export class Crew {
   /** The room as `id` sees it: everyone else, every piece set down so far, and every cable touched. */
   view(id: string, now = 0): Extract<ServerMsg, { t: "view" }> {
     return { t: "view", you: id, mates: [...this.mates.values()].filter((m) => m.id !== id), placed: [...this.placed.values()], cables: [...this.wires.values()], switches: [...this.switches.values()],
-      dj: this.dj, djName: this.dj ? this.mates.get(this.dj)?.name ?? "" : "", decks: this.spun, clock: now };
+      dj: this.dj, djName: this.dj ? this.mates.get(this.dj)?.name ?? "" : "", decks: this.spun, clock: now, amps: this.amps };
   }
 }

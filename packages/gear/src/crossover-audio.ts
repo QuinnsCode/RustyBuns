@@ -1,10 +1,10 @@
-// The rig's crossover, heard (#6473): the set split into the amp channels' bands as their DSP has them
-// (@rustybuns/gear crossover.ts), each band's filters, gain, delay and polarity, and summed back before the speakers.
+// A crossover, heard (#6473): the set split into the amp channels' bands as their DSP has them (crossover.ts), each band's filters, gain, delay and polarity, and summed back before the speakers.
 // Set right, the bands sum flat and you hear the set; set wrong, the split shows: a hole where a late or flipped sub
 // cancels the tops, a gap between two bands that don't meet, a bump where they overlap. Web Audio's own filters run
 // it on the audio thread, per sample; nothing here runs per frame. A Linkwitz-Riley edge is two Butterworth stages:
 // LR4 two second-order biquads at Q 0.707, LR8 two fourth-order pairs, LR2 two first-order (one-pole) stages.
-import type { ChannelDsp, Edge } from "@rustybuns/gear/crossover";
+// Qollab Studio's room PA and Sound Guy Simulator's speakers both play it.
+import type { ChannelDsp, Edge } from "./crossover.ts";
 
 /** Butterworth's Qs for order n's second-order stages (n even): 2nd 0.707; 4th 0.541, 1.307. */
 const BUTTER_Q: Record<number, number[]> = { 2: [Math.SQRT1_2], 4: [0.5412, 1.3066] };

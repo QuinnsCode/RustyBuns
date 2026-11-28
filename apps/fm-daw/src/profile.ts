@@ -6,6 +6,7 @@ import { bool, check, int, obj, opt, str } from "@rustybuns/util/guard";
 import { json } from "@rustybuns/util/http";
 import { NAME_MAX } from "./chat.ts";
 import { partyStore } from "./party-store.ts";
+import { stageStore } from "./stage-store.ts";
 
 export const CHAT_MIN_H = 140;
 export const CHAT_MAX_H = 900;
@@ -29,9 +30,10 @@ export default class Profile {
   constructor(private ctx: Ctx) {}
 
   async fetch(req: Request): Promise<Response> {
-    // a signed-in person's Qevent parties: the same kind of object, named for their owner key (src/party-store.ts)
+    // a signed-in person's Qevent parties and Stage Builder builds: the same kind of object, named for their owner key
+    // (src/party-store.ts, src/stage-store.ts)
     const owner = req.headers.get("X-Party-Owner");
-    if (owner !== null) return partyStore(this.ctx.storage, req, owner);
+    if (owner !== null) return new URL(req.url).pathname === "/stage-builds" ? stageStore(this.ctx.storage, req, owner) : partyStore(this.ctx.storage, req, owner);
     if (req.method === "GET") return json(sanitizeMe(await this.ctx.storage.get("me")));
     if (req.method !== "PUT") return json({ error: "GET or PUT" }, 405);
     const text = await req.text();
