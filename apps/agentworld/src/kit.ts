@@ -287,6 +287,8 @@ export function onPlayer(cb) {
 
 // A sealed frame can't fetch, so the page is asked for a model by name and posts its bytes back (world-frame.ts).
 const asked = new Map();
+// Models still on their way: the galaxy's ask for the land waits for them, but not for ever.
+let coming = 0, waited = 0;
 addEventListener("message", (e) => {
   if (e.source !== parent || e.data?.agentworld !== true || !asked.has(e.data.file)) return;
   const want = asked.get(e.data.file);
@@ -304,11 +306,12 @@ function bytesOf(name) {
 }
 
 /** A .glb the room keeps (PUT <room>/files/hero.glb), standing at x, z (on the ground unless y is given), h units tall.
- *  A group at once, empty until the model arrives; its first animation plays. Neighbours don't see it in the galaxy. */
+ *  A group at once, empty until the model arrives; its first animation plays. */
 export function model(name, { x = 0, y, z = 0, h = 10, turn = 0 } = {}) {
   const g = add(new THREE.Group());
   g.position.set(x, onGround(x, z, y), z);
   g.rotation.y = turn;
+  coming++;
   Promise.all([bytesOf(name), import("https://esm.sh/three@0.170.0/examples/jsm/loaders/GLTFLoader.js")])
     .then(([bytes, { GLTFLoader }]) => new GLTFLoader().parseAsync(bytes, ""))
     .then(({ scene, animations }) => {
@@ -318,12 +321,14 @@ export function model(name, { x = 0, y, z = 0, h = 10, turn = 0 } = {}) {
       fit.scale.setScalar(h / (box.max.y - box.min.y || 1));
       fit.add(scene);
       g.add(fit);
+      scene.traverse((o) => { o.userData.model = true; });
       if (!animations.length) return;
       const mixer = new THREE.AnimationMixer(scene);
       mixer.clipAction(animations[0]).play();
       every((t, dt) => mixer.update(dt));
     })
-    .catch((e) => console.error("model " + name + ": " + (e?.message || e)));
+    .catch((e) => console.error("model " + name + ": " + (e?.message || e)))
+    .finally(() => coming--);
   return g;
 }
 
@@ -547,8 +552,26 @@ export function near(x, z, radius, onEnter, onLeave) {
 // Agent Galaxy asks for the land as shapes (land.ts): corners, faces, colours, glow and where copies stand, with the
 // land's mood. Data only, nothing of this world's code goes with it. Stars, falling rain, the sun and moon, moving
 // smoke and cars stay home: the galaxy draws its own from the mood. Shapes of one colour are merged into one (s), so a
-// busy land stays a few dozen draws; a mesh as wide as the plot (its ground) stays itself.
+// busy land stays a few dozen draws; a mesh as wide as the plot (its ground) stays itself. A model goes as its meshes,
+// posed as they stand; one too finely cut for a part stays home.
 const MERGE = 20000;
+// A texture can't go, so it leaves one colour behind: its average, over the material's own.
+const averages = new Map();
+function colourOf(m) {
+  if (!averages.has(m.map)) {
+    const c = new OffscreenCanvas(16, 16).getContext("2d");
+    let average = new THREE.Color("#ffffff");
+    try {
+      c.drawImage(m.map.image, 0, 0, 16, 16);
+      const d = c.getImageData(0, 0, 16, 16).data, sum = [0, 0, 0];
+      let all = 0;
+      for (let i = 0; i < d.length; i += 4) { all += d[i + 3]; for (let n = 0; n < 3; n++) sum[n] += d[i + n] * d[i + 3]; }
+      if (all) average.setRGB(...sum.map((v) => v / all / 255), THREE.SRGBColorSpace);
+    } catch {} // pixels a canvas can't draw: the material's colour alone
+    averages.set(m.map, average);
+  }
+  return averages.get(m.map).clone().multiply(m.color);
+}
 function land() {
   made.scene.updateMatrixWorld(true);
   windowsOn();
@@ -556,13 +579,15 @@ function land() {
   made.scene.traverseVisible((o) => {
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
     const at = o.isMesh && !o.userData.live && o.geometry.attributes.position;
-    if (!at || !m?.color || m.fog === false || at.count > MERGE) return;
-    const e = m.emissive, glows = m.isMeshBasicMaterial ? 1.2 : e && m.emissiveIntensity >= 0.3 && e.r + e.g + e.b > 0 ? Math.min(4, m.emissiveIntensity) : 0;
-    const look = { c: "#" + (glows && e ? e : m.color).getHexString(), o: m.transparent ? m.opacity : undefined, e: glows || undefined };
+    if (!at || !m?.color || m.fog === false || at.count > MERGE || o.geometry.index?.count > 120000) return;
+    // A model's unlit or glow-mapped surface isn't a lamp: only the kit's own glow.
+    const isModel = o.userData.model, e = isModel && m.emissiveMap ? null : m.emissive;
+    const glows = m.isMeshBasicMaterial ? (isModel ? 0 : 1.2) : e && m.emissiveIntensity >= 0.3 && e.r + e.g + e.b > 0 ? Math.min(4, m.emissiveIntensity) : 0;
+    const look = { c: "#" + (glows && e ? e : isModel && m.map ? colourOf(m) : m.color).getHexString(), o: m.transparent ? m.opacity : undefined, e: glows || undefined };
     const index = o.geometry.index?.array, count = o.isInstancedMesh ? o.count : 1, one = new THREE.Matrix4(), v = new THREE.Vector3();
     const own = () => {
       const p = [];
-      for (let i = 0; i < at.count; i++) { v.fromBufferAttribute(at, i).applyMatrix4(o.matrixWorld); p.push(v.x, v.y, v.z); }
+      for (let i = 0; i < at.count; i++) { o.getVertexPosition(i, v).applyMatrix4(o.matrixWorld); p.push(v.x, v.y, v.z); }
       parts.push({ p: p.map(to(100)), i: index ? Array.from(index) : undefined, ...look });
     };
     if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
@@ -595,7 +620,7 @@ function land() {
         parts.push(into);
       }
       const base = into.p.length / 3;
-      for (let i = 0; i < at.count; i++) { v.fromBufferAttribute(at, i).applyMatrix4(one); into.p.push(...[v.x, v.y, v.z].map(to(100))); }
+      for (let i = 0; i < at.count; i++) { o.getVertexPosition(i, v).applyMatrix4(one); into.p.push(...[v.x, v.y, v.z].map(to(100))); }
       for (let i = 0; i < corners; i++) into.i.push(base + (index ? index[i] : i));
     }
   });
@@ -603,6 +628,8 @@ function land() {
 }
 addEventListener("message", (e) => {
   if (e.source !== parent || e.data?.agentworld !== true || e.data.ask !== "land" || !made) return;
+  // The page asks every half second: up to 12 of them for models, then the land goes as it stands.
+  if (coming && waited++ < 24) return;
   parent.postMessage({ agentworld_world: true, kind: "land", land: land() }, "*");
 });
 `;

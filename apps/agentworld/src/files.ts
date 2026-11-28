@@ -1,14 +1,14 @@
 // The files beside a room's world, kept in its Artifacts repo (keep.ts): a player's .glb first. An agent puts one
 // with curl (`PUT /api/r/<room>/files/hero.glb`) and anyone with the room's link may list and read them; the link is
-// the key, as for the tools. Small on purpose: git keeps every version, and Artifacts bills what is stored, so an upload
+// the key, as for the tools. Agent Galaxy reads one by its plot's public id (galaxy.ts). Small on purpose: git keeps every version, and Artifacts bills what is stored, so an upload
 // is also counted against what the whole app may store (budget.ts).
 import { json } from "@rustybuns/util/http";
 import { TokenBucket } from "@rustybuns/util/limits";
 import type { Spend } from "./budget.ts";
 import { keepFile, keptFile, keptFiles, type Repos } from "./keep.ts";
-import { MODEL_NAME } from "./world.ts";
+import { MODEL_NAME, ROOM_FILES } from "./world.ts";
 
-export const FILE_BYTES = 4 * 1024 * 1024, ROOM_FILES = 8;
+export const FILE_BYTES = 4 * 1024 * 1024;
 
 /** A room's uploads: a few in a row, then one every half minute. */
 export const fileBucket = () => new TokenBucket(1 / 30, 5, Date.now());

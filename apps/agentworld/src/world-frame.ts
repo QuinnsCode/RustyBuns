@@ -29,13 +29,13 @@ async function show(host: Element, doc: string) {
   host.replaceChildren(frame);
 }
 
-/** The world asked for a model the room keeps (kit.ts's model): fetched here, as its sealed frame has no network, and
- *  only its bytes handed in. The room's link is its key, so nothing sent in names the room. */
-async function hand(to: Window, room: string, name: string) {
+/** A world asked for a model its room keeps (kit.ts's model): fetched here from `files`, as its sealed frame has no
+ *  network, and only its bytes handed in. The room's link is its key, so nothing sent in names the room. */
+export async function hand(to: Window, files: string, name: string) {
   const answer = (more: { bytes: ArrayBuffer } | { error: string }) => to.postMessage({ agentworld: true, file: name, ...more }, "*");
   if (!MODEL_NAME.test(name)) return answer({ error: "a model is a .glb with a plain lowercase name, like hero.glb" });
   try {
-    const res = await fetch(`/api/r/${room}/files/${name}`);
+    const res = await fetch(`${files}${name}`);
     if (!res.ok) return answer({ error: res.status === 404 ? `the room keeps no ${name}` : `couldn't load it (${res.status})` });
     answer({ bytes: await res.arrayBuffer() });
   } catch { answer({ error: "couldn't load it: no connection" }); }
@@ -53,7 +53,7 @@ if (typeof customElements !== "undefined") customElements.define(WorldFrame.tag,
   private heard = (e: MessageEvent) => {
     const frame = this.querySelector<HTMLIFrameElement>("iframe.world");
     if (!frame?.contentWindow || e.source !== frame.contentWindow || field(e.data, SAID_KEY) !== true || field(e.data, "kind") !== "file") return;
-    void hand(frame.contentWindow, this.room, String(field(e.data, "name")));
+    void hand(frame.contentWindow, `/api/r/${this.room}/files/`, String(field(e.data, "name")));
   };
   connectedCallback() { addEventListener("message", this.heard); }
   disconnectedCallback() { removeEventListener("message", this.heard); }
