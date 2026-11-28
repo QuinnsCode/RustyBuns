@@ -1862,11 +1862,16 @@ export interface Governed extends Look { run(r: Running, level: number): void }
 export function runningLook(look: Look, renderer: THREE.WebGLRenderer, g: Graphics): Governed {
   let now: Running & { level: number } = { scale: g.scale, freezeShadows: false, cap: g.cap, level: 0 }, size: [number, number] = [1, 1], last = 0;
   renderer.setPixelRatio(Math.min(g.scale, devicePixelRatio)); // the open air sets its own: the knob wins
+  // With no GPU every draw is the processor's, and drawn back to back they leave the page no time for its clicks and its
+  // room's messages (#6555: three rooms in headless Chrome never got in). One a second; the frames between still walk and listen.
+  const gl = renderer.getContext(), info = gl.getExtension("WEBGL_debug_renderer_info");
+  const software = /swiftshader|llvmpipe|software/i.test(String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : ""));
   return {
     quality: look.quality,
     render(cam) {
       // a cap skips a draw, never the frame: walking and the clock still run every frame
-      if (now.cap) { const t = performance.now(); if (t - last < 1000 / now.cap - 2) return; last = t; }
+      const cap = software ? 1 : now.cap;
+      if (cap) { const t = performance.now(); if (t - last < 1000 / cap - 2) return; last = t; }
       look.render(cam);
     },
     resize(w, h) { size = [w, h]; look.resize(w, h); },
