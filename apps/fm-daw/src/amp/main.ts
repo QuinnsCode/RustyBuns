@@ -641,7 +641,8 @@ function showBoard() {
   refused = ""; // said once, on the change it turned away
   const rewired = def && edits[def.id]?.length ? "rewired in Q Builder" : "";
   const scoped = probedNet(S.pedal);
-  const hint = why ? `won't play, kept your last parts: ${why}` : scoped ? `scope on ${scoped.label} · click it again for the output` : rewired;
+  // The scope's note goes after the rewired one: probing a net doesn't make the board stock again.
+  const hint = why ? `won't play, kept your last parts: ${why}` : [rewired, scoped && `scope on ${scoped.label} · click it again for the output`].filter(Boolean).join(" · ");
   if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {}, { hint, edits: edits[def.id] });
   else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
   else if (l.spring.on) ui.board.show("spring", "Q Spring · the driver and recovery tubes around the tank", null);
