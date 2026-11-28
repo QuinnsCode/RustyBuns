@@ -9,6 +9,9 @@ restart), checked by [`scripts/counter.ts`](../../scripts/counter.ts). CI runs a
 all of them when `packages/` does, so a change to the CLI that breaks a framework shows up on the PR that made it.
 [FRAMEWORKS.md](../../FRAMEWORKS.md) has the matrix: which framework, which build output, and what has been verified.
 
+The samples have no Cmd+K menu, unlike the other apps with a page. A menu would add `@rustybuns/util` and client code,
+some to samples that ship none, and that changes what they test.
+
 They stay in this repo, not their own, for that reason: a separate repo would test against a published CLI, after the
 breaking change had already merged.
 
