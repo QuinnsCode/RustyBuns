@@ -132,7 +132,7 @@ const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.sear
 // ?tops= stands the rig's tops on the subs, a pole or their own stands (the sesh's pick, Settings > The gathering)
 const topsAsked = TOPS.find((t) => t === new URLSearchParams(location.search).get("tops"));
 const def: StudioDef = picked.outdoor && (rigAsked || topsAsked)
-  ? { ...picked, outdoor: { ...picked.outdoor, ...(rigAsked ? { rig: system(rigAsked).id } : {}), ...(topsAsked ? { tops: topsAsked } : {}) } }
+  ? { ...picked, outdoor: { ...picked.outdoor, ...(rigAsked ? { rig: system(rigAsked).id, stacks: picked.outdoor.stacks.map(({ rows: _own, ...st }) => st) } : {}), ...(topsAsked ? { tops: topsAsked } : {}) } }
   : picked;
 const jam = newJam(def);
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });

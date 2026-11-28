@@ -1,5 +1,6 @@
 // What Q Builder's page and its bench thread (worker.ts) say to each other.
-import type { BuilderPedal, Edit, Retest } from "../circuit/builder.ts";
+import type { BuilderPedal, Retest } from "../circuit/builder.ts";
+import type { Edit } from "../circuit/edits.ts";
 import type { swing } from "../circuit/builder.ts";
 import type { Swaps } from "../circuit/circuits.ts";
 

@@ -5,7 +5,7 @@
 // Pure: SVG text in, SVG text out.
 import { bool, check, num, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { BOARDS, farads, ohms, type BoardId } from "./circuits.ts";
-import { editedJson, type Edit } from "./builder.ts";
+import { editedJson, type Edit } from "./edits.ts";
 
 const Component = obj({ type: oneOf(["source_component"]), source_component_id: str(200), name: str(80), ftype: str(80), resistance: opt(num(0, 1e13)), capacitance: opt(num(0, 10)) });
 const Port = obj({ type: oneOf(["source_port"]), source_port_id: str(200), source_component_id: str(200), name: str(80), subcircuit_connectivity_map_key: opt(str(400)) });
