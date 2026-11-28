@@ -2,7 +2,6 @@
 // from the front door's seat at the keys, to the piano, your mic, a guitar on a board that grows and loops back, its
 // head and cabinet, and the Design desk. Then the board's rig as sound: the loop back and the cabinets change it.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { rmSync } from "node:fs";
 import { CAB_IDS, CABS, cabIR, DEFAULT_MIC, gainAt, runRig } from "@rustybuns/gear/circuit";
 import { load, openTab, until } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
