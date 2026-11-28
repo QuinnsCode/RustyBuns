@@ -1,12 +1,14 @@
 // Agent Galaxy through the running app: the dev server (scripts/dev.ts, the same galaxy and saved-world logic the
-// Durable Objects run) and two rooms open in headless Chrome over CDP (scripts/chrome.ts), each walking as its own
-// character through window.agentGalaxy. One journey, in order: two rooms claim two plots (and keep them), one walks
+// Durable Objects run) and two rooms open in headless Chrome over CDP (scripts/chrome.ts), each in its own browser,
+// signed in as its own person (a stand-in eqosys, eqosys-kit.ts) with a world its AI made, each walking as its own
+// character through window.agentGalaxy. One journey, in order: two people claim two plots (and keep them), one walks
 // off an edge onto the plot next door, each sees the other walk, an empty plot shows as empty, and a room that saved
 // its world runs it for a neighbour who steps onto its plot. Plus the doors a page from another site may not use.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { type Cdp, freePort, launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
 import { cellOf, keptFree, spiral } from "../src/galaxy.ts";
+import { fakeEqosys, signIn } from "./eqosys-kit.ts";
 
 setDefaultTimeout(120_000); // Bun bundles the page cold, then two tabs walk it
 
@@ -30,22 +32,28 @@ interface Galaxy {
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let server: ReturnType<typeof Bun.spawn>;
 let base = "";
+const eqosys = await fakeEqosys();
 beforeAll(async () => {
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
-  server = Bun.spawn(["bun", "scripts/dev.ts", "--port", String(port)], { cwd: join(import.meta.dir, ".."), stdout: "ignore", stderr: "inherit" });
+  server = Bun.spawn(["bun", "scripts/dev.ts", "--port", String(port)], { cwd: join(import.meta.dir, ".."), env: { ...process.env, EQOSYS_URL: eqosys.url }, stdout: "ignore", stderr: "inherit" });
   chrome = await launchChrome();
   for (let i = 0; i < 300; i++) { if (await fetch(base).then((r) => r.ok, () => false)) break; await Bun.sleep(100); }
 });
-afterAll(() => { chrome?.stop(); server?.kill(); });
+afterAll(() => { chrome?.stop(); server?.kill(); eqosys.stop(); });
 
 const roomName = (tag: string) => `${tag}${Math.random().toString(36).slice(2, 12).padEnd(10, "0")}`.slice(0, 16);
 
-async function open(cdp: Cdp, room: string) {
-  const tab = await openTab(cdp, { w: 1024, h: 720 });
+/** A room in its own browser, signed in as `who`, its world made: the AI's write loaded clean and was saved. */
+async function open(cdp: Cdp, room: string, who: string) {
+  const tab = await openTab(cdp, { w: 1024, h: 720 }, false, true);
   await load(cdp, tab, `${base}/r/${room}`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
   await waitFor(tab, "the galaxy handle", "!!window.agentGalaxy");
+  eqosys.as({ id: `u_${who}`, email: `${who}@example.com`, name: who });
+  await signIn(tab, eqosys.url);
+  await page(`__commands.run("page_write_file", { path: "index.html", text: "<!doctype html><canvas></canvas>" })`);
+  await waitFor(tab, "the world made", `!document.querySelector("[data-galaxy-lock]")`, 15_000);
   const until = (what: string, expr: string) => waitFor(tab, what, expr, 15_000, "agentGalaxy.state()", 50);
   return {
     room, page, until,
@@ -62,7 +70,7 @@ describe("two rooms in Agent Galaxy", () => {
   let meA: NonNullable<Galaxy["me"]>, meB: NonNullable<Galaxy["me"]>;
 
   test("each gets its own plot, and pressing again gives the same one back", async () => {
-    [a, b] = [await open(chrome.cdp, roomName("a")), await open(chrome.cdp, roomName("b"))];
+    [a, b] = [await open(chrome.cdp, roomName("a"), "ada"), await open(chrome.cdp, roomName("b"), "bob")];
     const first = await a.enter();
     expect(first).toMatchObject({ in: true, error: null, pos: { x: 0.5, z: 0.5 }, live: { kind: "mine" } });
     meA = first.me!;

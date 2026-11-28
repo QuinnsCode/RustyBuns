@@ -19,6 +19,8 @@ import { COMMON_CITY } from "./commonCity.ts";
 import { Claimed, FromGalaxy, type Plot, Plots, type ToGalaxy, VIEW_MAX, type Walker } from "./galaxy.ts";
 import { listing, Page } from "./page.ts";
 import { worldDoc } from "./world.ts";
+import { bearer } from "./account.ts";
+import { galaxyLock } from "./lock.ts";
 
 /** Asks for the galaxy (true) or the way back (false), from Cmd+K and window.agentGalaxy: ProfilePage listens. */
 export const galaxyAsks = Effect.runSync(Queue.unbounded<boolean>());
@@ -345,7 +347,7 @@ function mount(room: string) {
   s.ready = (async () => {
     // Saved first, so a neighbour who walks in right away runs it.
     await saveWorld(room, currentPage());
-    const me = await getJson("/api/galaxy/claim", Claimed, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ room }) });
+    const me = await getJson("/api/galaxy/claim", Claimed, { method: "POST", headers: { ...await bearer(), "content-type": "application/json" }, body: JSON.stringify({ room }) });
     if (g !== s) return;
     if (!me) { s.error = "The galaxy didn't answer: try again in a moment."; where.textContent = s.error; return; }
     s.me = me; s.plot = { x: me.x, y: me.y };
@@ -405,6 +407,7 @@ export function startGalaxy(room: string) {
     state: galaxyState,
     /** Up to the galaxy, once your plot is claimed and its world is running. */
     enter: async () => {
+      if (galaxyLock.why) return { ...galaxyState(), locked: galaxyLock.why };
       Queue.offerUnsafe(galaxyAsks, true);
       await until(() => g !== null);
       await g?.ready;

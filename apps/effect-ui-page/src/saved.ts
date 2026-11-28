@@ -2,7 +2,9 @@
 // after each change that lands (`PUT /api/r/<room>/world`) and anyone may read them back (`GET`, 404 when none). The
 // body is checked with the same Page Schema and limits as an agent's write. One storage key per file, so no value is
 // bigger than a file (100,000 characters). No platform here: the Room Durable Object and scripts/dev.ts hand it storage.
-import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
+// `POST /api/r/<room>/made` saves the same way and marks the world made (an AI wrote it and it loaded clean, lock.ts),
+// for good; `GET` there says whether it is. Agent Galaxy hands a plot only to a world that is made.
+import { arr, bool, check, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { json } from "@rustybuns/util/http";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { Option, Schema } from "effect";
@@ -10,7 +12,10 @@ import { FILES_MAX, Page, WORLD_MAX } from "./page.ts";
 import type { Kv } from "./galaxy.ts";
 import { fromPage } from "./relay.ts";
 
-const INDEX = "w:index";
+const INDEX = "w:index", MADE = "w:made";
+/** GET /api/r/<room>/made: whether this room's world is made. */
+export const Made = obj({ made: bool() });
+export type Made = Of<typeof Made>;
 const fileKey = (path: string) => `w:f:${path}`;
 const Index = obj({ paths: arr(str(120), FILES_MAX), backdrop: opt(str(40)) });
 const decodePage = Schema.decodeUnknownOption(Schema.fromJsonString(Page));
@@ -41,13 +46,15 @@ export class Saved {
     await this.kv.put({ ...Object.fromEntries(paths.map((p) => [fileKey(p), page.files[p]!])), [INDEX]: { paths, ...(page.backdrop ? { backdrop: page.backdrop } : {}) } });
   }
 
-  /** `/api/r/<room>/world`. */
-  async http(req: Request): Promise<Response> {
+  /** `/api/r/<room>/world` (PUT saves), or with `made` `/api/r/<room>/made` (POST saves and marks it made). */
+  async http(req: Request, made = false): Promise<Response> {
+    if (req.method === "GET" && made) return json({ made: (await this.kv.get([MADE])).get(MADE) === true } satisfies Made);
     if (req.method === "GET") {
       const page = await this.read();
       return page ? json(page satisfies Page) : json({ error: "this room hasn't saved its world" }, 404);
     }
-    if (req.method !== "PUT") return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
+    const write = made ? "POST" : "PUT";
+    if (req.method !== write) return new Response(null, { status: 405, headers: { Allow: `GET, ${write}` } });
     if (!fromPage(req)) return json({ error: "only this site's page may save the room's world" }, 403);
     if (!this.bucket.take(Date.now())) return json({ error: "saving too often: wait a second" }, 429);
     if (Number(req.headers.get("content-length") ?? 0) > BODY_MAX) return json({ error: "a world is 400,000 characters at most" }, 413);
@@ -58,6 +65,7 @@ export class Saved {
     const files = Object.values(page.files);
     if (files.length > FILES_MAX || files.reduce((n, t) => n + t.length, 0) > WORLD_MAX) return json({ error: `a world is ${FILES_MAX} files and ${WORLD_MAX.toLocaleString("en")} characters at most` }, 413);
     await this.write(page);
+    if (made) await this.kv.put({ [MADE]: true });
     return json({ ok: true, files: files.length });
   }
 }
