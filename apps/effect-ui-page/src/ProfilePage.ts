@@ -17,6 +17,9 @@ import { listTools } from "./tools.ts";
 import { worldDoc } from "./world.ts";
 import { LANDS } from "./lands.ts";
 import { READY } from "./worlds.ts";
+import cityShot from "./levels/city.jpg";
+import fishShot from "./levels/fish.jpg";
+import spaceShot from "./levels/space.jpg";
 import { galaxyAsks, preloadGalaxy } from "./galaxyView.ts";
 import { galaxyLock, lockLine, SIGN_IN_FIRST } from "./lock.ts";
 
@@ -170,19 +173,27 @@ export const connectLines = (origin: string, room: string) => {
 };
 
 /** The console's terminal: what happened, as a command line shows it, oldest first. `$` a command, `..` waiting,
- *  `ok` done, `>` a call (the agent's or yours), `!!` something went wrong. */
-type Line = readonly ["cmd" | "dim" | "ok" | "call" | "bad", string];
-export const termLines = (room: string, online: boolean, steps: Model["steps"], log: Model["log"]): Line[] => [
+ *  `ok` done, `>` a call (the agent's or yours), `!!` something went wrong, `->` your turn (always the last line). */
+type Line = readonly ["cmd" | "dim" | "ok" | "call" | "bad" | "you", string];
+
+/** What the person has to do in their own agent (nothing can be typed here), or null while it is busy. */
+const yourTurn = (online: boolean, s: Model["steps"]): string | null =>
+  !online ? null : s.up ? "to change it, type what you want into your agent" : !s.here ? "waiting for you: paste the prompt into your agent"
+    : !s.wrote ? "waiting for you: type what you want into your agent" : null;
+export const termLines = (room: string, online: boolean, steps: Model["steps"], log: Model["log"]): Line[] => {
+  const turn = yourTurn(online, steps);
+  return [
   ["cmd", `agent-page open ${room}`],
   online ? ["ok", "connected to the relay: your AI can reach this page"] : ["dim", "connecting to the relay…"],
-  ...(steps.here ? [["ok", "your AI is here"] as const] : online ? [["dim", "waiting for your AI…"] as const] : []),
+  ...(steps.here ? [["ok", "connected: your agent is here"] as const] : []),
   ...[...log].reverse().flatMap((l): Line[] => l.error === null ? [["call", `${l.tool}  ok`]] : [["call", l.tool], ["bad", l.error]]),
   ...(steps.up ? [["ok", "your world is up"] as const] : steps.wrote && !steps.clean ? [["bad", "the frame reported an error: page_read says what"] as const] : []),
-];
-const MARK = { cmd: "$", dim: "..", ok: "ok", call: ">", bad: "!!" } as const;
+  ...(turn ? [["you", turn] as const] : []),
+  ];
+};
+const MARK = { cmd: "$", dim: "..", ok: "ok", call: ">", bad: "!!", you: "->" } as const;
 const termView = Def.fragment((h, lines: Line[]) => h.div.class("term-out").attrs({ role: "log", "aria-label": "What happened" }).children(
   ...lines.map(([k, text], i) => h.p.key(`${i}-${text}`).class(`t-${k}`).children(h.span.class("t-mark").attr("aria-hidden", "true").children(MARK[k]), text)),
-  h.p.class("t-cursor").attr("aria-hidden", "true").children(h.span.class("t-mark").children("$"), h.i()),
 ));
 
 /** One button per ready-made world; the one on screen is pressed. */
@@ -299,9 +310,9 @@ const stepOf = (s: Model["steps"]) => (s.up ? 4 : s.wrote ? 3 : s.asked ? 2 : s.
 /** What happens next, under the strip, in a few words: picking your land while the picker is up, then one per step,
  *  and the galaxy's once the world is up. */
 export const nextLine = (steps: Model["steps"], locked: string | null, choose = false): string => choose ? "Next: pick your land" : [
-  "Next: copy the prompt and paste it into your AI",
-  "Next: your AI asks you about your world",
-  "Next: answer in your AI's chat, then it writes",
+  "Next: copy the prompt and paste it into your agent",
+  "Next: type what you want into your agent",
+  "Next: answer in your agent's chat, then it writes",
   steps.clean ? "Next: your world loads" : "Next: your AI fixes the error",
   locked === null ? "Next: open the galaxy" : locked === SIGN_IN_FIRST ? "Next: press Galaxy to sign in" : "Saving your world…",
 ][stepOf(steps)]!;
@@ -319,21 +330,24 @@ const stripView = Def.fragment((h, steps: Model["steps"], status: string | null,
 
 /** What to do, as three pictures: copy, paste into your AI, watch. Done steps turn dark; each call from the AI sends a
  *  dot down the wires (keyed by the call, so a new call starts it again), green when the page took it, red when not. */
-const stepsView = Def.fragment((h, copied: boolean, last: typeof Logged.Type | undefined) => {
-  const step = (done: boolean, name: Icon, says: string) => h.div.class("step", done && "done").key(says).children(h.span.class("dot").children(icon(h, name)), h.b(says));
+const stepsView = Def.fragment((h, copied: boolean, here: boolean, up: boolean, last: typeof Logged.Type | undefined) => {
+  const done = [copied || here, here, up];
+  const now = done.indexOf(false);
+  const step = (n: number, name: Icon, says: string) => h.div.class("step", done[n] && "done", n === now && "now").key(says).attr("aria-current", n === now ? "step" : undefined)
+    .children(h.span.class("dot").children(icon(h, name)), h.b(`${n + 1}. ${says}`));
   const wire = (n: number) => h.div.class("wire").key(`wire${n}`).attr("aria-hidden", "true").children(
     last && h.i.class("pulse", `w${n}`, last.error !== null && "bad").key(`p${last.call}-${n}`));
-  return h.div.class("go").attrs({ role: "group", "aria-label": "Copy, paste into your AI, then watch" }).children(
-    step(copied || last !== undefined, "copy", "Copy"), wire(1), step(last !== undefined, "chat", "Paste"), wire(2), step(last?.error === null, "screen", "Watch"));
+  return h.div.class("go").attrs({ role: "group", "aria-label": "Copy, paste into your agent, then watch" }).children(
+    step(0, "copy", "Copy the prompt"), wire(1), step(1, "chat", "Paste into your agent"), wire(2), step(2, "screen", "Watch it build"));
 });
 
-/** The ready-made worlds as picture tiles. */
-const PICTURED: Readonly<Record<string, readonly [Icon, string]>> = { "Rainy city": ["city", "City"], "Solar system": ["orbit", "Space"], "Fish tank": ["fish", "Fish"] };
-const worldTiles = Def.fragment((h, on: string | undefined) => h.div.class("tiles").attrs({ role: "group", "aria-label": "Try a world" }).children(
+/** The ready-made worlds as levels to look at: a photo of each (src/levels, shot from the world itself) and its name. */
+const LEVELS: Readonly<Record<string, readonly [string, string]>> = { "Rainy city": [cityShot, "City"], "Solar system": [spaceShot, "Space"], "Fish tank": [fishShot, "Fish"] };
+const levelCards = Def.fragment((h, on: string | undefined) => h.div.class("levels").attrs({ role: "group", "aria-label": "Choose a level to see" }).children(
   ...READY.map((w) => {
-    const [name, says] = PICTURED[w.name] ?? ["screen", w.name];
-    return h.button.key(w.name).class("tile").attrs({ type: "button", "data-try": w.name, "aria-label": w.name, title: w.name, "aria-pressed": w.name === on ? "true" : "false" })
-      .on("click", PageMessage.ClickedTry({ name: w.name })).children(icon(h, name), says);
+    const [shot, says] = LEVELS[w.name] ?? ["", w.name];
+    return h.button.key(w.name).class("level").attrs({ type: "button", "data-try": w.name, "aria-label": w.name, title: w.name, "aria-pressed": w.name === on ? "true" : "false" })
+      .on("click", PageMessage.ClickedTry({ name: w.name })).children(h.img.attrs({ src: shot, alt: "", width: "320", height: "200" }), h.b(says));
   })));
 
 /** "Pick your land": two big buttons for a new person, and a small way to keep the desert. */
@@ -348,7 +362,7 @@ const landPicker = Def.fragment((h) => h.div.class("pick").attrs({ role: "group"
 /** Export GIF: its own button, which shows how far along it is. */
 const exportButton = Def.fragment((h, gif: GifState) => h.button.attr("type", "button").class("tile", "export").disabled(gif.busy)
   .attrs({ "aria-label": gif.busy ? gif.says : "Export GIF", title: "Export GIF: three seconds of your world" })
-  .on("click", PageMessage.ClickedExportGif()).children(icon(h, "download"), gif.busy ? gif.says.match(/\d+%/)?.[0] ?? "…" : "GIF"));
+  .on("click", PageMessage.ClickedExportGif()).children(icon(h, "download"), gif.busy ? gif.says.match(/\d+%/)?.[0] ?? "…" : "Save a GIF"));
 
 // The landing: one screen over the night city (city.ts), no scrolling. The sign, the pitch, the three things you do
 // as pictures, one bright button (Create your world), the ready-made worlds, and a small row: Skip to the page, How
@@ -492,7 +506,22 @@ export const ProfilePageNoDeps = Def.make({
         h.div.class("term-body").children(
           termView(h, termLines(room, online, steps, log)),
           h.div.class("term-side").children(
-            stepsView(h, copied !== null && copied !== "ask" && !copied.startsWith("failed"), log.find((l) => l.call > 0)),
+            // Are we connected? Said here, and by your agent in its own chat (relay.ts asks it to).
+            h.p.class("conn", steps.here && "on").attr("role", "status").children(
+              h.span.class("live", online && "on").children(!online ? "Connecting" : steps.here ? "Connected: your agent is here" : "Ready for your agent"),
+              h.span.class("secret").attr("title", "Anyone with this page's link can change your world").children(icon(h, "key"), "Link is secret"),
+            ),
+            h.div.class("see").children(
+              h.h3("Want to see what is possible in the world?"),
+              h.h4("Choose a level to see"),
+              h.p.class("warn").children(icon(h, "info"), "A level replaces your world. Undo brings it back until you reload."),
+              levelCards(h, on?.name),
+              on && h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
+                .on("click", PageMessage.ClickedCopy({ what: "ask", text: on.ask }))
+                .children(icon(h, "chat"), h.span(h.b("Now tell your agent: "), on.ask), icon(h, copied === "ask" ? "check" : "copy")),
+            ),
+            h.h3.class("or").children("Or start telling your agent what to do"),
+            stepsView(h, copied !== null && copied !== "ask" && !copied.startsWith("failed"), steps.here, steps.up, log.find((l) => l.call > 0)),
             h.button.attr("type", "button").class("big", (steps.here || made || choose) && "quiet").on("click", PageMessage.ClickedCopy({ what: "prompt", text: promptText }))
               .attr("title", "Paste it into Claude Code, Codex, opencode or T3 Code")
               .children(icon(h, copied === "prompt" ? "check" : "copy"), copied === "prompt" ? "Copied" : "Copy prompt"),
@@ -501,19 +530,13 @@ export const ProfilePageNoDeps = Def.make({
                 .on("click", PageMessage.ClickedCopy({ what: c.what, text: c.text })).children(icon(h, copied === c.what ? "check" : "plug"), short))),
             // Only when the clipboard says no is there a line to read: the one to select by hand.
             failed !== undefined && h.p.class("by-hand").attr("role", "alert").children("Select and copy:", h.code(failed)),
-            h.div.class("facts").children(
-              h.span.class("live", online && "on").attr("role", "status").children(online ? "Ready" : "Connecting"),
-              h.span.class("secret").attr("title", "Anyone with this page's link can change your world").children(icon(h, "key"), "Link is secret"),
-            ),
-            worldTiles(h, on?.name),
-            on && h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
-              .on("click", PageMessage.ClickedCopy({ what: "ask", text: on.ask })).children(icon(h, "chat"), h.span(on.ask), icon(h, copied === "ask" ? "check" : "copy")),
+            h.h3.class("or").children("Do something cool"),
             h.div.class("tiles", "acts").children(
               h.button.attr("type", "button").class("tile").attr("aria-label", "Undo").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children(icon(h, "undo"), "Undo"),
               h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Start over", title: "Start over" }).on("click", PageMessage.ClickedReset()).children(icon(h, "reset"), "Reset"),
               exportButton(h, gif),
               h.button.attr("type", "button").class("tile", locked ? "locked" : "next").attrs({ "data-galaxy-tile": "", "aria-label": locked ? `Agent Galaxy: ${locked}` : "Agent Galaxy", title: locked ?? "Walk the galaxy: your land next to everyone's" }).attr("aria-disabled", locked ? "true" : undefined)
-                .on("click", PageMessage.ClickedGalaxy()).children(icon(h, locked ? "lock" : "globe"), "Galaxy"),
+                .on("click", PageMessage.ClickedGalaxy()).children(icon(h, locked ? "lock" : "globe"), "Walk galaxy"),
             ),
             locked && h.p.class("lock-line").attr("data-galaxy-lock", locked).children(icon(h, "lock"), locked),
             !gif.busy && gif.says !== "" && h.p.class("muted").attr("role", "status").children(gif.says),

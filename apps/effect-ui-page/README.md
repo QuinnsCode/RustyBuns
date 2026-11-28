@@ -32,8 +32,12 @@ When your AI first reads the page or changes it, the landing gives way to your w
 hand. Connecting your AI is in the console, where it is the next step. **How it's built** opens the longer story under
 the landing. A room this browser already kept opens straight on its page. The console is a terminal window in the middle of
 the screen (**Hide** puts it away, **Show** brings it back): on the left what happened, the way a command line shows it
-(connecting to the relay, connected, waiting for your AI, each call and how it went); on the right pictures and
-buttons: Copy, Paste, Watch across the top, then a button for each way in:
+(connecting to the relay, connected, each call and how it went), ending in what you have to do in your own agent
+("type what you want into your agent": nothing can be typed in the console). On the right: whether your agent is connected (it also
+says so in its own chat); the ready-made worlds as photo cards under **Choose a level to see** (a level replaces your
+world; Undo brings it back until you reload); **Or start telling your agent what to do** (copy the prompt, paste into
+your agent, watch it build); and **Do something cool** (Save a GIF, Walk galaxy). The console only goes one way: your
+agent talks to the page, and you talk to your agent in its own chat. Under Copy prompt, a button for each way in:
 
 - **Add it as an MCP server** (the default: the landing's line, and the Claude, Codex and opencode buttons copy these):
   - Claude Code: `claude mcp add --transport http agent-page <room>/mcp`

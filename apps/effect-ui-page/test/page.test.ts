@@ -5,7 +5,7 @@ import { Effect } from "effect";
 import { decode, inputSchema, type Request, TOOLS } from "../src/tools.ts";
 import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
 import { worldDoc, WORLD_CSP } from "../src/world.ts";
-import { step, connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { step, termLines, connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 import { READY } from "../src/worlds.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
@@ -153,6 +153,15 @@ test("the step strip follows the agent: read, status, write, and a clean load is
     expect([story.model.status, story.model.past.length, story.model.page]).toEqual(["Asking about the weather", 0, starter]);
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
   })));
+
+test("the console ends on what to do in your agent, and says nothing while the agent is writing", () => {
+  const none = { here: false, asked: false, wrote: false, clean: true, up: false };
+  const last = (s: Partial<typeof none>) => termLines("r", true, { ...none, ...s }, []).at(-1);
+  expect(last({})).toEqual(["you", "waiting for you: paste the prompt into your agent"]);
+  expect(last({ here: true, asked: true })).toEqual(["you", "waiting for you: type what you want into your agent"]);
+  expect(last({ here: true, wrote: true })?.[0]).not.toBe("you");
+  expect(last({ here: true, wrote: true, up: true })).toEqual(["you", "to change it, type what you want into your agent"]);
+});
 
 test("the Galaxy is locked until your world is made: a ready-made world doesn't make it, your AI's clean write does", () =>
   run(Effect.gen(function* () {
