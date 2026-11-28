@@ -32,10 +32,10 @@ export function Menu({ scenes, dir, error, records, onQuick, onRooms, onBrowse, 
           <span className="agent-k">Record</span><b>{hunts} won · best {best}</b>
         </div>
         <nav className="menu-nav">
-          <button className="big go" onClick={onQuick} disabled={!playable}>Quick hunt<small>Random room, no briefing</small></button>
-          <button className="big" onClick={onRooms} disabled={!scenes?.length}>Choose a room<small>The mission board</small></button>
-          <button className="big" onClick={onBrowse} disabled={!scenes?.length}>Room browser<small>Survey a site</small></button>
-          <button className="big" onClick={onHowTo}>How to play<small>The field manual</small></button>
+          <button className="big go" data-cmd="quick-hunt" onClick={onQuick} disabled={!playable}>Quick hunt<small>Random room, no briefing</small></button>
+          <button className="big" data-cmd="choose-room" onClick={onRooms} disabled={!scenes?.length}>Choose a room<small>The mission board</small></button>
+          <button className="big" data-cmd="browse" onClick={onBrowse} disabled={!scenes?.length}>Room browser<small>Survey a site</small></button>
+          <button className="big" data-cmd="how-to" onClick={onHowTo}>How to play<small>The field manual</small></button>
         </nav>
         <div className="secure-line"><RotaryDial /><div><span className="agent-k">Secure line · eqosys</span><Account /></div></div>
         {error && <p className="warn">{error}</p>}
@@ -54,7 +54,7 @@ export function RoomSelect({ scenes, records, onPick, onBack }: {
   return (
     <div className="screen rooms-screen lab">
       <header className="screen-head">
-        <button className="back" onClick={onBack}>← Menu</button>
+        <button className="back" data-cmd="back" onClick={onBack}>← Menu</button>
         <h1>Mission board</h1>
         <span className="dim small">Choose a room</span>
       </header>
@@ -98,7 +98,7 @@ export function HowTo({ onBack }: { onBack: () => void }) {
       <div className="menu-card console howto briefcase">
         <div className="case-lid" aria-hidden><i className="latch" /><span>Field kit · {serial("field-kit")}</span><i className="latch" /></div>
         <Band label="FIELD MANUAL · EYES ONLY" />
-        <button className="back" onClick={onBack}>← Menu</button>
+        <button className="back" data-cmd="back" onClick={onBack}>← Menu</button>
         <h1>How to play</h1>
         <ul className="foam" aria-label="The kit">
           {KIT.map(([kind, name, key]) => <li key={kind}><Gadget kind={kind} /><b>{name}</b><span>{key}</span></li>)}

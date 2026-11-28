@@ -118,6 +118,27 @@ export async function runCommand(name: string, args: unknown = {}, via: Via = "a
   return out === undefined ? { ok: true } : out;
 }
 
+/**
+ * A command that is a button the page already has: running it presses the first one on screen, so a person, an agent
+ * and the button all go the same way. The palette lists it only while there is one to press (not on another screen,
+ * not greyed out); an agent that calls it anyway is told. A file input is `hidden` behind its label, so it is on
+ * screen when the label is.
+ */
+export function buttonCommand(selector: string, c: Omit<Command, "execute" | "palette">): Command {
+  const find = () => [...document.querySelectorAll<HTMLElement>(selector)].find((e) =>
+    !e.matches(":disabled") && !!(e.matches('input[type="file"]') ? e.parentElement : e)?.getClientRects().length);
+  return {
+    ...c,
+    // A getter: the palette asks on every render, so it follows the screen you are on.
+    get palette() { return !!find(); },
+    execute: () => {
+      const el = find();
+      if (!el) throw new Error(`"${c.title}" can't be done from this screen right now`);
+      el.click();
+    },
+  };
+}
+
 /** Called when the list changes (the palette re-renders). The answer stops it. */
 export function watchCommands(fn: () => void): () => void { watchers.add(fn); return () => { watchers.delete(fn); }; }
 

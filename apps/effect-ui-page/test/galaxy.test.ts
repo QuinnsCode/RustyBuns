@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { join } from "node:path";
 import { type Cdp, freePort, launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
 import { cellOf, keptFree, spiral } from "../src/galaxy.ts";
-import { fakeEqosys, signIn } from "./eqosys-kit.ts";
+import { enterSigned, fakeEqosys, signIn } from "./eqosys-kit.ts";
 
 setDefaultTimeout(120_000); // Bun bundles the page cold, then two tabs walk it
 
@@ -60,7 +60,7 @@ async function open(cdp: Cdp, room: string, who: string) {
   const until = (what: string, expr: string) => waitFor(tab, what, expr, 15_000, "agentGalaxy.state()", 50);
   return {
     room, tab, page, until,
-    enter: () => page<Galaxy>("agentGalaxy.enter()"),
+    enter: () => enterSigned<Galaxy>(tab),
     leave: () => page<Galaxy>("agentGalaxy.leave()"),
     walk: (dx: number, dz: number) => page<Galaxy>(`agentGalaxy.walk(${dx}, ${dz})`),
     state: () => page<Galaxy>("agentGalaxy.state()"),
@@ -160,7 +160,7 @@ describe("two rooms in Agent Galaxy", () => {
     // An edit counts as the AI's write: the world is made.
     expect(await tab.eval<boolean>(`__commands.run("page_edit_file", { path: "world.js", find: "flyers(9)", replace: "flyers(8)" }).then((r) => r.ok)`)).toBe(true);
     await waitFor(tab, "the world made", `!document.querySelector("[data-galaxy-lock]")`, 90_000);
-    const mine = (await tab.eval<Galaxy>("agentGalaxy.enter()")).me!;
+    const mine = (await enterSigned<Galaxy>(tab)).me!;
     await waitFor(tab, "rain on my own land", `agentGalaxy.state().air?.weather === "rain"`, 45_000, "agentGalaxy.state().air");
     await tab.eval("agentGalaxy.leave().then(() => 1)");
     // B walks over from its own plot, and back again for the tests after this one.

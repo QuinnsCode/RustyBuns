@@ -18,7 +18,7 @@ export function Welcome({ status, onOpened }: { status: Status; onOpened: () => 
       <section className="hero">
         <h1>Splats, on your machine</h1>
         <p>Open a folder of Gaussian splat scenes (.ply, .spz, .sog, .splat) and edit them in SuperSplat. Files stay on your disk, however large.</p>
-        <button className="primary" onClick={pick}>Open folder…</button>
+        <button className="primary" data-cmd="open-folder" onClick={pick}>Open folder…</button>
         {error && <p className="error" role="alert">{error}</p>}
       </section>
 

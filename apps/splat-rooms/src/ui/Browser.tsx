@@ -81,7 +81,7 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
     <div className="shell lab">
       <aside className="rail">
         <Band label="SITE SURVEY" />
-        <button className="back" onClick={onBack}>← Menu</button>
+        <button className="back" data-cmd="back" onClick={onBack}>← Menu</button>
         <h1>Room browser</h1>
         <SatUplink room={scene?.id ?? null} objects={scene?.objects.length ?? 0} />
         <p className="dim small">{scenes.length} scene{scenes.length === 1 ? "" : "s"} in {dir}</p>
@@ -104,7 +104,7 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
         <ScopeFrame plate={scene ? `Survey optic · ${serial(scene.id)}` : "Survey optic · no site"} />
         <div className="hud bezel">
           <label className="chk"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> all boxes</label>
-          <button className="mini" onClick={() => viewer.current?.frameRoom()}>frame room</button>
+          <button className="mini" data-cmd="frame-room" onClick={() => viewer.current?.frameRoom()}>frame room</button>
           <span className="dim small hud-hint">drag orbit · shift-drag pan · wheel zoom · click to select · F frames the room</span>
           <span className="dim small hud-hint-short">drag · tap to select</span>
         </div>

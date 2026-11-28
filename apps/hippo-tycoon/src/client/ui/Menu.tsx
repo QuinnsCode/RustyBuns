@@ -36,11 +36,11 @@ export function Menu({ settings, onSettings, onSolo, onCouch, extra, note }: Men
         </About>
         <div className="col">
           {/* The ways to play and nothing else: name, bots, players and round length wait under Options, as last picked. */}
-          <button className="btn go big" onClick={onSolo} autoFocus>{COPY.solo}<small>{COPY.soloSub}</small></button>
-          <button className="btn" onClick={onCouch}>{COPY.couch}<small>{COPY.couchSub}</small></button>
+          <button className="btn go big" data-cmd="solo" onClick={onSolo} autoFocus>{COPY.solo}<small>{COPY.soloSub}</small></button>
+          <button className="btn" data-cmd="couch" onClick={onCouch}>{COPY.couch}<small>{COPY.couchSub}</small></button>
           {extra}
           <Account note={note} />
-          <button className="btn quiet" onClick={() => setOptions(true)}>{COPY.options}</button>
+          <button className="btn quiet" data-cmd="options" onClick={() => setOptions(true)}>{COPY.options}</button>
         </div>
       </main>
       {options && <OptionsDialog game settings={settings} onSettings={onSettings} onClose={() => setOptions(false)} />}

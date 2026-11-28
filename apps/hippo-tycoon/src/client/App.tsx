@@ -83,9 +83,9 @@ export function App({ signInNote }: { signInNote?: string } = {}) {
     : screen.t === "joinOnline" ? <JoinOnline onBack={() => setScreen({ t: "menu" })} onJoin={(room) => playNet(() => onlineSocket(room, name))} />
     : <Menu note={signInNote} settings={settings} onSettings={update} onSolo={() => playLocal(SOLO_CTL)} onCouch={() => setScreen({ t: "couch" })}
         extra={<>
-          {desktop && <button className="btn" onClick={hostLan}>{COPY.hostLan}<small>{COPY.hostLanSub}</small></button>}
-          {canJoinLan && <button className="btn" onClick={() => setScreen({ t: "joinLan" })}>{COPY.joinLan}<small>{COPY.joinLanSub}</small></button>}
-          {!desktop && <button className="btn" onClick={() => setScreen({ t: "joinOnline" })}>{COPY.online}<small>{COPY.onlineSub}</small></button>}
+          {desktop && <button className="btn" data-cmd="host-lan" onClick={hostLan}>{COPY.hostLan}<small>{COPY.hostLanSub}</small></button>}
+          {canJoinLan && <button className="btn" data-cmd="join-lan" onClick={() => setScreen({ t: "joinLan" })}>{COPY.joinLan}<small>{COPY.joinLanSub}</small></button>}
+          {!desktop && <button className="btn" data-cmd="online" onClick={() => setScreen({ t: "joinOnline" })}>{COPY.online}<small>{COPY.onlineSub}</small></button>}
           {screen.error && <p className="err" role="alert">{screen.error}</p>}
         </>} />;
   return <><Backdrop view={view} />{page}</>;
