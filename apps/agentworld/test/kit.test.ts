@@ -11,7 +11,7 @@ import { FIND, REPLACE, VILLAGE, WORLD } from "./session.ts";
 setDefaultTimeout(60_000);
 
 const ROOM = "kitjourney0001";
-const Reply = obj({ ok: opt(bool()), error: opt(str(2000)), said: opt(arr(str(600), 20)) });
+const Reply = obj({ ok: opt(bool()), error: opt(str(2000)), errors: opt(arr(str(600), 20)), said: opt(arr(str(600), 20)) });
 let server: ReturnType<typeof Bun.spawn<"ignore", "pipe", "inherit">>, chrome: Awaited<ReturnType<typeof launchChrome>>, tab: Tab, origin = "";
 
 const call = async (name: string, args: unknown = {}) =>
@@ -99,6 +99,16 @@ every(() => { if (++n === 5) console.error("blocks drew"); });
   expect(await heard("walked up")).toEqual(["error: blocks drew", "error: walked up"]);
   await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agentworld: true, player: null }, "*")`);
   expect(await heard("walked off")).toEqual(["error: blocks drew", "error: walked up", "error: walked off"]);
+});
+
+test("Undo pressed before the agent's world has loaded: world_build says the world changed, not ok", async () => {
+  // The person's click lands as soon as the frame is given the agent's world, before it can have loaded it.
+  await tab.eval(`(() => { const seen = new MutationObserver(() => {
+    if (!document.querySelector("iframe.world")?.srcdoc.includes("undoneworld")) return;
+    seen.disconnect();
+    document.querySelector('button[aria-label="Undo"]').click();
+  }); seen.observe(document.body, { subtree: true, childList: true, attributes: true }); })()`);
+  expect(await call("world_build", { code: "// undoneworld" })).toMatchObject({ ok: false, errors: [expect.stringContaining("the world changed before this loaded")] });
 });
 
 // The build doors answer from the real frame, in the same reply: no page_read after them.
