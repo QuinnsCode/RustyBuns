@@ -1,6 +1,9 @@
 // Crossovers (#6473): each rig's preset as its makers' sheets give it, and a split set wrong, heard as a hole, fixed.
 import { expect, test } from "bun:test";
-import { crossoverCheck, flatness, RIG_CROSSOVERS, rigCrossover, type Band } from "../src/crossover.ts";
+import { alignMs, BOX_CROSSOVERS, crossoverCheck, flatness, response, RIG_CROSSOVERS, rigCrossover, type Band } from "../src/crossover.ts";
+import { CROSSOVER_STEPS, lessonStart, SUB_AHEAD_M } from "../src/crossover-lesson.ts";
+import { gear, GEAR_IDS } from "../src/catalog.ts";
+import { checkSteps } from "../src/steps.ts";
 import { SYSTEM_IDS } from "../src/systems.ts";
 
 const band = (rig: string, box: string, i = 0) => RIG_CROSSOVERS[rig]!.filter((b) => b.box === box)[i]!;
@@ -58,4 +61,46 @@ test("on the tri-amp stack the room hears it: the preset plays flat, the bass fl
   expect(heard.dipDb).toBeLessThan(-10);
   expect(Math.abs(heard.dipHz - 150)).toBeLessThan(15);
   expect(crossoverCheck(flipped.map((b, i) => (i ? b : preset[0]!)), preset.map((b) => b.dsp)).dipDb).toBe(0);
+});
+
+// each speaker on its own, against the maker's numbers
+test.each([
+  ["top-12-powered", "powered", undefined, [80, 100, 125]], // QSC K12.2: its high-pass over a sub
+  ["sub-18", "powered", undefined, [80, 100]], // QSC KS118: its low-pass menu
+  ["wedge-12", "powered", undefined, [80]], // QSC CP12's Ext Sub voicings
+  ["top-15-passive", "passive", 2200, undefined], // JBL JRX215
+  ["wedge-12-passive", "passive", 2000, undefined], // JBL PRX412M
+  ["sculpted-3way", "passive", 1700, undefined], // Void Air Motion's passive 8" and 1.5"
+] as const)("%s on its own is the sheet's", (id, drive, internal, menu) => {
+  const box = BOX_CROSSOVERS[id]!;
+  expect([box.drive, box.internalHz, box.menu?.hz]).toEqual([drive, internal, menu && [...menu]]);
+});
+
+test("every speaker in the catalog says what splits it, and powered is what has no ohms", () => {
+  for (const id of GEAR_IDS) {
+    const speaker = gear(id).speaker;
+    if (speaker) expect(BOX_CROSSOVERS[id]?.drive, id).toBe(speaker.ohms === null ? "powered" : "passive");
+  }
+});
+
+test("the crossover lesson: each split found wrong is named, and the sub's delay closes the hole it leaves out front", () => {
+  const bands = lessonStart(), preset = rigCrossover("tri-amp").map((b) => b.dsp);
+  const now = () => checkSteps(CROSSOVER_STEPS, { bands, subAheadM: SUB_AHEAD_M });
+  const next = () => now().find((s) => !s.done)?.why;
+  const split = (i: number, hz: number) => {
+    bands[i] = { ...bands[i]!, lp: { ...bands[i]!.lp!, hz } };
+    bands[i + 1] = { ...bands[i + 1]!, hp: { ...bands[i + 1]!.hp!, hz } };
+  };
+  expect(next()).toContain("A gap: nothing carries 100 Hz to 220 Hz");
+  split(0, 150);
+  expect(next()).toContain("An overlap: both play 1.1 kHz to 1.3 kHz");
+  split(1, 1300);
+  expect(next()).toContain("it will blow");
+  split(2, 8000);
+  expect(next()).toMatch(/sub arrives 4\.4 ms before the tops, a \d+ dB hole/);
+  const hole = () => Math.min(...response(bands, preset, SUB_AHEAD_M).sum);
+  expect(hole()).toBeLessThan(-6);
+  bands[0] = { ...bands[0]!, delayMs: alignMs(SUB_AHEAD_M) };
+  expect(now().every((s) => s.done)).toBe(true);
+  expect(hole()).toBeGreaterThan(-0.5);
 });

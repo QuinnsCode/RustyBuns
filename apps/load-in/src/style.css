@@ -50,7 +50,7 @@ body.carrying #hint { top: auto; bottom: 52px; }
   font-size: 14px; line-height: 1.3; font-variant-numeric: tabular-nums; max-width: min(17rem, calc(100vw - 90px));
   --tilt: -1.2deg;
 }
-.bar-card > b:first-child, .bar-card > div:first-child > b:first-child { font: 400 17px var(--marker); margin-bottom: 2px; }
+.bar-card > b:first-child, .bar-card > div.lines > b:first-child, .bar-card > div:first-child > b:first-child { font: 400 17px var(--marker); margin-bottom: 2px; }
 .bar-card .pass, .bar-card .warn, .bar-card .trip { font-weight: 700; }
 .bar-card small { color: var(--ink-soft); font-size: 12px; margin-top: 3px; }
 .bar-card .rigs a { color: inherit; text-decoration: underline; pointer-events: auto; }

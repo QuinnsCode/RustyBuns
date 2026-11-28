@@ -166,14 +166,20 @@ export const heardDb = (bands: readonly ChannelDsp[], preset: readonly ChannelDs
 /** A rig's crossover preset, low band first (none for a rig with no preset). */
 export const rigCrossover = (id: string): readonly Band[] => RIG_CROSSOVERS[id] ?? [];
 
+/** The bands as they reach you with the lowest one (the sub) standing `subAheadM` metres nearer than the rest: its
+ *  sound arrives that much early, which only delay on its channel takes back (`alignMs`). */
+export const placed = (bands: readonly ChannelDsp[], subAheadM: number): readonly ChannelDsp[] =>
+  subAheadM ? bands.map((b, i) => (i ? b : { ...b, delayMs: b.delayMs - alignMs(subAheadM) })) : bands;
+
 /**
  * What's wrong with a rig's crossover as set: each band's warnings, and the deepest hole and highest bump from 40 Hz
  * to 16 kHz as the room plays it (`heardDb`). The preset reads 0; a move away from it reads as what it does to the
- * sound (a flipped sub's hole at the split, a gap, a bump).
+ * sound (a flipped sub's hole at the split, a gap, a bump). With the sub standing `subAheadM` in front of the tops, the
+ * preset reads a hole until the sub's delay lines them up again.
  */
-export function crossoverCheck(bands: readonly Band[], preset: readonly ChannelDsp[] = bands.map((b) => b.dsp)): { warnings: string[]; dipDb: number; dipHz: number; bumpDb: number; bumpHz: number } {
+export function crossoverCheck(bands: readonly Band[], preset: readonly ChannelDsp[] = bands.map((b) => b.dsp), subAheadM = 0): { warnings: string[]; dipDb: number; dipHz: number; bumpDb: number; bumpHz: number } {
   const warnings = bands.flatMap((b) => wayWarnings(b.range, b.dsp).map((w) => `${b.box}: ${w}`));
-  const now = bands.map((b) => b.dsp);
+  const now = placed(bands.map((b) => b.dsp), subAheadM);
   let dip = { db: Infinity, hz: 40 }, bump = { db: -Infinity, hz: 40 };
   for (const f of sweep(40, 16000, 96)) {
     const db = heardDb(now, preset, f);
@@ -183,3 +189,49 @@ export function crossoverCheck(bands: readonly Band[], preset: readonly ChannelD
   const r = (v: number) => Math.round(v * 10) / 10 || 0;
   return { warnings, dipDb: r(dip.db), dipHz: Math.round(dip.hz), bumpDb: r(bump.db), bumpHz: Math.round(bump.hz) };
 }
+
+/** The response plot's curves, 20 Hz to 20 kHz: each band as the room plays it, and their sum against the preset
+ *  (a flat 0 when it is set right), in dB. */
+export function response(bands: readonly ChannelDsp[], preset: readonly ChannelDsp[], subAheadM = 0, perOctave = 24): { hz: number[]; bands: number[][]; sum: number[] } {
+  const hz = sweep(20, 20000, perOctave), now = placed(bands, subAheadM);
+  const db = (d: ChannelDsp, f: number) => { const h = channelAt(d, f); return 20 * Math.log10(Math.max(1e-9, Math.hypot(h[0], h[1]))); };
+  return { hz, bands: heardBands(now, preset).map((d) => hz.map((f) => db(d, f))), sum: hz.map((f) => heardDb(now, preset, f)) };
+}
+
+// ---- each speaker on its own: what splits it inside, and what its own DSP or the amp's has to ----------------------
+
+/** What a speaker needs of a crossover on its own: whether it is powered (its DSP is inside) or passive (it takes amp
+ *  channels), the split inside it (Hz, where the sheet gives it), the settings its own menu offers against a sub or a
+ *  top, in plain words, and the sheet read. */
+export type BoxCrossover = { drive: "powered" | "passive"; internalHz?: number; menu?: { edge: "hp" | "lp"; hz: readonly number[] }; says: string; ref: string };
+const K2: BoxCrossover = { drive: "powered", menu: { edge: "hp", hz: [80, 100, 125] }, says: "powered: its own DSP splits it inside; over a sub, high-pass it at 80, 100 or 125 Hz, the sub's low-pass at the same", ref: "QSC, KS Series Crossover Settings: Do and Don't (the K.2's high-pass settings)" };
+const oneWay = (ref: string): BoxCrossover => ({ drive: "passive", says: "passive, one way: no network inside; the amp channel's DSP sets its whole band", ref });
+const airMotion: BoxCrossover = { drive: "passive", internalHz: 1700, says: 'two amp channels: the 12" on one, the 8" and 1.5" on another, split inside at 1.7 kHz', ref: "Air Motion guide UG10519" };
+/** Every speaker in the catalog, by gear id. A split the maker doesn't publish is left out and said so. */
+export const BOX_CROSSOVERS: Readonly<Record<string, BoxCrossover>> = {
+  "top-12-powered": K2,
+  "fill-8-powered": K2,
+  "sub-18": { drive: "powered", menu: { edge: "lp", hz: [80, 100] }, says: "powered sub: low-pass it at 80 Hz (the default for K.2 and CP tops) or 100 Hz", ref: "KS118 manual and FAQ" },
+  "wedge-12": { drive: "powered", menu: { edge: "hp", hz: [80] }, says: "powered: its own DSP splits it inside; its Ext Sub voicings high-pass it at 80 Hz", ref: "QSC CP12 presets (Default Ext Sub, Dance Ext Sub)" },
+  "line-array-10": { drive: "powered", says: "powered: its own DSP splits it inside; the split is not published", ref: "LA108 sheet" },
+  "top-15-passive": { drive: "passive", internalHz: 2200, says: "passive two-way: its own network splits at 2.2 kHz, so one amp channel runs it full range", ref: "JBL JRX215 product page: crossover frequency 2.2 kHz" },
+  "wedge-12-passive": { drive: "passive", internalHz: 2000, says: "passive two-way: its own network splits at 2.0 kHz, so one amp channel runs it full range", ref: "JBL PRX412M spec sheet: crossover frequency 2.0 kHz" },
+  "line-array-box": { drive: "passive", says: "passive, four amp channels (LF, LF, MF, HF): the split points are in the maker's amp presets, not published here", ref: "JBL VTX A12 spec sheet" },
+  "cab-4x12": { drive: "passive", says: "passive, four 12s full range: no crossover, the guitar amp drives it", ref: "Marshall 1960A: a 4x12 guitar cabinet" },
+  "stack-mid-high": { drive: "passive", says: 'two amp channels: the 15" on one, the 8" and 1" on another through their own passive network (its point not published)', ref: "F1 crossover settings, Res2 with BR221" },
+  "stack-mid-bass": oneWay("F215 MkII sheet, 55-250 Hz"),
+  "horn-sub-21": oneWay("F221 sheet, 25-125 Hz"),
+  "horn-sub-18": oneWay("F218 MkII sheet"),
+  "horn-sub-24": oneWay("F124 sheet D0037-01, 35-160 Hz"),
+  "infra-sub-18": oneWay("Infrabass 218 sheet D0059-00"),
+  "skeletal-mid-high": { drive: "passive", says: 'passive: its own network splits the 8" and 1" (its point not published); it plays from 250 Hz', ref: "Res 2SH sheet D0028-01, 250 Hz-18 kHz" },
+  "skeletal-mid": oneWay("Res 2S8 sheet, 250 Hz-5 kHz"),
+  "sculpted-3way": airMotion,
+  "sculpted-3way-lh": airMotion,
+  "arc-sub-18": oneWay("Arcline 118 sheet TD10753-2.0"),
+  "triple-21-sub": oneWay("Incubus guide UG10570"),
+  "synergy-horn": { drive: "passive", says: "passive: three ways on one amp channel through its own network (points not published)", ref: "SH50 sheet" },
+  "tapped-horn-18": oneWay("TH118 sheet: high-pass it at 30 Hz, 24 dB Butterworth"),
+  "tri-amp-top": { drive: "passive", says: 'tri-amped: three amp channels (12", 6.5", 1"), no network inside; split at 1.3 and 8 kHz in the drive rack', ref: "Turbosound Flashlight manual, issue 1.4" },
+  "tri-amp-bass": oneWay("Turbosound Flashlight manual: up to 150 Hz"),
+};
