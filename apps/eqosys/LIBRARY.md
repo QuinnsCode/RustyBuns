@@ -67,6 +67,9 @@ Who reviews: the super admin for now. A reviewer role comes when there are more 
 - The shared achievements (`SHARED`) only; its own list comes later, from its studio, not a PR here.
 - Friends, parties, rooms and saves through Qollab, the same doors our games use, under the same per-app limits. Who a
   person's friends are stays theirs: a studio's game can't ask, accept, drop or hand out the friend link.
+- [Spaces](QOLLAB.md#spaces): only your studio's own space. There the game does what the signed-in player can: reads the
+  channels they see, their direct messages and files, and, if they run it, invites, removes people, deletes and downloads the history. The player's
+  other spaces stay shut to it, and it can't join one by invite or make one.
 - No studios (they hold other people's names and emails), no download of the player's data and no deleting their account.
 - Its `erase` URL is called only for people who opened it, after our apps have erased, and can't hold the deletion up.
 - Reports from its players go to its studio in eqosys, not to issues on this repo (`reports.ts` files ours there).
