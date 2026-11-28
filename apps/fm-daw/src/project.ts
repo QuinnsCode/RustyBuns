@@ -5,6 +5,8 @@ import { readChannels, type ChannelDsp } from "@rustybuns/gear/crossover";
 import { arr, Bad, bool, check, int, maybe, nul, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
 import { TrackAmp } from "./amp/track-amp.ts";
+import { BoardRig } from "./amp/board-rig.ts";
+import { MIX_PARAMS } from "./grants.ts";
 import { DeskEdit, emptySeshDesk, plainSeshDesk, SeshDesk, withDeskEdit, type Channel } from "./desk.ts";
 import { TrackPlugin } from "./plugin-track.ts";
 import { ClipGuard, MAX_CLIPS, MAX_TAKES, MIN_CLIP_FRAMES, TAKE_RATE, TakeBytesGuard, clipsOf, soundIds, spanOf, takeRef, windowed, type Clip, type TakeBytes, type TakeRef } from "./take.ts";
@@ -99,6 +101,8 @@ export type Op =
   | { t: "voiceless"; track: number; on: boolean }
   /** A new instrument in the jam room: its track gets this patch and its name, emptied of notes, and the room a seat at it. */
   | { t: "instrument"; inst: Instrument; params: number[]; root: number }
+  /** A track's whole patch at once: the keys seat switched between piano and synth (src/studio/keys-voice.ts). */
+  | { t: "voice"; track: number; params: number[] }
   /** The desk beyond its tracks (src/desk.ts): a player's channel as it now is, the aux 2 return's fader, mute and Shape, or the Space return's Shape. */
   | { t: "desk"; player?: Channel; aux2?: SeshDesk["aux2"]; space?: SeshDesk["space"] }
   /** The leader moves the sesh to this studio (a room id, or "yours": each person's own built one). */
@@ -363,6 +367,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("take"), track: TRACK, take: nul(takeRef(MAX_BARS * BEATS_PER_BAR)) }),
   obj({ t: tag("clips"), track: TRACK, clips: arr(ClipGuard, MAX_CLIPS) }),
   obj({ t: tag("amp"), track: TRACK, amp: nul(TrackAmp) }),
+  obj({ t: tag("voice"), track: TRACK, params: arr(real, NPARAMS, { min: NPARAMS }) }),
   obj({ t: tag("plugin"), track: TRACK, plugin: nul(TrackPlugin) }),
   obj({ t: tag("insert"), track: TRACK, insert: nul(TrackPlugin) }),
   obj({ t: tag("voiceless"), track: TRACK, on: bool() }),
@@ -405,7 +410,7 @@ export type Live =
    * Their guitar is plugged into this track (-1: straight in, no amp), or unplugged (null): its sound comes by WebRTC
    * (src/guitar.ts). `mic`: it's their voice, from the vocal booth's mic, straight in.
    */
-  | { t: "guitar"; track: number | null; mic?: boolean }
+  | { t: "guitar"; track: number | null; mic?: boolean; rig?: BoardRig }
   /**
    * Their own plugin (a CLAP the desktop app hosts, src/engine/plugins.ts) voices this track, named so others can see what
    * it is, or stopped (null). Nobody else has the plugin: they keep that track quiet and hear its sound in slices (below).
@@ -444,7 +449,7 @@ const LIVE: Guard<Exclude<Live, DeckSay | DeckPress | MixSay>>[] = [
   obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
   obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })), room: opt(oneOf(["gear"])) }),
   obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
-  obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)), mic: opt(bool()) }),
+  obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)), mic: opt(bool()), rig: opt(BoardRig) }),
   obj({ t: tag("plugin"), track: TRACK, name: nul(str(500)) }),
   obj({ t: tag("pa"), on: bool(), name: opt(str(120, { min: 0 })) }),
   obj({ t: tag("lesson"), id: nul(LESSON_ID), steps: arr(obj({ job: str(200), done: bool() }), 16, { min: 0 }), why: opt(str(300)), finished: arr(LESSON_ID, 16, { min: 0 }) }),
@@ -576,6 +581,9 @@ export function apply(p: Project, op: Op): Project {
       if (others.size > MAX_TAKES) return p;
       return withTrack(p, op.track, (t) => withClips(t, clips));
     }
+    case "voice":
+      // the patch only: the desk's own settings (level, pan, sends, cuts, sidechain) stay as the track has them
+      return withTrack(p, op.track, (t) => ({ ...t, params: t.params.map((was, i) => (MIX_PARAMS.includes(i) ? was : clampParam(i, op.params[i] ?? was))) }));
     case "amp":
       return withTrack(p, op.track, (t) => { const { amp: _, ...rest } = t; return op.amp ? { ...rest, amp: op.amp } : rest; });
     case "plugin":

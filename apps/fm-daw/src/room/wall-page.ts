@@ -1,6 +1,7 @@
 // The sound wall on a page (WALL.md): its audio thread (wall-worklet.ts) heard from where its Q Out stands, and the
 // module list that brings one to your hands. The gear room (main.ts) and every studio's gear wall (../studio/main.ts)
 // run the same, so a sesh's wall plays on every listener's machine from the sesh's patch.
+import { hear } from "../scope-tap.ts";
 import wallWorkletUrl from "./wall-worklet.ts?worker&url";
 import type { FromWall, ToWall } from "./wall-worklet.ts";
 import type { WallSpec } from "../wall/wall.ts";
@@ -19,7 +20,9 @@ export class WallLine {
     await ctx.audioWorklet.addModule(wallWorkletUrl);
     const node = new AudioWorkletNode(ctx, "q-wall", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
     const pan = new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1, rolloffFactor: 0.8 });
-    node.connect(pan).connect(new GainNode(ctx, { gain: 0.5 })).connect(to);
+    const level = new GainNode(ctx, { gain: 0.5 });
+    node.connect(pan).connect(level).connect(to);
+    if (to === ctx.destination) hear(level); // in the jam room `to` is its brick wall, heard there
     return new WallLine(node, pan);
   }
 

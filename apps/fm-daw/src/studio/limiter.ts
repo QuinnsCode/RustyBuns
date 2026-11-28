@@ -5,6 +5,7 @@
 // parts, a different room), and with a 3 ms attack it still lets the front of a shout through. The curve is the
 // signal untouched up to a knee, then bent smoothly towards the ceiling, which nothing can pass: a WaveShaper clamps
 // any input past full scale to the curve's ends, and every point on the curve sits inside the ceiling.
+import { hear } from "../scope-tap.ts";
 import { CEILING } from "../engine/params.ts";
 
 /** Where the bend starts, as a share of the ceiling: under it a signal passes as it is. */
@@ -39,6 +40,7 @@ export function limiter(ctx: BaseAudioContext, db: number) {
 export function brickWall(ctx: AudioContext): AudioNode {
   const node = new WaveShaperNode(ctx, { curve: clipCurve(CEILING), oversample: "4x" });
   node.connect(ctx.destination);
+  hear(node);
   return node;
 }
 

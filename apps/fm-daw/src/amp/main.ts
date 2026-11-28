@@ -5,6 +5,7 @@
 // you are playing, and swaps its socketed parts live. The stage button puts the amp on a
 // three.js stage (stage3d.ts, loaded only when it's on), the knobs on the panel under it;
 // without WebGL the page stays 2D.
+import { hear } from "../scope-tap.ts";
 import "../brand.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./amp.css";
@@ -290,6 +291,7 @@ async function start() {
   analyser = new AnalyserNode(ctx, { fftSize: 16384, smoothingTimeConstant: 0.6, minDecibels: -110, maxDecibels: -10 });
   node.connect(analyser);
   node.connect(out).connect(ctx.destination);
+  hear(out);
   send();
   // Any MIDI input's chosen controller (11, expression, unless `qamp.cc(n)` picked another) rocks the wah; no MIDI, drag it.
   void startMidi({ on: noop, off: noop, panic: noop, bend: noop, devices: (names) => { midiInputs = names; }, cc: (n, v) => { if (n === S.cc) rockWah(v * 10); } });

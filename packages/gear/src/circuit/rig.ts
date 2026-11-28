@@ -87,6 +87,8 @@ export interface RigSpec {
   loop?: LoopSpec[];
   /** Links run side by side instead of one after another (a splitter's sides), each blended back in (`Blend`). */
   blends?: Blend[];
+  /** A loop back (feedback): link `from`'s output, soft-clipped, times `gain` into link `to`'s input a step later (`to` ≤ `from`). */
+  back?: Back;
   /** The tubes and op-amp inside the loop's machines, if not the ones `machines.ts` writes. */
   machines?: MachineCircuits;
   /** The chain in slots, taking `links` in order; left out, every link is one slot and each `loop` machine one after it. */
@@ -113,6 +115,8 @@ export interface RigSpec {
  * A blend stays inside one slot.
  */
 export interface Blend { at: number; lanes: number[]; mix: number[] }
+
+export interface Back { from: number; to: number; gain: number }
 
 export interface RigRun {
   out: Float32Array;
@@ -159,6 +163,8 @@ class LinkStage {
   private feed: Int32Array;
   /** Each circuit's work at the last `work` call. */
   private worked: Float64Array;
+  /** What the loop back carries into the next step, volts around 0. */
+  private fed = 0;
   /** The blend each link starts, or -1. */
   private blendAt: Int32Array;
   blends: Blend[];
@@ -179,7 +185,7 @@ class LinkStage {
    * `inRest`: the volts this slot's input rests at, 0 but for a part of a split rig, which takes the part ahead's
    * oversampled volts as they are (`run`'s `tapIn`).
    */
-  constructor(readonly key: string, links: Link[], blends: Blend[], private sampleRate: number, private oversample: number, noise: number, public inRest = 0) {
+  constructor(readonly key: string, links: Link[], blends: Blend[], private sampleRate: number, private oversample: number, noise: number, public inRest = 0, private back?: Back) {
     const hi = sampleRate * oversample, n = links.length;
     this.worked = new Float64Array(n);
     this.gains = links.map((l) => l.gain ?? 1);
@@ -290,7 +296,7 @@ class LinkStage {
    * gets the last link's volts before the downsampling, `buf` left as it was.
    */
   run(buf: Float64Array, n: number, amp: PushPull | null, power: number, tapIn?: Float32Array | Float64Array, tapOut?: Float32Array | Float64Array): void {
-    const { circuits, rest, up, down, oversample, mods, swing, sampleRate, blendAt, blends } = this;
+    const { circuits, rest, up, down, oversample, mods, swing, sampleRate, blendAt, blends, back } = this;
     const count = circuits.length, powered = !!amp && power > 0, scoped = this.scopeLink >= 0;
     for (let s = 0; s < n; s++) {
       let acc = 0;
@@ -306,7 +312,14 @@ class LinkStage {
         let xr = this.inRest;
         for (let i = 0; i < count; ) {
           const b = blendAt[i];
-          if (b < 0) { x = this.stepLink(i, x, xr); xr = rest[i++]; continue; }
+          if (b < 0) {
+            if (back && i === back.to) x += this.fed;
+            x = this.stepLink(i, x, xr);
+            // clipped to a volt, so a loop turned up howls and never runs away
+            if (back && i === back.from) this.fed = back.gain * Math.tanh(x - rest[i]);
+            xr = rest[i++];
+            continue;
+          }
           const { lanes, mix } = blends[b];
           let sum = 0;
           for (let l = 0; l < lanes.length; l++) {
@@ -438,8 +451,9 @@ export class Rig {
         li += sl.links;
         // A split part's hand-over ends are their own stages: built resting at what the part ahead rests at.
         const taps = i === 0 && this.tapIn, inRest = taps ? spec.inRest ?? 0 : 0;
-        const key = `${linksKey(links, blends)}${taps ? `|in${inRest}` : ""}${i === slots.length - 1 && this.tapOut ? "|out" : ""}`;
-        const make = () => new LinkStage(key, links, blends, sampleRate, oversample, this.noise, inRest);
+        const at = spec.back, back = at && at.to >= li - sl.links && at.from < li ? { ...at, from: at.from - (li - sl.links), to: at.to - (li - sl.links) } : undefined;
+        const key = `${back ? JSON.stringify(back) : ""}${linksKey(links, blends)}${taps ? `|in${inRest}` : ""}${i === slots.length - 1 && this.tapOut ? "|out" : ""}`;
+        const make = () => new LinkStage(key, links, blends, sampleRate, oversample, this.noise, inRest, back);
         const old = take(key);
         const l = old?.s instanceof LinkStage ? old.s.retune(links, blends, this.noise) : make();
         const r = !stereo ? null : old?.r instanceof LinkStage ? old.r.retune(links, blends, this.noise) : make();
@@ -646,8 +660,9 @@ const slotOfLink = (slots: readonly Slot[]): number[] => slots.flatMap((s, i) =>
  * On a rig in slots, only where what comes before the cut is mono and ahead of the loop: the part handing over
  * ends with links, at the oversampled rate.
  */
-export function cutPoints(spec: Pick<RigSpec, "links" | "blends" | "slots" | "send">): number[] {
-  const inside = (c: number) => (spec.blends ?? []).some((b) => c > b.at && c < b.at + b.lanes.reduce((a, l) => a + l, 0));
+export function cutPoints(spec: Pick<RigSpec, "links" | "blends" | "slots" | "send" | "back">): number[] {
+  const inside = (c: number) => (spec.blends ?? []).some((b) => c > b.at && c < b.at + b.lanes.reduce((a, l) => a + l, 0))
+    || (!!spec.back && c > spec.back.to && c <= spec.back.from);
   const slots = spec.slots, of = slots ? slotOfLink(slots) : [];
   const st = slots ? slots.findIndex((s) => "machine" in s && s.stereo) : -1;
   const before = slots ? Math.min(spec.send ?? slots.length, st < 0 ? slots.length : st) : Infinity;
@@ -670,7 +685,8 @@ export function splitRig(spec: RigSpec, cuts: readonly number[]): RigSpec[] {
     const from = edges[k], first = k === 0, last = k === edges.length - 2;
     const blends = (spec.blends ?? []).filter((b) => b.at >= from && b.at < end).map((b) => ({ ...b, at: b.at - from }));
     const tap = first ? (last ? undefined : "out") : last ? "in" : "both";
-    const part: RigSpec = { ...spec, links: spec.links.slice(from, end), blends, tap, ...(last ? {} : { cab: null, loop: [] }) };
+    const b = spec.back, back = b && b.to >= from && b.from < end ? { ...b, from: b.from - from, to: b.to - from } : undefined;
+    const part: RigSpec = { ...spec, links: spec.links.slice(from, end), blends, back, tap, ...(last ? {} : { cab: null, loop: [] }) };
     if (!spec.slots) return part;
     // The slots holding this part's links (a slot cut in two goes to both), and the machines whose place falls in it.
     const slots: Slot[] = [], was: number[] = [];

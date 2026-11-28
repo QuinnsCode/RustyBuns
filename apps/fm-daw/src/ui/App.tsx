@@ -1,3 +1,4 @@
+import { hear } from "../scope-tap.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
 import { connect, roomName, shareBounce, type Net, type NetStatus } from "./net.ts";
@@ -409,6 +410,7 @@ export function App() {
     setStartError(null);
     try {
       const a = await AudioOut.start(onWorklet);
+      hear(a.node);
       audioRef.current = a;
       a.send(loadMsg(proj.current));
       deskFeed.reset();

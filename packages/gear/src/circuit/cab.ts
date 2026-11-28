@@ -16,7 +16,21 @@ export interface Mic {
   at: number;
   /** Degrees off axis, 0 (pointing straight at the cone) to 90 (side on). */
   angle: number;
+  /** Which box the speakers are in (`CABS`); the closed 2x12 if left out. */
+  box?: CabId;
 }
+
+export const CAB_IDS = ["1x12", "2x12", "4x12"] as const;
+export type CabId = (typeof CAB_IDS)[number];
+/**
+ * The three boxes: speakers, where the low end stops, the thump (Hz, dB), how bright the top goes (times the 2x12's),
+ * and the back panel's reflection (an open back lets more of it through, out of phase).
+ */
+export const CABS: Record<CabId, { name: string; speakers: number; low: number; thump: [number, number]; top: number; back: number }> = {
+  "1x12": { name: "Q 112 open back", speakers: 1, low: 105, thump: [150, 2], top: 1.12, back: -0.45 },
+  "2x12": { name: "Q 212", speakers: 2, low: 80, thump: [110, 4], top: 1, back: -0.25 },
+  "4x12": { name: "Q 412 closed", speakers: 4, low: 68, thump: [92, 6], top: 0.85, back: -0.15 },
+};
 
 export const DEFAULT_MIC: Mic = { at: 0.3, angle: 0 };
 
@@ -34,10 +48,11 @@ export function gainAt(ir: Float64Array, hz: number, sr: number): number {
 export function cabIR(mic: Mic, sampleRate: number): Float64Array {
   const at = clamp01(mic.at), off = clamp(mic.angle, 0, 90) / 90;
   const n = Math.round(CAB_SECONDS * sampleRate), sr = sampleRate;
-  const top = Math.min(0.45 * sr, lerp(7000, 3200, at) * (1 - 0.45 * off));
+  const cab = CABS[mic.box ?? "2x12"];
+  const top = Math.min(0.45 * sr, lerp(7000, 3200, at) * cab.top * (1 - 0.45 * off));
   const filters = [
-    Biquad.make("hp", 80, 0.7, sr), // the closed box: nothing much below its resonance
-    Biquad.make("peak", 110, 1.2, sr, 4), // and a thump at it
+    Biquad.make("hp", cab.low, 0.7, sr), // the box: nothing much below its resonance
+    Biquad.make("peak", cab.thump[0], 1.2, sr, cab.thump[1]), // and a thump at it
     Biquad.make("peak", 1600, 1.5, sr, -3), // the cone's dip before it breaks up
     Biquad.make("peak", lerp(3600, 2000, at), 1.4, sr, lerp(5, 1, at) - 3 * off), // breakup: bright at the cap, softer out at the edge
     Biquad.make("lp", top, 0.54, sr), Biquad.make("lp", top, 1.31, sr),
@@ -47,7 +62,7 @@ export function cabIR(mic: Mic, sampleRate: number): Float64Array {
   const back = Math.round(0.0007 * sr), rim = Math.max(1, Math.round(0.00012 * at * sr));
   const ir = new Float64Array(n);
   for (let k = 0; k < n; k++) {
-    const x = (k === 0 ? 1 : 0) + (k === back ? -0.25 : 0) + (k === rim ? 0.3 * at : 0);
+    const x = (k === 0 ? 1 : 0) + (k === back ? cab.back : 0) + (k === rim ? 0.3 * at : 0);
     ir[k] = chain(filters, x);
   }
   // Fade the last quarter so the cut doesn't click.
