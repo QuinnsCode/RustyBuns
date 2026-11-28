@@ -347,10 +347,10 @@ const exportButton = Def.fragment((h, gif: GifState) => h.button.attr("type", "b
 // as pictures, one bright button (Create your world), the ready-made worlds, and a small row: Skip to the page, How
 // it's built (opens under it), Cmd+K. Connecting your AI waits in the console, where it is the next step.
 const landingView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: string | null) => h.div.class("l-wrap").children(
-  h.section.class("landing").attr("aria-label", "Agent Page").children(
+  h.section.class("landing").attr("aria-label", "Agent World").children(
     h.div.class("l-sign").attr("aria-hidden", "true").children("エージェント"),
     h.div.class("l-stage").children(
-      h.h1.class("l-word").children("Agent Page"),
+      h.h1.class("l-word").children("Agent World"),
       h.p.class("l-line").children("Your agent builds your world. Then you walk the galaxy everyone built."),
       h.div.class("l-signs").children(...SIGNS.map(([name, i, c]) => h.span.class("l-chip", `c-${c}`).key(name).children(icon(h, i), name))),
       h.ol.class("l-steps").attr("aria-label", "How it works").children(

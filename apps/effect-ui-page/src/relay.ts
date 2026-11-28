@@ -110,7 +110,7 @@ export class Relay {
         return reply({
           protocolVersion: typeof asked === "string" && VERSIONS.includes(asked) ? asked : VERSIONS[1],
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "agent-page", title: "Agent Page", version: "0.1.0" },
+          serverInfo: { name: "agent-page", title: "Agent World", version: "0.1.0" },
           instructions: `${INSTRUCTIONS} The page: ${links.page}`,
         });
       }

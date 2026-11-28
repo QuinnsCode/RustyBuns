@@ -1,4 +1,4 @@
-# Agent Page
+# Agent World
 
 > **What it proves:** a world any coding agent writes while you watch (Claude Code, Codex, opencode, T3 Code, or a
 > browser agent with WebMCP), the way codeSplitter's profile page works: the agent writes real code (a canvas city, a
@@ -85,7 +85,7 @@ link opens with the console put away.
 
 **Pictures.** A moment after the world loads with no errors, the page takes a picture of its largest `<canvas>` and
 keeps it on the room, at `GET <room>/picture` (the `/api/r/<room>` link). Share your `/r/<room>` link and the preview
-shows that picture; a room with none shows the Agent Page sign. A world with no canvas has no picture of its own.
+shows that picture; a room with none shows the Agent World sign. A world with no canvas has no picture of its own.
 **Export GIF** (in the console and in Cmd+K) records three seconds of the canvas and downloads them as an animated GIF,
 `<room>.gif`. Keep the tab in front while it records. The file's name is the room's key, so rename it before you pass it
 on.

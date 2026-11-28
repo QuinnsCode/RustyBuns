@@ -12,7 +12,7 @@ export async function fakeEqosys() {
   let url = "", next: Person | null = null, n = 0;
   const codes = new Map<string, Person>(), refreshes = new Map<string, Person>();
   const handoff = (p: Person, app: string) => ({ user: p, app, source: app, access: ["member"] });
-  /** A token for `p`: for Agent Page unless `app` says another, signed `at` (now by default; it lasts ten minutes). */
+  /** A token for `p`: for Agent World unless `app` says another, signed `at` (now by default; it lasts ten minutes). */
   const token = async (p: Person, o: { app?: string; at?: number } = {}) => (await sign(signer, url, handoff(p, o.app ?? "agent-page"), o.at ?? Date.now()))!;
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET, POST, OPTIONS" };
   const reply = (v: unknown, status = 200) => Response.json(v, { status, headers: cors });
