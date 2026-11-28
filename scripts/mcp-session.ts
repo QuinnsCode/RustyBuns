@@ -36,7 +36,15 @@ export const estimate = (text: string) => Math.ceil(text.length / 4);
 
 /** A session's estimated tokens: the list and instructions once, each call's arguments, each reply. */
 export function cost(s: Session) {
-  const list = estimate(s.instructions + JSON.stringify(asTools(s.tools)));
+  const list = estimate(s.instructions + (s.tools.length ? JSON.stringify(asTools(s.tools)) : ""));
   const calls = s.calls.map((c) => ({ name: c.name, args: estimate(c.args), reply: estimate(c.reply) }));
   return { list, calls, total: calls.reduce((n, c) => n + c.args + c.reply, list) };
+}
+
+/** The same cost as the AI pays it: read (the list or sheet once, every reply), write (every call's arguments), and
+ *  how many calls it made. */
+export function split(s: Session) {
+  const { calls, total } = cost(s);
+  const write = calls.reduce((n, c) => n + c.args, 0);
+  return { read: total - write, write, total, trips: s.calls.length };
 }
