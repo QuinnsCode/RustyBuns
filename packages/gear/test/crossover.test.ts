@@ -65,7 +65,8 @@ test("on the tri-amp stack the room hears it: the preset plays flat, the bass fl
 
 // each speaker on its own, against the maker's numbers
 test.each([
-  ["top-12-powered", "powered", undefined, [80, 100, 125]], // QSC K12.2: its high-pass over a sub
+  ["top-12-powered", "powered", 2000, [80, 100, 125]], // QSC K.2: its HF split inside, its high-pass over a sub
+  ["line-array-10", "powered", 1500, [80, 100]], // QSC LA108: its LEAF white paper, its user manual
   ["sub-18", "powered", undefined, [80, 100]], // QSC KS118: its low-pass menu
   ["wedge-12", "powered", undefined, [80]], // QSC CP12's Ext Sub voicings
   ["top-15-passive", "passive", 2200, undefined], // JBL JRX215
