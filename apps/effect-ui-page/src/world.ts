@@ -4,6 +4,7 @@
 // The frame is `sandbox="allow-scripts"` with no same-origin: an opaque origin, so no cookies, storage or reach into
 // this page. Pure strings here (no DOM), so the Worker could serve the same document later.
 import { camera } from "./camera.ts";
+import { KIT } from "./kit.ts";
 import type { Page } from "./page.ts";
 
 /** Where a world may load libraries from, pinned versions being the author's job (as codeSplitter's LIBRARY_HOSTS). */
@@ -69,6 +70,8 @@ export function worldDoc(page: Page): string {
   if (index === undefined) return `<!doctype html><meta charset="utf-8"><body style="margin:0;background:#05060f;color:#9aa0c4;font:14px ui-monospace,monospace;display:grid;place-items:center;height:100vh">No index.html yet: ask your AI to write one.`;
   const scripts = Object.keys(files).filter((p) => /\.m?js$/.test(p));
   const imports: Record<string, string> = Object.fromEntries(scripts.map((p) => [`@world/${p}`, `data:text/javascript;charset=utf-8,${encodeURIComponent(`${bareImports(files, p, files[p]!)}\n//# sourceURL=${p}`)}`]));
+  // The kit's bare name has no extension, so no file of the world's (its own kit.js is `@world/kit.js`) can take it.
+  imports["@world/kit"] = `data:text/javascript;charset=utf-8,${encodeURIComponent(`${KIT}\n//# sourceURL=@world/kit`)}`;
   let html = index
     .replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (m, attrs: string, body: string) => {
       const src = attr(attrs, "src");

@@ -1,17 +1,23 @@
 // Agent Page on Cloudflare: the built page as static assets (every /r/<room> is the same page), and one Room Durable
 // Object per room that relays agents' calls to the page open in someone's browser (../relay.ts). /api/r/<room>/socket
-// is the page's socket; /tools and /mcp are the agents' doors; /picture and the page's link preview are share.ts.
-// `bun run deploy`.
+// is the page's socket; /tools and /mcp are the agents' doors; /picture and the page's link preview are share.ts;
+// /world is the room's saved world (../saved.ts). /api/galaxy is Agent Galaxy, one Durable Object for the whole map
+// (./galaxy.ts). `bun run deploy`.
 import { type RoomCtx, type RoomSocket, Sockets } from "@rustybuns/util/room";
 import { json } from "@rustybuns/util/http";
+import type { Kv } from "../galaxy.ts";
 import { fromPage, linksFor, Relay } from "../relay.ts";
+import { Saved } from "../saved.ts";
 import { pictureBucket, pictureHttp, type Pictures, withCard } from "../share.ts";
 import { ROOM } from "../tools.ts";
+
+export { Galaxy } from "./galaxy.ts";
 
 interface Stub { fetch(r: Request): Promise<Response> }
 interface Env {
   ASSETS: Stub;
   ROOM: { idFromName(name: string): unknown; get(id: unknown): Stub };
+  GALAXY: { idFromName(name: string): unknown; get(id: unknown): Stub };
 }
 
 /** /api/r/<room><rest>: the room and the rest of the path, or null. */
@@ -25,6 +31,7 @@ export default {
     const url = new URL(req.url);
     // An MCP client asks whether it must sign in first (OAuth discovery): no.
     if (url.pathname.startsWith("/.well-known/")) return json({ error: "no sign-in: the room's link is its key" }, 404);
+    if (url.pathname === "/api/galaxy" || url.pathname.startsWith("/api/galaxy/")) return env.GALAXY.get(env.GALAXY.idFromName("galaxy")).fetch(req);
     if (url.pathname.startsWith("/api/")) {
       const r = roomOf(url.pathname);
       return r ? env.ROOM.get(env.ROOM.idFromName(r.room)).fetch(req) : json({ error: "not a room: /api/r/<room>/tools" }, 404);
@@ -48,10 +55,12 @@ export class Room {
   private relay: Relay;
   private pictures: Pictures;
   private uploads = pictureBucket();
-  constructor(ctx: RoomCtx & { storage: Storage }) {
+  private saved: Saved;
+  constructor(ctx: RoomCtx & { storage: Storage & Kv }) {
     this.pictures = { get: () => ctx.storage.get<Uint8Array<ArrayBuffer>>("picture"), put: (bytes) => ctx.storage.put("picture", bytes) };
     // A page only answers calls: a few frames a second, each at most a page's worth of JSON.
     this.sockets = new Sockets(ctx, { maxBytes: 256_000, rate: 20, burst: 40 });
+    this.saved = new Saved(ctx.storage);
     this.relay = new Relay(() => {
       const newest = this.sockets.open().sort((a, b) => (this.sockets.who(b)?.at ?? 0) - (this.sockets.who(a)?.at ?? 0))[0];
       return newest ? (frame) => newest.send(frame) : null;
@@ -67,6 +76,7 @@ export class Room {
       return this.sockets.upgrade({ at: Date.now() }).response;
     }
     if (r.rest === "/picture") return pictureHttp(req, this.pictures, this.uploads);
+    if (r.rest === "/world") return this.saved.http(req);
     return this.relay.http(req, r.rest, linksFor(url.origin, r.room));
   }
   webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {

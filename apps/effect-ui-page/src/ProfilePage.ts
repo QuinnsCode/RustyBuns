@@ -12,8 +12,10 @@ import { Agent, Call, type Request, Seen } from "./agent.ts";
 import { apply, backdropUrl, Page } from "./page.ts";
 import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
+import { listTools } from "./tools.ts";
 import { worldDoc } from "./world.ts";
 import { READY } from "./worlds.ts";
+import { galaxyAsks } from "./galaxyView.ts";
 
 export const PageMessage = UiSchema.TaggedEnum({
   ReceivedAgentCall: { call: Call },
@@ -35,6 +37,8 @@ export const PageMessage = UiSchema.TaggedEnum({
   ClickedExportGif: {},
   ChangedGif: { busy: Schema.Boolean, says: Schema.String },
   CompletedExportGif: {},
+  ClickedGalaxy: {},
+  ClickedBack: {},
 });
 
 /** "Create your world": sign in with eqosys, or open the world this browser keeps (account.ts, loaded only when pressed). */
@@ -86,6 +90,8 @@ const Model = Schema.Struct({
   steps: Schema.Struct({ here: Schema.Boolean, asked: Schema.Boolean, wrote: Schema.Boolean, clean: Schema.Boolean, up: Schema.Boolean }),
   /** The agent's last page_status. */
   status: Schema.NullOr(Schema.String),
+  /** Agent Galaxy: the dock drops away and the map takes the window (galaxyView.ts draws it). */
+  galaxy: Schema.Boolean,
 });
 type Model = typeof Model.Type;
 
@@ -101,7 +107,7 @@ const HISTORY = 20, LOG = 8;
 type Asked = Request | { readonly _tag: "Load"; readonly files: Page["files"] };
 
 /** One request on the Model: the next Model and the error to report, if it couldn't be done. */
-function step(m: Model, r: Asked): { model: Model; error: string | null } {
+export function step<M extends Pick<Model, "page" | "past">>(m: M, r: Asked): { model: M; error: string | null } {
   if (r._tag === "Undo") {
     const [page, ...past] = m.past;
     return page ? { model: { ...m, page, past }, error: null } : { model: m, error: "nothing to undo" };
@@ -172,7 +178,6 @@ const ICONS = {
   hourglass: ["M5 22h14", "M5 2h14", "M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22", "M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"],
   ask: ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
   code: ["m16 18 6-6-6-6", "m8 6-6 6 6 6"],
-  globe: ["M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"],
   info: ["M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z", "M12 16v-4", "M12 8h.01"],
   sparkles: ["M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0Z"],
   download: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
@@ -185,6 +190,8 @@ const ICONS = {
   city: ["M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z", "M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2", "M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2", "M10 6h4", "M10 10h4", "M10 14h4", "M10 18h4"],
   orbit: ["M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z", "M19 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z", "M5 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z", "M10.4 21.9a10 10 0 0 0 9.94-15.42", "M13.5 2.1a10 10 0 0 0-9.84 15.42"],
   fish: ["M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.47-3.44 6-7 6s-7.56-2.53-8.5-6Z", "M18 12v.5", "M16 17.93a9.77 9.77 0 0 1 0-11.86", "M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"],
+  globe: ["M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"],
+  back: ["m12 19-7-7 7-7", "M19 12H5"],
 } as const;
 type Icon = keyof typeof ICONS;
 
@@ -200,7 +207,7 @@ type Show =
   | { kind: "shelf"; items: readonly string[] };
 const PIECES: readonly { c: string; tag: string; title: string; says: string; show: Show; soon?: boolean }[] = [
   { c: "pink", tag: "WebMCP · MCP", title: "The tools",
-    says: "Your AI gets six tools and uses them for you. There is nothing here for you to press.",
+    says: `Your AI gets ${listTools().length} tools and uses them for you. There is nothing here for you to press.`,
     show: { kind: "data", rows: [["write", "puts a file in your world"], ["read", "reads a file back"], ["look", "checks for errors"], ["undo", "takes a change back"], ["reset", "starts over"], ["backdrop", "puts a page behind it"]] } },
   { c: "green", tag: "Sandbox", title: "The sealed frame",
     says: "The code your AI writes runs in a locked box. It can't use the network, read cookies or reach your computer.",
@@ -349,7 +356,7 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
 });
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing,
+  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false,
     explain: false, noSignIn: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
   update: ($, message) => {
     switch (message._tag) {
@@ -375,6 +382,8 @@ export const ProfilePageNoDeps = Def.make({
       case "ClickedExportGif": return $.run(ExportGif.make({ room: $.props.room }));
       case "ChangedGif": return $.evolve({ gif: { busy: message.busy, says: message.says } });
       case "CompletedExportGif": return $.model;
+      case "ClickedGalaxy": return $.evolve({ galaxy: true, landing: false });
+      case "ClickedBack": return $.evolve({ galaxy: false });
     }
     const a = asked(message);
     if (!a) return $.model;
@@ -398,9 +407,14 @@ export const ProfilePageNoDeps = Def.make({
     Subscription.make("gif", Stream.callback<GifState>((queue) => Effect.acquireRelease(
       Effect.sync(() => watchGif((s) => Queue.offerUnsafe(queue, s))), (off) => Effect.sync(off))).pipe(
       Stream.map((s) => PageMessage.ChangedGif(s)))),
+    // Cmd+K and window.agentGalaxy ask for the galaxy here, so every door goes through the same two messages.
+    Subscription.make("galaxy", Stream.fromQueue(galaxyAsks).pipe(Stream.map((on) => (on ? PageMessage.ClickedGalaxy() : PageMessage.ClickedBack())))),
   ],
-  view: (h, { page, past, log, online, copied, gif, full, landing, explain, noSignIn, steps, status }) => {
+  view: (h, { page, past, log, online, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status }) => {
     const { room, origin, who } = h.props;
+    // The map is drawn by galaxyView.ts in its own layer over the page; here only the way back.
+    if (galaxy) return h.div.class("galaxy-mode").attr("data-galaxy", "on").children(
+      h.button.attr("type", "button").class("galaxy-back").on("click", PageMessage.ClickedBack()).children(icon(h, "back"), "Back to my world"));
     if (landing) return landingView(h, room, origin, online, copied, explain, noSignIn, who);
     const on = READY.find((w) => Object.entries(w.files).every(([path, text]) => page.files[path] === text));
     const promptText = prompt(linksFor(origin, room));
@@ -445,10 +459,11 @@ export const ProfilePageNoDeps = Def.make({
             worldTiles(h, on?.name),
             on && h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
               .on("click", PageMessage.ClickedCopy({ what: "ask", text: on.ask })).children(icon(h, "chat"), h.span(on.ask), icon(h, copied === "ask" ? "check" : "copy")),
-            h.div.class("tiles").children(
+            h.div.class("tiles", "acts").children(
               h.button.attr("type", "button").class("tile").attr("aria-label", "Undo").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children(icon(h, "undo"), "Undo"),
               h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Start over", title: "Start over" }).on("click", PageMessage.ClickedReset()).children(icon(h, "reset"), "Reset"),
               exportButton(h, gif),
+              h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Agent Galaxy", title: "Walk the map of everyone's worlds" }).on("click", PageMessage.ClickedGalaxy()).children(icon(h, "globe"), "Galaxy"),
             ),
             !gif.busy && gif.says !== "" && h.p.class("muted").attr("role", "status").children(gif.says),
           ),

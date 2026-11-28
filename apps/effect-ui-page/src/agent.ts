@@ -9,7 +9,8 @@ import { addCommands, type Command, runCommand } from "@rustybuns/util/commands"
 import { check, field } from "@rustybuns/util/guard";
 import { connectSocket } from "@rustybuns/util/socket";
 import { Context, Effect, Layer, Queue, Schema, Stream } from "effect";
-import { listing, type Page } from "./page.ts";
+import { changed, fileRead, looked } from "./answers.ts";
+import type { Page } from "./page.ts";
 import { decode, type FromPage, inputSchema, READ, READ_FILE, ReadFile, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
 import { SAID_KEY } from "./world.ts";
 
@@ -36,6 +37,14 @@ export class Agent extends Context.Service<Agent, {
 /** Where the page is kept between visits, per room: this browser only. */
 export const savedKey = (room: string) => `agent-page:${room}`;
 
+/** Whoever else needs the world as it stands (Agent Galaxy, which shows it and saves it to the server): told after
+ *  each change that lands. */
+const watchers = new Set<(p: Page) => void>();
+let current: Page | null = null;
+export const watchPage = (fn: (p: Page) => void) => { watchers.add(fn); return () => { watchers.delete(fn); }; };
+/** The world as it stands, once the page is mounted. */
+export const currentPage = () => current;
+
 /** The relay's socket for this room, on the server the page came from. */
 const socketUrl = (room: string) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/r/${room}/socket`;
 
@@ -56,6 +65,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   const seen = yield* Queue.unbounded<Seen>();
   const waiting = new Map<number, (r: Report) => void>();
   let page = initial, next = 1;
+  current = initial;
   // What the world's frame said since it last loaded (world.ts's reporter): its errors and blocked loads, newest last.
   let said: string[] = [];
   const heard = (e: MessageEvent) => {
@@ -73,21 +83,17 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   const call = (tool: Tool, args: unknown) => {
     const request = decode(tool, args);
     const id = next++;
-    return new Promise<{ ok: boolean; error?: string; files: ReturnType<typeof listing> }>((done) => {
-      waiting.set(id, (r) => done(r.error === null ? { ok: true, files: listing(r.page) } : { ok: false, error: r.error, files: listing(r.page) }));
+    return new Promise<ReturnType<typeof changed>>((done) => {
+      waiting.set(id, (r) => done(changed(r.error, r.page)));
       Queue.offerUnsafe(queue, { call: id, tool: tool.name, request });
     });
   };
   const off = addCommands([
     { ...READ, group: "Page", palette: false, execute: (_args, from) => {
       if (from === "agent") Queue.offerUnsafe(seen, "read");
-      return { files: listing(page), ...(page.backdrop ? { backdrop: page.backdrop } : {}), said: said.length ? said : ["nothing: no errors since it loaded"] };
+      return looked(page, said);
     } },
-    { ...READ_FILE, group: "Page", palette: false, execute: (args) => {
-      const { path } = Schema.decodeUnknownSync(ReadFile)(args);
-      const text = page.files[path];
-      return text === undefined ? { ok: false, error: `no file "${path}": the files are ${Object.keys(page.files).join(", ") || "none"}` } : { path, text };
-    } },
+    { ...READ_FILE, group: "Page", palette: false, execute: (args) => fileRead(page, Schema.decodeUnknownSync(ReadFile)(args).path) },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
   ]);
@@ -107,6 +113,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     seen: Stream.fromQueue(seen),
     report: (r) => Effect.sync(() => {
       page = r.page;
+      if (r.error === null && current !== r.page) { current = r.page; for (const w of watchers) w(r.page); }
       try { localStorage.setItem(savedKey(room), JSON.stringify(r.page)); } catch { /* private window: kept for this visit only */ }
       waiting.get(r.call)?.(r);
       waiting.delete(r.call);

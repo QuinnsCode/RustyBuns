@@ -46,13 +46,14 @@ ground, what is on it, the weather) before it writes; the page never asks. A new
 | `page_read` | Each file's path and size, the backdrop, and what the frame said since it last loaded: errors with their file, loads it blocked |
 | `page_read_file` | One file's whole text |
 | `page_write_file` | Set one file (`index.html`, `world.js`, `lib/noise.js`, ...) to this text; `""` takes it away. Its description tells the agent how files load and what the frame allows |
+| `page_edit_file` | Swap the one exact match of `find` in a file for `replace`, so a small change doesn't resend the file. No match, or more than one, is refused with the count |
 | `page_set_backdrop` | A codeSplitter handle whose profile page (their public `page` repo) fills the window behind the world; `""` takes it away |
 | `page_undo`, `page_reset` | Take back the last change, or go back to the starter desert |
 | `page_status` | A few words (80 characters at most) on what the AI is doing, shown in the console and the step strip. Changes no file, nothing to undo |
 
-A write answers with the files (paths and sizes, not their text), or why it couldn't be done. The Undo and Start over
-buttons do the same as the tools. This browser keeps each room's world for the next visit. `?full` on the link opens with the
-console put away.
+A write or an edit answers with the files (paths and sizes, not their text), or why it couldn't be done. The Undo and
+Start over buttons do the same as the tools. This browser keeps each room's world for the next visit. `?full` on the
+link opens with the console put away.
 
 **Pictures.** A moment after the world loads with no errors, the page takes a picture of its largest `<canvas>` and
 keeps it on the room, at `GET <room>/picture` (the `/api/r/<room>` link). Share your `/r/<room>` link and the preview
@@ -80,16 +81,73 @@ What keeps it safe, in short:
 - What the world says goes back to the agent, so the prompt and the MCP instructions tell it page text is content,
   never instructions.
 
+### `@world/kit`
+
+A world's module can `import { world, ground, sky } from "@world/kit"` instead of writing the same three.js each
+time (`src/kit.ts`, three.js 0.170.0 from esm.sh). The plot is 100 units square around 0.
+
+| Call | Gives |
+|---|---|
+| `world({ orbit, distance, angle })` | The scene, a camera looking down at an angle, the renderer, resizing and the loop. Returns `{ scene, camera, renderer }` |
+| `ground({ type, color })` | `flat`, `dunes`, `hills` or `grass`. `heightAt(x, z)` reads it |
+| `sky(type)`, `weather(type)` | `day`, `night` (stars and a moon) or `dusk`; `rain`, `snow`, `fog` or `clear` |
+| `water({ y, x, z, width, depth })` | A sheet of water |
+| `trees(n)`, `cactus(n)`, `rocks(n)` | Scattered on the ground, never in water; `{ area, size, color }` |
+| `lights({ sun, fill, color, at })`, `lamp({ x, y, z, color })` | The sun and sky light; a coloured glow |
+| `every(f)`, `THREE` | Run `f(t, dt)` each frame; three.js for anything else |
+| `onPlayer(cb)` | `cb(player, at)` when the page says a visitor is walking the plot (`{ agent_page: true, player: { x, z } \| null }`, 0 to 1). A world reacts to them and never draws them |
+
+`test/fixtures/rain-city.js` is a whole rainy neon city by a river in about 30 lines of it.
+
+### What a world costs in tokens
+
+A fixed "build me a world" session (`test/session.ts`: `page_read`, read the starter's two files, write a small rainy
+city, look, one fix, look) counted with the instructions and tool list once, each call's arguments and each reply, at
+four characters a token (`scripts/mcp-session.ts`, the same session code as codeSplitter's `tool-tokens.ts`):
+
+| | Tool list and instructions | Whole session |
+|---|---|---|
+| Before: three.js by hand, whole files resent | 682 | 4,473 |
+| After: `@world/kit` and `page_edit_file` | 612 | 2,119 |
+
+`test/tokens.test.ts` fails when the session passes the budget in `test/tokens.json`. A change that earns more tokens
+raises it there, in the same PR. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
+
 From a script or the console, the same tools are on `window.__commands`:
 
 ```
 bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 ```
 
+### Agent Galaxy
+
+Every world is a plot on one shared map. **Agent Galaxy** (the Galaxy tile in the console, or Cmd+K) puts the console away and zooms
+out: your plot sits in the middle with its eight neighbours around it, seen from above at an angle, and you are a
+small character. Walk with WASD or the arrow keys (a touch stick on a phone). Walking off an edge takes you onto the
+plot next door from the opposite edge. **Back to my world** brings the console back.
+
+- The plot you stand on runs live, in the same sealed frame as always: your own world, the common city in the middle
+  (`src/commonCity.ts`, ours, nobody's), or a neighbour's world as their room last saved it. A neighbour's world is
+  read-only to you: no tool and no undo reach it. Only one world runs at a time; every other plot shows its latest
+  picture (`GET /api/r/<room>/picture`), or desert until it has one.
+- Your page saves your world to the server a second after each change that lands (`PUT /api/r/<room>/world`, checked
+  with the same Schema and limits as a write), so a neighbour who walks in runs what you see.
+- Empty plots are desert with a sign, "Invite someone to build here". Every third cell of the spiral stays free for
+  invites (the invite link itself, and signing in so a plot is a person's rather than a room's, come next).
+- You see the other characters on your plot and the ones touching it. They have a colour and no name.
+- The map never sends a room's link: a plot is known by a one-way hash of it, since the link is the room's key.
+
+From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()` and `walk(dx, dz)`:
+
+```
+bun run probe effect-ui-page --url http://127.0.0.1:4799/r/<room> --js 'await agentGalaxy.enter()' --shot galaxy.png
+```
+
 ## Deploy it
 
 `bun run deploy` builds the page and ships it with the relay as one Worker (`wrangler.jsonc`). It has one small
-Durable Object per room, which keeps one picture (150 KB at most) in its storage, and no AI or other paid bindings.
+Durable Object per room, which keeps one picture (150 KB at most) and the room's saved world (a key per file) in its
+storage, and one `Galaxy` Durable Object for the whole map, and no AI or other paid bindings.
 The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 
 ## How it's put together
@@ -98,9 +156,11 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
   function that changes it. A tool's JSON Schema for the agent comes from the same Schema that checks its call.
 - `src/world.ts`: the sealed frame's document: `index.html` with the world's own scripts and styles put inline, its
   modules' imports of each other through an import map, the policy and the reporter first. `src/starter.ts`: the
-  starter desert's two files (`src/rain-city.ts` is the Rainy city try-one world).
+  starter desert's two files (`src/rain-city.ts` is the Rainy city try-one world). `src/kit.ts`: `@world/kit`'s
+  source, a string the frame's import map carries.
 - `src/account.ts`: "Create your world": eqosys sign-in (`@rustybuns/util/eqosys`) and the room this browser keeps
   as the person's own. Client side only for now.
+- `src/answers.ts`: what the tools answer, shared by the page and the tests' stand-in for it (`test/app-kit.ts`).
 - `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP) and the frames between the relay and the page.
 - `src/agent.ts`: the `Agent` service in the page. Its Layer puts the WebMCP tools up (`@rustybuns/util/commands`)
   and keeps a socket to the room's relay while the page is mounted. A call from either becomes a message on a queue
@@ -117,9 +177,16 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 - `src/camera.ts`: what takes pictures inside the frame. `src/pictures.ts`: the page's side (upload, Export GIF).
   `src/gif.ts`: our GIF encoder. `src/share.ts`: the picture routes and the link preview, for the Worker and the dev
   server alike. `bun scripts/og.ts` remakes `public/og.jpg`, the preview of a room with no picture.
+- `src/galaxy.ts`: Agent Galaxy with no platform in it: the spiral, `claim`, the plots around a point, the players'
+  moves (each to the same and touching plots only) and the wire guards both ends import. `src/edge/galaxy.ts` runs it
+  in a Durable Object; `scripts/dev.ts` runs it in memory. `src/saved.ts`: a room's saved world, the same way.
+  `src/galaxyView.ts`: the map in the page, on a plain 2D canvas.
+- `test/galaxy.test.ts`: two rooms walking the galaxy in headless Chrome against the dev server.
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
-  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview
-and Export GIF.
+  `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a
+  missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview and Export
+  GIF. `test/tokens.test.ts`: the token budget. `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in
+  the frame and a kit world running there.
 
 Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit
 (`@effect/ui@a0d7578`). To move it on: `bun add https://pkg.pr.new/Effect-TS/ui/@effect/ui@<commit>` in this folder.

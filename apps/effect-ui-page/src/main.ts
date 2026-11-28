@@ -14,6 +14,7 @@ import { READY } from "./worlds.ts";
 import { ProfilePage } from "./ProfilePage.ts";
 import { ROOM } from "./tools.ts";
 import { backFromSignIn, login } from "./account.ts";
+import { startGalaxy } from "./galaxyView.ts";
 
 const newRoom = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
 
@@ -33,6 +34,7 @@ const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, ini
   .pipe(Layer.provide(agent(room, initial)));
 
 Layer.launch(Main).pipe(Effect.runFork);
+const galaxy = startGalaxy(room);
 
 // Cmd+K: the page's own tools (agent.ts puts them up) and, for a person only, the two lines that connect an AI.
 const copy = (text: string) => navigator.clipboard.writeText(text).then(() => "Copied", () => "The clipboard said no: copy it from the dock.");
@@ -47,6 +49,11 @@ addCommands([
     description: "Puts the paste-into-any-agent prompt for this room on the clipboard.", execute: () => copy(prompt(linksFor(location.origin, room))) },
   { name: "page_export_gif", title: "Export GIF", group: "Share", agent: false, answers: true,
     description: "Records three seconds of the world and downloads an animated GIF.", execute: () => exportGif(room) },
+  // The dock's Agent Galaxy button and window.agentGalaxy.enter() send the same message.
+  { name: "page_galaxy", title: "Agent Galaxy", group: "Galaxy", agent: false,
+    description: "Zoom out to the map of everyone's worlds and walk it as a small character.", execute: () => { void galaxy.enter(); } },
+  { name: "page_galaxy_back", title: "Back to my world", group: "Galaxy", agent: false,
+    description: "Leave the galaxy map and go back to your own world and the dock.", execute: () => { void galaxy.leave(); } },
 ]);
 mountPalette({ button: true, placeholder: "What should the page do?" });
 
