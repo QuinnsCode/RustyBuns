@@ -1,9 +1,9 @@
-// The browser entry: find this page's room (its address, /r/<room>, or a new one), bring back what this browser
-// kept of it (or, when it kept nothing, the world the room saved on the server: your world, signed in on another
-// browser), ask the server whether that world is made (lock.ts), and mount the page with the agents' doors up.
+// The browser entry: find this page's room (its address, /r/<room>, or a new one), bring back its world (what the
+// server keeps, so every browser sees the same one; this browser's copy when the server has none, or when it holds a
+// change that never got there), ask whether that world is made (lock.ts), and mount the page with the agents' doors up.
 import { BrowserHost } from "@effect/ui/html";
 import { Effect, Layer, Option, Schema } from "effect";
-import { layer as agent, savedKey } from "./agent.ts";
+import { layer as agent, savedKey, unsavedKey } from "./agent.ts";
 import { Page, starter } from "./page.ts";
 import { exportGif, startPictures } from "./pictures.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -29,12 +29,14 @@ const room = here && ROOM.test(here) ? here : newRoom();
 if (location.pathname !== `/r/${room}`) history.replaceState(null, "", `/r/${room}${location.search}`);
 
 const kept = (() => { try { return localStorage.getItem(savedKey(room)); } catch { return null; } })();
+const unsent = (() => { try { return localStorage.getItem(unsavedKey(room)) !== null; } catch { return false; } })();
 const [onServer, made] = await Promise.all([
-  kept ? null : fetch(`/api/r/${room}/world`).then((r): unknown => (r.ok ? r.json() : null)).catch(() => null),
+  fetch(`/api/r/${room}/world`).then((r): unknown => (r.ok ? r.json() : null)).catch(() => null),
   getJson(`/api/r/${room}/made`, Made).then((m) => m?.made ?? false),
 ]);
 const fromServer = Option.getOrNull(Schema.decodeUnknownOption(Page)(onServer));
-const initial = kept ? Option.getOrElse(Schema.decodeUnknownOption(Schema.fromJsonString(Page))(kept), () => starter) : (fromServer ?? starter);
+const local = kept ? Option.getOrNull(Schema.decodeUnknownOption(Schema.fromJsonString(Page))(kept)) : null;
+const initial = (unsent ? local ?? fromServer : fromServer ?? local) ?? starter;
 const who = login()?.name ?? null;
 galaxyLock.why = lockLine(who !== null, made);
 
