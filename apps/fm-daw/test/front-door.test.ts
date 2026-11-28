@@ -1,6 +1,6 @@
 // Qollab Studio's front door (#5860), the way a newcomer meets it, in headless Chrome over CDP (scripts/chrome.ts): at
-// phone and desktop sizes the field is the menu. LEARN, BUILD and PLAY are lanes on it, and under it each lane's shelf
-// follows the last, every card's name on one line with nothing off the side. A lane's button scrolls to its shelf, the
+// phone and desktop sizes the field is the menu. LEARN, STUDIO and EVENT are lanes on it, each listing its apps, and under it each
+// lane's shelf follows the last, every card's name on one line with nothing off the side. A lane's button scrolls to its shelf, the
 // buttons slide into the tabs up top, the tabs scroll between shelves, and the lane being read lights on the field. The
 // live field (#6019) darkens at the back when the air dries out and again behind a bank. Walking each path is
 // front-door-paths.test.ts, so CI's lanes can run the two side by side (#5922).
@@ -15,7 +15,7 @@ useBrowser();
 type Tab = Awaited<ReturnType<typeof openTab>>;
 const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 60_000);
 interface Chip { at: string; shown: boolean; text: string; left: number; right: number; top: number }
-interface Door { paths: { id: string; sector: string; name: string; href: string; shown: boolean; oneLine: boolean }[]; lane: string | null; overflowX: boolean; account: Chip[] }
+interface Door { lanes: { id: string; apps: { id: string; href: string; onScreen: boolean }[] }[]; paths: { id: string; sector: string; name: string; href: string; shown: boolean; oneLine: boolean }[]; lane: string | null; overflowX: boolean; account: Chip[] }
 /** The chip at `at`, which must be the only one on the screen. */
 const chipAt = (d: Door, at: string) => { expect(d.account.filter((c) => c.shown).map((c) => c.at)).toEqual([at]); return d.account.find((c) => c.at === at)!; };
 interface Hero { air: { tempC: number; humidity: number; bank: boolean }; map: { near: number; far: number }; back: { dull: number; ms: number }; playing: boolean; draws: number }
@@ -36,13 +36,16 @@ test.skipIf(!hasChrome)("each lane on the field scrolls to its shelf and becomes
       expect(sky.right).toBeGreaterThan(w - 40);
       expect(sky.top).toBeLessThan(80);
       expect(door.paths.map((p) => [p.sector, p.id, p.href])).toEqual(SECTORS.flatMap((s) => PATHS.filter((p) => p.sector === s.id).map((p) => [s.id, p.id, p.href])));
+      // each lane's card on the field lists its apps as links, all of them on the screen at once
+      expect(door.lanes.map((l) => [l.id, l.apps.map((a) => [a.id, a.href])])).toEqual(SECTORS.map((s) => [s.id, PATHS.filter((p) => p.sector === s.id).map((p) => [p.id, p.href])]));
+      expect(door.lanes.flatMap((l) => l.apps).filter((a) => !a.onScreen).map((a) => a.id)).toEqual([]);
       expect(door.lane).toBe(null);
       expect(door.paths.filter((p) => !p.shown || !p.oneLine).map((p) => p.name)).toEqual([]);
       expect(door.overflowX).toBe(false);
       // the first lane from its button on the field, the others from the tabs the buttons slid into: each scrolls to its
       // shelf, lights on the field, and draws its things
       for (const [i, s] of SECTORS.entries()) {
-        await tab.eval(i === 0 ? `document.querySelector('.lane[data-lane="${s.id}"]').click()` : `document.querySelector('#tabs [data-tab="${s.id}"]').click()`);
+        await tab.eval(i === 0 ? `document.querySelector('.lane[data-lane="${s.id}"] button').click()` : `document.querySelector('#tabs [data-tab="${s.id}"]').click()`);
         await until(tab, `qdoor.state().lane === ${JSON.stringify(s.id)}`);
         await until(tab, `document.body.classList.contains("scrolled") && qdoor.shelf().items.some((t) => t.seen && t.drawn)`);
         expect(await tab.eval<string | null>(`document.querySelector('#tabs [aria-selected="true"]')?.dataset.tab ?? null`)).toBe(s.id);

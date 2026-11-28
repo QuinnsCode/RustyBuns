@@ -4,7 +4,7 @@
 
 **Live:** https://fm-daw.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
-**Learn, Build, Play** (Qollab Studio's three words and seven sectors: Learn the setup; Event Planner, QDAW, Q Instruments, Q Amps, Q Builder; Playground, The Event): [PATHWAYS.md](PATHWAYS.md). The front door, https://fm-daw.notryanquinn.workers.dev/door.html, names them under their words and opens each on its first step; every page's **Paths** button (the house, on the decks and the builder) brings you back to it.
+**Learn, Studio, Event** (Qollab Studio's three lanes: Learn the setup; Event Planner, QDAW, Q Instruments, Q Amps, Q Builder, Speakers, Playground; The Event): [PATHWAYS.md](PATHWAYS.md). The front door, https://fm-daw.notryanquinn.workers.dev/door.html, lists them under their lanes and opens each on its first step; every page's **Paths** button (the house, on the decks and the builder) brings you back to it.
 
 **One kit, two storylines:** LEARN and Sound Guy Simulator ([apps/load-in](../load-in/README.md)) are the same gear: lessons here, a roadie's career there. A piece built here goes in a shared package so the game gets it too. The speaker, amp and rig models are in `@rustybuns/models/gear`. The rigs and spec sheets are in `@rustybuns/gear` (`SYSTEMS`, the catalog). Q Amp's heads are in `@rustybuns/gear/circuit` (`heads.ts`; this app builds each stage from its tscircuit board, and the game's show amp is Q Brit 3). The lesson step checker is `packages/gear` `steps.ts`.
 
