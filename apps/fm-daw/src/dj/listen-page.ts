@@ -1,6 +1,7 @@
 // A listen link's page (/listen/<id>, #5878): the set's name, the track list as it comes in, and a play button. No
 // sign-in. The sound comes over the set's socket as WebM chunks (src/listen.ts) and plays through MediaSource, a few
 // seconds behind the decks. `qlisten` is the harness for probes and the journey test.
+import { hear } from "../scope-tap.ts";
 import "../brand.css";
 import { check } from "@rustybuns/util/guard";
 import { LIVE_TYPE, SetSays, listenSocket, setFromPath } from "./live-wire.ts";
@@ -111,6 +112,7 @@ function play(on: boolean) {
       level = ctx.createAnalyser();
       level.fftSize = 2048;
       src.connect(level).connect(ctx.destination);
+      hear(level);
     }
     void actx?.resume();
     over = false; full = null;

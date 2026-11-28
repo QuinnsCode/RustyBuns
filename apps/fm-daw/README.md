@@ -50,6 +50,8 @@ Everything on the desk is one list of controls, with the room's level, the setup
 
 **Light or dark:** the room pill at the top right of every page (the one that names where you are) ends in three icons: follow your computer, light, or dark. The pick is kept in this browser and every page reads it; the 3D rooms, the field at dusk, the screens and the gear keep their own colours.
 
+**Scope:** the wave button at the top of every page that makes sound (and Cmd+K, **Scope on or off**) floats an oscilloscope of what that page plays; a YouTube deck is not in it.
+
 **Speaker plans:** `/speakers.html` builds a speaker box from its plan: pick one of the three, drag to turn the cabinet, **Apart** pulls the pieces out like a build sheet, and the curve, the walls and the cut list are worked out from the plan. Change what the walls are made of or add braces and listen: **Listen** plays a bass loop through the box (in Rust when this build has the wasm), **No box** the same loop without it, and **Knock** rings each wall on its own: MDF thuds, aluminium sings. **GLB** downloads the cabinet as it stands, to open in Blender.
 
 **Controls:** Desktop: Space play and stop, the A row plays notes, Z X change octave, R record, 1 to 0 pick a track, - and = zoom the grid out and in, \\ fits the whole loop, Esc stop all sound. Ctrl or Cmd + scroll (or a trackpad pinch) zooms about the pointer, a sideways or Shift scroll slides. · Phone: tap the pads and buttons; pinch the grid or the overview bar above it to zoom.

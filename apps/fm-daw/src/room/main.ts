@@ -12,6 +12,7 @@
 // it is the same pedal for everyone. Right of the rack stands the sound wall (../wall/, WALL.md): its modules in the
 // case run on an audio thread of their own (wall-worklet.ts), heard from its Q Out; N brings another module.
 // `window.qstudio` is the harness (scripts/probe.ts HANDLES).
+import { hear as toScope } from "../scope-tap.ts";
 import "../brand.css";
 import "./studio.css";
 import * as THREE from "three";
@@ -291,7 +292,9 @@ async function speakers(up: boolean) {
     node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
     threads = new AmpThreads(node, ctx.sampleRate, () => new Worker(new URL("../amp/part-worker.ts", import.meta.url), { type: "module" }), (m) => { meter = m; });
     panner = new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1, rolloffFactor: 0.8 });
-    node.connect(deskNode).connect(panner).connect(new GainNode(ctx, { gain: 0.5 })).connect(ctx.destination);
+    const level = new GainNode(ctx, { gain: 0.5 });
+    node.connect(deskNode).connect(panner).connect(level).connect(ctx.destination);
+    toScope(level);
     const data = riff(ctx.sampleRate), buf = ctx.createBuffer(1, data.length, ctx.sampleRate);
     buf.copyToChannel(data, 0);
     riffNode = new AudioBufferSourceNode(ctx, { buffer: buf, loop: true });

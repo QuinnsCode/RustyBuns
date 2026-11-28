@@ -4,6 +4,7 @@
 // loop through that box: in Rust (src/speakers/rust.ts) when this build has the wasm, else in TypeScript. Change
 // what the walls are made of, or add braces, and both the curve and the knock (each wall rung on its own) change.
 // window.qspeakers drives it (scripts/probe.ts).
+import { hear } from "../scope-tap.ts";
 import "../brand.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./speakers.css";
@@ -241,6 +242,7 @@ async function play(kind: "box" | "flat" | "knock") {
   buf.copyToChannel(Float32Array.from(audio, (v) => v * g), 0);
   const s = ctx.createBufferSource();
   s.buffer = buf; s.loop = kind !== "knock"; s.connect(ctx.destination); s.start();
+  s.addEventListener("ended", hear(s));
   s.onended = () => { if (source === s) { playing = null; source = null; paint(); } };
   source = s; playing = kind; paint();
   return { engine, peak, rms, running: ctx.state === "running" };
