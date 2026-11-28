@@ -9,23 +9,8 @@ import { SYSTEM_IDS, SYSTEMS, type SystemId } from "@rustybuns/gear";
 import { TOPS, type Tops } from "../project.ts";
 import type { Studio } from "./door.ts";
 import { shot } from "./picker.ts";
+import { DEFAULT_FONT, FONTS, loadFont, wearFont } from "./font-pick.ts";
 import { renderGraphics, type GraphicsDeps } from "./graphics-panel.ts";
-
-/** The 20 fonts on the owner's font board, Saira Condensed (the default) first. Small text stays Inter whichever is picked. */
-export const FONTS = ["Saira Condensed", "Barlow Condensed", "Inter", "Space Grotesk", "Oswald", "Bebas Neue", "Anton", "Teko", "Rajdhani",
-  "Archivo Narrow", "Chakra Petch", "Orbitron", "Righteous", "Bungee", "Press Start 2P", "Space Mono", "DM Sans", "Outfit", "Fraunces", "Permanent Marker"] as const;
-export const DEFAULT_FONT = FONTS[0];
-const FONT_KEY = "qollab-studio:font";
-
-/** The font this browser picked for headings and buttons, or the default. */
-export function loadFont(): string {
-  try { const f = localStorage.getItem(FONT_KEY); return f && FONTS.some((x) => x === f) ? f : DEFAULT_FONT; } catch { return DEFAULT_FONT; }
-}
-/** Wear `font` on this page (the `--qs-head` the jam room's CSS reads) and keep it for next time. */
-export function wearFont(font: string, keep = true) {
-  document.documentElement.style.setProperty("--qs-head", `"${font}"`);
-  if (keep) try { localStorage.setItem(FONT_KEY, font); } catch { /* worn for this page only */ }
-}
 
 export const TOPS_WORDS: Record<Tops, string> = { subs: "The subs", pole: "A pole over the subs", stands: "Their own stands" };
 const TOPS_CHIP: Record<Tops, string> = { subs: "tops on the subs", pole: "tops on poles", stands: "tops on stands" };

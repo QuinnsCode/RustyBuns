@@ -1,12 +1,12 @@
 // Qollab Studio's front door (/door.html), a landing page (#6019): the live field at dusk (src/front-hero.ts) fills the
-// screen behind everything, crowded up under the title, LEARN, BUILD and PLAY as lanes down the grass. Scroll and the
+// screen behind everything, crowded up under the title, LEARN, STUDIO and EVENT as lanes down the grass, each
+// with a list of its apps. Scroll and the
 // lane buttons slide up into the tabs along the top, and each lane's shelf follows one after another: its paths as
-// things swinging in the dark (src/front-shelf.ts), each card opening on its sector's first step and sliding in as it
+// things swinging in the dark (src/front-shelf.ts), each card opening on its app's first step and sliding in as it
 // comes onto the screen, the lane you are reading lit on the field behind. The night's air hides behind one small
 // button in the corner. After the shelves, the pedal-to-show chain, what works today, and a word for crews and for
 // classes. `qdoor` is the harness for probes and the journey tests (test/front-door.test.ts).
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "./studio/fonts.css";
 import "./door-fonts.css";
 import { clamp } from "@rustybuns/util";
 import { mountHero } from "./front-hero.ts";
@@ -14,17 +14,56 @@ import { mountShelf, type ShelfItem } from "./front-shelf.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "./account.ts";
 import { SKIN } from "./guest-list.ts";
-import { CHAIN, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type SectorId } from "./paths.ts";
+import { CHAIN, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type Sector, type SectorId } from "./paths.ts";
 import { followTheme } from "./ui/theme.ts";
+import { loadFont, wearFont } from "./studio/font-pick.ts";
 
-const TONES: Record<SectorId, string> = { learn: "#2dd4bf", build: "#fb923c", play: "#818cf8" };
+const TONES: Record<SectorId, string> = { learn: "#2dd4bf", studio: "#fb923c", event: "#818cf8" };
 /** Each lane's thematic face (door-fonts.css), as the field paints its word on the grass. */
-const FACES: Record<SectorId, string> = { learn: '400 100px "Caveat Brush", cursive', build: '800 100px "Doto", monospace', play: '400 100px "Special Elite", monospace' };
+const FACES: Record<SectorId, string> = { learn: '400 100px "Caveat Brush", cursive', studio: '800 100px "Doto", monospace', event: '400 100px "Special Elite", monospace' };
 /** The thing each path stands as on its lane's shelf. */
-const ITEMS: Record<PathId, ShelfItem> = { learn: "guitar", planner: "stack", daw: "screen", instruments: "turntable", amps: "amp", builder: "board", playground: "mic", event: "wedge" };
+const ITEMS: Record<PathId, ShelfItem> = { learn: "guitar", planner: "stack", daw: "screen", instruments: "turntable", amps: "amp", builder: "board", speakers: "stack", playground: "mic", event: "wedge" };
 const isSector = (v: string): v is SectorId => SECTORS.some((s) => s.id === v);
 
 followTheme();
+// headings and buttons in this viewer's Settings > You pick, again on a page the back button brings back
+wearFont(loadFont(), false);
+addEventListener("pageshow", () => wearFont(loadFont(), false));
+/** A lane's line: plain, with its weighed word strong, or as the console prompt whose last word rolls (door.html .roll). */
+const writeLine = (p: HTMLElement, s: Sector) => {
+  if (s.rolls) {
+    p.classList.add("console");
+    p.innerHTML = `<span class="said"></span><span class="prompt" aria-hidden="true">Build your <span class="roll"><span></span></span></span>`;
+    p.querySelector(".said")!.textContent = s.line;
+    // the first word again at the end, so the roll comes round without jumping back
+    for (const [word, path] of [...s.rolls, s.rolls[0]!]) {
+      const a = document.createElement("a");
+      a.href = pathOf(path).href; a.tabIndex = -1; a.textContent = word; a.title = pathOf(path).name;
+      p.querySelector(".roll > span")!.append(a);
+    }
+    return;
+  }
+  const [before, after] = s.weigh ? s.line.split(s.weigh) : [s.line];
+  p.textContent = before!;
+  if (s.weigh) {
+    const strong = document.createElement("strong");
+    strong.textContent = s.weigh;
+    p.append(strong, after ?? "");
+  }
+};
+/** A lane's apps, in the order its list and its shelf show them. */
+const appsOf = (id: SectorId) => PATHS.filter((p) => p.sector === id);
+/** A lane's apps as a plain bulleted list of links. */
+const appList = (id: SectorId) => {
+  const ul = document.createElement("ul");
+  ul.className = "apps";
+  for (const p of appsOf(id)) {
+    const li = document.createElement("li"), a = document.createElement("a");
+    a.href = p.href; a.dataset.app = p.id; a.textContent = p.name;
+    li.append(a); ul.append(li);
+  }
+  return ul;
+};
 const shelf = mountShelf();
 const list = document.getElementById("paths")!;
 for (const s of SECTORS) {
@@ -34,9 +73,10 @@ for (const s of SECTORS) {
   section.style.setProperty("--tone", TONES[s.id]);
   section.innerHTML = `<h2></h2><p class="line"></p><div class="cards"></div>`;
   section.querySelector("h2")!.textContent = s.word;
-  section.querySelector(".line")!.textContent = s.line;
+  writeLine(section.querySelector<HTMLElement>(".line")!, s);
   const cards = section.querySelector(".cards")!;
-  for (const p of PATHS.filter((p) => p.sector === s.id)) {
+  cards.before(appList(s.id));
+  for (const p of appsOf(s.id)) {
     const a = document.createElement("a");
     a.className = "path";
     a.href = p.href;
@@ -58,7 +98,7 @@ for (const a of list.querySelectorAll(".path")) rise.observe(a);
 
 // the field is the menu, and scrolling reads it: under the field each lane's shelf stands one after another. Scrolling
 // off the field slides the lane buttons up into the tabs, and the lane you are reading lights on the field behind, the
-// camera flown over it. A lane button, its strip of grass or a tab scrolls to its shelf; #build lands on it from a link.
+// camera flown over it. A lane button, its strip of grass or a tab scrolls to its shelf; #studio lands on it from a link.
 const tabs = document.getElementById("tabs")!, tabFor = new Map<SectorId, HTMLButtonElement>();
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const shelfOf = (id: string) => list.querySelector<HTMLElement>(`.sector[data-sector="${id}"]`);
@@ -72,11 +112,7 @@ for (const s of SECTORS) {
   b.addEventListener("click", () => go(s.id));
   tabs.querySelector(".tablist")!.append(b); tabFor.set(s.id, b);
 }
-const hero = mountHero(document.getElementById("hero")!, SECTORS.map((s) => ({ id: s.id, word: s.word, tone: TONES[s.id], face: FACES[s.id] })), go);
-for (const b of document.querySelectorAll<HTMLButtonElement>(".lane")) {
-  const n = PATHS.filter((p) => p.sector === b.dataset.lane).length;
-  b.querySelector("span")!.textContent = n === 1 ? "1 way in" : `${n} ways in`;
-}
+const hero = mountHero(document.getElementById("hero")!, SECTORS.map((s) => ({ id: s.id, word: s.word, tone: TONES[s.id], face: FACES[s.id], list: appList(s.id) })), go);
 document.getElementById("field-back")!.addEventListener("click", () => go(null));
 
 let reading: SectorId | null = null, frame = 0;
@@ -157,6 +193,14 @@ const harness = {
       const shown = a.getClientRects().length > 0;
       return { id: a.dataset.path, sector, name: b.textContent, href: a.getAttribute("href"), shown, oneLine: shown && b.getBoundingClientRect().height <= line * 1.2 && b.scrollWidth <= b.clientWidth };
     }),
+    /** The three lanes, each with the links its field card lists and whether each is on the screen. */
+    lanes: [...document.querySelectorAll<HTMLElement>(".lane")].map((c) => ({
+      id: c.dataset.lane,
+      apps: [...c.querySelectorAll<HTMLAnchorElement>("a[data-app]")].map((a) => {
+        const r = a.getBoundingClientRect();
+        return { id: a.dataset.app, name: a.textContent, href: a.getAttribute("href"), onScreen: a.checkVisibility({ visibilityProperty: true }) && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
+      }),
+    })),
     /** The lane that is open on the field, or null. */
     lane: hero.state().lane,
     overflowX: document.documentElement.scrollWidth > innerWidth,
@@ -166,7 +210,7 @@ const harness = {
       return { at: c.dataset.at, shown: c.getClientRects().length > 0 && r.width > 0, text: c.textContent?.trim() ?? "", left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top) };
     }),
   }),
-  /** Scrolls to a lane's shelf (learn, build or play), or back up to the field with null, as its button or tab does. */
+  /** Scrolls to a lane's shelf (learn, studio or event), or back up to the field with null, as its button or tab does. */
   lane: (id: SectorId | null) => go(id),
   /** Walks through a path's door, as a click on its card. */
   open: (id: PathId) => list.querySelector<HTMLAnchorElement>(`a[data-path="${id}"]`)?.click(),

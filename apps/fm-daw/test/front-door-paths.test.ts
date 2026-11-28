@@ -1,5 +1,5 @@
-// Qollab Studio's front door (#5860), signed out: through each card under LEARN, BUILD and PLAY to its first step (only PLAY's two ask
-// to sign in), and from there the way back home, in headless Chrome over CDP (scripts/chrome.ts). The door itself at phone
+// Qollab Studio's front door (#5860), signed out: through each card under LEARN, STUDIO and EVENT to its first step (only the
+// Playground and The Event ask to sign in), and from there the way back home, in headless Chrome over CDP (scripts/chrome.ts). The door itself at phone
 // and desktop sizes is front-door.test.ts.
 import { setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
@@ -7,7 +7,7 @@ import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 import { DOOR, PATHS, type PathId } from "../src/paths.ts";
 
 // the gear room and the jam room are 3D scenes, drawn in software on CI's runners
-setDefaultTimeout(300_000); // walks each of eight cards in headless Chrome
+setDefaultTimeout(300_000); // walks each of nine cards in headless Chrome
 useBrowser();
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
@@ -25,8 +25,21 @@ const FIRST: Record<PathId, { ready: string; back: string }> = {
   instruments: { ready: "!!window.qdecks && qdecks.start().library.length >= 2", back: "#qs-back" },
   planner: { ready: "!!window.qrooms && !!qrooms.state()", back: "#qs-back" },
   amps: { ready: "!!window.qamp && !!qamp.state().amp", back: "#qs-way a[data-to=paths]" },
+  speakers: { ready: "!!window.qspeakers", back: "#qs-way a[data-to=paths]" },
   builder: { ready: "!!window.qbuilder && !!qbuilder.state().probe", back: "#qs-way a[data-to=paths]" },
 };
+
+test.skipIf(!hasChrome)("Studio opens from its card on the field and a listed link opens that app", async () => {
+  const tab = await openTab(chrome.cdp, { w: 375, h: 740 }, true);
+  try {
+    await load(chrome.cdp, tab, `${vite.url}${DOOR.slice(1)}`, 0);
+    await until(tab, "!!window.qdoor");
+    await tab.eval(`document.querySelector('.lane[data-lane="studio"] button').click()`);
+    await until(tab, `qdoor.state().lane === "studio" && document.body.classList.contains("scrolled")`);
+    await tab.eval(`document.querySelector('.sector[data-sector="studio"] .apps a[data-app="speakers"]').click()`);
+    await until(tab, `location.pathname === "/speakers.html" && ${FIRST.speakers.ready}`);
+  } finally { await tab.close(); }
+});
 
 test.skipIf(!hasChrome)("each card opens on its first step and leads back", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });

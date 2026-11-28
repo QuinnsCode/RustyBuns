@@ -19,7 +19,7 @@ const OVER = (x: number): Cam => ({ x, y: 26, z: (FIELD.z0 + FIELD.z1) / 2 + 26 
 
 /** A lane down the field: one of the door's words, its strip of grass, and the colour its plate and beam take. */
 /** A lane down the field: one of the door's words, its strip of grass, the colour its plate and beam take, and the face its word is painted in on the grass (a canvas font, e.g. `400 100px "Caveat Brush"`, drawn at 100px). */
-export interface HeroLane { id: string; word: string; tone: string; face?: string }
+export interface HeroLane { id: string; word: string; tone: string; face?: string; list?: HTMLElement }
 
 export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], onPick: (id: string) => void = () => {}) {
   const canvas = root.querySelector<HTMLCanvasElement>("canvas")!, g = canvas.getContext("2d")!;
@@ -37,22 +37,24 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const land = (a: HeroAir) => (a.bank ? banks([BANK]) : () => 0);
 
-  // the lanes: the field cut into strips from the back to the stage, a word painted on the grass of each and a button
-  // standing on it (hemyviz's floor names and picked block in its beam of light)
+  // the lanes: the field cut into strips from the back to the stage, a word painted on the grass of each, and at the
+  // foot of the screen a card for each: its button and the list of its apps (hemyviz's floor names and picked block in its beam of light)
   const laneW = (FIELD.x1 - FIELD.x0) / Math.max(1, lanes.length);
   // the camera looks up the field from the back, so +x is to the left on screen: the first lane takes the far +x strip
   const strips = lanes.map((l, i) => ({ ...l, x0: FIELD.x1 - (i + 1) * laneW, x1: FIELD.x1 - i * laneW, quad: [] as [number, number][] }));
   let open: string | null = null, hover: string | null = null;
   const tags = document.querySelector<HTMLElement>(".lanes"); // over the whole page, so a button slides above the tab bar into its tab
-  const tagOf = new Map<string, HTMLButtonElement>();
+  const tagOf = new Map<string, HTMLElement>();
   for (const s of strips) {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "lane"; b.dataset.lane = s.id; b.style.setProperty("--tone", s.tone);
-    b.innerHTML = `<b></b><span></span>`; b.querySelector("b")!.textContent = s.word;
-    b.addEventListener("click", () => onPick(s.id));
-    b.addEventListener("pointerenter", () => { hover = s.id; draw(); });
-    b.addEventListener("pointerleave", () => { hover = null; draw(); });
-    tags?.append(b); tagOf.set(s.id, b);
+    const card = document.createElement("div"), b = document.createElement("button");
+    card.className = "lane"; card.dataset.lane = s.id; card.style.setProperty("--tone", s.tone);
+    b.type = "button"; b.innerHTML = `<b></b>`; b.querySelector("b")!.textContent = s.word;
+    card.append(b);
+    if (s.list) card.append(s.list);
+    card.addEventListener("click", (e) => { if (!(e.target instanceof Element && e.target.closest("a"))) onPick(s.id); });
+    card.addEventListener("pointerenter", () => { hover = s.id; draw(); });
+    card.addEventListener("pointerleave", () => { hover = null; draw(); });
+    tags?.append(card); tagOf.set(s.id, card);
   }
   const inQuad = (q: [number, number][], x: number, y: number) => {
     let inside = false;
@@ -85,13 +87,18 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
     for (const s of strips) {
       const tag = tagOf.get(s.id), to = into.get(s.id);
       if (!tag) continue;
-      // the button stands mid-field, where the word points, kept on the screen where an outer lane runs off a phone
-      const [px, py] = project({ x: (s.x0 + s.x1) / 2, y: 0, z: FIELD.z0 + (FIELD.z1 - FIELD.z0) * 0.5 }), half = tag.offsetWidth / 2 + 8;
-      let x = clamp(px, half, Math.max(half, W - half)), y = py, k = 1;
-      if (to && e > 0) { x += (to.left + to.width / 2 - x) * e; y += (to.top + to.height / 2 - y) * e; k = 1 + (to.height / Math.max(1, tag.offsetHeight) - 1) * e; }
-      tag.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${k.toFixed(3)})`;
-      tag.style.opacity = morph >= 1 ? "0" : "1";
-      tag.style.pointerEvents = morph > 0.6 ? "none" : "";
+      // the card's button slides from where the page laid it into its tab, and its list fades on the way
+      const head = tag.firstElementChild as HTMLElement, mid = head.offsetTop + head.offsetHeight / 2;
+      let x = 0, y = 0, k = 1;
+      if (to && e > 0) {
+        x = (to.left + to.width / 2 - (tag.offsetLeft + tag.offsetWidth / 2)) * e; y = (to.top + to.height / 2 - (tag.offsetTop + mid)) * e;
+        k = 1 + (to.height / Math.max(1, head.offsetHeight) - 1) * e;
+      }
+      tag.style.transformOrigin = `50% ${mid}px`;
+      tag.style.transform = e > 0 ? `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${k.toFixed(3)})` : "";
+      tag.style.setProperty("--list", clamp(1 - e * 3, 0, 1).toFixed(2));
+      tag.style.visibility = morph >= 1 ? "hidden" : "";
+      tag.style.pointerEvents = morph > 0.3 ? "none" : "";
     }
   }
   /** A word painted flat on the grass between x0 and x1, its foot at z (near the back) and its head toward the stage,
@@ -158,7 +165,7 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
       if (open && !lit) { path(); g.fillStyle = "rgba(9,10,14,.55)"; g.fill(); }
       if (lit || hot) { path(); g.fillStyle = s.tone + (lit ? "33" : "1a"); g.fill(); }
       path(); g.strokeStyle = s.tone + (lit ? "ff" : hot ? "cc" : "66"); g.lineWidth = lit ? 2.5 : 1.5; g.stroke();
-      floorWord(s.word.toUpperCase(), s.face ?? '600 100px "Barlow Condensed", sans-serif', s.x0 + laneW * 0.16, s.x1 - laneW * 0.16, FIELD.z1 - 18, laneW * 0.42, lit ? "rgba(244,241,234,.92)" : s.tone + (hot ? "dd" : "88"), dpr);
+      floorWord(s.word.toUpperCase(), s.face ?? '600 100px "Saira Condensed", sans-serif', s.x0 + laneW * 0.16, s.x1 - laneW * 0.16, FIELD.z1 - 18, laneW * 0.42, lit ? "rgba(244,241,234,.92)" : s.tone + (hot ? "dd" : "88"), dpr);
       if (lit) { // the beam: from the top of the sky down onto the lane's head, by the stage
         const [nl, nr] = [s.quad[0]!, s.quad[1]!], top = (nl[0] + nr[0]) / 2, spread = (nr[0] - nl[0]) * 0.35;
         const beam = g.createLinearGradient(0, 0, 0, nl[1]);

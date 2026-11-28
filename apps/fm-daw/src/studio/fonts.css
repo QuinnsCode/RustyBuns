@@ -1,6 +1,6 @@
-/* The jam room's fonts (#6420), shipped with the app in public/fonts (latin, woff2; licences in public/fonts/CREDITS.md):
+/* The jam room's and the front door's fonts (#6420), shipped with the app in public/fonts (latin, woff2; licences in public/fonts/CREDITS.md):
  the 20 on Settings > You, of which a browser only fetches the ones a page shows. --qs-head is headings and buttons
- (Saira Condensed unless this viewer picked another, settings.ts wearFont); --qs-body, small text, stays Inter. */
+ (Saira Condensed unless this viewer picked another, font-pick.ts wearFont); --qs-body, small text, stays Inter. */
 :root { --qs-head: "Saira Condensed"; --qs-body: "Inter"; }
 @font-face { font-family: "Saira Condensed"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/saira-condensed-500.woff2") format("woff2"); }
 @font-face { font-family: "Saira Condensed"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/saira-condensed-600.woff2") format("woff2"); }
