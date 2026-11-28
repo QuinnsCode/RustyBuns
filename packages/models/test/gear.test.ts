@@ -202,3 +202,13 @@ test.each([["triple-21-sub", 0.0075], ["arc-sub-18", 0.015]] as const)("%s stand
   expect(box("cabinet").min.y).toBeCloseTo(skid, 3);
   expect(new THREE.Box3().setFromObject(gear(id)).max.y).toBeCloseTo(GEAR_SIZES[id][1], 2);
 });
+
+test("the Incubus Sub's horn walls slant back at about 45 degrees to its grille, the braces in front of it", () => {
+  const box = (name: string) => new THREE.Box3().setFromObject(gearPieces("triple-21-sub")!.find((p) => p.name === name)!.group);
+  const walls = box("horn-walls"), grille = box("grille"), front = GEAR_SIZES["triple-21-sub"][2] / 2;
+  // from a divider in to the grille's edge is as far across as it is back
+  const across = walls.max.x - grille.max.x, back = front - grille.max.z;
+  expect(back / across).toBeGreaterThan(0.9);
+  expect(back / across).toBeLessThan(1.15);
+  expect(box("braces").min.z).toBeGreaterThan(grille.max.z);
+});
