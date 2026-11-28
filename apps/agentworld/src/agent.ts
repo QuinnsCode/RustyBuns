@@ -9,7 +9,7 @@ import { addCommands, type Command, runCommand } from "@rustybuns/util/commands"
 import { check, field } from "@rustybuns/util/guard";
 import { connectSocket } from "@rustybuns/util/socket";
 import { Context, Effect, Layer, Queue, Schema, Stream } from "effect";
-import { changed, checked, fileRead, looked } from "./answers.ts";
+import { changed, checked, fileRead, looked, noteBox, refused } from "./answers.ts";
 import type { Page } from "./page.ts";
 import { BUILD_TOOLS, decode, decodeReadFile, type FromPage, inputSchema, READ, READ_FILE, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
 import { SAID_KEY, worldDoc } from "./world.ts";
@@ -30,9 +30,13 @@ export class Agent extends Context.Service<Agent, {
   readonly seen: Stream.Stream<Seen>;
   /** Whether the room's relay is connected: agents in a terminal can reach the page while it is. */
   readonly online: Stream.Stream<boolean>;
+  /** The person's note for the agent (page_send_note): what is waiting, and what a reply just took. */
+  readonly notes: Stream.Stream<Note>;
   /** What came of a call (0 for a person's click): answers the agent waiting on it. */
   readonly report: (r: Report) => Effect.Effect<void>;
 }>()("agentworld/Agent") {}
+
+export interface Note { readonly waiting: string; readonly sent: string }
 
 /** Where the page is kept between visits, per room: this browser only. */
 export const savedKey = (room: string) => `agentworld:${room}`;
@@ -54,10 +58,9 @@ const socketUrl = (room: string) => `${location.protocol === "https:" ? "wss" : 
 const LOAD_MS = 5000, SETTLE_MS = 400;
 const SLOW = "not loaded after 5 s: send it again to check";
 
-/** A command's answer as a reply frame: a write that the page refused (`{ ok: false, error }`) is a refusal.
- *  world_build's `{ ok: false, errors }` is its answer. */
+/** A command's answer as a reply frame: a write that the page refused (`{ ok: false, error }`) is a refusal. */
 const replyOf = (id: number, r: unknown): FromPage =>
-  field(r, "ok") === false && !Array.isArray(field(r, "errors")) ? { t: "reply", id, ok: false, result: r, error: String(field(r, "error") ?? "refused") } : { t: "reply", id, ok: true, result: r };
+  refused(r) ? { t: "reply", id, ok: false, result: r, error: String(field(r, "error") ?? "refused") } : { t: "reply", id, ok: true, result: r };
 
 /** The tools a person reaches in the Cmd+K palette too, with the one line it asks for first (when it takes one). */
 const PALETTE: Readonly<Record<string, { ask?: string }>> = {
@@ -70,6 +73,13 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   const queue = yield* Queue.unbounded<Call>();
   const online = yield* Queue.unbounded<boolean>();
   const seen = yield* Queue.unbounded<Seen>();
+  const notes = yield* Queue.unbounded<Note>();
+  const box = noteBox((n) => Queue.offerUnsafe(notes, n));
+  /** An agent's tool: its answer takes the person's note along. A person running it from Cmd+K doesn't. */
+  const carrying = (c: Command): Command => ({ ...c, execute: async (args, via) => {
+    const r = await c.execute(args, via);
+    return via === "agent" ? box.carry(r) : r;
+  } });
   const waiting = new Map<number, (r: Report) => void>();
   let page = initial, next = 1;
   current = initial;
@@ -126,7 +136,11 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     const loaded = same ? up || await nextLoad(true).done : await load.done;
     return checked(loaded ? said : [...said, SLOW]);
   };
-  const off = addCommands([
+  const offNote = addCommands([{ name: "page_send_note", title: "Send a note to your agent", group: "Connect", agent: false, answers: true,
+    description: "Your agent reads it with the reply to its next step.", ask: "What should your agent know?",
+    inputSchema: { type: "object", properties: { text: { type: "string" } } },
+    execute: (args) => box.leave(String(field(args, "text") ?? "")) ? "It goes to your agent with its next step" : "Type a few words first" }]);
+  const off = addCommands(([
     { ...READ, group: "Page", palette: false, execute: (_args, from) => {
       if (from === "agent") Queue.offerUnsafe(seen, "read");
       return looked(page, said);
@@ -136,7 +150,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
       annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
     ...BUILD_TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       palette: false, execute: (args) => built(t, args) })),
-  ]);
+  ] satisfies Command[]).map(carrying));
   const link = connectSocket<ToPage, FromPage>(() => socketUrl(room), {
     decode: (v) => check(ToPage, v),
     onMessage: (m) => {
@@ -146,11 +160,12 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     onOpen: () => Queue.offerUnsafe(online, true),
     onClose: ({ tries }) => { Queue.offerUnsafe(online, false); return Math.min(10_000, 500 * 2 ** tries); },
   });
-  yield* Effect.addFinalizer(() => Effect.sync(() => { off(); link.close(); removeEventListener("message", heard); }));
+  yield* Effect.addFinalizer(() => Effect.sync(() => { off(); offNote(); link.close(); removeEventListener("message", heard); }));
   return Agent.of({
     calls: Stream.fromQueue(queue),
     online: Stream.fromQueue(online),
     seen: Stream.fromQueue(seen),
+    notes: Stream.fromQueue(notes),
     report: (r) => Effect.sync(() => {
       // A new document is on its way to the frame: it isn't up until it says so.
       if (up && worldDoc(r.page) !== worldDoc(page)) up = false;
