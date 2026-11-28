@@ -188,8 +188,9 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
 - Every app with a page has a Cmd+K menu (owner, 2026-11-27): `mountPalette({ button: true })` from `@rustybuns/util/palette`,
   over the same `addCommands` list its WebMCP tools use, so what an agent can call a person can press. A new app
   starts with one. A command that is a button the page has is `buttonCommand(selector, ...)` from
-  `@rustybuns/util/commands`: listed while that button is on screen. Agent Office keeps its own Cmd+K; the framework
-  samples and the parked tscircuit-desktop have none yet (#6513).
+  `@rustybuns/util/commands`: listed while that button is on screen. Agent Office keeps its own Cmd+K. The framework
+  samples (`apps/frameworks/*`) have no menu, on purpose (owner, 2026-11-27): don't add one. The parked
+  tscircuit-desktop gets one when it is brought back.
 - `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
   `@rustybuns/util`: import them. A game world's `TokenBucket`, `RoomMintGate` and `originAllowed` are `@rustybuns/util/limits`; its socket type,
   `WebSocketPair`, upgrade, attachment and fan-out are `Sockets` in `@rustybuns/util/room` (no `declare const WebSocketPair`, no `ws: any`);
