@@ -1,16 +1,19 @@
 // Who may do what in a sesh. The sesh's maker is its leader; the leader grants each person (by their
-// person id, src/chat.ts) what they can do: play (the live line, takes and the studio), edit (the groove),
-// mix (the desk) or lead (grant others, set the floor and the code). No grant of their own, a person gets the
-// floor's: Freezone lets everyone play, edit and mix, Hold only listen. Someone without a grant asks (a raised
-// hand) and the leader answers Yes or No. The World checks every message against this; the page only shows it.
+// person id, src/chat.ts) what they can do: play (any instrument: the live line, takes and the studio's gear),
+// edit (the groove), mix (the console), lights (the light desk, and nothing else of the studio's), speak (their mic
+// into the room, and the chat) or lead (grant others, set the floor and the code). A grant of nothing is listen only.
+// No grant of their own, a person gets the floor's: Freezone lets everyone do all but lead, Hold lets them speak
+// and listen. Someone without a grant asks (a raised hand) and the leader answers Yes or No. The World checks every message against this; the page only shows it.
 // Pure, so the World, the page and the tests share it.
 import { arr, bool, check, int, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { P, TRACKS } from "./engine/params.ts";
 import type { ClientMsg, Floor, Op } from "./project.ts";
 
-export const CANS = ["play", "edit", "mix", "lead"] as const;
+export const CANS = ["play", "edit", "mix", "lights", "speak", "lead"] as const;
 export type Can = (typeof CANS)[number];
 const CAN = oneOf(CANS);
+/** What someone with no grant of their own may do on this floor: all but lead when it's free, else only speak. */
+export const floorCans = (floor: Floor): Can[] => (floor === "free" ? CANS.filter((c) => c !== "lead") : ["speak"]);
 /** People a sesh keeps a grant for; past it, a new grant is refused (the leader can take one back). */
 export const MAX_GRANTED = 64;
 
@@ -19,7 +22,7 @@ const ID = str(64, { re: /^[0-9a-f]{8,64}$/ });
 const ids = <T>(of: Guard<T>, max: number): Guard<Record<string, T>> => (v) =>
   Object.fromEntries(Object.entries(rec(of, max)(v)).filter(([k]) => check(ID, k) !== null));
 /**
- * `who`: each person with a grant of their own, and what it is (an empty list is listen only). `maker`: the
+ * `who`: each person with a grant of their own, and what it is (an empty list is listen only: not even speak). `maker`: the
  * maker's person id, once they said hello. `handed`: the maker handed the lead on, so leading is the granted ones'.
  * `muted`: the people the leader muted for everyone: the World passes on none of their notes.
  * `tracks`: the people who may play only some tracks (by number), not the whole seat; set beside a grant without play.
@@ -49,7 +52,7 @@ export function may(g: Grants, floor: Floor, who: string | undefined, maker: boo
   if (lead) return true;
   const own = who ? g.who[who] : undefined;
   if (own) return own.includes(can) || (can === "play" && track !== undefined && !!g.tracks?.[who!]?.includes(track));
-  return floor === "free" && can !== "lead";
+  return floorCans(floor).includes(can);
 }
 
 /** The tracks this person may play when it is some and not the whole seat, or null (all of them, or none). */
@@ -103,6 +106,7 @@ export const MIX_PARAMS: readonly number[] = [P.GAIN, P.PAN, P.SEND, P.SEND2, P.
 export function opNeeds(op: Op): Can {
   // the studio moves everyone in the sesh: the leader's call
   if (op.t === "studio" || op.t === "rig" || op.t === "setup") return "lead";
+  if (op.t === "lights") return "lights";
   if (op.t === "param" && MIX_PARAMS.includes(op.i)) return "mix";
   if (op.t === "track" || op.t === "eq" || op.t === "eqAuto" || op.t === "eqPhase" || op.t === "amp" || op.t === "desk") return "mix";
   if (op.t === "global" && op.bpm === undefined && op.swing === undefined && op.bars === undefined) return "mix";
@@ -115,12 +119,16 @@ export function trackOf(m: ClientMsg): number | undefined {
   return undefined;
 }
 
+/** Whether this is a slice of sound straight in past every amp, as a mic's is: speaking sends it as playing does. */
+export const voice = (m: ClientMsg) => m.t === "live" && m.e.t === "sound" && m.e.track < 0;
+
 /** What a message from the page needs, or null when anyone may send it (a held room still lets a guest let go). */
 export function needs(m: ClientMsg): Can | null {
   if (m.t === "op") return opNeeds(m.op);
   if (m.t === "init" || m.t === "takeBytes") return "edit";
   if (m.t === "floor" || m.t === "lock") return "lead";
   if (m.t === "rewind") return null;                // a look back is heard by its asker alone
+  if (m.t === "live" && m.e.t === "guitar" && m.e.mic) return "speak";
   return "play";
 }
 

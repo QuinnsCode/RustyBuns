@@ -30,6 +30,7 @@ import { floorAt, propBlocks, thingBox, wallPieces, type Side, type Spot, type S
 import { inFootprint } from "./gear-wall.ts";
 import { MATERIALS, type Material } from "./sound.ts";
 import { ALL_LIGHTS, pickGraphics, qualityOf, type Graphics, type Quality, type Running } from "./graphics.ts";
+import type { StageLights } from "./stage-lights.ts";
 
 export type { Quality };
 /** Kept per browser: the knobs as JSON (an older visit kept "low" or "high" here, which still reads). */
@@ -1652,7 +1653,7 @@ export function practicals(def: StudioDef): [number, number][] {
 export interface LookState { quality: Quality; graphics?: Graphics; running?: Running & { level: number }; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" | "none" }
 
 /** The renderer set up for one room: call `render` every frame and `resize` with the canvas. */
-export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality }
+export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality; /** The light desk's colour and lasers, where the room has a truss. */ stage?(l: StageLights): void }
 
 export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, g: Graphics): Look {
   const quality = qualityOf(g), high = quality === "high", full = g.shadows === "full";
@@ -1863,14 +1864,20 @@ export interface Governed extends Look { run(r: Running, level: number): void }
 export function runningLook(look: Look, renderer: THREE.WebGLRenderer, g: Graphics): Governed {
   let now: Running & { level: number } = { scale: g.scale, freezeShadows: false, cap: g.cap, level: 0 }, size: [number, number] = [1, 1], last = 0;
   renderer.setPixelRatio(Math.min(g.scale, devicePixelRatio)); // the open air sets its own: the knob wins
+  // With no GPU every draw is the processor's, and drawn back to back they leave the page no time for its clicks and its
+  // room's messages (#6555: three rooms in headless Chrome never got in). One a second; the frames between still walk and listen.
+  const gl = renderer.getContext(), info = gl.getExtension("WEBGL_debug_renderer_info");
+  const software = /swiftshader|llvmpipe|software/i.test(String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : ""));
   return {
     quality: look.quality,
     render(cam) {
       // a cap skips a draw, never the frame: walking and the clock still run every frame
-      if (now.cap) { const t = performance.now(); if (t - last < 1000 / now.cap - 2) return; last = t; }
+      const cap = software ? 1 : now.cap;
+      if (cap) { const t = performance.now(); if (t - last < 1000 / cap - 2) return; last = t; }
       look.render(cam);
     },
     resize(w, h) { size = [w, h]; look.resize(w, h); },
+    stage: (l) => look.stage?.(l),
     run(r, level) {
       if (r.scale !== now.scale) { renderer.setPixelRatio(Math.min(r.scale, devicePixelRatio)); look.resize(...size); }
       // frozen, the cans' shadow maps stop being drawn every frame: what stands still keeps its shadow, and no shader recompiles
