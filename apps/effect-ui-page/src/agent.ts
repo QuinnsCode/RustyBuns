@@ -9,10 +9,10 @@ import { addCommands, type Command, runCommand } from "@rustybuns/util/commands"
 import { check, field } from "@rustybuns/util/guard";
 import { connectSocket } from "@rustybuns/util/socket";
 import { Context, Effect, Layer, Queue, Schema, Stream } from "effect";
-import { changed, fileRead, looked } from "./answers.ts";
+import { changed, checked, fileRead, looked } from "./answers.ts";
 import type { Page } from "./page.ts";
-import { decode, type FromPage, inputSchema, READ, READ_FILE, ReadFile, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
-import { SAID_KEY } from "./world.ts";
+import { BUILD_TOOLS, decode, type FromPage, inputSchema, READ, READ_FILE, ReadFile, Request, ToPage, type Tool, TOOLS } from "./tools.ts";
+import { SAID_KEY, worldDoc } from "./world.ts";
 
 export { Request };
 export const Call = Schema.Struct({ call: Schema.Number, tool: Schema.String, request: Request });
@@ -48,9 +48,14 @@ export const currentPage = () => current;
 /** The relay's socket for this room, on the server the page came from. */
 const socketUrl = (room: string) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/r/${room}/socket`;
 
-/** A command's answer as a reply frame: a write that the page refused (`{ ok: false, error }`) is a refusal. */
+/** How long world_build waits for the frame to load, and then for its first frames' errors. */
+const LOAD_MS = 5000, SETTLE_MS = 400;
+const SLOW = "not loaded after 5 s: send it again to check";
+
+/** A command's answer as a reply frame: a write that the page refused (`{ ok: false, error }`) is a refusal.
+ *  world_build's `{ ok: false, errors }` is its answer. */
 const replyOf = (id: number, r: unknown): FromPage =>
-  field(r, "ok") === false ? { t: "reply", id, ok: false, result: r, error: String(field(r, "error") ?? "refused") } : { t: "reply", id, ok: true, result: r };
+  field(r, "ok") === false && !Array.isArray(field(r, "errors")) ? { t: "reply", id, ok: false, result: r, error: String(field(r, "error") ?? "refused") } : { t: "reply", id, ok: true, result: r };
 
 /** The tools a person reaches in the Cmd+K palette too, with the one line it asks for first (when it takes one). */
 const PALETTE: Readonly<Record<string, { ask?: string }>> = {
@@ -68,15 +73,34 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   current = initial;
   // What the world's frame said since it last loaded (world.ts's reporter): its errors and blocked loads, newest last.
   let said: string[] = [];
+  let up = false;
+  const frameWatch = new Set<(kind: unknown) => void>();
+  /** The frame's next load: true once it has started again and loaded, false when it takes too long. */
+  const nextLoad = () => {
+    let end: (loaded: boolean) => void = () => {};
+    const done = new Promise<boolean>((resolve) => {
+      let started = false;
+      const watch = (kind: unknown) => {
+        if (kind === "start") started = true;
+        else if (kind === "loaded" && started) setTimeout(() => end(true), SETTLE_MS);
+      };
+      const late = setTimeout(() => end(false), LOAD_MS);
+      end = (loaded) => { clearTimeout(late); frameWatch.delete(watch); resolve(loaded); };
+      frameWatch.add(watch);
+    });
+    return { done, cancel: () => end(false) };
+  };
   const heard = (e: MessageEvent) => {
     const frame = document.querySelector("iframe.world");
     if (!(frame instanceof HTMLIFrameElement) || e.source !== frame.contentWindow || field(e.data, SAID_KEY) !== true) return;
     const kind = field(e.data, "kind"), text = String(field(e.data, "text") ?? "");
     if (kind === "start" || kind === "loaded") Queue.offerUnsafe(seen, kind);
     else if (kind === "error" || kind === "blocked") Queue.offerUnsafe(seen, "error");
-    if (kind === "start") said = [];
+    if (kind === "start") { said = []; up = false; }
+    if (kind === "loaded") up = true;
+    for (const w of frameWatch) w(kind);
     // The camera's pictures and frames (pictures.ts) are nothing the agent hears about.
-    else if ((kind === "error" || kind === "blocked") && said.length < 20) said.push(`${kind === "blocked" ? "blocked" : "error"}: ${text}`);
+    if ((kind === "error" || kind === "blocked") && said.length < 20) said.push(`${kind === "blocked" ? "blocked" : "error"}: ${text}`);
   };
   addEventListener("message", heard);
   // A write's answer is the world's files (path and size), not their text: the agent asks for a file when it needs it.
@@ -88,6 +112,18 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
       Queue.offerUnsafe(queue, { call: id, tool: tool.name, request });
     });
   };
+  // world_build and world_edit: the same change, then what the frame said once it has loaded it, in one answer.
+  const built = async (tool: Tool, args: unknown) => {
+    const before = worldDoc(page);
+    const load = nextLoad();
+    const r = await call(tool, args);
+    if (!r.ok) { load.cancel(); return checked([r.error ?? "refused"]); }
+    // The same document doesn't reload: what the frame already said stands.
+    const same = worldDoc(page) === before;
+    if (same) load.cancel();
+    const loaded = same ? up : await load.done;
+    return checked(loaded ? said : [...said, SLOW]);
+  };
   const off = addCommands([
     { ...READ, group: "Page", palette: false, execute: (_args, from) => {
       if (from === "agent") Queue.offerUnsafe(seen, "read");
@@ -96,6 +132,8 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     { ...READ_FILE, group: "Page", palette: false, execute: (args) => fileRead(page, Schema.decodeUnknownSync(ReadFile)(args).path) },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
+    ...BUILD_TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
+      palette: false, execute: (args) => built(t, args) })),
   ]);
   const link = connectSocket<ToPage, FromPage>(() => socketUrl(room), {
     decode: (v) => check(ToPage, v),
