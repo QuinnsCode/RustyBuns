@@ -80,6 +80,8 @@ export function mountPalette(o: PaletteOptions = {}): Palette {
   const open = () => {
     asking = null; askTag.hidden = true; input.placeholder = placeholder; say("");
     if (el.hidden) back = document.activeElement;
+    // A first-person game holds the mouse: let it go, so the list can be clicked.
+    if (document.pointerLockElement) document.exitPointerLock();
     el.hidden = false; input.value = ""; at = 0; render(); input.focus();
     ready = Promise.resolve(o.onOpen?.()).catch(() => {}).then(render);
   };

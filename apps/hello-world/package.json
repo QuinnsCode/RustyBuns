@@ -11,7 +11,8 @@
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
-    "@rustybuns/shell-bun": "^0.1.12"
+    "@rustybuns/shell-bun": "^0.1.12",
+    "@rustybuns/util": "^0.1.12"
   },
   "devDependencies": {
     "@rustybuns/cli": "^0.1.12",

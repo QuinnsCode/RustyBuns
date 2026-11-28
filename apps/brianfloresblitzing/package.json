@@ -6,5 +6,8 @@
   "scripts": {
     "dev": "bunx wrangler dev",
     "deploy": "bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app brianfloresblitzing"
+  },
+  "dependencies": {
+    "@rustybuns/util": "^0.1.12"
   }
 }

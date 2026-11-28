@@ -33,8 +33,8 @@ export function Podium({ frame, canAct, finale, onSkip, onRematch, onExit }: Pod
         </ol>
         <div className="row">
           {finale && <button className="btn" style={{ flex: 1 }} onClick={() => { onSkip(); (canAct ? rematch : menu).current?.focus(); }} autoFocus>Skip</button>}
-          <button ref={rematch} className="btn go" style={{ flex: 1 }} disabled={!canAct} onClick={onRematch} autoFocus={!finale}>Rematch</button>
-          <button ref={menu} className="btn" style={{ flex: 1 }} onClick={onExit}>Menu</button>
+          <button ref={rematch} data-cmd="rematch" className="btn go" style={{ flex: 1 }} disabled={!canAct} onClick={onRematch} autoFocus={!finale}>Rematch</button>
+          <button ref={menu} data-cmd="back" className="btn" style={{ flex: 1 }} onClick={onExit}>Menu</button>
         </div>
         {!canAct && <p className="hint">Waiting for host</p>}
       </section>

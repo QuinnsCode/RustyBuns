@@ -44,7 +44,7 @@ export function Benchmark({ available, unison, setUnison, songSeconds }: {
           <output>{unison}</output>
           <span className="dim">More oscillators, more work per sample.</span>
         </label>
-        <button className="go" onClick={race} disabled={!!running}>{running ? "Rendering…" : "Run all three"}</button>
+        <button className="go" data-cmd="race" onClick={race} disabled={!!running}>{running ? "Rendering…" : "Run all three"}</button>
       </div>
       <ol className="lanes">
         {LANES.map((l) => {

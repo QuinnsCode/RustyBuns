@@ -136,10 +136,10 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
       <nav className="corner" aria-label="Game">
         {driver.simEngine === "rust" && <span className="pill static" title="the game's rules and bots (?sim=ts for the TypeScript twin)">sim: Rust/wasm</span>}
         <span className="pill static" title="the oil geyser's fluid simulation">{fluid === "rust" ? "fluid: Rust/wasm" : "fluid: TypeScript"}</span>
-        <button className="pill" aria-pressed={!!(hint ?? autoHint)} onClick={() => setHint(!(hint ?? autoHint))}>Controls <kbd>H</kbd></button>
-        <button className="pill" onClick={() => setOptions(true)}>Options</button>
-        <button className="pill" aria-pressed={settings.muted} onClick={() => onSettings({ ...settings, muted: !settings.muted })}>{settings.muted ? "Unmute" : "Mute"}</button>
-        <button className="pill" onClick={onExit}>Menu</button>
+        <button className="pill" data-cmd="hint" aria-pressed={!!(hint ?? autoHint)} onClick={() => setHint(!(hint ?? autoHint))}>Controls <kbd>H</kbd></button>
+        <button className="pill" data-cmd="options" onClick={() => setOptions(true)}>Options</button>
+        <button className="pill" data-cmd="mute" aria-pressed={settings.muted} onClick={() => onSettings({ ...settings, muted: !settings.muted })}>{settings.muted ? "Unmute" : "Mute"}</button>
+        <button className="pill" data-cmd="back" onClick={onExit}>Menu</button>
       </nav>
       {options && <OptionsDialog settings={settings} onSettings={onSettings} onClose={() => setOptions(false)} />}
     </>

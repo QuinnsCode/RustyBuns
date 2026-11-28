@@ -8,6 +8,7 @@ import {
   EVEN, PALETTE, RIGS, TARGET, aimAt, cover, justDoIt, planFor, readDesign, rig, role, settle, sizeFor, stats, usePremade, wallFor,
   type Box, type Cover, type Design, type Role,
 } from "./plan.ts";
+import "../menu.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const KEY = "stacker:v1";

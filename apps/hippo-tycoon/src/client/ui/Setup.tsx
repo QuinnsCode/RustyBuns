@@ -53,9 +53,9 @@ export function Setup({ onStart, onBack, difficulty }: { onStart: (ctls: Ctl[], 
           ))}
         </div>
         <div className="col" style={{ marginTop: 16 }}>
-          <button className="btn go" disabled={humans === 0} onClick={() => onStart(seats, bots)}>Start</button>
+          <button className="btn go" data-cmd="start" disabled={humans === 0} onClick={() => onStart(seats, bots)}>Start</button>
           <p className="sr-only" aria-live="polite">{seats.map((c, i) => `${SEAT_NAMES[i]}: ${c === "bot" ? `${bots[i]} bot` : CTL_LABEL[c]}`).join(", ")}</p>
-          <button className="btn" onClick={onBack}>Back</button>
+          <button className="btn" data-cmd="back" onClick={onBack}>Back</button>
         </div>
       </div>
     </div>

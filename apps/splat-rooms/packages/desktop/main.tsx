@@ -3,6 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { Suspense } from "react";
 import { App } from "../../src/ui/App.tsx";
+import "../../src/ui/menu.ts";
 
 createRoot(document.getElementById("root")!).render(
   <Suspense fallback={null}><App netPath="/ws" /></Suspense>,

@@ -112,6 +112,7 @@
         "@rustybuns/native": "^0.1.12",
         "@rustybuns/rig": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
         "react": "19.3.1",
         "react-dom": "19.3.1",
         "three": "^0.180.0",
@@ -175,6 +176,9 @@
     "apps/brianfloresblitzing": {
       "name": "brianfloresblitzing",
       "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/util": "^0.1.12",
+      },
     },
     "apps/codesplitter": {
       "name": "codesplitter",
@@ -208,6 +212,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/cms": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
       },
       "devDependencies": {
         "vite": "^6.4.4",
@@ -830,6 +835,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
       },
       "devDependencies": {
         "@rustybuns/cli": "^0.1.12",
@@ -1042,6 +1048,9 @@
     "apps/playground": {
       "name": "playground",
       "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/util": "^0.1.12",
+      },
     },
     "apps/pwa-example": {
       "name": "pwa-example",
