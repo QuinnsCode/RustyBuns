@@ -8,6 +8,7 @@ import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { decodeCommit, gist, streamUrl, type Commit } from "./jetstream.ts";
 import { MAX_GRAPHEMES, STATUS, statusRecord } from "./lexicon.ts";
 import type { OAuthSession } from "./signin.ts";
+import "./menu.ts";
 
 // OAuth on a loopback host runs on 127.0.0.1: the authorization server sends you back there, and the sign-in's
 // stored state belongs to one origin.

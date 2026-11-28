@@ -3,5 +3,7 @@
 {
   "name": "rustybuns-playground",
   "compatibility_date": "2026-09-01",
-  "assets": { "directory": "public" }
+  "assets": { "directory": "public" },
+  // The Cmd/Ctrl+K menu (menu.ts), bundled on dev and deploy; public/menu.js isn't committed.
+  "build": { "command": "bun build menu.ts --target=browser --format=esm --minify --outfile=public/menu.js", "watch_dir": "menu.ts" }
 }

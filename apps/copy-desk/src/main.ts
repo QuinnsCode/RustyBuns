@@ -6,6 +6,7 @@ import posts from "../content/posts.json";
 import site from "../content/site.json";
 import { livePosts } from "./site.ts";
 import "./style.css";
+import "./menu.ts";
 
 const lang = localizeContent(
   { site, posts },

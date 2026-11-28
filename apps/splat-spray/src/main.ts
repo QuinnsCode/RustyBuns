@@ -23,6 +23,7 @@ import { createElement, Hand, ScanLine } from "lucide";
 import { brief, clearStamp, closeBrief, stamp } from "./briefing.ts";
 import { rank } from "./spy.ts";
 import { isMuted, setMuted, sfx } from "./sfx.ts";
+import "./menu.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");

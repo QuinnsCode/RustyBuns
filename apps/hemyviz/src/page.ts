@@ -8,6 +8,7 @@ import { DIMS, MODES, STATUS_COLOR, layout, type Block, type Dim, type Mode, typ
 import { boxFaces, camFor, fitScale, inside, project, type Cam, type Pt } from "./project.ts";
 import { demoFleet } from "./demo.ts";
 import { iconFor, iconImage } from "./icons.ts";
+import "./menu.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const icon = (node: IconNode) => createElement(node);
