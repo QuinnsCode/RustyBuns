@@ -14,7 +14,7 @@ import { mountShelf, type ShelfItem } from "./front-shelf.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "./account.ts";
 import { SKIN } from "./guest-list.ts";
-import { CHAIN, DEMOS, ICON, iconSvg, LESSON_GROUPS, LESSONS, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type Sector, type SectorId } from "./paths.ts";
+import { CHAIN, DEMOS, ICON, iconSvg, LESSON_GROUPS, LESSONS, PATHS, pathOf, PITCHES, SECTORS, type PathId, type Sector, type SectorId } from "./paths.ts";
 import { joinTarget } from "./join.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -184,29 +184,37 @@ showAir(false);
 const asked = location.hash.slice(1);
 if (isSector(asked)) go(asked, true);
 read();
+// the foot of the door, in pictures: the chain from a pedal to the show, what is live under each lane, and who it's for.
+// The sentences each had are the hover tips now.
 const chain = document.getElementById("chain")!;
 CHAIN.forEach((c, i) => {
   const p = pathOf(c.path), li = document.createElement("li");
-  li.innerHTML = `<a href="${p.href}" data-step="${i + 1}"><span class="head">${iconSvg(p.icon, 20)}<b></b></span><span></span></a>`;
+  li.style.setProperty("--tone", TONES[p.sector]);
+  li.innerHTML = `<a href="${p.href}" data-step="${i + 1}"><span class="node">${iconSvg(p.icon, 30)}</span><b></b></a>`;
   li.querySelector("b")!.textContent = c.step;
-  li.querySelector("a > span:last-child")!.textContent = c.does;
+  li.querySelector("a")!.title = c.does;
   chain.append(li);
 });
 const live = document.getElementById("live")!;
-for (const l of LIVE) {
-  const li = document.createElement("li");
-  li.innerHTML = `${iconSvg(ICON.check, 18)}<span><b></b> </span>`;
-  li.querySelector("b")!.textContent = pathOf(l.path).name;
-  li.querySelector("span")!.append(l.line);
-  live.append(li);
+for (const s of SECTORS) {
+  const col = document.createElement("li"), word = document.createElement("b"), row = document.createElement("div");
+  col.style.setProperty("--tone", TONES[s.id]);
+  word.textContent = s.word;
+  for (const p of appsOf(s.id)) {
+    const a = document.createElement("a");
+    a.href = p.href; a.title = p.does; a.innerHTML = iconSvg(p.icon, 18); a.append(p.name);
+    row.append(a);
+  }
+  if (s.soon) { const more = document.createElement("span"); more.className = "more"; more.textContent = "… soon"; more.title = s.soon; row.append(more); }
+  col.append(word, row); live.append(col);
 }
 const pitches = document.getElementById("pitches")!;
 for (const w of PITCHES) {
   const p = pathOf(w.path), a = document.createElement("a");
-  a.href = p.href;
-  a.innerHTML = `<span class="icon">${iconSvg(p.icon, 26)}</span><span><b></b><p></p></span>`;
+  a.href = p.href; a.title = w.line; a.style.setProperty("--tone", TONES[p.sector]);
+  a.innerHTML = `<span class="node">${iconSvg(p.icon, 30)}</span><b></b><span class="tags"></span>`;
   a.querySelector("b")!.textContent = w.who;
-  a.querySelector("p")!.textContent = w.line;
+  for (const t of w.tags) { const tag = document.createElement("i"); tag.textContent = t; a.querySelector(".tags")!.append(tag); }
   pitches.append(a);
 }
 
