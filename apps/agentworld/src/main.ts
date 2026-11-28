@@ -51,7 +51,10 @@ startPictures(room);
 const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, initial, full: new URLSearchParams(location.search).has("full"), landing: kept === null && fromServer === null && back === null && returning === null, who, made, back: back !== null }, document.getElementById("app")!)
   .pipe(Layer.provide(agent(room, initial)), Layer.provide(devtools()));
 
-Layer.launch(Main).pipe(Effect.runFork);
+// What follows reads the page, so it waits until the mount is up: with DevTools (dev) that isn't at once.
+await new Promise<void>((up) => {
+  Layer.build(Main).pipe(Effect.andThen(Effect.sync(up)), Effect.andThen(Effect.never), Effect.scoped, Effect.runFork);
+});
 const galaxy = startGalaxy(room);
 
 // Cmd+K: the page's own tools (agent.ts puts them up) and, for a person only, the two lines that connect an AI.
