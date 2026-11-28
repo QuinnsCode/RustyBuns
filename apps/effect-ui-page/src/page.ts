@@ -32,7 +32,12 @@ export const EditFile = Schema.TaggedStruct("EditFile", { path: Path, find: Text
 export const SetBackdrop = Schema.TaggedStruct("SetBackdrop", { codesplitter: Handle });
 export const Reset = Schema.TaggedStruct("Reset", {});
 
-export const Action = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset]);
+/** world_build: world.js is this module, and index.html opens it. */
+export const Build = Schema.TaggedStruct("Build", { code: Text.check(Schema.isMinLength(1)) });
+/** world_edit: EditFile on world.js. */
+export const EditWorld = Schema.TaggedStruct("EditWorld", { find: Text.check(Schema.isMinLength(1)), replace: Text });
+
+export const Action = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset, Build, EditWorld]);
 export type Action = typeof Action.Type;
 
 export const starter: Page = { files: STARTER_FILES };
@@ -41,6 +46,9 @@ export const starter: Page = { files: STARTER_FILES };
 export const listing = (page: Page) => Object.entries(page.files)
   .sort(([a], [b]) => (a === "index.html" ? -1 : b === "index.html" ? 1 : a.localeCompare(b)))
   .map(([path, text]) => ({ path, bytes: new TextEncoder().encode(text).length }));
+
+/** An index.html that opens world.js as a module, which the kit's `import` needs. */
+const OPENS_WORLD = /<script\b(?=[^>]*\btype\s*=\s*["']?module\b)(?=[^>]*\bsrc\s*=\s*["'](?:\.?\/)?world\.js["'])/i;
 
 const size = (files: Page["files"]) => Object.values(files).reduce((n, t) => n + t.length, 0);
 
@@ -77,5 +85,13 @@ export function apply(page: Page, a: Action): { page: Page } | { error: string }
     }
     case "Reset":
       return { page: starter };
+    case "Build": {
+      // An index.html that wouldn't run world.js (none, or a ready-made world's plain script) makes way: one undo.
+      const opens = OPENS_WORLD.test(page.files["index.html"] ?? "");
+      const base = opens ? { page } : apply(page, { _tag: "WriteFile", path: "index.html", text: STARTER_FILES["index.html"]! });
+      return "error" in base ? base : apply(base.page, { _tag: "WriteFile", path: "world.js", text: a.code });
+    }
+    case "EditWorld":
+      return apply(page, { _tag: "EditFile", path: "world.js", find: a.find, replace: a.replace });
   }
 }
