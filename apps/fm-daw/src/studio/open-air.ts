@@ -1,6 +1,7 @@
 // An open-air party, drawn (room.ts `outdoor`; Desert Gathering, rooms/desert-gathering.ts): the night in place of
-// look.ts's lit room. A sky fading from deep blue overhead to a dusty glow on the horizon, stars and a full moon, the
-// ranges standing black against it; a clearing of sand in the Mojave, under the moon's cold light; the speaker stacks
+// look.ts's lit room. Night here is a change of colour, not darkness (you have to see the party): a sky going from blue
+// overhead through violet to a coral glow on the horizon, stars and a full moon, the ranges standing purple against it;
+// a clearing of sand in the Mojave, lit blue by the moon and pink by the last of the glow; the speaker stacks
 // from Sound Guy Simulator's desert night (packages/models gear: a 21" horn bin, a mid-bass horn and a mid-high horn on
 // a sand dolly); a truss with moving heads that sweep the floor and lasers that fan over the crowd, for a party that
 // has one; tall hand-carved wooden poles with a vine cut up each one and a lantern hung from its crook, the flames never
@@ -260,7 +261,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   if (high) {
     const pm = new THREE.PMREMGenerator(renderer);
     scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environmentIntensity = 0.12;
+    scene.environmentIntensity = 0.3;
     pm.dispose();
   }
 
@@ -268,18 +269,18 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   group.name = "open-air";
   scene.add(group);
   const rnd = mulberry32(out.seed);
-  const horizon = new THREE.Color("#1c1a34"), zenith = new THREE.Color("#03040c");
+  const horizon = new THREE.Color("#8e4a8c"), zenith = new THREE.Color("#131c52");
   scene.background = zenith;
-  scene.fog = new THREE.Fog(horizon, 60, 200);
+  scene.fog = new THREE.Fog("#62467f", 60, 220);
 
-  // ---- the sky: a dome shaded from the horizon's glow to the deep blue overhead, paler round the full moon; the stars
+  // ---- the sky: a dome shaded from the horizon's glow through violet to the blue overhead, paler round the full moon; the stars
   // as a full moon leaves them (the faint ones washed out near it, the bright ones in their colours); the moon with
   // its dark seas and a soft glow round it
   const moonAt = new THREE.Vector3(-70, 62, -120), moonDir = moonAt.clone().normalize();
-  const dome = new THREE.SphereGeometry(190, 48, 24), col: number[] = [], p = dome.attributes.position, moonSky = new THREE.Color("#3a4a78"), at = new THREE.Vector3();
+  const dome = new THREE.SphereGeometry(190, 48, 24), col: number[] = [], p = dome.attributes.position, moonSky = new THREE.Color("#7f9be0"), at = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     const k = Math.max(0, Math.min(1, p.getY(i) / 190));
-    const c = new THREE.Color("#3a2436").lerp(horizon, Math.min(1, k * 6)).lerp(new THREE.Color("#0b0f26"), Math.min(1, k * 2.5)).lerp(zenith, Math.max(0, k * 1.4 - 0.3));
+    const c = new THREE.Color("#ec7f6a").lerp(horizon, Math.min(1, k * 6)).lerp(new THREE.Color("#403a8c"), Math.min(1, k * 2.5)).lerp(zenith, Math.max(0, k * 1.4 - 0.3));
     const near = at.fromBufferAttribute(p, i).normalize().angleTo(moonDir);
     c.lerp(moonSky, 0.55 * Math.exp(-((near / 0.45) ** 2)));
     col.push(c.r, c.g, c.b);
@@ -309,17 +310,21 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowDisc(), color: "#c9d6ff", transparent: true, opacity: 0.5, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
   halo.position.copy(moonAt).multiplyScalar(1.02); halo.scale.setScalar(70);
   group.add(halo);
-  const moonlight = new THREE.DirectionalLight("#9fb2e8", 0.9);
+  const moonlight = new THREE.DirectionalLight("#b4c4ff", 1.5);
   moonlight.position.copy(moonAt).normalize().multiplyScalar(40);
   moonlight.castShadow = high;
   moonlight.shadow.mapSize.set(2048, 2048);
   Object.assign(moonlight.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 100 });
   moonlight.shadow.bias = -0.0005;
   group.add(moonlight, moonlight.target);
-  group.add(new THREE.HemisphereLight("#33406e", "#2a1d14", 0.55));
+  group.add(new THREE.HemisphereLight("#8494ff", "#b0645c", 1.35));
+  // the glow on the horizon, from the side away from the moon: faces turned from it come out pink, not black
+  const glow = new THREE.DirectionalLight("#ff6fae", 0.8);
+  glow.position.set(-moonAt.x, 12, -moonAt.z);
+  group.add(glow, glow.target);
 
-  // ---- the ranges: two lines of bare mountains all the way round, black against the horizon's glow
-  for (const [radius, tall, color, seed] of [[176, 1, "#151329", out.seed % 7], [150, 0.55, "#0c0b17", (out.seed % 11) + 3]] as const) {
+  // ---- the ranges: two lines of bare mountains all the way round, purple against the horizon's glow
+  for (const [radius, tall, color, seed] of [[176, 1, "#5b4287", out.seed % 7], [150, 0.55, "#3b2d66", (out.seed % 11) + 3]] as const) {
     const n = 240, pos: number[] = [], idx: number[] = [];
     for (let i = 0; i <= n; i++) {
       const a = (i / n) * Math.PI * 2, x = Math.cos(a) * radius, z = Math.sin(a) * radius;
@@ -607,7 +612,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   if (!high) plain(group);
 
   let frames = 0, fps = 0, since = performance.now(), count = 0;
-  const lights = 2 + heads.length + flames.length + (fire ? 1 : 0);
+  const lights = 3 + heads.length + flames.length + (fire ? 1 : 0);
   return {
     quality,
     render(cam) {
