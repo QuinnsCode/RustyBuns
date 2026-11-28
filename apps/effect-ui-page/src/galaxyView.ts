@@ -1,5 +1,5 @@
-// Agent Galaxy in the page: everyone's land in one 3D scene (land3d.ts), butted edge to edge. You are a simple shape;
-// WASD, the arrow keys or the touch stick walk you, straight from your land onto your neighbour's. You arrive with a
+// Agent Galaxy in the page: everyone's land in one 3D scene (land3d.ts), butted edge to edge. You are a robot you
+// build (robotShop.ts: it opens the first time, and from its button and Cmd+K); WASD, the arrow keys or the touch stick walk you, straight from your land onto your neighbour's. You arrive with a
 // cloud over everything but your own land, and it lifts.
 // - Before your first visit you sign for your land, and each nearby plot's sign stands on it (signs.ts).
 // - A plot's land is asked of its world (@world/kit) in a hidden sealed frame and comes back as shapes: yours, and
@@ -13,11 +13,12 @@ import { check } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { Effect, Option, Queue, Schema } from "effect";
-import { currentPage, watchPage } from "./agent.ts";
+import { currentPage, unsavedKey, watchPage } from "./agent.ts";
 import { COMMON_CITY } from "./commonCity.ts";
 import type { Land } from "./land.ts";
 import type { Content, Person, Scene3d } from "./land3d.ts";
-import { Claimed, FromGalaxy, type Plot, Plots, type ToGalaxy, VIEW_MAX, type Walker } from "./galaxy.ts";
+import { Claimed, FromGalaxy, type Look, lookOf, type Plot, Plots, Robot, type ToGalaxy, VIEW_MAX, type Walker } from "./galaxy.ts";
+import { ROBOT_ICON, robotShop, type RobotShop } from "./robotShop.ts";
 import { listing, Page } from "./page.ts";
 import { bearer } from "./account.ts";
 import { galaxyLock } from "./lock.ts";
@@ -39,6 +40,8 @@ interface G {
   link: Link<ToGalaxy> | null; keys: Set<string>; stick: { x: number; z: number };
   raf: number; sentAt: number; sent: string; token: number; moving: Promise<void>;
   signs: GallerySigns; done: boolean;
+  /** Your robot, the builder when it is up, and whether it should open by itself (you've never built one). */
+  look: Look | null; shop: RobotShop | null; fresh: boolean;
   off: (() => void)[];
 }
 
@@ -49,16 +52,22 @@ const decodePage = Schema.decodeUnknownOption(Page);
 // ---------- saving the world for the neighbours ----------
 
 const saveWorld = (room: string, page: Page | null) => page
-  ? fetch(`/api/r/${room}/world`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(page) }).then((r) => r.ok, () => false)
+  ? fetch(`/api/r/${room}/world`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(page) }).then((r) => {
+    if (r.ok && currentPage() === page) try { localStorage.removeItem(unsavedKey(room)); } catch { /* private window */ }
+    return r.ok;
+  }, () => false)
   : Promise.resolve(false);
 
 /** Send the world after each change that lands, a second after the last one (an agent writes files in a row). */
 function keepSaved(room: string) {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  watchPage((p) => {
+  const send = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => void saveWorld(room, p).then((ok) => { if (!ok) timer = setTimeout(() => void saveWorld(room, currentPage()), 4000); }), 1000);
-  });
+    timer = setTimeout(() => void saveWorld(room, currentPage()).then((ok) => { if (!ok) timer = setTimeout(() => void saveWorld(room, currentPage()), 4000); }), 1000);
+  };
+  watchPage(send);
+  // A change the last visit never got to the server.
+  try { if (localStorage.getItem(unsavedKey(room)) !== null) send(); } catch { /* private window */ }
 }
 
 // ---------- the land ----------
@@ -153,9 +162,32 @@ const DIRS: Record<string, [number, number]> = {
   KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0],
 };
 
+// ---------- your robot ----------
+
+function openShop(s: G) {
+  if (s.shop || !s.me || !s.look) return;
+  s.fresh = false;
+  s.keys.clear();
+  s.layer.classList.add("building");
+  s.shop = robotShop(s.layer, s.look, (look) => { s.look = look; s.link?.send({ t: "look", look }); }, () => closeShop(s));
+}
+
+/** Put the builder away and keep the robot for your account. */
+function closeShop(s: G) {
+  if (!s.shop) return;
+  const look = s.shop.look();
+  s.shop.close();
+  s.shop = null;
+  s.layer.classList.remove("building");
+  void saveRobot(look).then((ok) => { if (!ok) s.where.textContent = "Your robot wasn't saved: try again in a moment."; });
+}
+
+const saveRobot = async (look: Look) =>
+  await getJson("/api/galaxy/robot", Robot, { method: "PUT", headers: { ...await bearer(), "content-type": "application/json" }, body: JSON.stringify({ look }) }) !== null;
+
 function tick(g: G, dt: number, now: number) {
-  let vx = g.stick.x, vz = g.stick.z;
-  for (const k of g.keys) { const d = DIRS[k]; if (d) { vx += d[0]; vz += d[1]; } }
+  let vx = g.shop ? 0 : g.stick.x, vz = g.shop ? 0 : g.stick.z;
+  for (const k of g.keys) { const d = DIRS[k]; if (d && !g.shop) { vx += d[0]; vz += d[1]; } }
   const len = Math.hypot(vx, vz);
   if (g.me && len > 0.05) void move(g, (vx / Math.max(1, len)) * SPEED * dt, (vz / Math.max(1, len)) * SPEED * dt);
   if (g.me) {
@@ -168,9 +200,11 @@ function tick(g: G, dt: number, now: number) {
   // The cloud lifts once you're there; a person who asks for less motion gets it gone at once.
   // It waits for your own land, so you never watch your picture turn into it (and gives up waiting after a while).
   if (lands.has(g.me.id) || now - g.since > 8000) g.lift = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : Math.min(1, g.lift + dt / LIFT_S);
-  const folk: Person[] = [...visible(g).map((p) => ({ id: p.id, color: p.color, x: p.x + p.px, z: p.y + p.pz, me: false })),
-    { id: g.me.id, color: "#ff3d8b", x: g.plot.x + g.pos.x, z: g.plot.y + g.pos.z, me: true }];
-  g.scene.draw(innerWidth, innerHeight, folk, g.cam, g.me, g.lift);
+  // The first time, the builder waits for the cloud to be gone.
+  if (g.fresh && g.lift === 1 && !g.signs.signing()) openShop(g);
+  const folk: Person[] = [...visible(g).map((p) => ({ id: p.id, look: p.look, x: p.x + p.px, z: p.y + p.pz, me: false })),
+    { id: g.me.id, look: g.look ?? lookOf(g.me.id), x: g.plot.x + g.pos.x, z: g.plot.y + g.pos.z, me: true }];
+  g.scene.draw(innerWidth, innerHeight, folk, g.cam, g.me, g.lift, g.shop ? innerHeight - g.shop.el.offsetTop : null);
   g.signs.place();
 }
 
@@ -206,6 +240,11 @@ function mount(room: string) {
   el("p", "galaxy-hint", layer).textContent = "Walk: WASD or the arrow keys";
   const stick = el("div", "galaxy-stick", layer);
   const knob = el("i", "", stick);
+  const dress = el("button", "galaxy-robot", layer);
+  dress.type = "button";
+  dress.title = "My robot";
+  dress.setAttribute("aria-label", "My robot");
+  dress.innerHTML = ROBOT_ICON;
   document.body.append(layer);
   // Neighbours may have built since your last visit: read their land afresh. Yours is forgotten when it changes.
   for (const id of [...asked.keys()]) if (id !== myPlot) forget(id);
@@ -213,11 +252,13 @@ function mount(room: string) {
     layer, canvas, where, three: null, scene: null, lift: 0, since: performance.now(), me: null, error: null, ready: Promise.resolve(),
     plot: { x: 0, y: 0 }, pos: { x: 0.5, z: 0.5 }, cam: null, plots: new Map(), players: new Map(),
     live: { kind: "empty", id: null, files: [] }, link: null, keys: new Set(), stick: { x: 0, z: 0 },
-    raf: 0, sentAt: 0, sent: "", token: 0, moving: Promise.resolve(), off: [], signs: gallerySigns(layer), done: false,
+    raf: 0, sentAt: 0, sent: "", token: 0, moving: Promise.resolve(), look: null, shop: null, fresh: false, off: [], signs: gallerySigns(layer), done: false,
   };
+  dress.addEventListener("click", () => openShop(s));
   const on = (t: EventTarget, type: string, f: (e: Event) => void) => { t.addEventListener(type, f); s.off.push(() => t.removeEventListener(type, f)); };
   on(window, "keydown", (e) => {
     if (!(e instanceof KeyboardEvent) || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || s.signs.signing()) return;
+    if (s.shop) { if (e.key === "Escape") closeShop(s); return; }
     const k = e.code in DIRS ? e.code : e.key;
     if (k in DIRS) { s.keys.add(k); e.preventDefault(); }
   });
@@ -271,6 +312,10 @@ function mount(room: string) {
     const me = await getJson("/api/galaxy/claim", Claimed, { method: "POST", headers: { ...await bearer(), "content-type": "application/json" }, body: JSON.stringify({ room }) });
     if (g !== s) return;
     if (!me) { s.error = "The galaxy didn't answer: try again in a moment."; where.textContent = s.error; return; }
+    const kept = await getJson("/api/galaxy/robot", Robot, { headers: await bearer() });
+    if (g !== s) return;
+    s.look = kept?.look ?? lookOf(me.id);
+    s.fresh = kept?.look === null;
     s.me = me; s.plot = { x: me.x, y: me.y }; myPlot = me.id;
     s.signs.start(s.scene!, me.id);
     await onPlot(s);
@@ -282,7 +327,8 @@ function mount(room: string) {
         else if (m.t === "player" && m.player) s.players.set(m.player.id, m.player);
         else if (m.t === "gone" && m.id) s.players.delete(m.id);
       },
-      onOpen: () => { s.sent = ""; },
+      // Your robot too: it may have changed while the socket was down.
+      onOpen: () => { s.sent = ""; if (s.look) s.link?.send({ t: "look", look: s.look }); },
       onClose: ({ code, tries }) => (code === 4001 ? null : Math.min(10_000, 500 * 2 ** tries)),
     });
   })();
@@ -293,6 +339,7 @@ function mount(room: string) {
 function unmount() {
   const s = g;
   if (!s) return;
+  closeShop(s);
   g = null;
   cancelAnimationFrame(s.raf);
   for (const f of s.off) f();
@@ -309,10 +356,10 @@ const until = async (ok: () => boolean, ms = 10_000) => {
 /** What a test or the probe asks: in the galaxy or not, your plot and spot, the plots and players on your plot and the
  *  eight around it, what the plot you stand on is, and what each plot in the scene shows (land, picture, town, open). */
 export function galaxyState() {
-  if (!g) return { in: false, ready: false, error: null, me: null, plot: null, pos: null, plots: [], players: [], live: null, shows: {}, signing: false, signs: {} };
+  if (!g) return { in: false, ready: false, look: null, building: false, error: null, me: null, plot: null, pos: null, plots: [], players: [], live: null, shows: {}, signing: false, signs: {} };
   const s = g;
   return {
-    in: true, ready: s.me !== null, error: s.error, me: s.me, plot: { ...s.plot }, pos: { ...s.pos },
+    in: true, ready: s.me !== null, look: s.look, building: s.shop !== null, error: s.error, me: s.me, plot: { ...s.plot }, pos: { ...s.pos },
     plots: [...s.plots.values()].filter((p) => near(p, s.plot)).map((p) => ({ ...p, mine: s.me !== null && p.id === s.me.id })),
     players: visible(s).map((p) => ({ ...p })),
     live: { ...s.live, files: s.live.files.map((f) => ({ ...f })) },
@@ -345,10 +392,17 @@ export function startGalaxy(room: string) {
     /** "Sign again" from anywhere: up to the galaxy, with the pad. */
     sign: async () => {
       await agentGalaxy.enter();
+      if (g) closeShop(g);
       void g?.signs.sign(g.me !== null);
     },
     /** Back to your world. */
     leave: async () => { Queue.offerUnsafe(galaxyAsks, false); await until(() => g === null); return galaxyState(); },
+    /** The robot builder, entering first when you're not in. */
+    robot: async () => {
+      const state = g?.me ? galaxyState() : await agentGalaxy.enter();
+      if (g) openShop(g);
+      return g ? galaxyState() : state;
+    },
     /** Walk by (dx, dz) plots at once (off an edge is the plot next door), once the plot you land on has loaded. */
     walk: async (dx: number, dz: number) => {
       const s = g;
