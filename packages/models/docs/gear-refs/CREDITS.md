@@ -8,6 +8,10 @@ Photos of the real products the speaker models copy (`LINEUP` in `src/lineup.ts`
 so they are never committed: they live in `~/.cache/rustybuns/gear-refs/` on the office Mac and on Bob, and each
 photo's source is linked in that model's issue.
 
+The turntable's light and the place behind its deck are CC0 HDRIs from Poly Haven, fetched on first use and never
+committed: https://polyhaven.com/a/kloofendal_overcast_puresky (the light) and https://polyhaven.com/a/potsdamer_platz
+(the background).
+
 | file | what | source | author | licence |
 | --- | --- | --- | --- | --- |
 | top-12-powered-1.jpg | 12-inch two-way moulded plastic PA top on a pole, back: recessed handle, pole cup, input plate | https://commons.wikimedia.org/wiki/File:100th_CS_%27light-up%27_sound_system_131206-F-FE537-0052.jpg | Gina Randall (US Air Force) | Public domain |

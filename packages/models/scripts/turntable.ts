@@ -1,5 +1,5 @@
-// The gear turntable (#5021, #5042): every gear id close up on a stage deck under a real sky's light (a CC0 HDRI from
-// Poly Haven, fetched once into ~/.cache/rustybuns/hdri/, never committed), from four angles (front three-quarter,
+// The gear turntable (#5021, #5042): every gear id close up on a raised stage deck under a real sky's light, a real place
+// out of focus behind it (CC0 HDRIs from Poly Haven, fetched once into ~/.cache/rustybuns/hdri/, never committed), from four angles (front three-quarter,
 // side, the back with its jacks, and `close`: a macro shot of the top front corner, half a millimetre a pixel, for
 // the coat's grain, the grille's holes and the hardware), at a fixed picture size. The shots land
 // beside the reference photos in docs/gear-refs/, so a judge sees model and photo side by side.
@@ -14,6 +14,7 @@
 //   bun packages/models/scripts/turntable.ts --js "turntable.ao.enabled = false"   runs this in the page first (try a light or a material)
 //   bun packages/models/scripts/turntable.ts --hdri studio_small_09       another Poly Haven HDRI (the default, kloofendal_overcast_puresky, is the photos' soft
 //                                                                         overcast daylight with a contact shadow; an indoor one gets the old hard key; `--hdri none`: offline)
+//   bun packages/models/scripts/turntable.ts --place urban_street_01      another HDRI behind the deck, under the sky (default potsdamer_platz)
 //
 // One headless Chrome (scripts/chrome.ts, on the Mac's GPU) and a tiny server for the page and the kit's textures.
 import { mkdirSync } from "node:fs";
@@ -40,7 +41,8 @@ async function hdri(name: string): Promise<string | null> {
   await Bun.write(file, r);
   return file;
 }
-const hdr = await hdri(hdriName);
+const hdr = await hdri(hdriName), sky = hdr !== null && /sky|overcast/.test(hdriName);
+const place = sky ? await hdri(flag("--place") ?? "potsdamer_platz") : null;
 
 const page = await Bun.build({ entrypoints: [join(import.meta.dir, "turntable-page.ts")], target: "browser", minify: false });
 if (!page.success) throw new Error(page.logs.join("\n"));
@@ -52,6 +54,7 @@ const server = Bun.serve({
     if (path === "/") return new Response(`<!doctype html><meta charset="utf-8"><body><script type="module" src="/page.js"></script>`, { headers: { "content-type": "text/html" } });
     if (path === "/page.js") return new Response(js, { headers: { "content-type": "text/javascript" } });
     if (path === "/hdri.hdr" && hdr) return new Response(Bun.file(hdr));
+    if (path === "/place.hdr" && place) return new Response(Bun.file(place));
     if (path.startsWith("/textures/") && !path.includes("..")) return new Response(Bun.file(join(pkg, path)));
     return new Response("not found", { status: 404 });
   },
@@ -60,7 +63,7 @@ const server = Bun.serve({
 const chrome = await launchChrome();
 try {
   const tab = await openTab(chrome.cdp, { w: size, h: size });
-  await load(chrome.cdp, tab, `http://127.0.0.1:${server.port}/?size=${size}${plain ? "&plain=1" : ""}${hdr ? (/sky|overcast/.test(hdriName) ? "&sky=1" : "") : "&hdri=0"}`, 1500);
+  await load(chrome.cdp, tab, `http://127.0.0.1:${server.port}/?size=${size}${plain ? "&plain=1" : ""}${hdr ? "" : "&hdri=0"}${sky ? "&sky=1" : ""}${place ? "&place=1" : ""}`, 1500);
   if (flag("--js")) await tab.eval(flag("--js")!);
   const { ids, angles } = await tab.eval<{ ids: string[]; angles: string[] }>("({ ids: turntable.ids, angles: turntable.angles })");
   mkdirSync(out, { recursive: true });
