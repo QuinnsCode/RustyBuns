@@ -212,8 +212,8 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
    `/builder.html`, **Change the circuit** goes past values ([#6423](https://github.com/QuinnsCode/RustyBuns/issues/6423)):
    add a resistor, capacitor or diode between two nets (From starts on the scope's net), take a part off, or move one
    of its ends to another net. The same bench check runs first; the scope, Play and the remake follow. A 100nF from
-   the fuzz's clipping diodes to ground takes that net's top end from about 50 to 16. These changes are Q Builder's
-   own (not on Q Amp's pedal yet), and the schematic stays the stock drawing, with the changes listed beside it.
+   the fuzz's clipping diodes to ground takes that net's top end from about 50 to 16. Q Amp's pedal and its build
+   sheet take these changes too (#6446), and the schematic stays the stock drawing, with the changes listed beside it.
 3. Bring your own board: drop a tscircuit board's circuit JSON on Q Amp's floor; the bench checks it solves, then it is the fourth pedal.
 4. Scope it (`/builder.html`): click a trace on the schematic, or a net in the list, and the scope shows the volts there while
    the riff plays through the circuit (and at its loudest note when nothing plays), with how far it swings and how

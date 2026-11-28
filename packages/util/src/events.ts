@@ -66,6 +66,13 @@ export type EventMade = Of<typeof EventMade>;
 export const EventDoor = obj({ access: oneOf(ACCESS), in: bool() });
 export type EventDoor = Of<typeof EventDoor>;
 
+/** The answers an RSVP carries, to the questions in `there.asks`: `plus` brings one more person, who gets their own ticket. */
+export const Answers = obj({ plus: or(bool(), false), food: or(str(200, { min: 0 }), ""), song: or(str(120, { min: 0 }), "") });
+export type Answers = Of<typeof Answers>;
+/** What the door says to one scan (eqosys's POST /e/<id>/scan): whether to let them in, why in words, and who is in so far. */
+export const Scanned = obj({ ok: bool(), words: str(200), in: int(0, 1e9), cap: opt(int(1, CAP_MAX)) });
+export type Scanned = Of<typeof Scanned>;
+
 /** An event's crew, as roles on its guest list. The same person can be the producer, the DJ and the promoter: the owner is all
  *  of them, and hands the rest out. `edit` lets someone change the event; the list's own perms run the list. */
 export const EVENT_ROLES: Role[] = [

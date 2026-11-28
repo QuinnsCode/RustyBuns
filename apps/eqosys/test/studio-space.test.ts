@@ -210,6 +210,14 @@ test("a studio's game opens the space of the studio that made it, and none of th
   expect((await member(game).c.mine())!.map((s) => s.name)).toEqual(["Rocket"]);
   const exported = (id: string) => call(`/q/space/${id}/export`, { bearer: game, origin: GAME }).then((r) => r.res.status);
   expect([await exported(theirs.id), await exported(den.id)]).toEqual([200, 404]);
+  // Nor the den's files, either way, or its socket (messages and direct messages).
+  const file = `/q/space/${den.id}/file`;
+  for (const [path, json] of [[`${file}?channel=general&name=a.txt`, {}], [`${file}/${crypto.randomUUID()}`, undefined]] as const) {
+    const { res } = await call(path, { json, bearer: game, origin: GAME });
+    expect([res.status, await res.json()]).toEqual([404, { error: "not a space you're in" }]);
+  }
+  const socket = await handle(new Request(`${base}/q/space/${den.id}`, { headers: { upgrade: "websocket", origin: GAME, "sec-websocket-protocol": `eqosys, ${game}` } }), conf);
+  expect(socket!.status).toBe(404);
   const invite = (await a.c.mine())!.find((s) => s.id === den.id)!.invite!;
   expect((await call("/q/space/join", { json: { invite }, bearer: game, origin: GAME })).res.status).toBe(404);
   expect((await call("/q/space", { json: { name: "Elsewhere" }, bearer: game, origin: GAME })).res.status).toBe(403);

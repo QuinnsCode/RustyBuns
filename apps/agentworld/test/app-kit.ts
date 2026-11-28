@@ -2,7 +2,7 @@
 // stand-in page behind it that does what the open page does with a call: the same check (decode), the same change and
 // undo history (step), the same answers (answers.ts). The sealed frame doesn't run, so page_read hears no errors.
 import { parseJson } from "@rustybuns/util/http";
-import { changed, checked, fileRead, looked } from "../src/answers.ts";
+import { changed, checked, fileRead, looked, noteBox } from "../src/answers.ts";
 import { type Page, starter } from "../src/page.ts";
 import { step } from "../src/ProfilePage.ts";
 import { linksFor, Relay } from "../src/relay.ts";
@@ -25,13 +25,15 @@ export function local() {
     if (build) return { ok: true, result: checked(out.error === null ? [] : [out.error]) };
     return { ok: out.error === null, result: changed(out.error, model.page), error: out.error ?? undefined };
   };
+  const notes = noteBox();
   const relay: Relay = new Relay(() => (frame) => {
     const m = ToPage(parseJson(frame));
-    queueMicrotask(() => relay.heard({ t: "reply", id: m.id, ...answer(m.name, m.args) }));
+    queueMicrotask(() => { const a = answer(m.name, m.args); relay.heard({ t: "reply", id: m.id, ...a, result: notes.carry(a.result) }); });
   });
   let id = 0;
   const rpc: Rpc = async (method, params) => (await relay.mcp({ jsonrpc: "2.0", id: ++id, method, params }, links)).json();
   /** The room's plain HTTP doors: a POST when there is a body. */
   const http = (path: string, body?: string) => relay.http(new Request(`${links.api}${path}`, body === undefined ? {} : { method: "POST", body }), path, links);
-  return { rpc, http, links, page: () => model.page };
+  /** `note`: what the person types on the page for their agent. */
+  return { rpc, http, links, page: () => model.page, note: notes.leave };
 }

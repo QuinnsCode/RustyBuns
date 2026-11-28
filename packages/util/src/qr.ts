@@ -1,5 +1,5 @@
-// A QR code for a link, with nothing fetched: the desktop's 📱 drawer draws the pairing link with it
-// (built to /qr.js), and `bun run phone` prints it in the terminal. Byte mode, error correction M,
+// A QR code for a link, with nothing fetched: codeSplitter's 📱 drawer and `bun run phone` draw its pairing
+// link with it, and eqosys draws an event's page link and its tickets. Byte mode, error correction M,
 // versions 1 to 40, the mask with the lowest penalty. After Project Nayuki's QR Code generator (MIT).
 
 /** Error-correction codewords per block, and blocks, for level M, by version (index 0 unused). */

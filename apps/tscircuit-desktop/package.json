@@ -68,5 +68,5 @@
     "@vitejs/plugin-react": "^4.3.0",
     "vite": "^6.2.6"
   },
-  "parked": "PARKED: tscircuit pins zod 3 and react-router 6 (audit: GHSA-mrhx-c7xc-m3w5 and two react-router moderates). The app is excluded from the workspace (root package.json) so none of this installs. To bring it back: move parkedDependencies and parkedDevDependencies back to dependencies and devDependencies, drop the '!apps/tscircuit-desktop' workspace line, remove the root zod override (tscircuit needs zod 3), and re-add the app to scripts/ci-apps.ts. Do that once tscircuit moves to zod 4."
+  "parked": "PARKED: tscircuit pins zod 3 and react-router 6 (audit: GHSA-mrhx-c7xc-m3w5 and two react-router moderates). The app is excluded from the workspace (root package.json) so none of this installs. To bring it back: move parkedDependencies and parkedDevDependencies back to dependencies and devDependencies, drop the '!apps/tscircuit-desktop' workspace line, remove the root zod override (tscircuit needs zod 3), and re-add the app to scripts/ci-apps.ts. Then give its page the Cmd+K menu every app has (mountPalette from @rustybuns/util/palette). Do that once tscircuit moves to zod 4."
 }
