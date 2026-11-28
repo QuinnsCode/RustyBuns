@@ -12,6 +12,7 @@
     "@rustybuns/util": "^0.1.12"
   },
   "devDependencies": {
+    "@rustybuns/cli": "^0.1.12",
     "geoboxq": "workspace:*",
     "wrangler": "4.156.0"
   }

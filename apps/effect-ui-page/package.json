@@ -16,6 +16,7 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@rustybuns/cli": "^0.1.12",
     "@types/three": "^0.180.0"
   }
 }
