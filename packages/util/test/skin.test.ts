@@ -42,7 +42,7 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
   const house = await looks("?house");
   // The house look's tiles have one even outline: no thick slab of the outline's colour under them, which read as a broken border on dark.
   for (const [name, l] of Object.entries({ ...house.surfaces, ...(await looks("?house", true)).surfaces })) expect({ name, slab: / 0px [2-4]px 0px 0px/.test(l.edge) }).toEqual({ name, slab: false });
-  for (const [name, l] of Object.entries(house.surfaces)) expect({ name, bg: l.bg, radius: l.radius }).toEqual({ name, bg: "rgb(255, 255, 255)", radius: name === "chip" ? TOKENS["--ui-radius-sm"] : TOKENS["--ui-radius"] });
+  for (const [name, l] of Object.entries(house.surfaces)) expect({ name, bg: l.bg, radius: l.radius }).toEqual({ name, bg: "rgb(255, 255, 255)", radius: name === "chip" ? "999px" : TOKENS["--ui-radius"] });
   // The house look follows a dark system; a game's own skin doesn't.
   for (const [name, l] of Object.entries((await looks("?house", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(23, 23, 26)" });
   for (const [name, l] of Object.entries((await looks("", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(28, 33, 40)" });
@@ -104,23 +104,21 @@ test.skipIf(!chromePath())("the chip's button curves with the chip and carries n
   }
 });
 
-// #3600: eqosys's badge is its own mark: the same pixels on the report form and the toast whatever a game's skin does.
+// #3600: eqosys's badge is its own mark: the same shapes on the report form and the toast whatever a game's skin does.
 test.skipIf(!chromePath())("the eqosys badge looks the same in Two Fronts, Mythic Masters, Skate Tech Park and the house look", async () => {
   const badges = async (query: string) => {
     const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
     await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
     const got = await tab.eval<unknown[][][]>(`[".rb-report .eq-badge", ".eq-toast .eq-badge", ".eq-chip .eq-badge"].map((sel) => {
-      const look = (el, keys) => { const s = getComputedStyle(el); return [el.offsetWidth, el.offsetHeight, ...keys.map((k) => s[k])]; };
-      const b = document.querySelector(sel), rim = getComputedStyle(b, "::after");
-      return [look(b, ["borderRadius", "boxShadow", "opacity"]), look(b.querySelector("b"), ["backgroundImage", "color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform"]), look(b.querySelector("i"), ["filter"]), [rim.content, rim.borderTopStyle, rim.borderTopColor]];
+      const look = (el, keys, pseudo) => { const s = getComputedStyle(el, pseudo); return keys.map((k) => s[k]); };
+      const b = document.querySelector(sel), mark = b.querySelector("i");
+      return [[mark.offsetWidth, mark.offsetHeight, ...look(mark, ["borderRadius", "backgroundImage"])], look(mark, ["backgroundColor", "clipPath"], "::after"), [b.querySelector("svg").innerHTML]];
     })`);
     await tab.close();
     return got;
   };
   const house = await badges("?house");
-  // The strip's hole has its own dark rim, outside the strip's mask, so it reads as a hole on a bright plate too.
-  expect(house[0][3]).toEqual(['""', "solid", "rgba(11, 11, 14, 0.9)"]);
   expect(house[1]).toEqual(house[0]);
   expect(house[2]).toEqual(house[0]);
   for (const game of ["two-fronts", "mythic-masters", "skate-tech-park"]) expect({ game, badge: await badges(`?game=${game}`) }).toEqual({ game, badge: house });

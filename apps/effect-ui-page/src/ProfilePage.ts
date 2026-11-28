@@ -12,6 +12,7 @@ import { Agent, Call, type Request, Seen } from "./agent.ts";
 import { apply, backdropUrl, Page, starter } from "./page.ts";
 import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
+import { copyright, FOOT_LINKS, MAKER, TAGLINE } from "./foot.ts";
 import { listTools } from "./tools.ts";
 import { worldDoc } from "./world.ts";
 import { LANDS } from "./lands.ts";
@@ -275,6 +276,12 @@ const deepView = Def.fragment((h) => h.section.class("l-deep").attrs({ id: "how"
     showView(h, p.show),
   )),
 ));
+/** The links at the very bottom, under How it's built. */
+const footView = Def.fragment((h) => h.footer.class("site-foot").children(
+  h.p(TAGLINE),
+  h.nav.children(...FOOT_LINKS.map(([text, href]) => h.a.key(href).attr("href", href).children(text))),
+  h.span.children("created by ", h.a.attr("href", MAKER.href).children(MAKER.name), ` · ${copyright()}`),
+));
 /** The three things you do, the landing's pictures: five words or less each (owner, 2026-11-28). */
 const STEPS: readonly (readonly [Icon, string, string])[] = [
   ["plug", "cyan", "Connect your agent"], ["chat", "amber", "Ask for your world"], ["globe", "pink", "Walk the galaxy"],
@@ -367,11 +374,12 @@ const landingView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: s
         h.button.attr("type", "button").class("l-skip").on("click", PageMessage.ClickedLeaveLanding()).children("Skip to the page"),
         h.button.attr("type", "button").class("l-skip").attrs({ "aria-expanded": explain ? "true" : "false", "aria-controls": "how" })
           .on("click", PageMessage.ClickedExplain()).children("How it's built"),
+        h.a.class("l-skip").attr("href", "/about").children("About"),
         h.span.class("l-keys").children(h.kbd("Cmd"), h.kbd("K")),
       ),
     ),
   ),
-  explain && deepView(h)));
+  explain && deepView(h), explain && footView(h)));
 
 export const ProfilePageNoDeps = Def.make({
   init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,

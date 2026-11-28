@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "bun scripts/dev.ts",
-    "build": "bun build ./index.html --outdir dist/ui --minify --conditions production --public-path=/ --splitting && cp public/og.jpg dist/ui/og.jpg",
+    "build": "bun build ./index.html ./about.html --outdir dist/ui --minify --conditions production --public-path=/ --splitting && cp public/og.jpg dist/ui/og.jpg",
     "deploy": "bun run build && bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app effect-ui-page",
     "test": "bun test test"
   },
