@@ -100,7 +100,7 @@ export function rigSpec(s: AmpSettings): { spec: RigSpec; shape: string; scale: 
   // The loop's machines are switched and turned in place, never a new chain: a tape keeps its echoes.
   // A board plays in place of the one pedal: its pedals ahead of the amp, a split's sides side by side.
   const front = s.board ? boardLinks(s.board) : null;
-  const pedal = !front && def ? { def, drive: s.drive, swaps: s.swaps } : undefined;
+  const pedal = !front && def ? { def, drive: s.drive, swaps: s.swaps, edits: s.edits } : undefined;
   const base = s.direct ? deskRig(pedal) : buildRig(amp, s.knobs, pedal, { ...DEFAULT_ROOM, mic: s.mic });
   const spec = { ...base, ...(front ? { links: [...front.links, ...base.links], blends: front.blends } : {}), loop: s.loop ?? [], machines: MACHINES };
   // A new shape (how many links, which run side by side) is a new chain; a split's blend is just set.

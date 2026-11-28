@@ -22,6 +22,7 @@ import { FullScreenQuad, Pass } from "three/examples/jsm/postprocessing/Pass.js"
 import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
 import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
+import { rigLamp } from "../control/fixtures.ts";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mulberry32 } from "@rustybuns/util";
@@ -1711,6 +1712,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     l.target.position.set(x + (aim() - 0.5) * 1.6, 0, z + (aim() - 0.5) * 1.6);
     group.add(l, l.target);
     lights.push(l);
+    rigLamp(l, `Can ${lights.length}`); // a DMX fixture for the show desk (#6474)
   }
   const shadowers = full ? [...lights].sort((a, b) => Math.hypot(a.position.x, a.position.z) - Math.hypot(b.position.x, b.position.z)).slice(0, 3) : [];
   for (const l of shadowers) {

@@ -26,7 +26,8 @@ UI, WebMCP, Cloudflare Artifacts, Effect), the three steps as pictures, and one 
 signs you in with eqosys and opens your world: the server keeps one per account (`POST /api/me/world`), the room you
 first signed in from, so signing in on another browser lands you in the same world, its files from the server. Signed
 in already, it goes straight there, and where eqosys can't be reached (local dev) it says so in one line. Signed out,
-everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Under it, three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
+everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Once your AI has built it, your eqosys account keeps
+the **World builder** achievement (built signed out, it is sent when you sign in). Under Create your world, three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
 one click with no AI connected, on the landing, in the console and in Cmd+K, each with one thing to ask your AI next.
 When your AI first reads the page or changes it, the landing gives way to your world; "Skip to the page" does it by
 hand. Connecting your AI is in the console, where it is the next step. **How it's built** opens the longer story under
@@ -34,13 +35,17 @@ the landing. A room this browser already kept opens straight on its page. The co
 the screen (**Hide** puts it away, **Show** brings it back): on the left what happened, the way a command line shows it
 (connecting to the relay, connected, each call and how it went), ending in what you have to do in your own agent
 ("type what you want into your agent": a note typed in the console waits for its next call). On the right: whether your agent is connected (it also
-says so in its own chat); the ready-made worlds as photo cards under **Choose a level to see** (a level replaces your
-world; Undo brings it back until you reload); **Or start telling your agent what to do** (copy the prompt, paste into
-your agent, watch it build); and **Do something cool** (Save a GIF, Walk galaxy). A page cannot start a turn in your
-agent, so you talk to it in its own chat. Once it is here you can also **send it a note** from the console (or "Send a
-note to your agent" in Cmd+K): the note waits, and goes with the reply to the agent's next call, as `user_note`, so
-it hears you while it is still working. If it has stopped, nothing happens until you say something in its chat. Anyone
-who opens the room's link can send one, and your agent is told to follow it for the world only. Under Copy prompt, a button for each way in:
+says so in its own chat); the flow (copy the prompt, paste into your agent, watch it build); then one card with the one
+thing to do now. First **Connect your agent** (Copy prompt and the MCP lines), with **Want to see what is possible
+first?** folded under it: the ready-made worlds as photo cards (a level replaces your world; Undo brings it back until
+you reload), offered only until your agent connects. Connected, **Now explain what you want**, with an ask to copy.
+Your world made, **Achievement unlocked: World builder** and **Now let's build our galaxy, as a group!** with Walk
+galaxy as the big button. Under the card, **Your world** (Undo, Reset, Save a GIF) and, once connected, **Connect
+another agent** folded away. A page cannot start a turn in your agent, so you talk to it in its own chat. Once it is
+here you can also **send it a note** from the console (or "Send a note to your agent" in Cmd+K): the note waits, and
+goes with the reply to the agent's next call, as `user_note`, so it hears you while it is still working. If it has
+stopped, nothing happens until you say something in its chat. Anyone who opens the room's link can send one, and your
+agent is told to follow it for the world only. Under Copy prompt, a button for each way in:
 
 - **Add it as an MCP server** (the default: the landing's line, and the Claude, Codex and opencode buttons copy these):
   - Claude Code: `claude mcp add --transport http agentworld <room>/mcp`
@@ -346,15 +351,25 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 | --- | --- |
 | Component | One, `ProfilePage`, with the view split into `Def.fragment` helpers. No child components. |
 | Messages and `update` | `PageMessage`. Agent calls and clicks go through the same `step`. |
-| Commands | `ReportPage` (a `Command.Service`, `mode: "queue"`), `CreateWorld`, `MarkMade`, `ExportGif`, `CopyText`. The last four use the default mode, `concurrent`. |
+| Commands | `ReportPage` (a `Command.Service`, `mode: "queue"`), `CreateWorld`, `MarkMade`, `ExportGif`, `CopyText`, `FocusNext` (where the focus goes after sign-in). All but the first use the default mode, `concurrent`; `update` keeps `MarkMade` to one at a time. |
+| Mounts | `ShowGalaxy` (`src/galaxyView.ts`): Agent Galaxy's layer is up as long as the page's `data-galaxy` element is. |
 | Subscriptions | The agent's calls, the relay's state, what the frame said, GIF progress, galaxy asks. |
 | Services and Layers | `Agent` (`src/agent.ts`), given at mount; `ReportPage.layer` through `Component.provide`. |
-| Tests | `Story` and `HtmlScene` in `test/page.test.ts`, on `ProfilePageNoDeps`. |
-| Not used | Queries, shared state (`shares` / `reads`), routing, SSR, Effect UI Kit, DevTools, Play tests, `Story.check` / `explore`. |
+| Tests | `Story` and `HtmlScene` in `test/page.test.ts`; `Story.explore` in `test/overlap.test.ts`, which tries agent calls, a person's Undo and Start over, frame loads and Command results in every order. Both on `ProfilePageNoDeps`. |
+| DevTools | The overlay and, when asked for, its MCP server, in `bun run dev` only (below). |
+| Not used | Queries, shared state (`shares` / `reads`), routing, SSR, Effect UI Kit (installed only because DevTools needs it), Play tests, `Story.check`. |
 
-Outside the component, and so outside its Model and tests: Agent Galaxy (`src/galaxyView.ts` draws its own DOM and
-finds out it is on with a `MutationObserver`), the focus moves after sign-in (`src/main.ts`, three more observers) and
+Outside the component, and so outside its Model and tests: Agent Galaxy's own DOM (`src/galaxyView.ts`) and
 `galaxyLock` (`src/lock.ts`, a mutable global beside the Model's `made`).
 
-Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit
-(`@effect/ui@a0d7578`). To move it on: `bun add https://pkg.pr.new/Effect-TS/ui/@effect/ui@<commit>` in this folder.
+**DevTools** (`src/devtools.ts`). `bun run dev` puts a button in the page's bottom left corner: the timeline of every
+message, Command and mount, the Model at each, and time travel. A production build (`--conditions production`) takes
+`src/devtoolsOff.ts` instead (`#devtools` in `package.json`), so none of it is in `dist`. For an agent to read the same
+log, run `bun run devtools` beside the dev server and open the page with `?devtools=mcp` on its link; the MCP server is
+`http://127.0.0.1:4774/mcp`, on this machine only. It can read, not act: `bun run devtools --dispatch` lets it send
+messages. The overlay's WebMCP tools are off, so they don't mix with the page's own.
+
+Effect UI is in public preview and not on npm yet, so `package.json` pins pkg.pr.new snapshots by commit
+(`f4cddd0`: `@effect/ui`, `@effect/ui-devtools`, and `@effect/ui-kit`, which DevTools needs). To move it on, change the
+commit in all three and run `bun install` (not every commit has a snapshot). `effect` is the repo's (4.1.4, held by the
+root's `overrides`); `@effect/ui-kit` asks for 4.1.6, and DevTools runs on 4.1.4 all the same.

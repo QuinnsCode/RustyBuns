@@ -18,7 +18,7 @@ const TOWER: Cam = { x: 0, y: 7, z: FIELD.z1 + 8, pitch: 0.26, cyf: 0.42 };
 const OVER = (x: number): Cam => ({ x, y: 26, z: (FIELD.z0 + FIELD.z1) / 2 + 26 / Math.tan(1.25), pitch: 1.25, cyf: 0.5 });
 
 /** A lane down the field: one of the door's words, its strip of grass, and the colour its plate and beam take. */
-/** A lane down the field: one of the door's words, its strip of grass, the colour its plate and beam take, and the face its word is painted in on the grass (a canvas font, e.g. `400 100px "Caveat Brush"`, drawn at 100px). */
+/** A lane down the field: one of the door's words, its strip of grass, the colour its plate and beam take, and the face its word is painted in on the grass (a canvas font, e.g. `400 100px "Russo Brush"`, drawn at 100px). */
 export interface HeroLane { id: string; word: string; tone: string; face?: string; list?: HTMLElement }
 
 export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], onPick: (id: string) => void = () => {}) {
@@ -165,7 +165,7 @@ export function mountHero(root: HTMLElement, lanes: readonly HeroLane[] = [], on
       if (open && !lit) { path(); g.fillStyle = "rgba(9,10,14,.55)"; g.fill(); }
       if (lit || hot) { path(); g.fillStyle = s.tone + (lit ? "33" : "1a"); g.fill(); }
       path(); g.strokeStyle = s.tone + (lit ? "ff" : hot ? "cc" : "66"); g.lineWidth = lit ? 2.5 : 1.5; g.stroke();
-      floorWord(s.word.toUpperCase(), s.face ?? '600 100px "Saira Condensed", sans-serif', s.x0 + laneW * 0.16, s.x1 - laneW * 0.16, FIELD.z1 - 18, laneW * 0.42, lit ? "rgba(244,241,234,.92)" : s.tone + (hot ? "dd" : "88"), dpr);
+      floorWord(s.word.toUpperCase(), s.face ?? '600 100px "Russo One", sans-serif', s.x0 + laneW * 0.16, s.x1 - laneW * 0.16, FIELD.z1 - 18, laneW * 0.42, lit ? "rgba(244,241,234,.92)" : s.tone + (hot ? "dd" : "88"), dpr);
       if (lit) { // the beam: from the top of the sky down onto the lane's head, by the stage
         const [nl, nr] = [s.quad[0]!, s.quad[1]!], top = (nl[0] + nr[0]) / 2, spread = (nr[0] - nl[0]) * 0.35;
         const beam = g.createLinearGradient(0, 0, 0, nl[1]);

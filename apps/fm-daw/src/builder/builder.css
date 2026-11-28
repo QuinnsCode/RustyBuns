@@ -1,7 +1,7 @@
 /* Q Builder (main.ts): the board on the left, the scope and the remake beside it; one column on a phone. */
 :root {
   --ink: #eceef1; --dim: #9aa1ab; --warn: #ffb000; --ok: #4fd18b; --probe: #38bdf8;
-  --silk: "Barlow Condensed", "Arial Narrow", sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --silk: var(--q-thin); --body: var(--q-thin); --mono: "IBM Plex Mono", ui-monospace, monospace;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -15,7 +15,7 @@ button { font: inherit; color: inherit; }
 
 .qb { display: grid; gap: 14px; padding: calc(56px + env(safe-area-inset-top, 0px)) 16px 24px; max-width: 1400px; margin: 0 auto; }
 .qb-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
-.qb-head h1 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font: 600 1.35rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.qb-head h1 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font: 600 1.35rem/1 var(--q-thick); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
 /* Eleven pedals: they wrap onto a second row rather than push the page sideways. */
 .qb-pedals { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); min-width: 0; }
 .qb-pedal { padding: 6px 12px; border: 0; border-radius: 9px; background: none; cursor: pointer; white-space: nowrap; }
@@ -70,7 +70,7 @@ button { font: inherit; color: inherit; }
 
 /* The print sheet: off screen (so the schematic can be measured and cropped) until the page prints. */
 .qb-print { position: absolute; left: -10000px; top: 0; width: 186mm; background: #fff; color: #111; font: 400 10pt/1.4 var(--body); }
-.qb-print h1 { margin: 0 0 2mm; font: 600 20pt/1 var(--silk); letter-spacing: 0.06em; text-transform: uppercase; }
+.qb-print h1 { margin: 0 0 2mm; font: 600 20pt/1 var(--q-thick); letter-spacing: 0.06em; text-transform: uppercase; }
 .qb-print h2 { margin: 6mm 0 2mm; font: 600 12pt/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; border-bottom: 0.3mm solid #111; padding-bottom: 1mm; }
 .qb-print p { margin: 0 0 1mm; }
 .qb-print .qp-dim { color: #555; font-size: 9pt; }

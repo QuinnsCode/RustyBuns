@@ -181,7 +181,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
   }
 
   // A space's files (space.ts): POST /q/space/<id>/file?channel=&name= with the bytes as the body posts one in that channel as a
-  // message; GET /q/space/<id>/file/<file id> brings it back. The token as a bearer, from any Q app, like the socket.
+  // message; GET /q/space/<id>/file/<file id> brings it back. The token as a bearer, from the same apps as the socket (`ours`).
   const fileAt = /^\/q\/space\/([0-9a-f-]{36})\/file(?:\/([0-9a-f-]{36}))?$/.exec(pathname);
   if (fileAt) {
     const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST", "access-control-expose-headers": "content-disposition" };

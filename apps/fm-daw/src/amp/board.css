@@ -1,5 +1,5 @@
 /* The board view (board.ts): tscircuit's schematic and PCB, restyled for a dark stage. Shared by Q Amp and the build sheet. */
-.board-view { --dim: #9aa1ab; --ink: #eceef1; --warn: #ffb000; --silk: "Barlow Condensed", "Arial Narrow", sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+.board-view { --dim: #9aa1ab; --ink: #eceef1; --warn: #ffb000; --silk: var(--q-thin); --mono: "IBM Plex Mono", ui-monospace, monospace; }
 .board-view {
   --signal: 0; position: relative; width: min(940px, 100%); justify-self: center; border-radius: 12px; overflow: visible;
   background: #05080a; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);

@@ -9,7 +9,8 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { SAND, WALK, holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { cellsIn, master, mean } from "../src/venues/dive-bar.ts";
-import { CAMP_LIMIT, DANCE_FLOOR, DESERT, DESERT_RIGS, GEN_QUIET, bringRig, desertState, heat, score, wrap } from "../src/venues/desert.ts";
+import { CAMP_LIMIT, DANCE_FLOOR, DESERT, DESERT_RIGS, GEN_QUIET, bringRig, desertState, heat, score, wrap, openCrossover, setAmpCrossover, crossoverCost } from "../src/venues/desert.ts";
+import { rigCrossover } from "@rustybuns/gear/crossover";
 import { SYSTEMS, gear as catalog, stackWidth } from "@rustybuns/gear";
 
 setDefaultTimeout(30_000);
@@ -209,4 +210,21 @@ test("another rig for the night: each of the open-air rigs comes off the truck a
     expect(DESERT_RIGS).not.toContain("line-array");
     expect(bringRig("line-array")).toBe("dance-stack");
   } finally { bringRig("dance-stack"); }
+});
+
+test("the tri-amp stack's crossover: found wrong it costs sound, and set right with the sub in line it costs nothing", () => {
+  bringRig("dance-stack");
+  expect(openCrossover(newWorld(DESERT))).toMatchObject({ ok: false, why: expect.stringContaining("tri-amp") });
+  bringRig("tri-amp");
+  const w = newWorld(DESERT);
+  expect(crossoverCost(w)).toBe(0); // untouched, the racks play their preset
+  expect(openCrossover(w)).toEqual({ ok: true });
+  expect(desertState(w, newCables(w)).crossover).toBeGreaterThan(15);
+  // the maker's splits, the sub still out in front: a hole at the split
+  const preset = rigCrossover("tri-amp").map((b) => b.dsp);
+  setAmpCrossover(w, preset);
+  expect(crossoverCost(w)).toBeGreaterThan(5);
+  setAmpCrossover(w, preset.map((b, i) => (i ? b : { ...b, delayMs: 4.37 })));
+  expect(crossoverCost(w)).toBe(0);
+  bringRig("dance-stack");
 });

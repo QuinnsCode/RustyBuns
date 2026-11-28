@@ -17,8 +17,11 @@ test("an EmailMessage's raw MIME is written as is; the builder form is composed"
   const { messageId } = await mail.send(new EmailMessage("hi@example.com", "you@example.com", raw));
   expect(messageId).toBeString();
   await mail.send({ from: { email: "hi@example.com", name: "Hi" }, to: ["a@example.com"], subject: "both", text: "plain", html: "<b>rich</b>" });
-  const [first, second] = emls(dir);
-  expect(first).toBe(raw);
+  // Two sent in the same millisecond sort by their random id, so find each by what it is.
+  const sent = emls(dir);
+  expect(sent).toHaveLength(2);
+  expect(sent).toContain(raw);
+  const second = sent.find((m) => m !== raw);
   expect(second).toContain("From: Hi <hi@example.com>\r\nTo: a@example.com\r\nSubject: both");
   expect(second).toContain("multipart/alternative");
   expect(second).toContain("plain");

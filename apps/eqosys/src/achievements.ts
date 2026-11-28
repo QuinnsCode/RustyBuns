@@ -4,7 +4,7 @@
 // Add a game's list in a PR, the same way it is added to APPS. Every game's list starts with the same ones (SHARED), so
 // "played" is number one everywhere, and each has its badge: a lucide icon, or a letter in the console font. A studio's own game
 // (listings.ts) has no list here: it gets the shared ones its maturity can unlock, until its studio can add its own.
-import { Armchair, Bandage, BookUser, GraduationCap, Biohazard, Bird, Briefcase, Coins, Crown, Droplet, Earth, Feather, Flag, Flame, Footprints, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Link, MapPin, Medal, Megaphone, Orbit, PiggyBank, PlaneLanding, Radio, Repeat, ScanEye, Search, Shield, ShieldCheck, Sparkles, Spline, SprayCan, Target, Tent, TrendingUp, Trophy, UserRound, Users, Waves, type IconNode } from "lucide";
+import { Armchair, Bandage, BookUser, GraduationCap, Biohazard, Bird, Briefcase, Coins, Crown, Droplet, Earth, Feather, Flag, Flame, Footprints, Gamepad2, GlassWater, Globe, Hammer, Hourglass, Landmark, Link, MapPin, Medal, Megaphone, Orbit, PiggyBank, PlaneLanding, Radio, Repeat, ScanEye, Search, Shield, ShieldCheck, Sparkles, Spline, SprayCan, Target, Tent, TrendingUp, Trophy, UserRound, Users, Waves, type IconNode } from "lucide";
 import type { QApp } from "./apps.ts";
 import type { Env } from "./env.ts";
 import { appOf, isListing } from "./listings.ts";
@@ -30,6 +30,10 @@ export const SHARED = {
 } satisfies Record<string, Achievement>;
 
 export const ACHIEVEMENTS: Record<string, Achievement[]> = {
+  agentworld: [
+    SHARED.played,
+    { id: "world-builder", name: "World builder", blurb: "Have your AI build your world.", icon: Hammer },
+  ],
   "alien-disc-golf": [
     SHARED.played,
     SHARED.alpha,

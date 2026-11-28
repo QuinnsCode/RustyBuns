@@ -1,6 +1,6 @@
 // The jam room's way in (#6420), in headless Chrome over CDP (scripts/chrome.ts): the entry panel is a gateway, the
 // gathering's name, whose it is and who's here, then Settings, Leave, a big Enter and one row of share buttons, with
-// nothing to choose (and no password field: this room has none). Wide along the bottom on a landscape screen, stacked on
+// nothing to choose (and no password field: this room has none). Show desk ends the share row (#6474). Wide along the bottom on a landscape screen, stacked on
 // a phone (Enter on top, Settings and Leave side by side). A room made with no event is the desert gathering; alone in
 // it with no live line you are its owner, so Settings > The gathering shows it, and an edit there goes on the sesh. You
 // picks a font for this browser only. (The password's door is world.test.ts's: the World holds it.)
@@ -30,7 +30,7 @@ async function wayIn(tab: Awaited<ReturnType<typeof openTab>>, w: number, h: num
 
   // the panel: only its own buttons show, every one inside the screen
   const shown = await page<string[]>(`[...document.querySelectorAll("#menu button, #menu a")].filter((e) => e.getClientRects().length).map((e) => e.id)`);
-  expect(shown.filter((id) => id !== "share").sort()).toEqual(["friends-open", "invite", "lobby", "play", "settings-open"]);
+  expect(shown.filter((id) => id !== "share").sort()).toEqual(["friends-open", "invite", "lobby", "play", "settings-open", "show-open"]);
   expect(await page<string>(`document.getElementById("room-title").textContent`)).toBe("way-in");
   expect(await page<number>(`document.querySelectorAll("#menu input, #menu select").length - document.querySelectorAll("#menu [hidden] input, #menu [hidden] select, #menu input[hidden]").length`)).toBe(0);
   expect(await page<string>(`document.getElementById("here-line").textContent`)).toContain("1 here");
@@ -71,8 +71,8 @@ async function wayIn(tab: Awaited<ReturnType<typeof openTab>>, w: number, h: num
   // You: the 20 fonts, each in its own; a pick changes this page's headings and is kept
   await page(`(document.getElementById("tab-you").click(), 1)`);
   const fonts = await page<{ name: string; font: string }[]>(`[...document.querySelectorAll("#set-fonts b")].map((b) => ({ name: b.textContent, font: b.style.fontFamily }))`);
-  expect(fonts).toHaveLength(20);
-  expect(fonts[0]?.name).toBe("Saira Condensed");
+  expect(fonts).toHaveLength(21); // Qollab's own face, then the board's 20
+  expect(fonts[0]?.name).toBe("Russo One");
   for (const f of fonts) expect(f.font).toContain(f.name);
   await page(`([...document.querySelectorAll("#set-fonts button")].find((b) => b.textContent === "Oswald").click(), 1)`);
   expect(await page<string>(`getComputedStyle(document.getElementById("room-title")).fontFamily`)).toContain("Oswald");

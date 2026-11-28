@@ -33,11 +33,15 @@ test("ready: supported frameworks, Workers and fetch-handler servers", () => {
     [{ pkg: pkg({}), files: ["wrangler.jsonc"], viteConfig: null }, { label: "Cloudflare Worker" }],
     [{ pkg: pkg({ hono: "4" }), files: [] }, { label: "hono" }],
     [{ pkg: pkg({ astro: "7", "@astrojs/cloudflare": "14" }), files: ["astro.config.mjs"] }, { stack: "astro", label: "Astro" }],
-    [{ pkg: pkg({ nuxt: "4", vue: "3" }), files: ["nuxt.config.ts"] }, { stack: "nuxt", label: "Nuxt, TypeScript", issue: undefined }],
+    [{ pkg: pkg({ nuxt: "4", vue: "3" }), files: ["nuxt.config.ts"] }, { stack: "nuxt", label: "Nuxt, TypeScript" }],
     [{ pkg: pkg({ "@solidjs/start": "2", "solid-js": "1", vite: "8" }), files: ["wrangler.jsonc"] }, { stack: "solidstart" }],
     [{ pkg: pkg({ "@builder.io/qwik": "1", "@builder.io/qwik-city": "1", vite: "7" }), files: [] }, { stack: "qwik" }],
   ];
-  for (const [input, want] of cases) expect(fit(input)).toMatchObject({ verdict: "ready", ...want });
+  for (const [input, want] of cases) {
+    const got = fit(input);
+    expect(got).toMatchObject({ verdict: "ready", ...want });
+    expect(got.issue).toBeUndefined();
+  }
 });
 
 test("Next.js, React Router and SvelteKit are ready with their Cloudflare build, and need work without it", () => {

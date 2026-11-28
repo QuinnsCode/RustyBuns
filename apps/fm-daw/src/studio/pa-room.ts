@@ -11,12 +11,12 @@
 // out here and moved at body rate (jam.ts BODY_HZ), not every frame, with short glides so nothing clicks.
 // `hearSpeaker` and `paSpeakers` are pure, for the test; `PaRoom` is the Web Audio graph.
 import { clamp } from "@rustybuns/util";
-import { airAbsorption, levelAt, MILD_FIELD, screenPath, source, speedOfSound, stackSources, stackWidth, system, systemSound, type Field, type RigPlan, type Source, type StackPlace, type System } from "@rustybuns/gear";
+import { airAbsorption, levelAt, MILD_FIELD, screenPath, gear, isTop, rowsSize, source, speedOfSound, stackRows, stackSources, system, systemSound, type Field, type RigPlan, type Source, type StackPlace, type System } from "@rustybuns/gear";
 import { BODY_HZ } from "./jam.ts";
 import { roomLand, thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
 import { crossover, type Crossover } from "./crossover-audio.ts";
-import { heardBands, rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
+import { heardBands, placed, rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
 
 /** Metres a second, indoors (out of doors the field's air sets it: roomField). */
 export const SOUND_SPEED = 343;
@@ -64,13 +64,12 @@ export function roomRig(def: StudioDef): System {
  */
 export function rigStacks(def: StudioDef): (Outdoor["stacks"][number] & Pick<StackPlace, "tops" | "out">)[] {
   const pa = roomPa(def), stacks = pa?.stacks ?? [];
-  const w = stackWidth(roomRig(def)) + 0.02;
   const middle = (b: readonly { at: [number, number] }[]): [number, number] => [b.reduce((t, s) => t + s.at[0], 0) / b.length, b.reduce((t, s) => t + s.at[1], 0) / b.length];
   const all = stacks.length ? middle(stacks) : [0, 0] as [number, number];
   const outOf = (s: { at: [number, number]; yaw: number }, m: [number, number]): -1 | 1 => (s.at[0] - m[0]) * Math.cos(s.yaw) - (s.at[1] - m[1]) * Math.sin(s.yaw) < 0 ? -1 : 1;
   return stackBlocks(stacks).flatMap((block) => {
     if (block.length < 2) return block.map((s) => ({ ...s, tops: pa?.tops, out: outOf(s, all) }));
-    const [mx, mz] = middle(block);
+    const [mx, mz] = middle(block), w = Math.max(...block.map((s) => rowsSize(stackRows(roomRig(def), s)).w)) + 0.02;
     const gap = Math.min(...block.slice(1).map((s, i) => Math.hypot(s.at[0] - block[i]!.at[0], s.at[1] - block[i]!.at[1])));
     const k = gap > 1e-6 ? w / gap : 1;
     return block.map((s) => ({ ...s, at: [mx + (s.at[0] - mx) * k, mz + (s.at[1] - mz) * k] as [number, number], tops: pa?.tops, out: outOf(s, [mx, mz]) }));
@@ -104,7 +103,12 @@ const AIR_4K_DB = 10 * Math.log10(Math.E) * AIR[5];
 export function paSpeakers(def: StudioDef): Speaker[] {
   const dj = def.spots.find((s) => s.kind === "dj");
   const spread = roomPa(def)?.stacks.length ? systemSound(roomRig(def)).coverage.h : undefined, rig = roomRig(def);
-  const stacks: { at: [number, number]; yaw: number; boxes: Source[] }[] = rigStacks(def).map((s) => ({ at: s.at, yaw: s.yaw, boxes: stackSources(rig, s) }));
+  // a stack with its own boxes throws as wide as its highest top does (the bar pair's isn't the rig's)
+  const spreadOf = (s: Pick<StackPlace, "rows">) => {
+    const top = s.rows?.map((r) => r.box).findLast(isTop);
+    return top ? gear(top).speaker!.coverage.h : spread;
+  };
+  const stacks: { at: [number, number]; yaw: number; boxes: Source[]; spread?: number }[] = rigStacks(def).map((s) => ({ at: s.at, yaw: s.yaw, boxes: stackSources(rig, s), spread: spreadOf(s) }));
   if (!stacks.length && dj) {
     const b = thingBox(dj), fx = -Math.sin(dj.yaw), fz = -Math.cos(dj.yaw), rx = Math.cos(dj.yaw), rz = -Math.sin(dj.yaw), out = b.hw + 1.2;
     for (const k of [-1, 1]) {
@@ -115,12 +119,12 @@ export function paSpeakers(def: StudioDef): Speaker[] {
   }
   if (!stacks.length) return [];
   const field = roomField(def);
-  if (roomPa(def)?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, spread, field }));
+  if (roomPa(def)?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, field }));
   // a stack plays the left of the set when it stands left of the stacks' middle as the crowd sees them
   const mx = stacks.reduce((t, s) => t + s.at[0], 0) / stacks.length, mz = stacks.reduce((t, s) => t + s.at[1], 0) / stacks.length;
   return stacks.map((s) => {
     const rx = Math.cos(s.yaw), rz = -Math.sin(s.yaw); // the crowd's right, facing the speaker
-    return { ...s, side: (s.at[0] - mx) * rx + (s.at[1] - mz) * rz < 0 ? 0 : 1, spread, field };
+    return { ...s, side: (s.at[0] - mx) * rx + (s.at[1] - mz) * rz < 0 ? 0 : 1, field };
   });
 }
 
@@ -250,6 +254,8 @@ export class PaRoom {
   /** The rig's preset (what the bands are heard against) and the bands as set. */
   private preset: ChannelDsp[] = [];
   private set: readonly ChannelDsp[] = [];
+  /** How far the sub stands in front of the tops (the crossover lesson's), metres. */
+  private ahead = 0;
 
   constructor(private ctx: BaseAudioContext, def: StudioDef, to: AudioNode) {
     this.input = new GainNode(ctx);
@@ -316,7 +322,12 @@ export class PaRoom {
   /** The rig's crossover bands as they're set (null indoors). */
   bands(): readonly ChannelDsp[] | null { return this.xo ? this.set : null; }
   /** Set the crossover's bands (an amp's DSP moved), heard against the preset. False indoors, where there's no rig. */
-  setBands(bands: readonly ChannelDsp[]): boolean { if (!this.xo) return false; this.set = bands; this.xo.set(heardBands(bands, this.preset)); return true; }
+  setBands(bands: readonly ChannelDsp[]): boolean { if (!this.xo) return false; this.set = bands; this.play(); return true; }
+  /** How far the sub stands in front of the tops, metres. */
+  subAheadM(): number { return this.ahead; }
+  /** Stand the sub `metres` in front of the tops: it is heard that much early until its delay takes it back. */
+  setSubAhead(metres: number) { this.ahead = metres; this.play(); }
+  private play() { this.xo?.set(heardBands(placed(this.set, this.ahead), this.preset)); }
 
   /** The speakers as you hear them now, for the harness. */
   state() {

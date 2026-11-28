@@ -6,9 +6,12 @@
 // (spread or staggered, they cancel in places), keep the mid-highs up over the heads (the floor is scored with the
 // night's peak crowd on it, and bodies soak up the highs), and keep the spill off the camp. The night is twelve hours: the
 // fuel in the generator and the jerry cans set down by it (or poured in) have to last until the sun comes up, and the score is how much of
-// the night the wall played. Plain data, no DOM; the page (desert-view.ts) draws it.
+// the night the wall played. On the tri-amp rig the amps' crossover can be set too (#6473, @rustybuns/gear's lesson:
+// the same one Qollab Studio teaches), and one left wrong costs sound. Plain data, no DOM; the page (desert-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
 import { type Area, type CrowdField, type Grid, type System, type SystemId, SYSTEM_IDS, SYSTEMS, coverage, passive, coverageThrough, gear as catalog, runHours, stackWidth, system } from "@rustybuns/gear";
+import { crossoverCheck, rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
+import { LESSON_RIG, SUB_AHEAD_M, lessonStart } from "@rustybuns/gear/crossover-lesson";
 import { type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Cables, jacks } from "../cables/cables.ts";
@@ -85,6 +88,37 @@ export function bringRig(id: string | null): string {
   const gap = Math.max(STACK_X[0]! - STACK_X[1]!, stackWidth(rig) + 0.1);
   DESERT.items = [...DESERT.items.filter((i) => !/^(dolly|bin|midbass|top)-\d$/.test(i.key)), ...STACK_X.flatMap((_, n) => stackAt(n + 1, STACK_X[0]! - n * gap, STACK_Z, rig))];
   return rig.id;
+}
+
+/** Tonight's amp crossovers, by world: none until you open the amps' DSP, and the racks play their preset. */
+const amps = new WeakMap<World, { bands: readonly ChannelDsp[]; subAheadM: number }>();
+const presetOf = () => rigCrossover(tonight).map((b) => b.dsp);
+/** The amps' DSP as it is set, and how far the sub stands in front of the tops (0 till it's opened). */
+export const ampCrossover = (w: World) => amps.get(w) ?? { bands: presetOf(), subAheadM: 0 };
+/** Open the amps' DSP for the lesson: on the tri-amp stack it is found set wrong, with the sub out in front. Opened
+ *  again, it is as you left it. */
+export function openCrossover(w: World): { ok: true } | { ok: false; why: string } {
+  if (tonight !== LESSON_RIG) return { ok: false, why: "bring the tri-amp stack to set a crossover by hand (?rig=tri-amp)" };
+  if (!amps.has(w)) amps.set(w, { bands: lessonStart(), subAheadM: SUB_AHEAD_M });
+  return { ok: true };
+}
+/** Set the amps' bands (once opened). */
+export function setAmpCrossover(w: World, bands: readonly ChannelDsp[]) {
+  const a = amps.get(w);
+  if (a) amps.set(w, { ...a, bands });
+}
+/** Back to the maker's preset, the sub back in line. */
+export function resetAmpCrossover(w: World) {
+  if (amps.has(w)) amps.set(w, { bands: presetOf(), subAheadM: 0 });
+}
+/** What a crossover left wrong takes off the sound: its worst hole or bump past 1 dB, and 5 for each driver in danger. */
+const CROSSOVER_MOST = 30;
+export function crossoverCost(w: World): number {
+  const a = amps.get(w);
+  if (!a) return 0;
+  const preset = rigCrossover(tonight), c = crossoverCheck(preset.map((b, i) => ({ ...b, dsp: a.bands[i] ?? b.dsp })), presetOf(), a.subAheadM);
+  const off = Math.max(-c.dipDb, c.bumpDb);
+  return Math.min(CROSSOVER_MOST, Math.round(off > 1 ? off : 0) + 5 * c.warnings.length);
 }
 
 /** Where things are: the dance floor in front of the wall and the crew's camp off to the right. */
@@ -221,7 +255,10 @@ export type Score = {
   tripped: boolean;
   /** The plugged joints the dust gets into by sunrise (`owner jack`): each crackles through the night. */
   dusty: string[];
-  /** The sound: 40 for the floor at the target, 30 for the bass, 30 for a quiet camp, less DUST_COST for each dusty joint. */
+  /** What the amps' crossover takes off the sound (0 at its preset). */
+  crossover: number;
+  /** The sound: 40 for the floor at the target, 30 for the bass, 30 for a quiet camp, less DUST_COST for each dusty joint
+   *  and what the crossover costs. */
   sound: number;
   /** The sound times the share of the night it played. */
   score: number;
@@ -234,14 +271,14 @@ export function score(w: World, c: Cables, high: Grid = heat(w, c), low: Grid = 
   const covered = floor.filter((d) => Math.abs(d - TARGET) <= SPREAD).length / floor.length;
   const bass = bassCells.filter((d) => d >= BASS).length / bassCells.length;
   const loudest = Math.max(...camp), quiet = Number.isFinite(loudest) ? clamp(1 - (loudest - CAMP_LIMIT) / 3, 0, 1) : 1;
-  const grit = dusty(w, c);
-  const sound = covered === 0 && bass === 0 ? 0 : Math.max(0, Math.round(40 * covered + 30 * bass + 30 * quiet) - Math.min(DUST_MOST, DUST_COST * grit.length));
+  const grit = dusty(w, c), xo = crossoverCost(w);
+  const sound = covered === 0 && bass === 0 ? 0 : Math.max(0, Math.round(40 * covered + 30 * bass + 30 * quiet) - Math.min(DUST_MOST, DUST_COST * grit.length) - xo);
   const f = fuel(w, c), off = tripped(w, c), hours = off || !f ? 0 : Math.min(NIGHT_HOURS, f.hours), night = hours / NIGHT_HOURS;
   const s = Math.round(sound * night), r1 = (v: number) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
   return {
     covered: Math.round(covered * 100) / 100, bass: Math.round(bass * 100) / 100,
     floor: r1(mean(floor)), bassLow: Math.min(...bassCells) > 0 ? r1(Math.min(...bassCells)) : null, camp: r1(loudest),
-    hours: Math.round(hours * 10) / 10, until: clockAt(hours), sunrise: hours >= NIGHT_HOURS, tripped: off, dusty: grit,
+    hours: Math.round(hours * 10) / 10, until: clockAt(hours), sunrise: hours >= NIGHT_HOURS, tripped: off, dusty: grit, crossover: xo,
     sound, score: s, pass: s >= PASS && hours >= NIGHT_HOURS,
   };
 }

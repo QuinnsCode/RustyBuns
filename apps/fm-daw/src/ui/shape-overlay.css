@@ -3,7 +3,7 @@
 .shape-overlay {
   --bg: #141518; --panel: #1d1f23; --raised: #262930; --edge: #33373f; --ink: #eceef1; --dim: #9aa1ab;
   --hot: #ff4d3d; --ok: #4fd18b; --warn: #ffb000; --cell: #2b2f37;
-  --silk: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --silk: var(--q-thin);
   --body: system-ui, sans-serif;
   --mono: ui-monospace, monospace;
   color-scheme: dark;

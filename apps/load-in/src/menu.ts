@@ -12,6 +12,7 @@ addCommands([
   cmd("#make", "make_party", "Make a party", "Open a party others can join with a code."),
   cmd("#start", "start_party", "Start the party's load-in", "As the host, start the game for the party."),
   cmd("#go", "stack_it", "Just do it", "Build the picked rig's stacks for this floor."),
+  cmd("#crossover", "crossover", "Set the amps' crossover", "The tri-amp stack's response plot and its splits, delays and polarity, as a lesson.", { keys: "K" }),
   cmd("#undo", "undo", "Undo", "Take back the last change to the design."),
   cmd("#v-stack", "view_stack", "Show the stack", "Look at the stack from the front."),
   cmd("#v-stage", "view_stage", "Show the stage", "Look at the floor plan."),

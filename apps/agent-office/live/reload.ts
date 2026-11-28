@@ -12,6 +12,11 @@ import type { ReloadState } from "./replies.ts";
 
 const SCRIPT = /^(rb-(?!chunk-|reload-)[a-z]+)-\w+\.js$/;
 
+/** An --aot binary lists its compiled modules in import.meta.dir but keeps no source to read (#5555); they can't change either. */
+function contentHash(file: string) {
+  try { return Bun.hash(readFileSync(file)).toString(36); } catch { return "unreadable"; }
+}
+
 /** A hash of every file in `dir` whose name starts with `rb-` (or is in `extra`), by name and content; re-read only when its size or mtime moves. */
 export function fingerprint(dir: string, extra: string[] = []) {
   const seen = new Map<string, { key: string; hash: string }>();
@@ -20,7 +25,7 @@ export function fingerprint(dir: string, extra: string[] = []) {
     return files.map((f) => {
       const file = path.join(dir, f), st = statSync(file), key = `${st.size}:${st.mtimeMs}`;
       let c = seen.get(f);
-      if (c?.key !== key) seen.set(f, c = { key, hash: Bun.hash(readFileSync(file)).toString(36) });
+      if (c?.key !== key) seen.set(f, c = { key, hash: contentHash(file) });
       return `${f}:${c.hash}`;
     }).join(",");
   };

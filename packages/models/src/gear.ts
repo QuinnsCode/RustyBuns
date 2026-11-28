@@ -766,7 +766,7 @@ function distro(): Build {
   const [w, h, d] = GEAR_SIZES["distro-box"], b: Build = { pieces: [], marks: [] }, body = h - 0.04;
   b.pieces.push(box("rubber", [w, body, d], [0, body / 2, 0], { bevel: 0.025 }));
   b.pieces.push(...handle("rubber", [0, body, 0], "y", 0.18, 0.035));
-  for (const sx of [-1, 1]) b.pieces.push(box("metal", [0.03, 0.12, 0.012], [sx * w * 0.3, body * 0.72, -d / 2 - 0.006])); // hanging brackets
+  for (const sx of [-1, 1]) b.pieces.push(box("metal", [0.03, 0.12, 0.006], [sx * w * 0.3, body * 0.72, -d / 2 - 0.003])); // hanging brackets
   b.pieces.push(box("panel", [w - 0.05, body * 0.7, 0.008], [0, body * 0.47, d / 2]));
   b.pieces.push(box("mesh", [w * 0.6, 0.04, 0.004], [0, body * 0.84, d / 2 + 0.004])); // the breakers' window
   const rows = [body * 0.62, body * 0.42], cols = [-w * 0.3, 0, w * 0.3];
@@ -782,8 +782,8 @@ function distro(): Build {
   jacks(b, outs.slice(3), "front", [cols[0]! - 0.008, rows[1]!, d / 2 + 0.012], [w * 0.3, 0, 0], 0.012);
   b.pieces.push(disc("knob", 0.03, 0.012, "z", [0, body * 0.2, d / 2 + 0.006], 16)); // the L6-30's collar
   jacks(b, ["power-out-7"], "front", [0, body * 0.2, d / 2 + 0.013], [0, 0, 0], 0.02);
-  b.pieces.push(disc("knob", 0.04, 0.03, "x", [-w / 2 - 0.012, body * 0.5, 0], 16)); // the 50 A inlet's housing
-  jacks(b, ["power-in"], "left", [-w / 2 - 0.028, body * 0.5, 0], [0, 0, 0], 0.024);
+  b.pieces.push(disc("knob", 0.04, 0.03, "x", [-w / 2 - 0.006, body * 0.5, 0], 16)); // the 50 A inlet's housing
+  jacks(b, ["power-in"], "left", [-w / 2 - 0.022, body * 0.5, 0], [0, 0, 0], 0.024);
   mark(b, "grab", [0, h, 0]);
   return b;
 }
@@ -2539,15 +2539,16 @@ function hornShell(rim: number, lip: number, rt: number, len: number, k: number,
  * frame, each driver in a round can behind its horn, gloss teal (a custom colour; Void's own are red, black and white).
  * Seen from the front, right-handed: the 12" LF horn on the left, the 8" MF on the right, the 1.5" HF above, between
  * them. `hand` -1 is the left-handed one (Air-Motion-Line-Drawing-LH), the same box mirrored left to right with the
- * same connector plate. Measured off the front and side views (about 10 mm):
+ * same connector plate. Measured off the front and side views (about 10 mm), the frame off all six views:
  * - lf horn: rim 537 across, lip 485, throat 220, centre 268 from the left and 269 up; it runs back to its can, 380
  *   across and 246 deep, whose back is the box's back
  * - mf horn: rim 299, lip 257, throat 134, centre 703 from the left and 269 up, 229 long; can 282 across, 190 deep
  * - hf horn: rim 262, a bell to a 38 mm throat, centre 583 from the left and 541 up, 109 long; can 181 across, 120 deep
  * - plug: the cone in the MF horn's throat
- * - frame: the powder-coated steel post between the cans, an arm to each can, a foot plate under it (the stand fixing)
- * - jacks: the two NL4s; the real box has them under the HF can, where no plug reaches from outside the box, so the
- *   model has them under the frame's foot
+ * - frame: powder-coated 40 mm square tube at the LF and MF centres' height: a spine front to back, an arm to a lug
+ *   on each of those horns, a riser from the spine's front up and forward to the HF horn, and a clamp block with the
+ *   fixing hole. Nothing reaches the floor: the box stands on its horns' rims
+ * - jacks: the two NL4s under the MF can (the real ones sit round toward the LF side of it; these are dead under it)
  * - cables: the armoured hoses from the HF unit to the LF and MF cans
  * - badge: the plain oval on the HF horn, where the real one carries the maker's name
  */
@@ -2571,16 +2572,24 @@ function airMotionPieces(hand: 1 | -1): Record<string, Build> {
   // the MF horn's phase plug, a cone standing out of its throat
   const [, mx, my, , , , mlen] = H[1];
   plug.pieces.push(loft("shell", [R(0, 0.05), R(0.04, 0.032), R(0.09, 0)], { seg: 16, smooth: true, m: along("z", [mx, my, plane - mlen]) }));
-  // the frame: a post between the cans, arms to each, the foot plate the stand fixes to
-  const px = X(510), pz = -0.1, foot = 0.0125;
-  frame.pieces.push(box("knob", [0.04, 0.5 - foot, 0.04], [px, (0.5 + foot) / 2, pz], { bevel: 0.003 }));
-  frame.pieces.push(box("knob", [0.16, 0.008, 0.16], [px, foot + 0.004, pz], { bevel: 0.002 }));
-  const arms: [THREE.Vector3Tuple, THREE.Vector3Tuple][] = [[[px, 0.3, pz], [hand * 0.03, 0.3, -0.14]], [[px, 0.27, pz], [hand * 0.165, 0.27, -0.02]], [[px, 0.49, pz], [X(583), 0.465, 0.15]]];
-  for (const [a, b] of arms)
-    frame.pieces.push(rod("knob", a, b, 0.012));
-  mark(frame, "grab", [px, 0.51, pz]);
-  mark(frame, "pole-cup", [px, foot, pz], [0, -1, 0]);
-  socketPanel(jack, "sculpted-3way", "bottom", [px, foot, pz], [0.12, 0.08]);
+  // the frame, in mm as the drawing has it: `l` and `r` from the left, `y0` and `y1` up, `a` and `b` behind the front
+  const Z = (behind: number) => f - mm(behind);
+  const bar = (to: Build, slot: "knob" | "shell", [l, r]: [number, number], [y0, y1]: [number, number], [a, b]: [number, number]) =>
+    to.pieces.push(box(slot, [mm(r - l), mm(y1 - y0), mm(b - a)], [X((l + r) / 2), mm((y0 + y1) / 2), Z((a + b) / 2)], { bevel: 0.003 }));
+  bar(frame, "knob", [482, 522], [249, 289], [155, 388]); // the spine, front to back
+  bar(frame, "knob", [427, 522], [249, 289], [348, 388]); // the arm to the LF horn
+  bar(frame, "knob", [482, 597], [249, 289], [155, 196]); // the arm to the MF horn
+  bar(frame, "knob", [482, 522], [249, 467], [155, 196]); // the riser
+  bar(frame, "knob", [482, 522], [427, 467], [123, 196]); // forward to the HF horn
+  bar(frame, "knob", [480, 606], [427, 455], [111, 123]); // the HF horn's plate
+  bar(frame, "knob", [421, 427], [226, 312], [325, 411]); // the LF and MF arms' bolt plates
+  bar(frame, "knob", [597, 603], [226, 312], [133, 218]);
+  bar(frame, "knob", [477, 530], [249, 334], [277, 318]); // the clamp block round the spine, the fixing hole in it
+  bar(lf, "shell", [376, 421], [224, 314], [325, 412]); // the lugs moulded on the two horns, where the plates bolt
+  bar(mf, "shell", [603, 640], [224, 314], [130, 220]);
+  mark(frame, "grab", [X(502), mm(467), Z(175)]);
+  mark(frame, "pole-cup", [X(503), mm(249), Z(297)], [0, -1, 0]);
+  socketPanel(jack, "sculpted-3way", "bottom", [X(703), mm(149), Z(327)], [0.12, 0.08]);
   // the hoses from the HF unit to the two cans, each in two runs
   const hoses: THREE.Vector3Tuple[][] = [[[X(583), 0.465, 0.13], [hand * 0.06, 0.45, -0.02], [hand * -0.08, 0.44, -0.16]], [[X(583) + hand * 0.02, 0.465, 0.12], [hand * 0.22, 0.43, 0.06], [hand * 0.24, 0.4, 0.03]]];
   for (const run of hoses)
@@ -2609,10 +2618,12 @@ function onSkids(pieces: Record<string, Build>, skid: number, w: number, d: numb
  * its 7.5 mm skids, which the model keeps inside the 696, so a box stacks on it there): three 21" in a hybrid horn bandpass, 18 mm birch
  * in a black textured coat, red aluminium braces. Measured off the front, side, rear and plan views (about 10 mm):
  * - cabinet: the shell open at the front, and the two dividers 168 in from each end
- * - horn walls: the main mouth, 1107 between the dividers, its two walls running back from the dividers to the grille
- *   (the fold behind them is not drawn, so it is not built)
- * - grille: 443 wide, centred, 550 back, the chamber dark behind it
- * - braces: two uprights with stepped edges at the grille's edges, a cross bar 748 long at half height between the walls
+ * - horn walls: the main mouth, 1107 between the dividers, its two walls slanting back at about 45 degrees from the
+ *   dividers to the grille, not flat panels facing front (#6161): in the drawing's isometric view the wall meets the
+ *   floor along a level line, where a flat panel's edge would drop at 30 degrees (the fold behind is not drawn or built)
+ * - grille: 443 wide, centred, 345 back, the chamber dark behind it
+ * - braces: two uprights with stepped edges and a window above and below, 25 to 285 back, at the grille's edges; a
+ *   cross bar at half height, 200 back, from wall to wall, its flanges lying along the walls
  * - slots: the two end slots, 150 wide, full height and depth, with two red brackets each, 234 and 456 down
  * - handles: two recessed in each side (582 and 1081 back from the front), two in the back (302 either side of centre)
  * - jacks: the two 8-pin sockets on a plate between the back handles
@@ -2626,7 +2637,7 @@ function incubusPieces(): Record<string, Build> {
   const xd = w / 2 - mm(177); // the dividers' middles
   for (const s of [-1, 1]) cab.pieces.push(box("coat", [t, ih, d - t], [s * xd, cy, t / 2]));
   // the horn walls: from each divider at the front back to the grille's edge
-  const zg = f - mm(550), xg = mm(221.5);
+  const zg = f - mm(345), xg = mm(221.5);
   for (const s of [-1, 1]) {
     const a = [s * (xd - t / 2), f - 0.004], b = [s * xg, zg], dx = b[0]! - a[0]!, dz = b[1]! - a[1]!, l = Math.hypot(dx, dz);
     const n = [(s * -dz * t) / l, (s * dx * t) / l]; // the wall's thickness, away from the mouth
@@ -2634,17 +2645,20 @@ function incubusPieces(): Record<string, Build> {
   }
   grille.pieces.push(...grilleSlab(2 * xg, ih - 0.004, 0.012, cy, zg - 0.012, 0.004));
   grille.pieces.push(box("cavity", [2 * xg, ih, 0.004], [0, cy, zg - 0.2]));
-  // the braces: the cross bar at half height where it meets the walls, flanged to them; the stepped uprights
-  const zb = f - mm(298), xb = mm(374), ang = Math.atan2(xd - t / 2 - xg, mm(546));
+  // the braces: the cross bar at half height, its flanges flat on the walls; the stepped uprights, short of the grille
+  const wallZ = (x: number) => f - 0.004 - ((xd - t / 2 - x) / (xd - t / 2 - xg)) * (f - 0.004 - zg); // a wall's depth at |x|
+  const zb = f - mm(200), xb = xg + ((zb - zg) / (f - 0.004 - zg)) * (xd - t / 2 - xg);
   braces.pieces.push(box("body", [2 * xb, 0.03, 0.012], [0, cy, zb], { bevel: 0.002 }));
-  for (const s of [-1, 1]) braces.pieces.push(box("body", [0.01, 0.09, 0.07], [s * xb, cy, zb], { bevel: 0.002, rot: [0, s * ang, 0] }));
   for (const s of [-1, 1]) {
+    const on = [mm(382), mm(235)].map((x) => [s * x, wallZ(x)]); // the flange's ends on the wall, then 6 proud of it
+    braces.pieces.push(slab("body", [...on, ...[...on].reverse().map(([x, z]) => [x! - s * 0.006, z! + 0.006])], cy - 0.021, cy + 0.021));
     const steps = 8, edge = Array.from({ length: steps + 1 }, (_, k) => [mm(30) * (k % 2), t + (ih * k) / steps]);
-    const outline = [...edge, ...[...edge].reverse().map(([u, y]) => [u! + mm(60), y!])];
-    const up = frontPlate("body", outline, [], 0.004, 0.008);
-    up.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(s * mm(144), 0, zb - mm(45)).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)));
+    const outline = [...edge, ...[...edge].reverse().map(([u, y]) => [u! + mm(230), y!])];
+    const windows = [-1, 1].map((k) => rect(mm(130), cy + k * ih * 0.24, mm(140), ih * 0.3));
+    const up = frontPlate("body", outline, windows, 0.004, 0.008);
+    up.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(s * mm(144), 0, f - mm(285)).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)));
     braces.pieces.push(up);
-    for (const y of [t + 0.003, h - t - 0.003]) braces.pieces.push(box("body", [0.05, 0.006, 0.1], [s * mm(144), y, zb], { bevel: 0.001 }));
+    for (const y of [t + 0.003, h - t - 0.003]) braces.pieces.push(box("body", [0.05, 0.006, mm(260)], [s * mm(144), y, f - mm(155)], { bevel: 0.001 }));
   }
   // the end slots: dark at the back, two red brackets across each
   for (const s of [-1, 1]) {

@@ -1,15 +1,16 @@
 import { HtmlLocator, HtmlScene } from "@effect/ui/html/testing";
 import { Locator, Story } from "@effect/ui/testing";
 import { describe, expect, test } from "bun:test";
+import { Component } from "@effect/ui";
 import { Effect } from "effect";
 import { BUILD_TOOLS, decode, decodeReadFile, inputSchema, type Request, TOOLS } from "../src/tools.ts";
 import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
 import { worldDoc, WORLD_CSP } from "../src/world.ts";
-import { step, termLines, connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { step, termLines, connectLines, CopyText, CreateWorld, FocusNext, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 import { READY } from "../src/worlds.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
-const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false, who: null, made: false };
+const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false, who: null, made: false, back: false };
 const run = <A>(e: Effect.Effect<A, never, import("effect").Scope.Scope>) => Effect.runPromise(Effect.scoped(e));
 const write = (path: string, text: string) => ({ call: { call: 1, tool: "page_write_file", request: { _tag: "WriteFile" as const, path, text } } });
 
@@ -168,6 +169,20 @@ test("the step strip follows the agent: read, status, write, and a clean load is
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
   })));
 
+test("the console is one thread: connect (the levels offered once), then say what you want, then the achievement and the galaxy", () =>
+  run(Effect.gen(function* () {
+    const card = (name: string) => HtmlLocator.role("region", { name });
+    const peek = Locator.text("Want to see what is possible first?");
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, who: "Ada" });
+    s.expect(card("Connect your agent")).toExist().expect(peek).toExist()
+      .subscription("seen", PageMessage.Saw({ what: "read" }))
+      .expect(card("Connect your agent")).toBeAbsent().expect(peek).toBeAbsent()
+      .expect(card("Tell your agent what you want")).toExist();
+    const made = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, who: "Ada", made: true });
+    made.expect(card("Achievement")).toExist().expect(Locator.text("Achievement unlocked: World builder", { exact: false })).toExist()
+      .expect(HtmlLocator.role("button", { name: "Agent Galaxy" })).toExist();
+  })));
+
 test("the console ends on what to do in your agent, and says nothing while the agent is writing", () => {
   const none = { here: false, asked: false, wrote: false, clean: true, up: false };
   const last = (s: Partial<typeof none>) => termLines("r", true, { ...none, ...s }, []).at(-1);
@@ -252,4 +267,19 @@ test("a fresh room lands on the landing, and the AI's first write brings up the 
     story.send(PageMessage.ReceivedAgentCall(write("world.js", "// mine")));
     expect(story.model.landing).toBe(false);
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
+  })));
+
+test("back from signing in, the focus is sent on at each step: as you arrive, past the land picker, to the open galaxy", () =>
+  run(Effect.gen(function* () {
+    const s = yield* Story.make(ProfilePageNoDeps, { ...props, who: "Ada", back: true });
+    const sent = (step: "first" | "copy" | "galaxy") => { s.expectExact(FocusNext); expect(s.pending.at(-1)!.command.args).toEqual({ step }); s.resolve(FocusNext, Component.noop); };
+    sent("first");
+    s.send(PageMessage.ClickedLand({ name: "" }));
+    sent("copy");
+    s.send(PageMessage.MadeWorld({ made: true }));
+    sent("galaxy");
+    // Not back from signing in: the page leaves the focus alone.
+    const other = yield* Story.make(ProfilePageNoDeps, { ...props, who: "Ada" });
+    other.send(PageMessage.ClickedLand({ name: "" }));
+    expect(other.pending).toHaveLength(0);
   })));

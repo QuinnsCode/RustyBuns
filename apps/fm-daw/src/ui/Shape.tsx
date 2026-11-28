@@ -246,7 +246,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
         ctx.beginPath(); ctx.arc(x, y, i === s ? 9 : 7.5, 0, Math.PI * 2);
         ctx.fillStyle = b.on ? col : "transparent"; ctx.fill();
         ctx.lineWidth = i === s ? 2.5 : 1.5; ctx.strokeStyle = b.on ? ink : col; ctx.stroke();
-        ctx.fillStyle = b.on ? "#111" : col; ctx.font = "700 10px 'Barlow Condensed', sans-serif";
+        ctx.fillStyle = b.on ? "#111" : col; ctx.font = "700 10px 'Exo 2', sans-serif";
         ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(i + 1), x, y + 0.5);
         ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
       });

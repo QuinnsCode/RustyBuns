@@ -49,12 +49,15 @@
       "name": "agentworld",
       "version": "0.0.1",
       "dependencies": {
-        "@effect/ui": "https://pkg.pr.new/Effect-TS/ui/@effect/ui@a0d7578",
+        "@effect/ui": "https://pkg.pr.new/Effect-TS/ui/@effect/ui@f4cddd0",
         "@rustybuns/util": "^0.1.12",
         "effect": "4.1.4",
         "three": "^0.180.0",
       },
       "devDependencies": {
+        "@effect/platform-node": "4.1.4",
+        "@effect/ui-devtools": "https://pkg.pr.new/Effect-TS/ui/@effect/ui-devtools@f4cddd0",
+        "@effect/ui-kit": "https://pkg.pr.new/Effect-TS/ui/@effect/ui-kit@f4cddd0",
         "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
       },
@@ -362,9 +365,7 @@
       "name": "fm-daw",
       "version": "0.0.1",
       "dependencies": {
-        "@fontsource/barlow-condensed": "^5.3.0",
         "@fontsource/ibm-plex-mono": "^5.3.0",
-        "@fontsource/ibm-plex-sans": "^5.3.0",
         "@rustybuns/cli": "^0.1.12",
         "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/gear": "^0.1.12",
@@ -1916,7 +1917,11 @@
 
     "@effect/sql-d1": ["@effect/sql-d1@4.1.4", "", { "dependencies": { "@cloudflare/workers-types": "^5.20261107.1" }, "peerDependencies": { "effect": "^4.1.4" } }, "sha512-x7UtDPNCgcAz6lvGbrf0INHxztV0qV8i4qleqPb31ADeilz7MnGYJ5Qhprqod+ySBUNPdsvXNRE9vm36TznIdg=="],
 
-    "@effect/ui": ["@effect/ui@https://pkg.pr.new/Effect-TS/ui/@effect/ui@a0d7578", { "peerDependencies": { "effect": "^4.1.4" } }, "sha512-t5MlRULBOIy3v20WTd20LHw4qlRtUO5ZLZ+EZ4xPgtzF67/KWnx606OfRFOpYnaYltQlTa9gYt00Cwg0hN6BNQ=="],
+    "@effect/ui": ["@effect/ui@https://pkg.pr.new/Effect-TS/ui/@effect/ui@f4cddd0", { "peerDependencies": { "effect": "^4.1.4" } }, "sha512-559sd/05+CaAbv1QxDUfPlcUKOaW6xD3X2zZRIuAUkXR+aUDBlZOZzrtl8YjlJDUwQSqjg5sLhk5U3+m1iC6jA=="],
+
+    "@effect/ui-devtools": ["@effect/ui-devtools@https://pkg.pr.new/Effect-TS/ui/@effect/ui-devtools@f4cddd0", { "peerDependencies": { "@effect/platform-node": "^4.1.4", "@effect/ui": "^0.0.0", "@effect/ui-kit": "^0.0.0", "effect": "^4.1.4" }, "optionalPeers": ["@effect/platform-node"], "bin": { "effect-ui-devtools": "./dist/node/internal/bin.js" } }, "sha512-bitCuNfyAajAVPfHifl59V3Y2dwUgA4bb+5VkdrSsK7hdd+3QtecZ9ACuYZS307h7XtAgf+ijxzpGgqtJErxtw=="],
+
+    "@effect/ui-kit": ["@effect/ui-kit@https://pkg.pr.new/Effect-TS/ui/@effect/ui-kit@f4cddd0", { "peerDependencies": { "@effect/ui": "^0.0.0", "effect": "^4.1.6" } }, "sha512-96vfRHVROVoC6GxZT9SYoGHM2vkQ+mdwIqJWuVCo6haVYqef9zlh+U4skCJFNgsgWhUeIuOpao56mTUSZ7jUEw=="],
 
     "@electric-sql/pglite": ["@electric-sql/pglite@0.5.8", "", {}, "sha512-n9tsbUOhwx2epK1V0ZG9Ar4SHWUju04dhmzZXiSBXwBoleOvIfals33NAaWgagQVAL4Rbvx/Ptsu3P+pA09f6Q=="],
 

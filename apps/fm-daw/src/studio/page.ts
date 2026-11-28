@@ -10,12 +10,11 @@
 // a scene (the builder edits the one on stage, each scene with its own undo), saves versions that stay, and puts one
 // party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z), delay(x, z),
 // download("list" | "plan"), undo(), redo(), event(walk?), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";
-import { boothMiddle, builtLink, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, STUDIO_PREMADES, type Surface, venueSrc, yours, YOURS } from "./builder.ts";
+import { boothMiddle, builtLink, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, type Surface, venueSrc, yours, YOURS } from "./builder.ts";
 import { BuildView, type Hit, type WallsMode } from "./build-view.ts";
 import { footprint, gearPlace } from "./gear-wall.ts";
 import type { Side, SpotKind, StudioDef } from "./room.ts";
@@ -23,7 +22,7 @@ import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
+import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, PREMADES, rowsSize, speedOfSound, stackRows, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
 import { arrivals, paBoxes, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
 import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, linkEvent, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
@@ -193,8 +192,9 @@ function render() {
   }
   // the rig's stacks, each its footprint turned its way, and a line out along where its tops aim
   if (roomPa(room)) {
-    const rig = roomRig(room), sw = stackWidth(rig), sd = Math.max(...rig.stack.map((b) => sheet(b).size.d));
+    const rig = roomRig(room);
     rigStacks(room).forEach((st, i) => {
+      const { w: sw, d: sd } = rowsSize(stackRows(rig, st));
       const g = el("g", { "data-stack": i }), turned = el("g", { transform: `rotate(${(-st.yaw * 180) / Math.PI} ${st.at[0]} ${st.at[1]})` });
       turned.append(el("rect", { class: `stack${i === stackPicked ? " on" : ""}`, x: st.at[0] - sw / 2, y: st.at[1] - sd / 2, width: sw, height: sd, "stroke-width": 0.06 * scale }));
       g.append(turned);
@@ -596,10 +596,10 @@ function renderPa() {
   if (!map) { host.innerHTML = ""; return; }
   const rp = rigPlan(room), power = rp ? powerPlan(rp) : null, stacks = roomPa(room)?.stacks ?? [];
   if (stackPicked !== null && !stacks[stackPicked]) stackPicked = null;
-  const st = stackPicked !== null ? stacks[stackPicked] : undefined, line = roomRig(room).stack.filter((b) => b.startsWith("line-array")).length;
+  const st = stackPicked !== null ? stacks[stackPicked] : undefined, line = stackRows(roomRig(room), st).filter((r) => r.box.startsWith("line-array")).length;
   const pins = st?.pins ?? [0.14, 0.07, 0.02];
   host.innerHTML = `<h2>PA</h2>
-    <div class="row"><label>Stack<select id="premade" aria-label="Start from a premade stack"><option value="">Start from…</option>${STUDIO_PREMADES.map((p) => `<option value="${p.id}" title="${esc(p.about)}">${esc(p.name)}</option>`).join("")}</select></label></div>
+    <div class="row"><label>Stack<select id="premade" aria-label="Start from a premade stack"><option value="">Start from…</option>${PREMADES.map((p) => `<option value="${p.id}" title="${esc(p.about)}">${esc(p.name)}</option>`).join("")}</select></label></div>
     <div class="big">${map.stats.mean.toFixed(0)} dB <small>over the floor, ${map.stats.even.toFixed(1)} dB from its quiet tenth to its loud</small></div>
     <p class="hint">Quietest ${map.stats.min.toFixed(0)} dB, loudest ${map.stats.max.toFixed(0)} dB at ear height, mids and highs. ${showMap ? "The map is against the ring on the floor: gold louder, orange within 3 dB, teal 9 down, blue past 15." : "Coverage (the waves over the view) draws it on the floor."}</p>
     ${rp ? `${st ? `<h2>Stack ${stackPicked! + 1}</h2>

@@ -23,7 +23,7 @@ import { READY } from "./worlds.ts";
 import cityShot from "./levels/city.jpg";
 import fishShot from "./levels/fish.jpg";
 import spaceShot from "./levels/space.jpg";
-import { galaxyAsks, preloadGalaxy } from "./galaxyView.ts";
+import { galaxyAsks, preloadGalaxy, ShowGalaxy } from "./galaxyView.ts";
 import { galaxyLock, lockLine, SIGN_IN_FIRST } from "./lock.ts";
 
 export const PageMessage = UiSchema.TaggedEnum({
@@ -69,10 +69,25 @@ export const MarkMade = Command.make("agentworld/MarkMade", { args: { room: Sche
   Effect.promise(() => fetch(`/api/r/${room}/made`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(page) }).then((r) => r.ok, () => false))
     .pipe(Effect.map((made) => {
       if (made) galaxyLock.why = lockLine(signedIn, true);
+      if (made) void import("./account.ts").then((a) => a.worldBuilder());
       // Open now: claim the plot and build the galaxy hidden, a moment later, when the browser is idle.
       if (made && signedIn) setTimeout(() => void preloadGalaxy(), 600);
       return PageMessage.MadeWorld({ made });
     })));
+
+/** Back from signing in (main.ts), the next step takes the focus: "first" as you arrive (Pick your land when it is up,
+ *  else Copy prompt, so one press copies), "copy" once your land is picked, "galaxy" once your world is made. A Command
+ *  starts after its update has rendered, so the button is there. Only "first" moves the focus off something in use. */
+export const FocusNext = Command.make("agentworld/FocusNext", { args: { step: Schema.Literals(["first", "copy", "galaxy"]) } }, ({ step }) =>
+  Effect.sync(() => {
+    const find = (selector: string) => document.querySelector<HTMLButtonElement>(selector);
+    const at = document.activeElement, idle = !at || at === document.body, copy = find(".dock button.big");
+    const to = step === "first" ? find(".pick [data-land]") ?? copy
+      : step === "copy" ? idle && copy
+      // On to the Galaxy tile only from Copy, or from nothing: never away from something else you were using.
+      : (idle || at === copy) && find("[data-galaxy-tile].next");
+    if (to) to.focus({ preventScroll: true });
+  }).pipe(Effect.as(Component.noop)));
 
 /** Record the world as a GIF (pictures.ts); how it goes comes back as ChangedGif. */
 export const ExportGif = Command.make("agentworld/ExportGif", { args: { room: Schema.String } }, ({ room }) =>
@@ -131,11 +146,21 @@ const Model = Schema.Struct({
   galaxy: Schema.Boolean,
   /** The world is made (its AI's write loaded clean and the server keeps it): with a sign-in, the galaxy opens. */
   made: Schema.Boolean,
+  /** MarkMade is out: a frame that loads again meanwhile doesn't send another. */
+  marking: Schema.Boolean,
 });
 type Model = typeof Model.Type;
 
-/** `who`: the eqosys name this browser is signed in as (account.ts), or null. `made`: the server says this room's world is. */
-const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean, who: Schema.NullOr(Schema.String), made: Schema.Boolean });
+const holds = (page: Page, files: Page["files"]) =>
+  Object.keys(page.files).length === Object.keys(files).length && Object.entries(files).every(([path, text]) => page.files[path] === text);
+/** A world the page hands out (the starter desert, a ready-made one, a land): a person's click put it up, not their AI. */
+const handedOut = (page: Page) => [starter, ...READY, ...LANDS].some((w) => holds(page, w.files));
+/** Pick your land is up: a signed-in person whose world is still the untouched starter. */
+const choosing = (who: string | null, m: Pick<Model, "page" | "picked" | "made">) => who !== null && !m.picked && !m.made && holds(m.page, starter.files);
+
+/** `who`: the eqosys name this browser is signed in as (account.ts), or null. `made`: the server says this room's world is.
+ *  `back`: the person just came back from signing in, so the next step takes the focus (FocusNext). */
+const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean, who: Schema.NullOr(Schema.String), made: Schema.Boolean, back: Schema.Boolean });
 
 const Def = Html.component({ name: "ProfilePage", props: Props, model: Model, message: PageMessage });
 
@@ -321,6 +346,9 @@ const STRIP: readonly (readonly [Icon, string])[] = [
   ["hourglass", "Waiting for your AI"], ["bot", "Your AI is here"], ["ask", "Asking you about your world"], ["code", "Writing the code"], ["globe", "Your world is up"],
 ];
 const stepOf = (s: Model["steps"]) => (s.up ? 4 : s.wrote ? 3 : s.asked ? 2 : s.here ? 1 : 0);
+/** The console's one thing to do now: connect your agent, then say what you want, then (your world made) the galaxy. */
+export const stageOf = (s: Model["steps"], made: boolean): "connect" | "ask" | "made" => (s.up || made ? "made" : s.here ? "ask" : "connect");
+const EXAMPLE_ASK = "make me a rainy city with neon signs and a river";
 /** What happens next, under the strip, in a few words: picking your land while the picker is up, then one per step,
  *  and the galaxy's once the world is up. */
 export const nextLine = (steps: Model["steps"], locked: string | null, choose = false): string => choose ? "Next: pick your land" : [
@@ -410,8 +438,11 @@ const landingView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: s
   explain && deepView(h), explain && footView(h)));
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, draft: "", waiting: "", copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,
-    explain: false, noSignIn: false, picked: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
+  init: ($) => {
+    const model = { page: $.props.initial, past: [], log: [], online: false, draft: "", waiting: "", copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,
+      marking: false, explain: false, noSignIn: false, picked: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null };
+    return $.props.back ? $.set(model).run(FocusNext.make({ step: lockLine($.props.who !== null, model.made) === null ? "galaxy" : "first" })) : model;
+  },
   update: ($, message) => {
     switch (message._tag) {
       case "ChangedRelay": return $.evolve({ online: message.online });
@@ -428,7 +459,7 @@ export const ProfilePageNoDeps = Def.make({
       case "ClickedExplain": return $.evolve({ explain: !$.model.explain });
       case "ClickedCreate": return $.run(CreateWorld.make({ room: $.props.room }));
       case "ClickedLand": {
-        if (message.name === "") return $.evolve({ picked: true });
+        if (message.name === "") return $.props.back && choosing($.props.who, $.model) ? $.evolve({ picked: true }).run(FocusNext.make({ step: "copy" })) : $.evolve({ picked: true });
         break;
       }
       case "CreatedWorld": return message.went === "here" ? $.evolve({ landing: false }) : $.evolve({ noSignIn: message.went === "off" });
@@ -441,8 +472,9 @@ export const ProfilePageNoDeps = Def.make({
           case "error": return $.evolve({ steps: { ...s, clean: false, up: false } });
           case "loaded": {
             const steps = { ...s, up: s.wrote && s.clean };
-            return steps.up && !$.model.made
-              ? $.set({ ...$.model, steps }).run(MarkMade.make({ room: $.props.room, page: $.model.page, signedIn: $.props.who !== null }))
+            // Once at a time, and only for the AI's work: after Start over or Undo what loads may be the page's own.
+            return steps.up && !$.model.made && !$.model.marking && !handedOut($.model.page)
+              ? $.set({ ...$.model, steps, marking: true }).run(MarkMade.make({ room: $.props.room, page: $.model.page, signedIn: $.props.who !== null }))
               : $.evolve({ steps });
           }
         }
@@ -457,7 +489,10 @@ export const ProfilePageNoDeps = Def.make({
         if (why === SIGN_IN_FIRST) return $.run(CreateWorld.make({ room: $.props.room }));
         return why ? $.model : $.evolve({ galaxy: true, landing: false });
       }
-      case "MadeWorld": return $.evolve({ made: message.made });
+      case "MadeWorld": {
+        const done = $.evolve({ made: message.made, marking: false });
+        return message.made && $.props.back && $.props.who !== null ? done.run(FocusNext.make({ step: "galaxy" })) : done;
+      }
       case "ClickedBack": return $.evolve({ galaxy: false });
     }
     const a = asked(message);
@@ -469,8 +504,10 @@ export const ProfilePageNoDeps = Def.make({
     // An agent's call says it is here; its page_status that it is asking; its first write or edit that lands that it is writing.
     const s = model.steps;
     const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || (["WriteFile", "EditFile", "Build", "EditWorld"].includes(r._tag) && error === null) } : s;
-    return $.set({ ...model, landing, steps, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
+    const next = $.set({ ...model, landing, steps, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
       .run(ReportPage.make({ call, error, page: model.page }));
+    // The land picker was up and this change took it down: Copy prompt is next.
+    return $.props.back && choosing($.props.who, $.model) && !choosing($.props.who, model) ? next.run(FocusNext.make({ step: "copy" })) : next;
   },
   subscriptions: () => [
     Subscription.make("agent", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).calls; })).pipe(
@@ -490,8 +527,9 @@ export const ProfilePageNoDeps = Def.make({
   view: (h, { page, past, log, online, draft, waiting, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status, made, picked }) => {
     const { room, origin, who } = h.props;
     const locked = lockLine(who !== null, made);
-    // The map is drawn by galaxyView.ts in its own layer over the page; here only the way back.
-    if (galaxy) return h.div.class("galaxy-mode").attr("data-galaxy", "on").children(
+    // The map is drawn by galaxyView.ts in its own layer over the page, up for as long as this element is (its mount);
+    // here only the way back.
+    if (galaxy) return h.div.class("galaxy-mode").key("galaxy").attr("data-galaxy", "on").onMount(ShowGalaxy({ room })).children(
       h.button.attr("type", "button").class("galaxy-back").on("click", PageMessage.ClickedBack()).children(icon(h, "back"), "Back to my world"));
     if (landing) return landingView(h, explain, noSignIn, who);
     const on = READY.find((w) => Object.entries(w.files).every(([path, text]) => page.files[path] === text));
@@ -501,7 +539,22 @@ export const ProfilePageNoDeps = Def.make({
       .find((c) => copied === `failed: ${c.what}`)?.text;
     const doc = worldDoc(page);
     // A signed-in person whose world is still the untouched starter: one tap says what it starts as.
-    const choose = who !== null && !picked && !made && Object.keys(page.files).length === Object.keys(starter.files).length && Object.entries(starter.files).every(([path, text]) => page.files[path] === text);
+    const choose = choosing(who, { page, picked, made });
+    const stage = stageOf(steps, made);
+    const copyPrompt = (quiet: boolean) => h.button.attr("type", "button").class("big", quiet && "quiet").on("click", PageMessage.ClickedCopy({ what: "prompt", text: promptText }))
+      .attr("title", "Paste it into Claude Code, Codex, opencode or T3 Code")
+      .children(icon(h, copied === "prompt" ? "check" : "copy"), copied === "prompt" ? "Copied" : "Copy prompt");
+    const chips = h.div.class("chips").attrs({ role: "group", "aria-label": "Or add it as an MCP server" }).children(
+      ...lines.map(([c, short]) => h.button.attr("type", "button").key(c.what).attrs({ "aria-label": `${copied === c.what ? "Copied" : "Copy"} the ${c.what} line`, title: c.text })
+        .on("click", PageMessage.ClickedCopy({ what: c.what, text: c.text })).children(icon(h, copied === c.what ? "check" : "plug"), short)));
+    // Only when the clipboard says no is there a line to read: the one to select by hand.
+    const byHand = failed !== undefined && h.p.class("by-hand").attr("role", "alert").children("Select and copy:", h.code(failed));
+    const askButton = (ask: string) => h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
+      .on("click", PageMessage.ClickedCopy({ what: "ask", text: ask }))
+      .children(icon(h, "chat"), h.span(h.b("Tell your agent: "), ask), icon(h, copied === "ask" ? "check" : "copy"));
+    const galaxyTile = (extra?: string) => h.button.attr("type", "button").class("tile", extra, locked ? "locked" : "next").attrs({ "data-galaxy-tile": "", "aria-label": locked ? `Agent Galaxy: ${locked}` : "Agent Galaxy", title: locked ?? "Walk the galaxy: your land next to everyone's" }).attr("aria-disabled", locked ? "true" : undefined)
+      .on("click", PageMessage.ClickedGalaxy()).children(icon(h, locked ? "lock" : "globe"), "Walk galaxy");
+    const lockView = h.p.class("lock-line").attr("data-galaxy-lock", locked ?? "").children(icon(h, "lock"), locked ?? "");
     return h.div.class("shell", full && "full").children(
       // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
       page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
@@ -530,25 +583,36 @@ export const ProfilePageNoDeps = Def.make({
               h.span.class("live", online && "on").children(!online ? "Connecting" : steps.here ? "Connected: your agent is here" : "Ready for your agent"),
               h.span.class("secret").attr("title", "Anyone with this page's link can change your world").children(icon(h, "key"), "Link is secret"),
             ),
-            h.div.class("see").children(
-              h.h3("Want to see what is possible in the world?"),
-              h.h4("Choose a level to see"),
-              h.p.class("warn").children(icon(h, "info"), "A level replaces your world. Undo brings it back until you reload."),
-              levelCards(h, on?.name),
-              on && h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
-                .on("click", PageMessage.ClickedCopy({ what: "ask", text: on.ask }))
-                .children(icon(h, "chat"), h.span(h.b("Now tell your agent: "), on.ask), icon(h, copied === "ask" ? "check" : "copy")),
-            ),
-            h.h3.class("or").children("Or start telling your agent what to do"),
+            // The flow first: copy, paste, watch.
             stepsView(h, copied !== null && copied !== "ask" && !copied.startsWith("failed"), steps.here, steps.up, log.find((l) => l.call > 0)),
-            h.button.attr("type", "button").class("big", (steps.here || made || choose) && "quiet").on("click", PageMessage.ClickedCopy({ what: "prompt", text: promptText }))
-              .attr("title", "Paste it into Claude Code, Codex, opencode or T3 Code")
-              .children(icon(h, copied === "prompt" ? "check" : "copy"), copied === "prompt" ? "Copied" : "Copy prompt"),
-            h.div.class("chips").attrs({ role: "group", "aria-label": "Or add it as an MCP server" }).children(
-              ...lines.map(([c, short]) => h.button.attr("type", "button").key(c.what).attrs({ "aria-label": `${copied === c.what ? "Copied" : "Copy"} the ${c.what} line`, title: c.text })
-                .on("click", PageMessage.ClickedCopy({ what: c.what, text: c.text })).children(icon(h, copied === c.what ? "check" : "plug"), short))),
-            // Only when the clipboard says no is there a line to read: the one to select by hand.
-            failed !== undefined && h.p.class("by-hand").attr("role", "alert").children("Select and copy:", h.code(failed)),
+            // Then one thing to do now, and only that (owner, 2026-11-27): connect your agent; connected, say what
+            // you want; your world made, the achievement and the galaxy we all build together.
+            stage === "connect" && h.section.class("now-card").attrs({ "data-stage": "connect", "aria-label": "Connect your agent" }).children(
+              h.h3.children(icon(h, "plug"), "Connect your agent"),
+              h.p("Copy the prompt and paste it into your agent's chat. It connects over MCP and says so."),
+              copyPrompt(choose),
+              chips,
+              byHand,
+              // What's possible, once, at the start: a yes opens the levels.
+              h.details.class("see").children(
+                h.summary.children(icon(h, "sparkles"), "Want to see what is possible first?"),
+                h.p.class("warn").children(icon(h, "info"), "A level replaces your world. Undo brings it back until you reload."),
+                levelCards(h, on?.name),
+                on && askButton(on.ask),
+              ),
+            ),
+            stage === "ask" && h.section.class("now-card", "on").attrs({ "data-stage": "ask", "aria-label": "Tell your agent what you want" }).children(
+              h.h3.children(icon(h, "check"), "Connected! Now explain what you want"),
+              h.p("Type it into your agent's chat, in your own words. Like this:"),
+              askButton(on?.ask ?? EXAMPLE_ASK),
+            ),
+            stage === "made" && h.section.class("now-card", "won").attrs({ "data-stage": "made", "aria-label": "Achievement" }).children(
+              h.p.class("badge").children(icon(h, "sparkles"), "Achievement unlocked: World builder"),
+              h.h3("Now let's build our galaxy, as a group!"),
+              h.p("Your land goes next to everyone else's. Walk over, see what they made, and keep changing yours."),
+              galaxyTile("big-tile"),
+              locked && lockView,
+            ),
             // Once your agent is here: a note it picks up with the reply to its next call.
             steps.here && h.form.class("note").key("note").on("submit", PageMessage.SubmittedNote()).children(
               h.input.attrs({ "aria-label": "A note to your agent", placeholder: "Send your agent a note", maxlength: String(NOTE_MAX), autocomplete: "off" })
@@ -557,16 +621,22 @@ export const ProfilePageNoDeps = Def.make({
             ),
             steps.here && h.p.class("note-says").key("note-says").attr("role", "status").children(
               waiting ? `Waiting for its next step: "${waiting}". If it has stopped, say anything in its chat.` : "It reads this with its next step."),
-            h.h3.class("or").children("Do something cool"),
-            h.div.class("tiles", "acts").children(
+            h.h3.class("or").children("Your world"),
+            h.div.class("tiles", "acts", stage === "made" && "three").children(
               h.button.attr("type", "button").class("tile").attr("aria-label", "Undo").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children(icon(h, "undo"), "Undo"),
               h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Start over", title: "Start over" }).on("click", PageMessage.ClickedReset()).children(icon(h, "reset"), "Reset"),
               exportButton(h, gif),
-              h.button.attr("type", "button").class("tile", locked ? "locked" : "next").attrs({ "data-galaxy-tile": "", "aria-label": locked ? `Agent Galaxy: ${locked}` : "Agent Galaxy", title: locked ?? "Walk the galaxy: your land next to everyone's" }).attr("aria-disabled", locked ? "true" : undefined)
-                .on("click", PageMessage.ClickedGalaxy()).children(icon(h, locked ? "lock" : "globe"), "Walk galaxy"),
+              stage !== "made" && galaxyTile(),
             ),
-            locked && h.p.class("lock-line").attr("data-galaxy-lock", locked).children(icon(h, "lock"), locked),
+            stage !== "made" && locked && lockView,
             !gif.busy && gif.says !== "" && h.p.class("muted").attr("role", "status").children(gif.says),
+            // Connected, the prompt stays at hand, small, for a second agent or a new chat.
+            stage !== "connect" && h.details.class("again").children(
+              h.summary.children(icon(h, "plug"), "Connect another agent"),
+              copyPrompt(true),
+              chips,
+              byHand,
+            ),
           ),
         ),
       ),

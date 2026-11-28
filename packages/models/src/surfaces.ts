@@ -27,6 +27,9 @@ type Spec = {
   normalScale?: number;
   /** How solid an alpha map's holes are. */
   backing?: number;
+  /** How much of the surroundings' light it gives back (1, the default): lower, and a black part stays black under a
+   * bright sky. A shader scale, since `envMapIntensity` does nothing to a scene's own environment. Lamps are not scaled. */
+  env?: number;
   /** How the surface wears (see `Wear`). */
   wear?: Wear;
 };
@@ -48,10 +51,10 @@ export const SURFACES = {
   /** Perforated steel speaker grille: round holes on a 3 mm pitch, an alpha map, so the cone shows through, faintly:
    * `backing` is the dark foam behind the holes (0 clear, 1 solid). */
   grille: { tile: 0.05, tint: 0x3a3d41, roughness: 0.55, metalness: 0.45, alpha: true, normalScale: 0.6, backing: 0.4, wear: { chip: 0x6c7076, scuff: 0.5, matte: 0.42 } },
-  /** A hung line array box's grille: the same perforated steel in a matte dark grey, backed nearly solid, so its hole
-   * grid shows darker than the steel but the drivers behind it stay out of sight, as through a real box's foam-lined
-   * grille, with a little steel sheen at a low light. */
-  mesh: { dir: "grille", tile: 0.05, tint: 0x2c2e32, roughness: 0.6, metalness: 0.45, alpha: true, normalScale: 0.7, backing: 0.88, wear: { chip: 0x45484d, scuff: 0.2, matte: 0.42 } },
+  /** A hung line array box's grille: the same perforated steel in a near-black powder coat that gives back little of
+   * the sky, so it stays the darkest, most neutral black on the box, with a little sheen at a low angle; its hole grid
+   * shows up close, and the drivers behind it only faintly. */
+  mesh: { dir: "grille", tile: 0.05, tint: 0x222222, roughness: 0.46, metalness: 0.25, alpha: true, normalScale: 0.7, backing: 0.78, env: 0.55, wear: { chip: 0x333333, scuff: 0.2, matte: 0.42 } },
   /** Woven grille cloth (a guitar cab's front). */
   cloth: { tile: 0.12, tint: 0x8a8070, roughness: 1, metalness: 0, color: true },
   /** Tolex: black textured vinyl over a guitar amp's ply. */
@@ -124,7 +127,7 @@ export function surface(name: SurfaceName, { base, quality = "high", loader = ne
     load("rough", false).then((t) => void (material.roughnessMap = t)),
     s.alpha ? load("alpha", false).then((t) => see(material, t)) : undefined,
   ]).then(() => void (material.needsUpdate = true));
-  patch(material, s.alpha ? s.backing ?? 0 : 0, s.wear);
+  patch(material, s.alpha ? s.backing ?? 0 : 0, s.wear, s.env);
   return { material, ready };
 }
 
@@ -168,12 +171,19 @@ function put(src: string, at: string, by: string): string {
 type Shader = { vertexShader: string; fragmentShader: string };
 
 /** A standard material's shader (`THREE.ShaderLib.physical`, or what `onBeforeCompile` hands over) with an alpha
- * map's `backing` and the surface's `wear` written in. */
-export function wornShader(shader: Shader, backing: number, wear?: Wear): Shader {
+ * map's `backing`, the surface's `wear` and its `env` written in. */
+export function wornShader(shader: Shader, backing: number, wear?: Wear, env = 1): Shader {
   let { vertexShader: v, fragmentShader: f } = shader;
   if (backing) f = put(f, "#include <alphamap_fragment>", `#ifdef USE_ALPHAMAP
   diffuseColor.a *= mix(${glsl(backing)}, 1.0, texture2D(alphaMap, vAlphaMapUv).g);
 #endif`);
+  if (env !== 1) f = put(f, "#include <lights_fragment_maps>", `#include <lights_fragment_maps>
+  #if defined( RE_IndirectDiffuse )
+  iblIrradiance *= ${glsl(env)};
+  #endif
+  #if defined( RE_IndirectSpecular )
+  radiance *= ${glsl(env)};
+  #endif`);
   if (wear) {
     const { chip, metal, stipple = 0, scuff = 0, matte = 0, speck = 0, fleck = 1 } = wear;
     v = put(put(v, "#include <common>", "#include <common>\nvarying vec3 vWearPos;"), "#include <begin_vertex>", "#include <begin_vertex>\nvWearPos = transformed;");
@@ -225,14 +235,14 @@ export function wornShader(shader: Shader, backing: number, wear?: Wear): Shader
 }
 
 /** The shader changes a surface asks for, in one `onBeforeCompile`. */
-function patch(material: THREE.MeshStandardMaterial, backing: number, wear?: Wear) {
-  if (!backing && !wear) return;
-  material.onBeforeCompile = (shader) => void Object.assign(shader, wornShader(shader, backing, wear));
-  material.customProgramCacheKey = () => `surface-${backing}-${JSON.stringify(wear ?? null)}`;
+function patch(material: THREE.MeshStandardMaterial, backing: number, wear?: Wear, env = 1) {
+  if (!backing && !wear && env === 1) return;
+  material.onBeforeCompile = (shader) => void Object.assign(shader, wornShader(shader, backing, wear, env));
+  material.customProgramCacheKey = () => `surface-${backing}-${env}-${JSON.stringify(wear ?? null)}`;
 }
 
 /** The gear's look made of the kit: cabinets in textured plastic (a line array box's in an even coat with paler
- * cheeks, and a black grille backed nearly solid), perforated steel grilles, brushed aluminium,
+ * cheeks, and a near-black grille), perforated steel grilles, brushed aluminium,
  * painted steel panels, rubber and tolex, a dance stack's pale horn lining and violet cabinets; the rest (the guitar's paint, chrome, knobs, LEDs) as `gearLook()` has them. */
 export function gearSurfaces(opts: SurfaceOptions): { look: GearLook; ready: Promise<void> } {
   const flat = gearLook(), loader = opts.loader ?? new THREE.TextureLoader();
