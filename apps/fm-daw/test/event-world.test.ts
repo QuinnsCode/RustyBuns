@@ -28,6 +28,9 @@ test.skipIf(!hasChrome)("an event's room: two guests see each other and the perf
 
   const walkIn = async (url: string) => {
     const tab = await openTab(chrome.cdp, { w: 1280, h: 720 }, false, true);
+    // nothing here looks at the picture (who's in, the grants, the set and the lights are the room's state), and three
+    // rooms share one browser's software GL: each page's blocking GL calls waited behind the others' frames, past a look's 60 s
+    await tab.call("Page.addScriptToEvaluateOnNewDocument", { source: "for (const f of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced', 'drawRangeElements']) WebGL2RenderingContext.prototype[f] = () => {};" });
     await load(chrome.cdp, tab, url, 0);
     const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
     const until = (what: string, expr: string) => waitFor(tab, what, expr, 90_000, "window.qjam?.state().grants");
