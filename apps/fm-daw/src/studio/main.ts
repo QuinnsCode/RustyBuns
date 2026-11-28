@@ -53,7 +53,7 @@ import { VenueSplat } from "./venue-splat.ts";
 import { SYSTEMS, system } from "@rustybuns/gear";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { fromBuilt, yours, Studio } from "./builder.ts";
-import { addCommands } from "@rustybuns/util/commands";
+import { addCommands, buttonCommand } from "@rustybuns/util/commands";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
 import { bassReach, bassSynth, keysKind, keysSynth, madeKind, seedOf } from "./gear-models.ts";
@@ -86,6 +86,9 @@ import { gearKit, gearKitLook } from "./gear-kit.ts";
 import { Keys, Kit, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
+import { fadeSlice, mountTune } from "./hear.ts";
+import { mountSocial } from "./social.ts";
+import type { ToWorklet } from "../engine/messages.ts";
 import { PaLine } from "./pa-line.ts";
 import { paBoxes, PaRoom, paSpeakers, rigStacks, roomLevel, roomRig } from "./pa-room.ts";
 import { crossoverCommands, crossoverState, resetCrossover, setCrossover, type CrossoverDeps } from "./crossover-commands.ts";
@@ -255,6 +258,8 @@ const booth = new Booth();
 /** Someone's YouTube deck, played in a hidden player here on the room's clock (src/dj/room-tube.ts): the PA can't carry it. */
 const roomTubes = new RoomTubes();
 const tubeSpeakers = paSpeakers(def);
+/** Tuned in to the stage (hear.ts): the set heard as from the floor's middle, wherever you stand. */
+const tune = mountTune(tubeSpeakers);
 addEventListener("pointerdown", () => roomTubes.pressed(), true);
 addEventListener("keydown", () => roomTubes.pressed(), true);
 /** Each instrument's keys or drums, by spot id, to show what's played on them. */
@@ -752,7 +757,8 @@ let mySource: MediaStreamAudioSourceNode | null = null;
 /** Each guitar through its track's amp, at your mutes, where its player stands; you, where you are. */
 function hearGuitars() {
   // a set on the PA follows your mutes and the leader's, as a guitar does
-  paRoom?.listen(jam.me.x, jam.me.z, jam.me.yaw);
+  const stage = tune.ears(jam.me);
+  paRoom?.listen(stage.x, stage.z, stage.yaw);
   nightAir?.listen(jam.me.x, jam.me.z, mutes.room, musicOn());
   if (pa) for (const peer of paOn.keys()) pa.level(peer, paLevel(peer));
   if (!guitars) return;
@@ -828,7 +834,9 @@ function onLive(from: number, e: Live) {
 const wall = () => performance.timeOrigin + performance.now();
 const band = new Band(() => ({ bpm: project.bpm, loopBeats: loopBeats(project) }), wall);
 /** Everyone else's guitars and plugin tracks, coming in as slices (src/studio/plugin-line.ts). */
-const far = new FarSound(band, (m) => out?.send(m));
+const far = new FarSound(band, (m) => out?.send(nearby(m)));
+/** Out on the grounds, someone's guitar or mic heard a loop late is as far off as they stand (hear.ts), as their call is. */
+const nearby = (m: ToWorklet) => (def.outdoor && band.listen === "loop" && m.t === "sound" && !far.isPlugin(m.peer, m.track) ? fadeSlice(m, jam.others.get(m.peer)?.at, jam.me) : m);
 
 // ---- Rec (src/studio/take-rec.ts): one loop of a player's input as a take on a track, heard here as on the sesh page ----
 const takes = new TakeShelf();
@@ -933,7 +941,7 @@ setInterval(() => {
   if (!out) return;
   const ts = out.ctx.getOutputTimestamp();
   if (ts.contextTime !== undefined && ts.performanceTime !== undefined) out.send(band.grid(ts.contextTime, performance.timeOrigin + ts.performanceTime));
-  for (const m of band.due()) out.send(m, m.t === "sound" ? [m.pcm.buffer] : []);
+  for (const m of band.due().map(nearby)) out.send(m, m.t === "sound" ? [m.pcm.buffer] : []);
 }, 50);
 // ---- mutes: yours (the room, or one person) and the leader's for everyone ----
 const mutes = noMutes();
@@ -1344,7 +1352,7 @@ if (here) net = connect({
     if (gated() !== gateWas) door();
     settings?.render();
   },
-  onChat(m) { if (m.t === "chat") rights.me = m.you; },
+  onChat(m) { if (m.t === "chat") rights.me = m.you; social?.heard(m); },
   onTakeBytes(m) { if (takes.add(m)) syncTakes(project); },
   hello: () => ({ key: myKey(), name }),
   token,
@@ -1518,7 +1526,7 @@ function openModules(open: boolean) {
 }
 $("modules-close").addEventListener("click", () => openModules(false));
 /** Something over the room has the mouse: a panel, the decks, the help card, the module list. */
-const panelOpen = () => viewHeld || !!settings?.isOpen() || character.isOpen() || !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen();
+const panelOpen = () => viewHeld || !!settings?.isOpen() || character.isOpen() || !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen() || !!social?.isOpen();
 /** Esc in the menu takes you back into the room; out of it, Esc steps back out of whatever is over the room, one at a time. */
 document.addEventListener("keydown", (e) => {
   if (e.code !== "Escape" || e.repeat) return;
@@ -1529,6 +1537,7 @@ document.addEventListener("keydown", (e) => {
   if (settings?.isOpen()) return settings.close();
   if (phase === "menu" && here && !$("door-room").hidden) return play();
   if (phase !== "play") return;
+  if (social?.isOpen()) return void social.open(false);
   if (lane?.isOpen()) return lane.close();
   if (desk.isOpen()) return desk.close();
   if (seatBar.isOpen()) return seatBar.close();
@@ -1754,7 +1763,18 @@ $("share").addEventListener("click", () => {
   void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: shareLink() }).catch(() => {});
 });
 
-function menu() { if (phase !== "play") seatBar.sync(false); decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play" || !!settings?.isOpen(); door(); people(); invites(); if (phase === "menu") void refreshHub(); }
+// the one social panel on the HUD (social.ts), and its symbol and the stage's in the palette
+const social = here ? mountSocial({
+  app: APP, hub: friendHub, view: () => hubView, refresh: () => refreshHub(true), link: shareLink, signedIn, canSignIn: () => eq.canSignIn(),
+  signIn: () => $("sign-in").click(), invite: inviteFriend, asked, send: (text) => net?.chat({ t: "say", text }), online: () => status.state === "online",
+  opened: () => { releaseAll(); keys.clear(); document.exitPointerLock?.(); },
+}) : null;
+addCommands([
+  buttonCommand("#social-open", { group: "Studio", name: "studio_people", title: "People: invite, chat, friends", description: "Open or close the social panel." }),
+  buttonCommand("#tune-in", { group: "Studio", name: "studio_tune", title: "Tune in to the stage", description: "Hear the stage's set at full level wherever you stand, or from where you stand again." }),
+]);
+
+function menu() { if (phase !== "play") seatBar.sync(false); social?.show(phase === "play"); tune.show(!!here && phase === "play"); decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play" || !!settings?.isOpen(); door(); people(); invites(); if (phase === "menu") void refreshHub(); }
 /** The room has a password and turned this page away for it (world.ts locked): the entry panel asks for it. */
 function gated() { return !!here && status.state === "full" && (status.full === "code" || status.full === "tries"); }
 /** Enter with the password typed: kept in this browser for this room (net.ts saveCode), and the page knocks again with it. */
@@ -1926,7 +1946,7 @@ function frame(now: number) {
   hearGuitars();
   hearWall();
   // a YouTube deck as loud as the PA is where you stand, at your mutes and the leader's
-  const tubeAt = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw });
+  const tubeAt = roomLevel(tubeSpeakers, tune.ears(jam.me));
   roomTubes.follow(booth.sides, roomNow(), (peer) => tubeLevel(peer, tubeAt));
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
@@ -1964,7 +1984,7 @@ const harness = {
     pa: { stacks: rigStacks(def), sources: paBoxes(def), walk: walking, testSet: !!walkSet, heard: paRoom?.state() ?? null } }),
   /** What you hear (levels.ts): MUSIC and CROWD as set and as their buses play, each person's level, and each of their lines as heard now. */
   levels: () => {
-    const at = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw }), peers = [...jam.others.keys()];
+    const at = roomLevel(tubeSpeakers, tune.ears(jam.me)), peers = [...jam.others.keys()];
     const each = (f: (p: number) => number) => Object.fromEntries(peers.map((p) => [p, Math.round(f(p) * 1000) / 1000]));
     return {
       music: levels.music, crowd: levels.crowd, buses: bus ? { music: bus.music.gain.value, crowd: bus.crowd.gain.value } : null,
@@ -2034,6 +2054,10 @@ const harness = {
   /** Mute a peer for you (on left out: the other way round), the whole room, or (the leader) a peer for everyone. */
   mute: (peer: number, on?: boolean) => { mutePerson(peer, on); return harness.state().muted; },
   muteRoom: (on?: boolean) => { muteAll(on); return harness.state().muted; },
+  /** The social panel (social.ts): open or close it (left out: as it is), then the chat as this page has it. */
+  social: (open?: boolean) => { if (open !== undefined) social?.open(open); return social?.state() ?? null; },
+  /** Tune in to the stage or back out (hear.ts; left out: as it is); then whether you're tuned in. */
+  tune: (on?: boolean) => { if (on !== undefined) tune.set(on); return tune.on(); },
   muteForAll: (peer: number, on = true) => muteForAll(peer, on),
   /** Raise your hand to play (H). */
   raise: () => { raise(); return harness.state().grants; },
