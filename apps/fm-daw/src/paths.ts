@@ -31,6 +31,8 @@ export interface Path {
   sector: SectorId;
   /** The short name on its card (one line at every size). */
   name: string;
+  /** What's in it, a few words each, under its name on the lane's card. */
+  features: string;
   /** What you do there, in one line. */
   does: string;
   /** The page it opens on: the path's first step. */
@@ -49,47 +51,47 @@ export const DOOR = "/door.html";
 // lucide (ISC): graduation-cap, tent, audio-lines, piano, speaker, circuit-board, volume-2, users, ticket
 export const PATHS: readonly Path[] = [
   {
-    id: "learn", sector: "learn", name: "Learn the setup", does: "Plug a guitar into an amp, patch a synth, set up a PA, and hear what each cable and knob does.",
+    id: "learn", sector: "learn", name: "Learn the setup", features: "Guitar into an amp · patch a synth · set up a PA · know your plugs", does: "Plug a guitar into an amp, patch a synth, set up a PA, and hear what each cable and knob does.",
     href: "/studio.html", first: "The gear room: the guitar on its stand, the amps on the rack", signIn: false,
     icon: '<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
   },
   {
-    id: "planner", sector: "studio", name: "Event Planner", does: "Draw the room or the field, place and aim the stacks, see the coverage, the power and the gear list.",
+    id: "planner", sector: "studio", name: "Event Planner", features: "Coverage and aim · delay · power · gear list", does: "Draw the room or the field, place and aim the stacks, see the coverage, the power and the gear list.",
     href: "/rooms.html", first: "The studio builder", signIn: false,
     icon: '<path d="M3.5 21 14 3"/><path d="M20.5 21 10 3"/><path d="M15.5 21 12 15l-3.5 6"/><path d="M2 21h20"/>',
   },
   {
-    id: "daw", sector: "studio", name: "QDAW", does: "Press Space and the beat plays: play notes, record, mix, bounce it to a file.",
+    id: "daw", sector: "studio", name: "QDAW", features: "Play · record · mix · bounce to a file", does: "Press Space and the beat plays: play notes, record, mix, bounce it to a file.",
     href: "/desk", first: "The desk with the demo beat loaded", signIn: false,
     icon: '<path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>',
   },
   {
-    id: "instruments", sector: "studio", name: "Q Instruments", does: "Two decks and a mixer with demo tracks on them: sync, cue, loop, scratch.",
+    id: "instruments", sector: "studio", name: "Q Instruments", features: "Two decks and a mixer · sync, cue, loop, scratch", does: "Two decks and a mixer with demo tracks on them: sync, cue, loop, scratch.",
     href: "/decks.html", first: "The decks with the demo tracks", signIn: false,
     icon: '<path d="M18.5 8c-1.4 0-2.6-.8-3.2-2A6.87 6.87 0 0 0 2 9v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8.5C22 9.6 20.4 8 18.5 8"/><path d="M2 14h20"/><path d="M6 14v4"/><path d="M10 14v4"/><path d="M14 14v4"/><path d="M18 14v4"/>',
   },
   {
-    id: "amps", sector: "studio", name: "Q Amps", does: "Play an amp and pedals solved as real circuits as you play.",
+    id: "amps", sector: "studio", name: "Q Amps", features: "Amp and pedals solved as real circuits", does: "Play an amp and pedals solved as real circuits as you play.",
     href: "/amp.html", first: "Q Amp", signIn: false,
     icon: '<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 6h.01"/><circle cx="12" cy="14" r="4"/><path d="M12 14h.01"/>',
   },
   {
-    id: "builder", sector: "studio", name: "Q Builder", does: "Open a pedal's board, swap its parts, scope any net, remake it in tscircuit and retest it.",
+    id: "builder", sector: "studio", name: "Q Builder", features: "Swap parts · scope any net · remake and retest", does: "Open a pedal's board, swap its parts, scope any net, remake it in tscircuit and retest it.",
     href: "/builder.html", first: "Q Builder: the fuzz's board with a scope on it", signIn: false,
     icon: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M11 9h4a2 2 0 0 0 2-2V3"/><circle cx="9" cy="9" r="2"/><path d="M7 21v-4a2 2 0 0 1 2-2h4"/><circle cx="15" cy="15" r="2"/>',
   },
   {
-    id: "speakers", sector: "studio", name: "Speakers", does: "Speaker boxes from the makers' drawings: their sizes, drivers and cut sheets.",
+    id: "speakers", sector: "studio", name: "Speakers", features: "Makers' drawings · sizes, drivers, cut sheets", does: "Speaker boxes from the makers' drawings: their sizes, drivers and cut sheets.",
     href: "/speakers.html", first: "Speaker Plans", signIn: false,
     icon: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
   },
   {
-    id: "playground", sector: "studio", name: "Playground", does: "Your own sesh: make a room in your studio, send the link, and friends drop in to jam.",
+    id: "playground", sector: "studio", name: "Playground", features: "Your own room · invite link · jam with friends", does: "Your own sesh: make a room in your studio, send the link, and friends drop in to jam.",
     href: "/jam.html", first: "The jam room's lobby: make a room", signIn: true,
     icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/>',
   },
   {
-    id: "event", sector: "event", name: "The Event", does: "The live show: take a planned party live, with its guest list and a listen link for the crowd.",
+    id: "event", sector: "event", name: "The Event", features: "Guest list · performers on the stacks · a listen link for the crowd", does: "The live show: take a planned party live, with its guest list and a listen link for the crowd.",
     href: "/rooms.html#party", first: "The Event Planner's Party panel: open as event", signIn: true,
     icon: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>',
   },

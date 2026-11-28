@@ -247,7 +247,7 @@ circuit on its own thread, not your guitar through Q Amp's audio thread, and onl
 (`src/hero.ts`, drawn by `src/front-hero.ts`), two stacks and the map of their highs (4 kHz, `@rustybuns/gear`'s outdoor model) on the
 grass. The Air and Humidity sliders and the Bank button change the map, and **Hear it from the back** loops a beat through an EQ
 set by what the field took from each band at the back; they hide behind one small thermometer button in the field's corner,
-an easter egg. Start learning and Plan a show open `/studio.html` and `/rooms.html`.
+an easter egg. 
 The field is the menu: LEARN, STUDIO and EVENT are three lanes down the grass, each with its word painted on the floor and a button
 standing on it (hemyviz's floor names). The field stands behind the whole page, crowded up under the title; under it each lane's shelf follows the last. Scrolling off
 the field slides the lane buttons up into the tabs along the top (`morph` in `src/front-hero.ts`), and the lane whose shelf you are
