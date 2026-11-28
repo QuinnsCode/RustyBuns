@@ -13,15 +13,24 @@ export interface Sector {
   rolls?: readonly (readonly [string, PathId])[];
   /** The word of `line` given weight. */
   weigh?: string;
+  /** The lane's one way in for someone new: two or three words, an icon, and where it lands. */
+  start: { say: string; href: string; icon: string };
 }
+
+/** Studio's way in: a room of your own in the live room, sat at the keys (src/studio/main.ts reads `start`). */
+export const STUDIO_START = "/jam.html?start=keys";
+// lucide (ISC): play, piano, ticket
+const PLAY = '<polygon points="6 3 20 12 6 21 6 3"/>';
+const PIANO = '<path d="M18.5 8c-1.4 0-2.6-.8-3.2-2A6.87 6.87 0 0 0 2 9v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8.5C22 9.6 20.4 8 18.5 8"/><path d="M2 14h20"/><path d="M6 14v4"/><path d="M10 14v4"/><path d="M14 14v4"/><path d="M18 14v4"/>';
+const TICKET = '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>';
 
 /** The front door's three lanes, in the order it shows them. */
 export const SECTORS: readonly Sector[] = [
-  { id: "learn", word: "Learn", line: "How to set it up and how to use it, checked on the real gear as you go." },
+  { id: "learn", word: "Learn", line: "How to set it up and how to use it, checked on the real gear as you go.", start: { say: "First lesson", href: "/studio.html", icon: PLAY } },
   // the owner's copy (#6527): Studio's line is a console prompt whose last word rolls through what you build, each word
   // opening the app that builds it; `line` is the one still sentence a screen reader gets
-  { id: "studio", word: "Studio", line: "Build your set, speaker, signal, pedal, song or plugin.", rolls: [["set", "instruments"], ["speaker", "speakers"], ["signal", "planner"], ["pedal", "amps"], ["song", "daw"], ["plugin", "builder"]] },
-  { id: "event", word: "Event", line: "Take your studio pieces to a 3D hangout and experience the sound and the worlds.", weigh: "experience" },
+  { id: "studio", word: "Studio", line: "Build your set, speaker, signal, pedal, song or plugin.", rolls: [["set", "instruments"], ["speaker", "speakers"], ["signal", "planner"], ["pedal", "amps"], ["song", "daw"], ["plugin", "builder"]], start: { say: "Walk in and play", href: STUDIO_START, icon: PIANO } },
+  { id: "event", word: "Event", line: "Take your studio pieces to a 3D hangout and experience the sound and the worlds.", weigh: "experience", start: { say: "Host or join", href: "/rooms.html#party", icon: TICKET } },
 ];
 
 export type PathId = "learn" | "planner" | "daw" | "instruments" | "amps" | "builder" | "speakers" | "playground" | "event";
@@ -48,7 +57,7 @@ export interface Path {
 /** The front door's address, which every page's way back opens. */
 export const DOOR = "/door.html";
 
-// lucide (ISC): graduation-cap, tent, audio-lines, piano, speaker, circuit-board, volume-2, users, ticket
+// lucide (ISC): graduation-cap, tent, audio-lines, disc-3, speaker, circuit-board, volume-2, users, ticket
 export const PATHS: readonly Path[] = [
   {
     id: "learn", sector: "learn", name: "Learn the setup", features: "Guitar into an amp · patch a synth · set up a PA · know your plugs", does: "Plug a guitar into an amp, patch a synth, set up a PA, and hear what each cable and knob does.",
@@ -68,7 +77,7 @@ export const PATHS: readonly Path[] = [
   {
     id: "instruments", sector: "studio", name: "Q Instruments", features: "Two decks and a mixer · sync, cue, loop, scratch", does: "Two decks and a mixer with demo tracks on them: sync, cue, loop, scratch.",
     href: "/decks.html", first: "The decks with the demo tracks", signIn: false,
-    icon: '<path d="M18.5 8c-1.4 0-2.6-.8-3.2-2A6.87 6.87 0 0 0 2 9v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8.5C22 9.6 20.4 8 18.5 8"/><path d="M2 14h20"/><path d="M6 14v4"/><path d="M10 14v4"/><path d="M14 14v4"/><path d="M18 14v4"/>',
+    icon: '<circle cx="12" cy="12" r="10"/><path d="M6 12c0-1.7.7-3.2 1.8-4.2"/><circle cx="12" cy="12" r="2"/><path d="M18 12c0 1.7-.7 3.2-1.8 4.2"/>',
   },
   {
     id: "amps", sector: "studio", name: "Q Amps", features: "Amp and pedals solved as real circuits", does: "Play an amp and pedals solved as real circuits as you play.",
@@ -142,6 +151,14 @@ export const ICON = {
   arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
 } as const;
+
+/** "Not sure? Try a demo": four things that make a sound in one click, signed out, each an app's own first step. */
+export const DEMOS: readonly { id: string; say: string; path: PathId }[] = [
+  { id: "beat", say: "Make a beat", path: "daw" },
+  { id: "mix", say: "Mix two tracks", path: "instruments" },
+  { id: "amp", say: "Play an amp", path: "amps" },
+  { id: "stage", say: "Plan a stage", path: "planner" },
+];
 
 /** A path by its id. */
 export const pathOf = (id: PathId): Path => PATHS.find((p) => p.id === id)!;
