@@ -1,10 +1,12 @@
 // The Stage Builder's model (#6053), pure: the arenas and ready-made stages it offers, a new arena as a studio
 // definition (room.ts, so builder.ts's edits, the coverage map and the jam room all read it as any room), the crowd's
 // zone in front of the stage, and what this browser keeps: each build as its saves (every change is one, so Undo and
-// History work between visits) and the orders you locked in. stage-page.ts draws it.
+// History work between visits) and the orders you locked in; signed in, your account keeps them too (stage-account.ts).
+// stage-page.ts draws it.
 import { arr, check, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { gear } from "@rustybuns/gear";
 import { BOXES, Studio } from "./builder.ts";
+import { OWNER } from "./party.ts";
 import { inStage, onStage, type StudioDef } from "./room.ts";
 import { MATERIALS } from "./sound.ts";
 
@@ -131,6 +133,31 @@ export function readStore(json: string | null): Store {
   // (a save gone bad is dropped; a build with none left goes too)
   const builds = each(kept?.builds, Build, MAX_BUILDS).filter((b) => b.saves.length), orders = each(kept?.orders, Order, MAX_ORDERS);
   return { ...(kept?.open && builds.some((b) => b.id === kept.open) ? { open: kept.open } : {}), builds, orders };
+}
+
+// ---- on your eqosys account (#6583): the same builds and orders, kept by src/stage-store.ts ----
+
+/** What the account keeps: all but which build is up, which is each device's own. Read back, one gone bad is left out. */
+export const Shelf = obj({ builds: arr(Build, MAX_BUILDS, { drop: true }), orders: arr(Order, MAX_ORDERS, { drop: true }) });
+/** The same on its way in: anything else is refused, so it never replaces what is kept with nothing. */
+export const ShelfSent = obj({ builds: arr(Build, MAX_BUILDS), orders: arr(Order, MAX_ORDERS) });
+export type Shelf = Of<typeof Shelf>;
+/** GET or PUT /stage-builds?token=: your builds and orders, and your owner key. */
+export const StageReply = obj({ owner: str(24, { re: OWNER }), store: Shelf });
+export type StageReply = Of<typeof StageReply>;
+export const shelf = (s: Shelf): Shelf => ({ builds: s.builds.filter((b) => b.saves.length), orders: s.orders });
+
+/** One of each id, the later one, newest first, at most `max`. */
+function newest<T extends { id: string }>(all: T[], when: (x: T) => number, max: number): T[] {
+  const by = new Map<string, T>();
+  for (const x of all) { const had = by.get(x.id); if (!had || when(x) > when(had)) by.set(x.id, x); }
+  return [...by.values()].sort((a, b) => when(b) - when(a)).slice(0, max);
+}
+/** This browser's store with the account's added: past the caps, the ones left longest go. */
+export function mergeStores(mine: Store, theirs: Shelf): Store {
+  const builds = newest([...mine.builds, ...theirs.builds.filter((b) => b.saves.length)], (b) => b.saves[b.saves.length - 1]!.at, MAX_BUILDS);
+  const orders = newest([...mine.orders, ...theirs.orders], (o) => o.at, MAX_ORDERS);
+  return { ...(builds.some((b) => b.id === mine.open) ? { open: mine.open } : {}), builds, orders };
 }
 
 export const openBuild = (s: Store) => s.builds.find((b) => b.id === s.open);

@@ -25,8 +25,8 @@ import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, PREMADES, rowsSize, speedOfSound, stackRows, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
 import { arrivals, paBoxes, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
-import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, linkEvent, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
-import { partySync } from "./party-sync.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, linkEvent, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, PartiesReply, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { accountSync } from "./account-sync.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { events, type Event } from "@rustybuns/util/events";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
@@ -49,7 +49,7 @@ let room: StudioDef = openScene(parties)?.studio ?? yours() ?? structuredClone(R
 // once the account answers; until then, and signed out, they are this browser's alone.
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
 const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
-const sync = partySync(location.origin, token);
+const sync = accountSync<PartiesReply, typeof parties>(`${location.origin}/parties`, PartiesReply, token);
 let owner: string | null = null;
 let picked: string | undefined = room.spots[0]?.id;
 let why = "";
@@ -258,6 +258,8 @@ let partyWas: string | undefined;
 const stage = mountStage({
   view: () => build,
   canvas,
+  token,
+  signedIn: eq.ready,
   opening: () => { partyWas = parties.open; if (partyWas) partyDo(open(parties, undefined)); },
   closed: () => { if (partyWas && parties.parties.some((p) => p.id === partyWas)) partyDo(open(parties, partyWas)); else render(); },
   // Open as event, from a locked-in build: its own party (the same one next time), live, and the builder's left as it was

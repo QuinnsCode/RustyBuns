@@ -180,7 +180,9 @@ coverage map and `walk-set.ts` through `PaRoom` from a tapped spot. Each change 
 24 orders, in this browser), so Undo and History work between visits. Lock in freezes an order; The Event makes it a
 live party. A stage is `StudioDef.stage`, set by the builder's `stage` edit, so the jam room draws what was placed.
 Code: `stage-build.ts` (model and storage), `stage-page.ts` (the screen), `stage-model.ts`; `window.qstage`; the journey
-is `test/stage-page.test.ts`. Not yet: stage parts, several stages, flown arrays, and builds on your account.
+is `test/stage-page.test.ts`. Not yet: stage parts, several stages and flown arrays.
+Signed in, builds and orders follow the account (#6583): `GET`/`PUT /stage-builds` (`src/stage-store.ts`) and
+`src/studio/stage-account.ts`. Last save wins, except that work the account never got is added to it, not replaced.
 
 ### Out of doors: the air, the ground and the land
 

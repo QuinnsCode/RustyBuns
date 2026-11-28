@@ -16,12 +16,16 @@ import { paStack } from "./open-air.ts";
 import { arrivalSpread, PaRoom, roomRig } from "./pa-room.ts";
 import { deckHeight, floorAt, inStage, STAGE_SIZE, type StagePiece, type StudioDef } from "./room.ts";
 import { ARENA, ARENAS, arenaWords, BUILDS, crowdZone, inZone, keep, latest, lockIn, MAX_HIGH, newArena, openBuild, readStore, rollBack, snap, STACK_BOXES, stacksOf, stackStart, STAGES, stageFits, stageStart, startBuild, stepBack, TURN, type Arena, type Order, type Store } from "./stage-build.ts";
+import { stageAccount } from "./stage-account.ts";
 import { stageModel } from "./stage-model.ts";
 import { playWalkSet } from "./walk-set.ts";
 
 export type StageDeps = {
   /** The builder's 3D view and its canvas (null with no WebGL). */
   view(): BuildView | null;
+  /** A fresh eqosys token (null while signed out), and when the sign-in has been read. */
+  token(): string | null;
+  signedIn: Promise<unknown>;
   canvas: HTMLCanvasElement;
   /** Open `def` as The Event in a new tab: its link, or why not. */
   event(def: StudioDef): { link: string } | { why: string };
@@ -92,8 +96,24 @@ export function mountStage(deps: StageDeps) {
   /** Where the canvas goes back to. */
   let home: { parent: Node; after: Node | null; hidden: boolean } | null = null;
 
+  // signed in, your account keeps them too (#6583)
+  const account = stageAccount(location.origin, deps.token, store, localStorage);
+  void deps.signedIn.then(() => account.follow(() => store)).then((got) => { if (got) arrived(got); });
+
   function persist() {
+    account.keep(store);
     try { localStorage.setItem(BUILDS, JSON.stringify(store)); } catch { why = "this browser won't keep it: the build lasts until you reload"; }
+  }
+
+  /** What the account keeps is in: the build that is up takes its newer saves, or closes if it is gone. */
+  function arrived(got: Store) {
+    store = got;
+    persist();
+    if (!on) return;
+    const b = openBuild(store);
+    if (!b) return close();
+    if (def && JSON.stringify(latest(b)) === JSON.stringify(def)) return;
+    endTest(); placing = null; redo = []; why = ""; def = latest(b); needStage(); show();
   }
 
   // ---- the view ----
