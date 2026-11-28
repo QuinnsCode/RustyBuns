@@ -1,6 +1,7 @@
 // Agent Galaxy in the page: everyone's land in one 3D scene (land3d.ts), butted edge to edge. You are a simple shape;
 // WASD, the arrow keys or the touch stick walk you, straight from your land onto your neighbour's. You arrive with a
 // cloud over everything but your own land, and it lifts.
+// - Before your first visit you sign for your land, and each nearby plot's sign stands on it (signs.ts).
 // - A plot's land is asked of its world (@world/kit) in a hidden sealed frame and comes back as shapes: yours, and
 //   those around you from what their rooms last saved (GET /api/galaxy/world/<id>, checked with the Page Schema).
 //   A neighbour's code never runs in the shared scene. A world without land shows its picture on the ground
@@ -20,6 +21,7 @@ import { Claimed, FromGalaxy, type Plot, Plots, type ToGalaxy, VIEW_MAX, type Wa
 import { listing, Page } from "./page.ts";
 import { bearer } from "./account.ts";
 import { galaxyLock } from "./lock.ts";
+import { type GallerySigns, gallerySigns } from "./signs.ts";
 
 /** Asks for the galaxy (true) or the way back (false), from Cmd+K and window.agentGalaxy: ProfilePage listens. */
 export const galaxyAsks = Effect.runSync(Queue.unbounded<boolean>());
@@ -36,6 +38,7 @@ interface G {
   plots: Map<string, Plot>; players: Map<string, Walker>; live: Live;
   link: Link<ToGalaxy> | null; keys: Set<string>; stick: { x: number; z: number };
   raf: number; sentAt: number; sent: string; token: number; moving: Promise<void>;
+  signs: GallerySigns; done: boolean;
   off: (() => void)[];
 }
 
@@ -91,6 +94,7 @@ function read(id: string, three: NonNullable<G["three"]>): Promise<Land | null> 
 /** Put a plot in the scene: its land if its world has some, else its picture, the town, or open ground. */
 function show(s: G, p: Plot) {
   const next = Math.abs(p.x - s.plot.x) <= 1 && Math.abs(p.y - s.plot.y) <= 1;
+  s.signs.plot(p, next);
   const set = (shows: string, content: Content) => s.scene?.setPlot(p.x, p.y, shows, content);
   if (p.city) return set("town", { kind: "town" });
   if (!p.id) return set(next ? "open:sign" : "open", { kind: "open", sign: next });
@@ -167,6 +171,7 @@ function tick(g: G, dt: number, now: number) {
   const folk: Person[] = [...visible(g).map((p) => ({ id: p.id, color: p.color, x: p.x + p.px, z: p.y + p.pz, me: false })),
     { id: g.me.id, color: "#ff3d8b", x: g.plot.x + g.pos.x, z: g.plot.y + g.pos.z, me: true }];
   g.scene.draw(innerWidth, innerHeight, folk, g.cam, g.me, g.lift);
+  g.signs.place();
 }
 
 /** Where you are, out to the galaxy: at most every SEND_MS, unless `now` must. */
@@ -208,11 +213,11 @@ function mount(room: string) {
     layer, canvas, where, three: null, scene: null, lift: 0, since: performance.now(), me: null, error: null, ready: Promise.resolve(),
     plot: { x: 0, y: 0 }, pos: { x: 0.5, z: 0.5 }, cam: null, plots: new Map(), players: new Map(),
     live: { kind: "empty", id: null, files: [] }, link: null, keys: new Set(), stick: { x: 0, z: 0 },
-    raf: 0, sentAt: 0, sent: "", token: 0, moving: Promise.resolve(), off: [],
+    raf: 0, sentAt: 0, sent: "", token: 0, moving: Promise.resolve(), off: [], signs: gallerySigns(layer), done: false,
   };
   const on = (t: EventTarget, type: string, f: (e: Event) => void) => { t.addEventListener(type, f); s.off.push(() => t.removeEventListener(type, f)); };
   on(window, "keydown", (e) => {
-    if (!(e instanceof KeyboardEvent) || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey) return;
+    if (!(e instanceof KeyboardEvent) || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || s.signs.signing()) return;
     const k = e.code in DIRS ? e.code : e.key;
     if (k in DIRS) { s.keys.add(k); e.preventDefault(); }
   });
@@ -253,10 +258,21 @@ function mount(room: string) {
       where.textContent = s.error;
       return;
     }
+    // Your sign first: the server hands out no plot without one.
+    const signed = await s.signs.signed();
+    if (g !== s) return;
+    if (signed === null) { s.error = "The galaxy didn't answer: try again in a moment."; where.textContent = s.error; return; }
+    if (!signed) {
+      where.textContent = "Sign for your land";
+      if (!(await s.signs.sign(false)) || g !== s) return;
+      s.since = performance.now();
+      where.textContent = "Finding your plot…";
+    }
     const me = await getJson("/api/galaxy/claim", Claimed, { method: "POST", headers: { ...await bearer(), "content-type": "application/json" }, body: JSON.stringify({ room }) });
     if (g !== s) return;
     if (!me) { s.error = "The galaxy didn't answer: try again in a moment."; where.textContent = s.error; return; }
     s.me = me; s.plot = { x: me.x, y: me.y }; myPlot = me.id;
+    s.signs.start(s.scene!, me.id);
     await onPlot(s);
     if (g !== s) return;
     s.link = connectSocket<FromGalaxy, ToGalaxy>(() => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/galaxy/socket?room=${room}`, {
@@ -270,6 +286,7 @@ function mount(room: string) {
       onClose: ({ code, tries }) => (code === 4001 ? null : Math.min(10_000, 500 * 2 ** tries)),
     });
   })();
+  void s.ready.finally(() => { s.done = true; });
   g = s;
 }
 
@@ -280,6 +297,7 @@ function unmount() {
   cancelAnimationFrame(s.raf);
   for (const f of s.off) f();
   s.link?.close();
+  s.signs.close();
   s.scene?.dispose();
   s.layer.remove();
 }
@@ -291,7 +309,7 @@ const until = async (ok: () => boolean, ms = 10_000) => {
 /** What a test or the probe asks: in the galaxy or not, your plot and spot, the plots and players on your plot and the
  *  eight around it, what the plot you stand on is, and what each plot in the scene shows (land, picture, town, open). */
 export function galaxyState() {
-  if (!g) return { in: false, ready: false, error: null, me: null, plot: null, pos: null, plots: [], players: [], live: null, shows: {} };
+  if (!g) return { in: false, ready: false, error: null, me: null, plot: null, pos: null, plots: [], players: [], live: null, shows: {}, signing: false, signs: {} };
   const s = g;
   return {
     in: true, ready: s.me !== null, error: s.error, me: s.me, plot: { ...s.plot }, pos: { ...s.pos },
@@ -299,6 +317,7 @@ export function galaxyState() {
     players: visible(s).map((p) => ({ ...p })),
     live: { ...s.live, files: s.live.files.map((f) => ({ ...f })) },
     shows: s.scene?.shows() ?? {},
+    signing: s.signs.signing(), signs: s.signs.state(),
   };
 }
 
@@ -313,14 +332,20 @@ export function startGalaxy(room: string) {
   follow();
   const agentGalaxy = {
     state: galaxyState,
-    /** Up to the galaxy, once your plot is claimed and its world is running. */
+    /** Up to the galaxy, once your plot is claimed and its world is running; or, before your first visit, once the
+     *  pad is up for you to sign (`signing`). */
     enter: async () => {
       if (galaxyLock.why) return { ...galaxyState(), locked: galaxyLock.why };
       Queue.offerUnsafe(galaxyAsks, true);
       await until(() => g !== null);
-      await g?.ready;
-      await until(() => g?.link?.open === true || g?.error !== null);
+      await until(() => g === null || g.done || g.signs.signing(), 60_000);
+      if (!g?.signs.signing()) await until(() => g?.link?.open === true || g?.error !== null);
       return galaxyState();
+    },
+    /** "Sign again" from anywhere: up to the galaxy, with the pad. */
+    sign: async () => {
+      await agentGalaxy.enter();
+      void g?.signs.sign(g.me !== null);
     },
     /** Back to your world. */
     leave: async () => { Queue.offerUnsafe(galaxyAsks, false); await until(() => g === null); return galaxyState(); },

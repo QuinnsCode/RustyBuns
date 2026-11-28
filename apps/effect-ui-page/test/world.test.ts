@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { freePort, launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
-import { fakeEqosys, type Person, signIn } from "./eqosys-kit.ts";
+import { enterSigned, fakeEqosys, type Person, signIn } from "./eqosys-kit.ts";
 
 setDefaultTimeout(120_000); // Bun bundles the page cold
 
@@ -50,6 +50,10 @@ describe("over HTTP", () => {
     expect((await post("/api/galaxy/claim", { room: roomName("d") }, token)).status).toBe(403);
     // What the page sends once the AI's write loaded clean.
     expect((await post(`/api/r/${room}/made`, { files: { "index.html": "<canvas></canvas>" } })).status).toBe(200);
+    // Made, but not signed for yet (sign.test.ts has the rest of signing).
+    const unsigned = await post("/api/galaxy/claim", { room }, token);
+    expect([unsigned.status, (await unsigned.json()).error]).toEqual([409, "Sign for your land first"]);
+    expect((await post("/api/galaxy/sign", { strokes: [Array.from({ length: 8 }, (_, i) => ({ x: i * 40, y: 100 }))] }, token)).status).toBe(200);
     const plot = await (await post("/api/galaxy/claim", { room }, token)).json();
     expect(Object.keys(plot).sort()).toEqual(["id", "x", "y"]);
     expect(await (await post("/api/galaxy/claim", { room }, token)).json()).toEqual(plot);
@@ -97,7 +101,7 @@ describe("in the page", () => {
     // The AI writes; the frame loads it clean; the page saves it as made.
     await tab.eval(`__commands.run("page_write_file", { path: "index.html", text: "<!doctype html><canvas></canvas><p>Ada's world</p>" })`);
     await waitFor(tab, "the lock to go", `!document.querySelector("[data-galaxy-lock]")`, 15_000);
-    const s = await tab.eval<{ in: boolean; me: { id: string } | null; locked?: string }>(`agentGalaxy.enter()`);
+    const s = await enterSigned<{ in: boolean; me: { id: string } | null; locked?: string }>(tab);
     expect([s.in, s.locked, typeof s.me?.id]).toEqual([true, undefined, "string"]);
   });
 

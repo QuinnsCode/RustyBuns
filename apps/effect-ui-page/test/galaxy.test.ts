@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { join } from "node:path";
 import { type Cdp, freePort, launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
 import { cellOf, keptFree, spiral } from "../src/galaxy.ts";
-import { fakeEqosys, signIn } from "./eqosys-kit.ts";
+import { enterSigned, fakeEqosys, signIn } from "./eqosys-kit.ts";
 
 setDefaultTimeout(120_000); // Bun bundles the page cold, then two tabs walk it
 
@@ -58,7 +58,7 @@ async function open(cdp: Cdp, room: string, who: string) {
   const until = (what: string, expr: string) => waitFor(tab, what, expr, 15_000, "agentGalaxy.state()", 50);
   return {
     room, tab, page, until,
-    enter: () => page<Galaxy>("agentGalaxy.enter()"),
+    enter: () => enterSigned<Galaxy>(tab),
     leave: () => page<Galaxy>("agentGalaxy.leave()"),
     walk: (dx: number, dz: number) => page<Galaxy>(`agentGalaxy.walk(${dx}, ${dz})`),
     state: () => page<Galaxy>("agentGalaxy.state()"),

@@ -64,6 +64,9 @@ addCommands([
   { name: "page_galaxy", title: "Agent Galaxy", group: "Galaxy", agent: false,
     description: "Zoom out to the map of everyone's worlds and walk it as a small character, once your world is made.", answers: true,
     execute: () => galaxyLock.why ?? void galaxy.enter() },
+  { name: "page_sign", title: "Sign for your land", group: "Galaxy", agent: false, answers: true,
+    description: "Your signature, standing as a sign on your land for neighbours to see. Opens the pad, again too.",
+    execute: () => galaxyLock.why ?? void galaxy.sign() },
   { name: "page_galaxy_back", title: "Back to my world", group: "Galaxy", agent: false,
     description: "Leave the galaxy map and go back to your own world and the dock.", execute: () => { void galaxy.leave(); } },
 ]);

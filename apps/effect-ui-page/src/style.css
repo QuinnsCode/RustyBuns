@@ -262,3 +262,21 @@ button:disabled { opacity: .5; cursor: default; }
 @media (pointer: coarse) { .galaxy-stick { display: block; } .galaxy-hint { display: none; } }
 .galaxy-back { position: fixed; top: 56px; left: 14px; z-index: 21; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #fff; background: rgba(8, 8, 24, .8); border-color: rgba(255, 255, 255, .3); }
 @media (min-width: 700px) { .galaxy-back { top: 12px; } }
+
+/* Signing for your land (signPad.ts, signs.ts): a card terminal with a pale screen, and the signs' buttons. */
+.sign-again { position: absolute; top: 56px; right: 14px; font-size: 12px; font-weight: 600; color: #fff; background: rgba(8, 8, 24, .8); border-color: rgba(255, 255, 255, .3); }
+@media (min-width: 700px) { .sign-again { top: 12px; } }
+.sign-hide { position: absolute; left: 0; top: 0; z-index: 1; padding: 3px 10px; font-size: 12px; white-space: nowrap; color: #fff; background: rgba(8, 8, 24, .72); border-color: rgba(255, 255, 255, .3); }
+.sign-till { position: absolute; inset: 0; z-index: 2; display: grid; grid-template-columns: minmax(0, 440px); justify-content: center; align-content: safe center; overflow-y: auto; padding: 104px 16px 16px; background: rgba(10, 8, 20, .55); }
+.sign-pad { padding: 18px; border-radius: 22px; background: linear-gradient(#4a4a55, #26262e); box-shadow: 0 24px 60px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .18); text-align: center; }
+.sign-pad h2 { margin: 0 0 10px; font: 700 14px ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; color: #cfe8d8; }
+.sign-screen { position: relative; border-radius: 8px; overflow: hidden; background: #d9e4d2; box-shadow: inset 0 2px 8px rgba(0, 0, 0, .35); }
+.sign-screen::before { content: "X"; position: absolute; left: 5%; bottom: 22%; font: 700 22px ui-monospace, monospace; color: #3c4a3c; }
+.sign-screen::after { content: ""; position: absolute; left: 4%; right: 4%; bottom: 20%; border-bottom: 2px solid #3c4a3c; pointer-events: none; }
+.sign-screen canvas { position: relative; z-index: 1; display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; touch-action: none; cursor: crosshair; }
+.sign-keys { display: flex; gap: 10px; margin-top: 14px; }
+.sign-keys button { flex: 1; border: 0; border-radius: 10px; padding: 10px; font: 700 14px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; color: #fff; }
+.sign-clear { background: #b8453a; }
+.sign-done { background: #2f8f52; }
+.sign-says { margin: 10px 0 0; font-size: 12px; color: #c9cfe8; }
+.sign-keep { margin-top: 8px; font-size: 12px; color: #c9cfe8; background: none; border: 0; text-decoration: underline; }
