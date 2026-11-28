@@ -87,6 +87,7 @@ export const APPS: Record<string, App> = {
   "pixel-rag":         { test: "bun test test", prep: "bun run build:native", perOs: true },
   "park-hide-seek":    { test: "bun test", boot: true },
   "playground":        { test: "bun test test", drop: false },
+  "python-react":      { test: "bun test test", drop: false },
   "qcrm":              { test: "bun test test", drop: false },
   "react-router-example": { test: "bun test test", boot: true },
   "qwik-example":      { test: "bun test test", boot: true },

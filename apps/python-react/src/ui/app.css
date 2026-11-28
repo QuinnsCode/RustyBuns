@@ -1,0 +1,8 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { max-width: 560px; margin: 40px auto; padding: 0 16px; }
+form { display: flex; gap: 8px; }
+input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; }
+button { font: inherit; padding: 8px 14px; }
+dl div { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+dd { margin: 0; font-variant-numeric: tabular-nums; }
+[role="alert"] { color: #c0392b; }

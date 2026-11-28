@@ -219,6 +219,11 @@
         "line": "A small business site on the built-in CMS: its words and news posts are JSON files you edit as forms and translate, with no code to touch."
       },
       {
+        "app": "python-react",
+        "name": "Python + React",
+        "line": "A React page calls an existing Python codebase as typed functions: CPython runs inside the app's Bun process through bun:ffi, with no second server."
+      },
+      {
         "app": "hemyviz",
         "name": "hemyviz",
         "line": "Your Alchemy deployments, drawn live: every stack, every stage, every resource, in 2D, 2.5D and 3D, five ways each."

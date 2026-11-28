@@ -1076,6 +1076,31 @@
         "vite": "^6.4.4",
       },
     },
+    "apps/python-react": {
+      "name": "python-react",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+      },
+      "devDependencies": {
+        "@alchemy.run/cloudflare": "2.0.0-beta.87",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.87",
+        "@alchemy.run/hetzner": "2.0.0-beta.87",
+        "@alchemy.run/neon": "2.0.0-beta.87",
+        "@alchemy.run/railway": "2.0.0-beta.87",
+        "@effect/platform-bun": "4.1.4",
+        "@effect/platform-node": "4.1.4",
+        "@types/react": "19",
+        "@types/react-dom": "19",
+        "alchemy": "2.0.0-beta.87",
+        "effect": "4.1.4",
+        "vite": "^6.4.4",
+      },
+    },
     "apps/qcrm": {
       "name": "qcrm",
       "version": "0.1.4",
@@ -4235,6 +4260,8 @@
 
     "pwa-example": ["pwa-example@workspace:apps/pwa-example"],
 
+    "python-react": ["python-react@workspace:apps/python-react"],
+
     "qcrm": ["qcrm@workspace:apps/qcrm"],
 
     "qollab": ["qollab@workspace:apps/qollab"],
@@ -5447,6 +5474,10 @@
 
     "puppeteer-core/devtools-protocol": ["devtools-protocol@0.0.1653615", "", {}, "sha512-pGVkY3T/qXxAp2nFPodwYqOevk6ncNMSmvL8QfRCx5ZWGd6Vor7AFNmyaA8Zs6uJyP1QAfjuLandCgvSix1BNA=="],
 
+    "python-react/react": ["react@19.2.8", "", {}, "sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw=="],
+
+    "python-react/react-dom": ["react-dom@19.2.8", "", { "dependencies": { "scheduler": "^0.27.0" }, "peerDependencies": { "react": "^19.2.8" } }, "sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ=="],
+
     "qcrm/@cloudflare/vite-plugin": ["@cloudflare/vite-plugin@1.60.2", "", { "dependencies": { "@cloudflare/unenv-preset": "2.16.2", "miniflare": "5.20260925.0-alpha", "unenv": "2.0.0-rc.24", "workerd": "1.20260925.1", "wrangler": "4.141.0", "ws": "8.21.0" }, "peerDependencies": { "vite": "^6.1.0 || ^7.0.0 || ^8.0.0" }, "bin": { "cf-vite": "bin/cf-vite" } }, "sha512-scyKSUBOAXNJDLDD5y1qDUPBgbmGOE8v7zgTHjeYXE1VLxYGTHewhu4rUXXctJg0t2Lsp2ciW5feM858UZ5qTQ=="],
 
     "qcrm/@cloudflare/workers-types": ["@cloudflare/workers-types@5.20260801.1", "", {}, "sha512-XCv5xWi47WQOK0LpLa6997Mrpz8Ct+nZmp/M5Xp8Z4BFsarf7nYjkznGOcOoYK5m1GfbMFEEuQ2OIZnbIWoe9A=="],
@@ -6292,6 +6323,8 @@
     "postman-runtime/postman-request/http-signature": ["http-signature@1.3.6", "", { "dependencies": { "assert-plus": "^1.0.0", "jsprim": "^2.0.2", "sshpk": "^1.14.1" } }, "sha512-3adrsD6zqo4GsTqtO7FyrejHNv+NgiIfAfv68+jVlFmSr9OGy7zrxONceFRLKvnnZA5jbxQBX1u9PpB6Wi32Gw=="],
 
     "postman-runtime/postman-request/qs": ["qs@6.5.5", "", {}, "sha512-mzR4sElr1bfCaPJe7m8ilJ6ZXdDaGoObcYR0ZHSsktM/Lt21MVHj5De30GQH2eiZ1qGRTO7LCAzQsUeXTNexWQ=="],
+
+    "python-react/react-dom/scheduler": ["scheduler@0.27.0", "", {}, "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q=="],
 
     "qcrm/@cloudflare/vite-plugin/miniflare": ["miniflare@5.20260925.0-alpha", "", { "dependencies": { "@cspotcode/source-map-support": "0.8.1", "sharp": "0.35.4", "undici": "7.29.0", "workerd": "1.20260925.1", "ws": "8.21.0", "youch": "4.1.0-beta.10" } }, "sha512-ly2ygNOfuouMiPcyTNEUW6f3+zgndfC45e1nQZ2LSciOSFfrih8V7ciaZ01I/64Ccp3F6fWraxh5VuHPsP3AAw=="],
 
