@@ -278,9 +278,9 @@ export class Galaxy {
       if ((await this.worldOf(person)) !== body.room) return json({ error: "Claim from your own world: that room isn't it." }, 403);
       const had = await this.mine(person);
       if (had) return json(had satisfies Claimed);
-      if (!(await this.signs.read(person))) return json({ error: SIGN_FIRST }, 409);
       const made = await readJson(await forward(body.room, "/made"), Made);
       if (!made?.made) return json({ error: MAKE_FIRST }, 409);
+      if (!(await this.signs.read(person))) return json({ error: SIGN_FIRST }, 409);
       if (!this.claims.take(Date.now())) return json({ error: "too many new plots at once: try again in a moment" }, 429);
       return json((await this.claim(person, body.room)) satisfies Claimed);
     }
