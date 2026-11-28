@@ -65,12 +65,10 @@ test.skipIf(!hasChrome)("from the keys: piano, mic, guitar and pedals, amp and c
   await press("design");
   await until(tab, `[...document.querySelectorAll('#seat-panel a')].map((a) => a.getAttribute("href")).join() === "/rooms.html#party,/rooms.html,/speakers.html"`, "the three ways on");
 
-  if (process.env.SHOTS) await Bun.write(`${process.env.SHOTS}/seat-desk.png`, Buffer.from((await chrome.cdp.send("Page.captureScreenshot", {}, tab.session) as { data: string }).data, "base64"));
-  await tab.close?.();
 });
 
 test("a loop back and the cabinet change what a board sounds like, and the lists the wire checks match the circuits", () => {
-  expect([...PEDAL_IDS].sort()).toEqual(PEDALS.map((p) => p.id).sort());
+  expect<string[]>([...PEDAL_IDS].sort()).toEqual(PEDALS.map((p) => p.id).sort());
   expect([...BOARD_CABS]).toEqual([...CAB_IDS]);
   const sr = 48000, tone = Float32Array.from({ length: 2400 }, (_, i) => (i < 600 ? 0.3 * Math.sin((2 * Math.PI * 220 * i) / sr) : 0));
   const two = addPedal(newBoard(), "dist"), looped = loopBack(two, 1, 0);
