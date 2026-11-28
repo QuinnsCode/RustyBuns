@@ -30,13 +30,13 @@ beforeAll(() => {
 test("Create your world: no eqosys here, then off to sign in, back to this browser's world, and straight there once signed in", async () => {
   const { backFromSignIn, createWorld, login } = await import("../src/account.ts");
   // Local dev, with no eqosys to send anyone back: the card says so and nothing leaves.
-  expect(createWorld("room00000001")).toBe("off");
+  expect(await createWorld("room00000001")).toBe("off");
   expect(went).toBe("");
 
   // The live site: off to eqosys's login, from the root it sends people back to.
   localStorage.setItem("agent-page.eqosys", EQOSYS_URL);
   at(`${SITE}/r/room00000001`);
-  expect(createWorld("room00000001")).toBe("away");
+  expect(await createWorld("room00000001")).toBe("away");
   for (let i = 0; !went && i < 100; i++) await Bun.sleep(5); // signIn makes its PKCE challenge first
   const out = new URL(went);
   expect([out.origin + out.pathname, out.searchParams.get("app"), out.searchParams.get("return")]).toEqual([`${EQOSYS_URL}/login`, "agent-page", `${SITE}/`]);
@@ -48,7 +48,7 @@ test("Create your world: no eqosys here, then off to sign in, back to this brows
   expect(login()?.name).toBe("Ada");
 
   // Signed in: from another room the card goes to that world; in it, it just opens.
-  expect(createWorld("room00000002")).toBe("away");
+  expect(await createWorld("room00000002")).toBe("away");
   expect(went).toBe("/r/room00000001");
-  expect(createWorld("room00000001")).toBe("here");
+  expect(await createWorld("room00000001")).toBe("here");
 });

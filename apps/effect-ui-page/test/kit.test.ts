@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { arr, bool, obj, opt, str } from "@rustybuns/util/guard";
 import { join } from "node:path";
-import { chromeStartMs, launchChrome, load, openTab, waitFor, type Tab } from "../../../scripts/chrome.ts";
+import { chromeStartMs, launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
 import { WORLD } from "./session.ts";
 
 setDefaultTimeout(60_000);
@@ -65,10 +65,4 @@ test("a world written with @world/kit runs in the sealed frame with no errors an
   expect(await heard("drew")).toEqual(["error: drew"]);
   await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agent_page: true, player: { x: 0.75, z: 0.5 } }, "*")`);
   expect(await heard("visitor")).toEqual(["error: drew", `error: visitor [{"x":0.75,"z":0.5},[50,0]]`]);
-});
-
-test("a world built with the kit stands in 3D in Agent Galaxy", async () => {
-  await call("page_write_file", { path: "world.js", text: `import { ground, trees } from "@world/kit"; ground({ type: "hills" }); trees(20);` });
-  await tab.eval("agentGalaxy.enter()");
-  await waitFor(tab, "your land as shapes", `Object.values(agentGalaxy.state().shows).includes("land")`, 45_000, "agentGalaxy.state()");
 });

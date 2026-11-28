@@ -7,13 +7,18 @@
 // - A plot is known to the page by a public id, never by its room: a room's link is its key (it can drive the room's
 //   agent tools), so the map hands out a one-way hash of it and the server looks the room up when a page asks for a
 //   plot's picture or world.
+// - A plot is a person's: signed in through eqosys (who.ts), `eq:<sub>`. Each person has one world, the first room
+//   they signed in from (POST /api/me/world), and claims a plot for it once that world is made (lock.ts): the AI's
+//   write loaded clean and the page saved it (POST /api/r/<room>/made). Nothing sent out names the person or the room.
 // - Players are name-less characters with a colour, a plot and a spot on it. A move goes only to players on the same
 //   or a touching plot.
 import { sha256 } from "@rustybuns/util/bytes";
 import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { json, readJson } from "@rustybuns/util/http";
 import { TokenBucket } from "@rustybuns/util/limits";
+import { MAKE_FIRST } from "./lock.ts";
 import { fromPage } from "./relay.ts";
+import { Made } from "./saved.ts";
 import { ROOM } from "./tools.ts";
 
 // ---------- the spiral ----------
@@ -57,7 +62,11 @@ export type Plots = Of<typeof Plots>;
 /** A claim's answer: the plot this room holds. */
 export const Claimed = obj({ x: Coord, y: Coord, id: str(32) });
 export type Claimed = Of<typeof Claimed>;
-export const ClaimBody = obj({ room: str(32, { re: ROOM }) });
+/** A claim's body, and POST /api/me/world's: the room the page is in. */
+export const RoomBody = obj({ room: str(32, { re: ROOM }) });
+/** POST /api/me/world's answer: the room that is this person's world (the first one they sent, kept for good). */
+export const MyWorld = obj({ room: str(32, { re: ROOM }) });
+export type MyWorld = Of<typeof MyWorld>;
 
 /** A player: a colour, a plot, and a spot on it (0 to 1 across, x west to east, z north to south). */
 export const Walker = obj({ id: str(32), color: str(24), x: Coord, y: Coord, px: num(0, 1), pz: num(0, 1) });
@@ -90,7 +99,7 @@ export const memoryKv = (): Kv => {
   };
 };
 
-const Cell = obj({ owner: str(64), room: str(32, { re: ROOM }), id: str(32) });
+const Cell = obj({ owner: str(210), room: str(32, { re: ROOM }), id: str(32) });
 
 /** The id the map knows a room's plot by: a one-way hash, so the map never hands out a room's link. */
 export const plotId = async (room: string) => (await sha256(`agent-page-plot:${room}`)).slice(0, 16);
@@ -103,14 +112,38 @@ export class Galaxy {
   private chain: Promise<unknown> = Promise.resolve();
   // A burst of claims (a script making rooms) can't fill the map: a few a second.
   private claims = new TokenBucket(3, 30, Date.now());
-  constructor(private kv: Kv) {}
+  /** `who`: the person behind a request, `eq:<sub>`, or null (who.ts, with the platform's eqosys origin). */
+  constructor(private kv: Kv, private who: (req: Request) => Promise<string | null> = async () => null) {}
 
-  /** The plot this owner holds, or null. */
-  async mine(owner: string): Promise<Claimed | null> {
-    const n = (await this.kv.get([`o:${owner}`])).get(`o:${owner}`);
+  /** The plot at the cell `key` points to (`o:<owner>` or `r:<room>`), or null. */
+  private async plotAt(key: string): Promise<Claimed | null> {
+    const n = (await this.kv.get([key])).get(key);
     if (typeof n !== "number") return null;
     const c = check(Cell, (await this.kv.get([`c:${n}`])).get(`c:${n}`));
     return c ? { ...spiral(n), id: c.id } : null;
+  }
+
+  /** The plot this owner holds, or null. */
+  mine(owner: string): Promise<Claimed | null> { return this.plotAt(`o:${owner}`); }
+  /** The plot this room's world sits on, or null. */
+  plotOf(room: string): Promise<Claimed | null> { return this.plotAt(`r:${room}`); }
+
+  /** This person's world: the room kept for them, or null when they have none yet. */
+  async worldOf(person: string): Promise<string | null> {
+    const room = (await this.kv.get([`p:${person}`])).get(`p:${person}`);
+    return typeof room === "string" && ROOM.test(room) ? room : null;
+  }
+
+  /** This person's world, `room` being kept as it the first time: one world per person, whatever they send after. */
+  myWorld(person: string, room: string): Promise<string> {
+    const run = this.chain.then(async () => {
+      const had = await this.worldOf(person);
+      if (had) return had;
+      await this.kv.put({ [`p:${person}`]: room });
+      return room;
+    });
+    this.chain = run.catch(() => undefined);
+    return run;
   }
 
   /** The plot this owner already has, or the next free cell of the spiral. One plot per owner. */
@@ -123,7 +156,7 @@ export class Galaxy {
       let n = typeof from === "number" ? from : 1;
       while (keptFree(n)) n++;
       const id = await plotId(room);
-      await this.kv.put({ next: n + 1, [`o:${owner}`]: n, [`c:${n}`]: { owner, room, id }, [`i:${id}`]: room });
+      await this.kv.put({ next: n + 1, [`o:${owner}`]: n, [`r:${room}`]: n, [`c:${n}`]: { owner, room, id }, [`i:${id}`]: room });
       return { ...spiral(n), id };
     });
     this.chain = run.catch(() => undefined);
@@ -155,7 +188,7 @@ export class Galaxy {
     if (!fromPage(req)) return json({ error: "only this site's page may walk the galaxy" }, 403);
     const room = new URL(req.url).searchParams.get("room") ?? "";
     if (!ROOM.test(room)) return json({ error: "which room? ?room=<room>" }, 400);
-    const plot = await this.mine(`room:${room}`);
+    const plot = await this.plotOf(room);
     if (!plot) return json({ error: "claim a plot first: POST /api/galaxy/claim" }, 409);
     return { id: plot.id, color: colorOf(plot.id), x: plot.x, y: plot.y, px: 0.5, pz: 0.5 };
   }
@@ -170,15 +203,27 @@ export class Galaxy {
       const r = Math.max(0, Math.min(VIEW_MAX, at("r") || 1));
       return json({ plots: await this.around(x, y, r) } satisfies Plots);
     }
+    if (rest === "/me/world" && req.method === "POST") {
+      if (!fromPage(req)) return json({ error: "only this site's page may ask for your world" }, 403);
+      const person = await this.who(req);
+      if (!person) return json({ error: "Sign in with eqosys first: your world is kept for your account." }, 401);
+      const body = await readJson(req, RoomBody);
+      if (!body) return json({ error: "send { room }: the room this browser is in" }, 400);
+      return json({ room: await this.myWorld(person, body.room) } satisfies MyWorld);
+    }
     if (rest === "/claim" && req.method === "POST") {
       if (!fromPage(req)) return json({ error: "only this site's page may claim a plot" }, 403);
-      const body = await readJson(req, ClaimBody);
-      if (!body) return json({ error: "send { room }: the room that claims its plot" }, 400);
-      const had = await this.mine(`room:${body.room}`);
+      const person = await this.who(req);
+      if (!person) return json({ error: "Sign in with eqosys first: a plot is a signed-in person's world." }, 401);
+      const body = await readJson(req, RoomBody);
+      if (!body) return json({ error: "send { room }: your world's room" }, 400);
+      if ((await this.worldOf(person)) !== body.room) return json({ error: "Claim from your own world: that room isn't it." }, 403);
+      const had = await this.mine(person);
       if (had) return json(had satisfies Claimed);
+      const made = await readJson(await forward(body.room, "/made"), Made);
+      if (!made?.made) return json({ error: MAKE_FIRST }, 409);
       if (!this.claims.take(Date.now())) return json({ error: "too many new plots at once: try again in a moment" }, 429);
-      // In this PR a plot's owner is its room; signing in (PR 5) swaps in the person.
-      return json((await this.claim(`room:${body.room}`, body.room)) satisfies Claimed);
+      return json((await this.claim(person, body.room)) satisfies Claimed);
     }
     const m = rest.match(/^\/(picture|world)\/([a-z0-9]{1,32})$/);
     if (m && req.method === "GET") {

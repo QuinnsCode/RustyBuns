@@ -1,6 +1,7 @@
 // `bun run dev`: the page and its relay in one Bun server, so an agent on this machine connects the way it would to
 // the deployed one (http://localhost:4799/r/<room>, the Connect box's lines). Bun bundles index.html itself. Rooms,
 // their saved worlds and Agent Galaxy live in memory for as long as the server runs. `--port 4799` (or `--port 0`).
+// Sign-in tokens are checked against EQOSYS_URL's keys (a local eqosys, or a test's), else the live eqosys's.
 import { onPortOrFree, portArg } from "@rustybuns/util/ports";
 import { json, parseJson } from "@rustybuns/util/http";
 import { TokenBucket } from "@rustybuns/util/limits";
@@ -11,6 +12,7 @@ import { fromPage, linksFor, Relay } from "../src/relay.ts";
 import { Saved } from "../src/saved.ts";
 import { pictureBucket, pictureHttp, type Pictures, withCard } from "../src/share.ts";
 import { ROOM } from "../src/tools.ts";
+import { EQOSYS, whoSent } from "../src/who.ts";
 
 const port = portArg(process.argv[process.argv.indexOf("--port") + 1], "agentPage");
 /** A socket is a room's page, or a player walking the galaxy (the same limits as the Durable Object's). */
@@ -32,7 +34,7 @@ const roomFor = (id: string) => {
 const card = async (req: Request, srv: { url: URL }) =>
   withCard(await fetch(new URL("/__page", srv.url)), new URL(req.url), async (room) => (await rooms.get(room)?.pictures.get()) !== undefined);
 
-const galaxy = new Galaxy(memoryKv());
+const galaxy = new Galaxy(memoryKv(), (req) => whoSent(req, process.env.EQOSYS_URL || EQOSYS));
 const walkers = new Set<ServerWebSocket<Tag>>();
 const hub: Hub<ServerWebSocket<Tag>> = {
   list: () => [...walkers].flatMap((s) => (s.data.walker ? [{ s, p: s.data.walker }] : [])),
@@ -44,6 +46,7 @@ const roomHttp = (req: Request, room: string, rest: string) => {
   const r = roomFor(room);
   if (rest === "/picture") return pictureHttp(req, r.pictures, r.uploads);
   if (rest === "/world") return r.saved.http(req);
+  if (rest === "/made") return r.saved.http(req, true);
   return r.relay.http(req, rest, linksFor(new URL(req.url).origin, room));
 };
 
@@ -55,8 +58,8 @@ const { server, moved } = onPortOrFree(port, (p) => Bun.serve<Tag>({
   async fetch(req, srv) {
     const url = new URL(req.url);
     if (url.pathname.startsWith("/.well-known/")) return json({ error: "no sign-in: the room's link is its key" }, 404);
-    if (url.pathname === "/api/galaxy" || url.pathname.startsWith("/api/galaxy/")) {
-      const rest = url.pathname.slice("/api/galaxy".length);
+    if (url.pathname === "/api/galaxy" || url.pathname.startsWith("/api/galaxy/") || url.pathname === "/api/me/world") {
+      const rest = url.pathname === "/api/me/world" ? "/me/world" : url.pathname.slice("/api/galaxy".length);
       if (rest === "/socket") {
         const w = await galaxy.seat(req);
         if (w instanceof Response) return w;

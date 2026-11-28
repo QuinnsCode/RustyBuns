@@ -119,6 +119,9 @@ button:disabled { opacity: .5; cursor: default; }
 .dock .tile { flex-direction: column; padding: 12px 4px 8px; border-radius: 14px; font-size: 12px; }
 .dock .tile .l-i { width: 26px; height: 26px; }
 .dock .tile[aria-pressed="true"] { border-color: var(--t-call); color: var(--t-call); }
+.dock .tile.locked { opacity: .6; cursor: not-allowed; }
+.dock .lock-line { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 6px 0 0; font-size: 12px; color: var(--l-dim, #9aa); }
+.dock .lock-line .l-i { width: 14px; height: 14px; }
 .dock .say { justify-content: flex-start; text-align: left; padding: 10px 12px; border-radius: 14px 14px 14px 4px; font-size: 12px; }
 .say span { flex: 1; }
 
@@ -239,7 +242,9 @@ button:disabled { opacity: .5; cursor: default; }
 .l-card b { font: 600 14px var(--l-body); color: var(--c); }
 .l-card span { color: var(--l-dim); }
 .l-explain { grid-column: 1 / -1; padding: 14px 16px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, .14); }
-.l-explain p { margin: 0; font-size: 13px; max-width: 64ch; }
+.l-explain p, .l-explain ol { margin: 0; font-size: 13px; max-width: 64ch; }
+.l-explain ol { padding-left: 20px; }
+.l-explain li + li { margin-top: 4px; }
 .l-explain p + p { margin-top: 6px; color: var(--l-dim); }
 .l-cards > .l-alt { grid-column: 1 / -1; }
 @media (max-width: 520px) { .l-cards { grid-template-columns: 1fr; } }

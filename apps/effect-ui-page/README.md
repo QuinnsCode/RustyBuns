@@ -12,10 +12,19 @@ cd apps/effect-ui-page
 bun run dev              # http://127.0.0.1:4799
 ```
 
+How it goes, as the landing's **What is Agent World?** card says it:
+
+1. See how it works: try a ready-made world, no AI needed.
+2. Make an account with eqosys: your world follows you to any browser.
+3. Connect your AI and make your world: it asks you three things, then writes the code while you watch.
+4. Then the galaxy opens: your world joins one big map you can walk.
+
 Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
 city. Two cards at the top: **What is Agent World?** opens a short explainer in place, and **Create your world**
-signs you in with eqosys and opens your world (the room this browser keeps, or this one); signed in already, it goes
-straight there, and where eqosys can't be reached (local dev) it says so in one line. Below them: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
+signs you in with eqosys and opens your world: the server keeps one per account (`POST /api/me/world`), the room you
+first signed in from, so signing in on another browser lands you in the same world, its files from the server. Signed
+in already, it goes straight there, and where eqosys can't be reached (local dev) it says so in one line. Signed out,
+everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Below them: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
 pictures of what that line does. Three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
 one click with no AI connected, on the landing, in the console and in Cmd+K, each with one thing to ask your AI next.
 When your AI first reads the page or changes it, the landing gives way to your world; "Skip to the page" does it by
@@ -121,6 +130,13 @@ bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 
 ### Agent Galaxy
 
+Every world is a plot of land in one shared space, and the galaxy opens once your world is made: you are signed in, and your AI's write
+loaded with no errors (the step strip's "Your world is up"), which the page saves on the server
+(`POST /api/r/<room>/made`). Until then the Galaxy tile has a lock and one line under it ("Sign in and make your world
+first", or "Make your world first"), and Cmd+K and `agentGalaxy.enter()` say the same; the server answers a claim with
+no token 401 and one for a world not yet made 409. A ready-made world from Try one now doesn't count. A plot is a
+person's (`eq:<sub>`, the token's checked against eqosys's keys, `src/who.ts`), one each, on their world's room.
+
 Everyone's land in one 3D space, like rural neighbours: plots touch edge to edge with no streets or fences. **Agent
 Galaxy** (the Galaxy tile in the console, or Cmd+K) shows your own land under cloud, then the cloud lifts and you are a
 simple shape on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
@@ -158,8 +174,9 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
   modules' imports of each other through an import map, the policy and the reporter first. `src/starter.ts`: the
   starter desert's two files (`src/rain-city.ts` is the Rainy city try-one world). `src/kit.ts`: `@world/kit`'s
   source, a string the frame's import map carries.
-- `src/account.ts`: "Create your world": eqosys sign-in (`@rustybuns/util/eqosys`) and the room this browser keeps
-  as the person's own. Client side only for now.
+- `src/account.ts`: "Create your world": eqosys sign-in (`@rustybuns/util/eqosys`), the token the page sends
+  (`bearer`) and your world as the server keeps it (`myWorld`). `src/who.ts`: the server's side, the token checked
+  against eqosys's keys (`EQOSYS_URL`) for app `agent-page`. `src/lock.ts`: when the galaxy opens, and its two lines.
 - `src/answers.ts`: what the tools answer, shared by the page and the tests' stand-in for it (`test/app-kit.ts`).
 - `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP) and the frames between the relay and the page.
 - `src/agent.ts`: the `Agent` service in the page. Its Layer puts the WebMCP tools up (`@rustybuns/util/commands`)
@@ -182,8 +199,9 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
   in a Durable Object; `scripts/dev.ts` runs it in memory. `src/saved.ts`: a room's saved world, the same way.
   `src/galaxyView.ts`: walking and the players in the page. `src/land3d.ts`: the one 3D scene (three.js, loaded when
   the galaxy opens). `src/land.ts`: a plot's land as data, and what is left out of it.
-- `test/galaxy.test.ts`: two rooms walking the galaxy in headless Chrome against the dev server.
+- `test/galaxy.test.ts`: two people walking the galaxy in headless Chrome against the dev server.
   `test/land.test.ts`: what a world's frame may put in the shared space.
+
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
   `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a
   missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview and Export

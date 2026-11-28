@@ -18,6 +18,8 @@ import type { Land } from "./land.ts";
 import type { Content, Person, Scene3d } from "./land3d.ts";
 import { Claimed, FromGalaxy, type Plot, Plots, type ToGalaxy, VIEW_MAX, type Walker } from "./galaxy.ts";
 import { listing, Page } from "./page.ts";
+import { bearer } from "./account.ts";
+import { galaxyLock } from "./lock.ts";
 
 /** Asks for the galaxy (true) or the way back (false), from Cmd+K and window.agentGalaxy: ProfilePage listens. */
 export const galaxyAsks = Effect.runSync(Queue.unbounded<boolean>());
@@ -200,6 +202,8 @@ function mount(room: string) {
   const stick = el("div", "galaxy-stick", layer);
   const knob = el("i", "", stick);
   document.body.append(layer);
+  // Neighbours may have built since your last visit: read their land afresh. Yours is forgotten when it changes.
+  for (const id of [...asked.keys()]) if (id !== myPlot) forget(id);
   const s: G = {
     layer, canvas, where, three: null, scene: null, lift: 0, since: performance.now(), me: null, error: null, ready: Promise.resolve(),
     plot: { x: 0, y: 0 }, pos: { x: 0.5, z: 0.5 }, cam: null, plots: new Map(), players: new Map(),
@@ -249,7 +253,7 @@ function mount(room: string) {
       where.textContent = s.error;
       return;
     }
-    const me = await getJson("/api/galaxy/claim", Claimed, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ room }) });
+    const me = await getJson("/api/galaxy/claim", Claimed, { method: "POST", headers: { ...await bearer(), "content-type": "application/json" }, body: JSON.stringify({ room }) });
     if (g !== s) return;
     if (!me) { s.error = "The galaxy didn't answer: try again in a moment."; where.textContent = s.error; return; }
     s.me = me; s.plot = { x: me.x, y: me.y }; myPlot = me.id;
@@ -311,6 +315,7 @@ export function startGalaxy(room: string) {
     state: galaxyState,
     /** Up to the galaxy, once your plot is claimed and its world is running. */
     enter: async () => {
+      if (galaxyLock.why) return { ...galaxyState(), locked: galaxyLock.why };
       Queue.offerUnsafe(galaxyAsks, true);
       await until(() => g !== null);
       await g?.ready;

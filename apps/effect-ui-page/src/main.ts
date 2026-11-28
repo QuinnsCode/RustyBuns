@@ -1,5 +1,6 @@
 // The browser entry: find this page's room (its address, /r/<room>, or a new one), bring back what this browser
-// kept of it, and mount the page with the agents' doors up for as long as it is mounted.
+// kept of it (or, when it kept nothing, the world the room saved on the server: your world, signed in on another
+// browser), ask the server whether that world is made (lock.ts), and mount the page with the agents' doors up.
 import { BrowserHost } from "@effect/ui/html";
 import { Effect, Layer, Option, Schema } from "effect";
 import { layer as agent, savedKey } from "./agent.ts";
@@ -13,7 +14,10 @@ import { linksFor, prompt } from "./relay.ts";
 import { READY } from "./worlds.ts";
 import { ProfilePage } from "./ProfilePage.ts";
 import { ROOM } from "./tools.ts";
+import { getJson } from "@rustybuns/util/http";
 import { backFromSignIn, login } from "./account.ts";
+import { galaxyLock, lockLine } from "./lock.ts";
+import { Made } from "./saved.ts";
 import { startGalaxy } from "./galaxyView.ts";
 
 const newRoom = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
@@ -25,12 +29,19 @@ const room = here && ROOM.test(here) ? here : newRoom();
 if (location.pathname !== `/r/${room}`) history.replaceState(null, "", `/r/${room}${location.search}`);
 
 const kept = (() => { try { return localStorage.getItem(savedKey(room)); } catch { return null; } })();
-const initial = kept ? Option.getOrElse(Schema.decodeUnknownOption(Schema.fromJsonString(Page))(kept), () => starter) : starter;
+const [onServer, made] = await Promise.all([
+  kept ? null : fetch(`/api/r/${room}/world`).then((r): unknown => (r.ok ? r.json() : null)).catch(() => null),
+  getJson(`/api/r/${room}/made`, Made).then((m) => m?.made ?? false),
+]);
+const fromServer = Option.getOrNull(Schema.decodeUnknownOption(Page)(onServer));
+const initial = kept ? Option.getOrElse(Schema.decodeUnknownOption(Schema.fromJsonString(Page))(kept), () => starter) : (fromServer ?? starter);
+const who = login()?.name ?? null;
+galaxyLock.why = lockLine(who !== null, made);
 
 // Before the page mounts, so the first world's load is seen.
 startPictures(room);
 
-const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, initial, full: new URLSearchParams(location.search).has("full"), landing: kept === null && back === null, who: login()?.name ?? null }, document.getElementById("app")!)
+const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, initial, full: new URLSearchParams(location.search).has("full"), landing: kept === null && fromServer === null && back === null, who, made }, document.getElementById("app")!)
   .pipe(Layer.provide(agent(room, initial)));
 
 Layer.launch(Main).pipe(Effect.runFork);
@@ -51,7 +62,8 @@ addCommands([
     description: "Records three seconds of the world and downloads an animated GIF.", execute: () => exportGif(room) },
   // The dock's Agent Galaxy button and window.agentGalaxy.enter() send the same message.
   { name: "page_galaxy", title: "Agent Galaxy", group: "Galaxy", agent: false,
-    description: "Zoom out to the map of everyone's worlds and walk it as a small character.", execute: () => { void galaxy.enter(); } },
+    description: "Zoom out to the map of everyone's worlds and walk it as a small character, once your world is made.", answers: true,
+    execute: () => galaxyLock.why ?? void galaxy.enter() },
   { name: "page_galaxy_back", title: "Back to my world", group: "Galaxy", agent: false,
     description: "Leave the galaxy map and go back to your own world and the dock.", execute: () => { void galaxy.leave(); } },
 ]);
