@@ -1,5 +1,5 @@
-// The turntable's page (see turntable.ts): one piece of gear on a stage deck, lit as a photo of it would be: a real
-// room's light (a CC0 HDRI from Poly Haven, also the soft background), a key light with a soft shadow, and ambient
+// The turntable's page (see turntable.ts): one piece of gear on a raised stage deck, lit as a photo of it would be: a
+// real place's light and an out-of-focus background (CC0 HDRIs from Poly Haven), a key light with a soft shadow, and ambient
 // occlusion for the contact shadows and the creases. `window.turntable.show(id, angle)` sets it up and resolves once
 // its textures have loaded. `?hdri=0` falls back to three's RoomEnvironment and a flat backdrop (no download).
 import * as THREE from "three";
@@ -9,7 +9,6 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearLook, gearPieces } from "../src/gear.ts";
 import { surface, gearSurfaces } from "../src/surfaces.ts";
 import { plugPieces, socketPieces } from "../src/sockets.ts";
@@ -24,9 +23,12 @@ import type { Piece } from "../src/shapes.ts";
 // above; `straight` is the owner's straight-on photo's. Neither is in the default set; `--js "turntable.angles = ['photo']"` picks one.
 const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16], photo: [-15, 8], straight: [0, 4], panel: [195, 12] } as const;
 type Angle = keyof typeof ANGLES;
+/** The elevations under the sky, where the default angles look nearly level. */
+const LEVEL: Partial<Record<Angle, number>> = { front: 7, side: 5, back: 9, close: 10 };
 
 // `?sky=1` (an outdoor overcast HDRI, the default): the photos' soft daylight. The sky does most of the lighting, the
-// key is a weak sun through cloud with a wide blurred shadow, and the deck fades into a pale haze, not a dark room.
+// key is a weak sun through cloud with a wide blurred shadow. The camera stands lower there, as a photographer would,
+// so the place shows behind the deck.
 const q = new URLSearchParams(location.search), size = Number(q.get("size") ?? 768), plain = q.has("plain"), hdri = q.get("hdri") !== "0";
 const sky = hdri && q.has("sky");
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -41,19 +43,33 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const pmrem = new THREE.PMREMGenerator(renderer);
-const backdrop = sky ? 0x8c9196 : 0x3b3d40;
+/** An HDRI as a texture. Under the sky it is white-balanced as a camera would (the average colour made grey), so the
+ * overcast's blue doesn't tint the black paint and steel. */
+async function loadHdr(url: string) {
+  const t = await new HDRLoader().setDataType(THREE.FloatType).loadAsync(url);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  const data: unknown = t.image.data;
+  if (sky && data instanceof Float32Array) {
+    const sum = [0, 0, 0];
+    for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) sum[c]! += data[i + c]!;
+    const lum = 0.2126 * sum[0]! + 0.7152 * sum[1]! + 0.0722 * sum[2]!, gain = sum.map((s) => lum / s);
+    for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) data[i + c]! *= gain[c]!;
+    t.needsUpdate = true;
+  }
+  return t;
+}
 let lit: Promise<unknown> = Promise.resolve();
 if (hdri) {
-  lit = new HDRLoader().loadAsync("/hdri.hdr").then((t) => {
-    t.mapping = THREE.EquirectangularReflectionMapping;
-    scene.environment = pmrem.fromEquirectangular(t).texture;
-    scene.background = t;
-    scene.backgroundBlurriness = 0.35;
-    scene.backgroundIntensity = sky ? 0.6 : 0.45;
+  // `?place=1`: what the camera sees behind the deck is another HDRI than the one that lights it (a sky has no horizon)
+  lit = Promise.all([loadHdr("/hdri.hdr"), q.has("place") ? loadHdr("/place.hdr") : null]).then(([light, place]) => {
+    scene.environment = pmrem.fromEquirectangular(light).texture;
+    scene.background = place ?? light;
+    scene.backgroundBlurriness = place ? 0.06 : 0.35;
+    scene.backgroundIntensity = place ? 1.3 : 0.45;
   });
 } else {
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.background = new THREE.Color(backdrop);
+  scene.background = new THREE.Color(0x3b3d40);
 }
 scene.environmentIntensity = sky ? 0.95 : 0.8;
 const key = new THREE.DirectionalLight(0xfff4e8, sky ? 1.0 : 1.8);
@@ -63,7 +79,7 @@ key.shadow.radius = sky ? 10 : 8;
 key.shadow.blurSamples = 24;
 key.shadow.bias = sky ? -0.0002 : -0.0004;
 key.shadow.normalBias = 0.01;
-const rim = new THREE.DirectionalLight(0xdfe8ff, sky ? 0.35 : 0.9);
+const rim = new THREE.DirectionalLight(sky ? 0xffffff : 0xdfe8ff, sky ? 0.35 : 0.9);
 scene.add(key, key.target, rim, rim.target);
 
 // The contact shadow: under overcast sky the darkest thing in a photo is the thin band where a box meets the floor. A
@@ -85,8 +101,8 @@ contact.position.y = 0.0015;
 contact.renderOrder = 1;
 scene.add(contact);
 
-// The stage deck: painted ply sheets, 1.22 by 2.44 m, with a 3 mm gap between them, fading into the room's haze. One
-// mesh, each sheet's grain shifted (UVs in metres, so the grain is at its real size), so no two sheets repeat.
+// The raised deck, as the photos show gear: a painted ply riser just wider than the piece, an aluminium frame round
+// its top edge and a black drape hanging from it, with the place behind and below it out of focus. No sheet joints.
 const deckLook = plain ? { material: new THREE.MeshStandardMaterial({ color: 0x2b2b2c, roughness: 0.8 }), ready: Promise.resolve() } : surface("ply", { base: "/textures/" });
 if (!plain) deckLook.material.color.setHex(0x34332f);
 // matte under the sky: a painted deck is flat, and a glossy one reads as brushed metal
@@ -94,28 +110,48 @@ deckLook.material.roughness = sky ? 0.95 : 0.75;
 // and under it the grain is painted over: no colour streaks, only a faint relief from the wood under the paint (more reads as brushed metal at a slant)
 if (sky && !plain) void deckLook.ready.then(() => {
   const m = deckLook.material;
-  m.map = null;
+  m.map = m.roughnessMap = null;
+  m.roughness = 0.95;
   m.color.setHex(0x3a3936);
   m.normalScale.setScalar(0.12);
   m.envMapIntensity = 0.7;
   m.needsUpdate = true;
 });
-const sheets: THREE.BufferGeometry[] = [];
-for (let i = -4; i <= 4; i++) for (let j = -3; j <= 3; j++) {
-  const g = new THREE.BoxGeometry(1.217, 0.02, 2.437), uv = g.getAttribute("uv"), pos = g.getAttribute("position"), nor = g.getAttribute("normal");
-  const du = ((i * 7 + j * 13) % 5) * 0.37, dv = ((i * 3 + j * 11) % 7) * 0.53;
-  for (let k = 0; k < uv.count; k++) {
-    const ny = Math.abs(nor.getY(k)), nx = Math.abs(nor.getX(k));
-    uv.setXY(k, du + (ny > 0.5 || nx < 0.5 ? pos.getX(k) : pos.getZ(k)), dv + (ny > 0.5 ? pos.getZ(k) : pos.getY(k)));
+const frameLook = new THREE.MeshStandardMaterial({ color: 0x55575a, metalness: 0.8, roughness: 0.55 });
+const drapeLook = new THREE.MeshStandardMaterial({ color: 0x151516, roughness: 1 });
+const deck = new THREE.Group();
+scene.add(deck);
+const FRAME = 0.04, DROP = 2.5, PLEAT = 0.14;
+/** Rebuilds the deck for a footprint `box`: its top at y = 0, `margin` metres of deck past the piece on every side. */
+function deckFor(box: THREE.Box3, margin: number) {
+  for (const m of deck.children as THREE.Mesh[]) m.geometry.dispose();
+  deck.clear();
+  const size = box.getSize(new THREE.Vector3()), at = box.getCenter(new THREE.Vector3()), w = size.x + 2 * margin, d = size.z + 2 * margin;
+  const add = (g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, turn = 0) => {
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(at.x + x, y, at.z + z);
+    mesh.rotation.y = turn;
+    mesh.receiveShadow = true;
+    deck.add(mesh);
+  };
+  // the top: UVs in metres, so the grain under the paint is at its real size
+  const top = new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), uv = top.getAttribute("uv");
+  for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * w, uv.getY(k) * d);
+  add(top, deckLook.material, 0, 0, 0);
+  for (const [run, off, turn] of [[w, d / 2, 0], [w, d / 2, Math.PI], [d, w / 2, Math.PI / 2], [d, w / 2, -Math.PI / 2]] as const) {
+    const x = Math.sin(turn) * off, z = Math.cos(turn) * off;
+    add(new THREE.BoxGeometry(run + 0.03, FRAME, 0.015), frameLook, x, -FRAME / 2 + 0.001, z, turn); // 1 mm proud: flush, it fights the top for the same depth
+    // the drape: pleats that hang straight and open a little towards the floor
+    const cloth = new THREE.PlaneGeometry(run, DROP, Math.ceil((run / PLEAT) * 12), 4), pos = cloth.getAttribute("position");
+    for (let k = 0; k < pos.count; k++) {
+      const fall = 0.5 - pos.getY(k) / DROP;
+      // set 16 mm back, so no pleat comes through the frame
+      pos.setZ(k, Math.sin((pos.getX(k) / PLEAT) * 2 * Math.PI) * (0.008 + 0.025 * fall) - 0.016);
+    }
+    cloth.computeVertexNormals();
+    add(cloth, drapeLook, x, -FRAME / 2 - DROP / 2, z, turn);
   }
-  sheets.push(g.translate(i * 1.22 + 0.4, -0.01, j * 2.44 + 0.3));
 }
-const deck = new THREE.Mesh(mergeGeometries(sheets), deckLook.material);
-deck.receiveShadow = true;
-const gap = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 }));
-gap.rotation.x = -Math.PI / 2;
-gap.position.y = -0.019;
-scene.add(deck, gap);
 const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 60);
 
 const composer = new EffectComposer(renderer);
@@ -202,7 +238,8 @@ async function show(id: string, angle: Angle) {
   scene.add(shown);
   shown.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(shown), c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
-  const [az, el] = ANGLES[angle === "panel" && id === "connectors" ? "straight" : angle].map((d) => (d * Math.PI) / 180);
+  const view = angle === "panel" && id === "connectors" ? "straight" : angle;
+  const [az, el] = [ANGLES[view][0], (sky ? LEVEL[view] : undefined) ?? ANGLES[view][1]].map((d) => (d * Math.PI) / 180) as [number, number];
   const far = (r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.02;
   let dist = angle === "close" ? far * 0.4 : far;
   // the panel shot aims at the middle of the jacks (or the board's face) from 40 cm
@@ -220,7 +257,7 @@ async function show(id: string, angle: Angle) {
   rim.target.position.copy(c);
   const s = key.shadow.camera as THREE.OrthographicCamera;
   s.left = s.bottom = -r * 2; s.right = s.top = r * 2; s.near = 0.1; s.far = r * 20; s.updateProjectionMatrix();
-  scene.fog = new THREE.Fog(backdrop, dist + r * 2, dist + r * 14);
+  deckFor(box, Math.max(0.15, r * 0.3));
   // the pad covers the footprint, and only when the piece stands on the deck
   const foot = box.getSize(new THREE.Vector3());
   contact.visible = sky && box.min.y < 0.02;
