@@ -170,19 +170,27 @@ export const connectLines = (origin: string, room: string) => {
 };
 
 /** The console's terminal: what happened, as a command line shows it, oldest first. `$` a command, `..` waiting,
- *  `ok` done, `>` a call (the agent's or yours), `!!` something went wrong. */
-type Line = readonly ["cmd" | "dim" | "ok" | "call" | "bad", string];
-export const termLines = (room: string, online: boolean, steps: Model["steps"], log: Model["log"]): Line[] => [
+ *  `ok` done, `>` a call (the agent's or yours), `!!` something went wrong, `->` your turn (always the last line). */
+type Line = readonly ["cmd" | "dim" | "ok" | "call" | "bad" | "you", string];
+
+/** What the person has to do in their own agent (nothing can be typed here), or null while it is busy. */
+const yourTurn = (online: boolean, s: Model["steps"]): string | null =>
+  !online ? null : s.up ? "to change it, type what you want into your agent" : !s.here ? "waiting for you: paste the prompt into your agent"
+    : !s.wrote ? "waiting for you: type what you want into your agent" : null;
+export const termLines = (room: string, online: boolean, steps: Model["steps"], log: Model["log"]): Line[] => {
+  const turn = yourTurn(online, steps);
+  return [
   ["cmd", `agent-page open ${room}`],
   online ? ["ok", "connected to the relay: your AI can reach this page"] : ["dim", "connecting to the relay…"],
-  ...(steps.here ? [["ok", "your AI is here"] as const] : online ? [["dim", "waiting for your AI…"] as const] : []),
+  ...(steps.here ? [["ok", "your AI is here"] as const] : []),
   ...[...log].reverse().flatMap((l): Line[] => l.error === null ? [["call", `${l.tool}  ok`]] : [["call", l.tool], ["bad", l.error]]),
   ...(steps.up ? [["ok", "your world is up"] as const] : steps.wrote && !steps.clean ? [["bad", "the frame reported an error: page_read says what"] as const] : []),
-];
-const MARK = { cmd: "$", dim: "..", ok: "ok", call: ">", bad: "!!" } as const;
+  ...(turn ? [["you", turn] as const] : []),
+  ];
+};
+const MARK = { cmd: "$", dim: "..", ok: "ok", call: ">", bad: "!!", you: "->" } as const;
 const termView = Def.fragment((h, lines: Line[]) => h.div.class("term-out").attrs({ role: "log", "aria-label": "What happened" }).children(
   ...lines.map(([k, text], i) => h.p.key(`${i}-${text}`).class(`t-${k}`).children(h.span.class("t-mark").attr("aria-hidden", "true").children(MARK[k]), text)),
-  h.p.class("t-cursor").attr("aria-hidden", "true").children(h.span.class("t-mark").children("$"), h.i()),
 ));
 
 /** One button per ready-made world; the one on screen is pressed. */
@@ -299,8 +307,8 @@ const stepOf = (s: Model["steps"]) => (s.up ? 4 : s.wrote ? 3 : s.asked ? 2 : s.
 /** What happens next, under the strip, in a few words: picking your land while the picker is up, then one per step,
  *  and the galaxy's once the world is up. */
 export const nextLine = (steps: Model["steps"], locked: string | null, choose = false): string => choose ? "Next: pick your land" : [
-  "Next: copy the prompt and paste it into your AI",
-  "Next: your AI asks you about your world",
+  "Next: copy the prompt and paste it into your agent",
+  "Next: type what you want into your agent",
   "Next: answer in your AI's chat, then it writes",
   steps.clean ? "Next: your world loads" : "Next: your AI fixes the error",
   locked === null ? "Next: open the galaxy" : locked === SIGN_IN_FIRST ? "Next: press Galaxy to sign in" : "Saving your world…",
@@ -320,11 +328,15 @@ const stripView = Def.fragment((h, steps: Model["steps"], status: string | null,
 /** What to do, as three pictures: copy, paste into your AI, watch. Done steps turn dark; each call from the AI sends a
  *  dot down the wires (keyed by the call, so a new call starts it again), green when the page took it, red when not. */
 const stepsView = Def.fragment((h, copied: boolean, last: typeof Logged.Type | undefined) => {
-  const step = (done: boolean, name: Icon, says: string) => h.div.class("step", done && "done").key(says).children(h.span.class("dot").children(icon(h, name)), h.b(says));
+  const done = [copied || last !== undefined, last !== undefined, last?.error === null];
+  const now = done.indexOf(false);
+  const step = (n: number, name: Icon, says: string) => h.div.class("step", done[n] && "done", n === now && "now").key(says).attr("aria-current", n === now ? "step" : undefined)
+    .children(h.span.class("dot").children(icon(h, name)), h.b(`${n + 1}. ${says}`));
   const wire = (n: number) => h.div.class("wire").key(`wire${n}`).attr("aria-hidden", "true").children(
     last && h.i.class("pulse", `w${n}`, last.error !== null && "bad").key(`p${last.call}-${n}`));
-  return h.div.class("go").attrs({ role: "group", "aria-label": "Copy, paste into your AI, then watch" }).children(
-    step(copied || last !== undefined, "copy", "Copy"), wire(1), step(last !== undefined, "chat", "Paste"), wire(2), step(last?.error === null, "screen", "Watch"));
+  return h.div.class("go").attrs({ role: "group", "aria-label": "Make your own world" }).children(
+    h.h3("Make your own world"),
+    step(0, "copy", "Copy the prompt"), wire(1), step(1, "chat", "Paste into your agent"), wire(2), step(2, "screen", "Watch it build"));
 });
 
 /** The ready-made worlds as picture tiles. */
@@ -504,6 +516,10 @@ export const ProfilePageNoDeps = Def.make({
             h.div.class("facts").children(
               h.span.class("live", online && "on").attr("role", "status").children(online ? "Ready" : "Connecting"),
               h.span.class("secret").attr("title", "Anyone with this page's link can change your world").children(icon(h, "key"), "Link is secret"),
+            ),
+            h.div.class("see").children(
+              h.h3("Want to see what is possible in the world?"),
+              h.p.class("warn").children(icon(h, "info"), "Picking one replaces your world. Undo brings it back until you reload."),
             ),
             worldTiles(h, on?.name),
             on && h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
