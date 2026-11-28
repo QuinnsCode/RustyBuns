@@ -1864,17 +1864,25 @@ export interface Governed extends Look { run(r: Running, level: number): void }
 export function runningLook(look: Look, renderer: THREE.WebGLRenderer, g: Graphics): Governed {
   let now: Running & { level: number } = { scale: g.scale, freezeShadows: false, cap: g.cap, level: 0 }, size: [number, number] = [1, 1], last = 0;
   renderer.setPixelRatio(Math.min(g.scale, devicePixelRatio)); // the open air sets its own: the knob wins
-  // With no GPU every draw is the processor's, and drawn back to back they leave the page no time for its clicks and its
-  // room's messages (#6555: three rooms in headless Chrome never got in). One a second; the frames between still walk and listen.
+  // With no GPU every draw is the processor's, and queued back to back they leave the page no time for its clicks and its
+  // room's messages (#6555: three rooms in headless Chrome never got in). So one draw at a time, then as long again off:
+  // as many as the machine can make with half of it left over. The frames between still walk and listen.
+  let fence: WebGLSync | null = null, sent = 0, rested = 0;
   const gl = renderer.getContext(), info = gl.getExtension("WEBGL_debug_renderer_info");
   const software = /swiftshader|llvmpipe|software/i.test(String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : ""));
   return {
     quality: look.quality,
     render(cam) {
       // a cap skips a draw, never the frame: walking and the clock still run every frame
-      const cap = software ? 1 : now.cap;
-      if (cap) { const t = performance.now(); if (t - last < 1000 / cap - 2) return; last = t; }
+      const t = performance.now();
+      if (fence && gl instanceof WebGL2RenderingContext && gl.getSyncParameter(fence, gl.SYNC_STATUS) === gl.SIGNALED) {
+        gl.deleteSync(fence); fence = null; rested = t + (t - sent);
+      }
+      // a skipped draw still moves the camera, so a tap and a name tag find what the frame says is there
+      if (fence || t < rested || (now.cap && t - last < 1000 / now.cap - 2)) return cam.updateMatrixWorld();
+      last = t;
       look.render(cam);
+      if (software && gl instanceof WebGL2RenderingContext) { sent = t; fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush(); }
     },
     resize(w, h) { size = [w, h]; look.resize(w, h); },
     stage: (l) => look.stage?.(l),
