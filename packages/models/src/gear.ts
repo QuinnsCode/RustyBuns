@@ -2618,10 +2618,12 @@ function onSkids(pieces: Record<string, Build>, skid: number, w: number, d: numb
  * its 7.5 mm skids, which the model keeps inside the 696, so a box stacks on it there): three 21" in a hybrid horn bandpass, 18 mm birch
  * in a black textured coat, red aluminium braces. Measured off the front, side, rear and plan views (about 10 mm):
  * - cabinet: the shell open at the front, and the two dividers 168 in from each end
- * - horn walls: the main mouth, 1107 between the dividers, its two walls running back from the dividers to the grille
- *   (the fold behind them is not drawn, so it is not built)
- * - grille: 443 wide, centred, 550 back, the chamber dark behind it
- * - braces: two uprights with stepped edges at the grille's edges, a cross bar 748 long at half height between the walls
+ * - horn walls: the main mouth, 1107 between the dividers, its two walls slanting back at about 45 degrees from the
+ *   dividers to the grille, not flat panels facing front (#6161): in the drawing's isometric view the wall meets the
+ *   floor along a level line, where a flat panel's edge would drop at 30 degrees (the fold behind is not drawn or built)
+ * - grille: 443 wide, centred, 345 back, the chamber dark behind it
+ * - braces: two uprights with stepped edges and a window above and below, 25 to 285 back, at the grille's edges; a
+ *   cross bar at half height, 200 back, from wall to wall, its flanges lying along the walls
  * - slots: the two end slots, 150 wide, full height and depth, with two red brackets each, 234 and 456 down
  * - handles: two recessed in each side (582 and 1081 back from the front), two in the back (302 either side of centre)
  * - jacks: the two 8-pin sockets on a plate between the back handles
@@ -2635,7 +2637,7 @@ function incubusPieces(): Record<string, Build> {
   const xd = w / 2 - mm(177); // the dividers' middles
   for (const s of [-1, 1]) cab.pieces.push(box("coat", [t, ih, d - t], [s * xd, cy, t / 2]));
   // the horn walls: from each divider at the front back to the grille's edge
-  const zg = f - mm(550), xg = mm(221.5);
+  const zg = f - mm(345), xg = mm(221.5);
   for (const s of [-1, 1]) {
     const a = [s * (xd - t / 2), f - 0.004], b = [s * xg, zg], dx = b[0]! - a[0]!, dz = b[1]! - a[1]!, l = Math.hypot(dx, dz);
     const n = [(s * -dz * t) / l, (s * dx * t) / l]; // the wall's thickness, away from the mouth
@@ -2643,17 +2645,20 @@ function incubusPieces(): Record<string, Build> {
   }
   grille.pieces.push(...grilleSlab(2 * xg, ih - 0.004, 0.012, cy, zg - 0.012, 0.004));
   grille.pieces.push(box("cavity", [2 * xg, ih, 0.004], [0, cy, zg - 0.2]));
-  // the braces: the cross bar at half height where it meets the walls, flanged to them; the stepped uprights
-  const zb = f - mm(298), xb = mm(374), ang = Math.atan2(xd - t / 2 - xg, mm(546));
+  // the braces: the cross bar at half height, its flanges flat on the walls; the stepped uprights, short of the grille
+  const wallZ = (x: number) => f - 0.004 - ((xd - t / 2 - x) / (xd - t / 2 - xg)) * (f - 0.004 - zg); // a wall's depth at |x|
+  const zb = f - mm(200), xb = xg + ((zb - zg) / (f - 0.004 - zg)) * (xd - t / 2 - xg);
   braces.pieces.push(box("body", [2 * xb, 0.03, 0.012], [0, cy, zb], { bevel: 0.002 }));
-  for (const s of [-1, 1]) braces.pieces.push(box("body", [0.01, 0.09, 0.07], [s * xb, cy, zb], { bevel: 0.002, rot: [0, s * ang, 0] }));
   for (const s of [-1, 1]) {
+    const on = [mm(382), mm(235)].map((x) => [s * x, wallZ(x)]); // the flange's ends on the wall, then 6 proud of it
+    braces.pieces.push(slab("body", [...on, ...[...on].reverse().map(([x, z]) => [x! - s * 0.006, z! + 0.006])], cy - 0.021, cy + 0.021));
     const steps = 8, edge = Array.from({ length: steps + 1 }, (_, k) => [mm(30) * (k % 2), t + (ih * k) / steps]);
-    const outline = [...edge, ...[...edge].reverse().map(([u, y]) => [u! + mm(60), y!])];
-    const up = frontPlate("body", outline, [], 0.004, 0.008);
-    up.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(s * mm(144), 0, zb - mm(45)).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)));
+    const outline = [...edge, ...[...edge].reverse().map(([u, y]) => [u! + mm(230), y!])];
+    const windows = [-1, 1].map((k) => rect(mm(130), cy + k * ih * 0.24, mm(140), ih * 0.3));
+    const up = frontPlate("body", outline, windows, 0.004, 0.008);
+    up.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(s * mm(144), 0, f - mm(285)).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)));
     braces.pieces.push(up);
-    for (const y of [t + 0.003, h - t - 0.003]) braces.pieces.push(box("body", [0.05, 0.006, 0.1], [s * mm(144), y, zb], { bevel: 0.001 }));
+    for (const y of [t + 0.003, h - t - 0.003]) braces.pieces.push(box("body", [0.05, 0.006, mm(260)], [s * mm(144), y, f - mm(155)], { bevel: 0.001 }));
   }
   // the end slots: dark at the back, two red brackets across each
   for (const s of [-1, 1]) {
