@@ -80,7 +80,7 @@ import { badge, dropBadge } from "./badge.ts";
 import { prop, chaseSteps, tickProps } from "./props.ts";
 import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { doorways } from "./doors.ts";
-import { dress, loadGraphics, loadQuality, metreUV, runningLook, saveGraphics, surface, useKit, wallSurface, type Look, type Quality } from "./look.ts";
+import { dress, loadGraphics, loadQuality, metreUV, paintFor, runningLook, saveGraphics, surface, useKit, wallSurface, type Look, type Quality } from "./look.ts";
 import { preset, PRESETS, stepWords, type Graphics } from "./graphics.ts";
 import { graphicsCommands, watchPicture } from "./graphics-panel.ts";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -198,6 +198,7 @@ const canvas = $("stage");
 if (!(canvas instanceof HTMLCanvasElement)) throw new Error("#stage is not a canvas");
 // no multisampling at low: in software GL (a weak laptop, CI) it is four times the pixels on every frame (#5922)
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: loadQuality() === "high" });
+paintFor(renderer);
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 const scene = new THREE.Scene();
 // a lens about a phone's main camera: wide enough to see the room, not so wide its corners stretch (the light: look.ts)
@@ -511,7 +512,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   const key = JSON.stringify([a, label]);
   let d = drawn.get(id);
   if (d && d.key !== key) { scene.remove(d.fig.group); d.fig.dispose(); d = undefined; }
-  if (!d) { d = { fig: figure(a, label), key, avatar: a, x, z, y: up, yaw, speed: 0, heading: 0 }; scene.add(d.fig.group); drawn.set(id, d); }
+  if (!d) { d = { fig: figure(a, label, id !== "me"), key, avatar: a, x, z, y: up, yaw, speed: 0, heading: 0 }; scene.add(d.fig.group); drawn.set(id, d); }
   // others glide to where their last body said, 10 a second; you are where you are
   const k = snap ? 1 : 1 - Math.exp(-dt * 12);
   const nx = lerp(d.x, x, k), nz = lerp(d.z, z, k);
