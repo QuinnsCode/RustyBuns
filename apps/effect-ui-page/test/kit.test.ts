@@ -120,3 +120,9 @@ test("each door builds the village in the frame with no errors, and a mistake co
   expect((await fetch(`${api}/socket`, { headers: { origin: "https://evil.example" } })).status).toBe(403);
   expect((await fetch(`${origin}/api/r/NOPE/build`, { method: "POST", body: VILLAGE })).status).toBe(404);
 });
+
+test("the About page ends in the shared links, this year's © and the way back to QNTBR", async () => {
+  await load(chrome.cdp, tab, `${origin}/about`, 500);
+  expect(await tab.eval<string>(`document.querySelector(".site-foot").innerText`)).toContain(`© ${new Date().getFullYear()}`);
+  expect(await tab.eval<boolean>(`!!document.querySelector('.site-foot a[href="https://qntbr.com"]')`)).toBe(true);
+});
