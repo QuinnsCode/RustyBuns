@@ -16,6 +16,7 @@ import { listTools } from "./tools.ts";
 import { worldDoc } from "./world.ts";
 import { READY } from "./worlds.ts";
 import { galaxyAsks } from "./galaxyView.ts";
+import { galaxyLock, lockLine } from "./lock.ts";
 
 export const PageMessage = UiSchema.TaggedEnum({
   ReceivedAgentCall: { call: Call },
@@ -39,11 +40,19 @@ export const PageMessage = UiSchema.TaggedEnum({
   CompletedExportGif: {},
   ClickedGalaxy: {},
   ClickedBack: {},
+  /** The world was saved as made (MarkMade), or the server said no: the galaxy opens to a signed-in person. */
+  MadeWorld: { made: Schema.Boolean },
 });
 
-/** "Create your world": sign in with eqosys, or open the world this browser keeps (account.ts, loaded only when pressed). */
+/** "Create your world": sign in with eqosys, or open your world (account.ts). */
 export const CreateWorld = Command.make("effect-ui-page/CreateWorld", { args: { room: Schema.String } }, ({ room }) =>
   Effect.promise(() => import("./account.ts").then((a) => a.createWorld(room))).pipe(Effect.map((went) => PageMessage.CreatedWorld({ went }))));
+
+/** Your AI's world loaded clean: save it on the server as made (POST /api/r/<room>/made, saved.ts), which opens the
+ *  galaxy to a signed-in person (lock.ts) and lets the server hand it a plot. */
+export const MarkMade = Command.make("effect-ui-page/MarkMade", { args: { room: Schema.String, page: Page, signedIn: Schema.Boolean } }, ({ room, page, signedIn }) =>
+  Effect.promise(() => fetch(`/api/r/${room}/made`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(page) }).then((r) => r.ok, () => false))
+    .pipe(Effect.map((made) => { if (made) galaxyLock.why = lockLine(signedIn, true); return PageMessage.MadeWorld({ made }); })));
 
 /** Record the world as a GIF (pictures.ts); how it goes comes back as ChangedGif. */
 export const ExportGif = Command.make("effect-ui-page/ExportGif", { args: { room: Schema.String } }, ({ room }) =>
@@ -92,11 +101,13 @@ const Model = Schema.Struct({
   status: Schema.NullOr(Schema.String),
   /** Agent Galaxy: the dock drops away and the map takes the window (galaxyView.ts draws it). */
   galaxy: Schema.Boolean,
+  /** The world is made (its AI's write loaded clean and the server keeps it): with a sign-in, the galaxy opens. */
+  made: Schema.Boolean,
 });
 type Model = typeof Model.Type;
 
-/** `who`: the eqosys name this browser is signed in as (account.ts), or null. */
-const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean, who: Schema.NullOr(Schema.String) });
+/** `who`: the eqosys name this browser is signed in as (account.ts), or null. `made`: the server says this room's world is. */
+const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean, who: Schema.NullOr(Schema.String), made: Schema.Boolean });
 
 const Def = Html.component({ name: "ProfilePage", props: Props, model: Model, message: PageMessage });
 
@@ -192,6 +203,7 @@ const ICONS = {
   fish: ["M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.47-3.44 6-7 6s-7.56-2.53-8.5-6Z", "M18 12v.5", "M16 17.93a9.77 9.77 0 0 1 0-11.86", "M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"],
   globe: ["M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"],
   back: ["m12 19-7-7 7-7", "M19 12H5"],
+  lock: ["M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z", "M7 11V7a5 5 0 0 1 10 0v4"],
 } as const;
 type Icon = keyof typeof ICONS;
 
@@ -280,8 +292,12 @@ const cardsView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: str
   h.button.attr("type", "button").class("l-card", "c-pink").on("click", PageMessage.ClickedCreate())
     .children(icon(h, "sparkles"), h.b("Create your world"), h.span(who ? `Signed in as ${who}` : "Sign in with eqosys to get your plot")),
   explain && h.div.class("l-explain").attrs({ id: "l-explain", role: "region", "aria-label": "What is Agent World?" }).children(
-    h.p("You get a plot of your own. Your AI builds a world on it: first it asks you three things in your own chat (the ground, what is on it, the weather), then it writes the code while you watch."),
-    h.p("Every world joins one big map that anyone can walk through."),
+    h.ol.children(
+      h.li("See how it works: try a ready-made world below, no AI needed."),
+      h.li("Make an account with eqosys: your world follows you to any browser."),
+      h.li("Connect your AI and make your world: it asks you three things, then writes the code while you watch."),
+      h.li("Then the galaxy opens: your world joins one big map you can walk."),
+    ),
   ),
   noSignIn && h.p.class("l-alt").attr("role", "alert").children("Sign-in isn't reachable from here, so your world stays in this browser: Skip to the page below."),
 ));
@@ -356,7 +372,7 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
 });
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false,
+  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,
     explain: false, noSignIn: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
   update: ($, message) => {
     switch (message._tag) {
@@ -376,13 +392,20 @@ export const ProfilePageNoDeps = Def.make({
           case "read": return $.evolve({ landing: false, steps: { ...s, here: true } });
           case "start": return $.evolve({ steps: { ...s, clean: true, up: false } });
           case "error": return $.evolve({ steps: { ...s, clean: false, up: false } });
-          case "loaded": return $.evolve({ steps: { ...s, up: s.wrote && s.clean } });
+          case "loaded": {
+            const steps = { ...s, up: s.wrote && s.clean };
+            return steps.up && !$.model.made
+              ? $.set({ ...$.model, steps }).run(MarkMade.make({ room: $.props.room, page: $.model.page, signedIn: $.props.who !== null }))
+              : $.evolve({ steps });
+          }
         }
       }
       case "ClickedExportGif": return $.run(ExportGif.make({ room: $.props.room }));
       case "ChangedGif": return $.evolve({ gif: { busy: message.busy, says: message.says } });
       case "CompletedExportGif": return $.model;
-      case "ClickedGalaxy": return $.evolve({ galaxy: true, landing: false });
+      // Shut until the world is made: the tile's line says why (and Cmd+K and window.agentGalaxy say it too).
+      case "ClickedGalaxy": return lockLine($.props.who !== null, $.model.made) ? $.model : $.evolve({ galaxy: true, landing: false });
+      case "MadeWorld": return $.evolve({ made: message.made });
       case "ClickedBack": return $.evolve({ galaxy: false });
     }
     const a = asked(message);
@@ -410,8 +433,9 @@ export const ProfilePageNoDeps = Def.make({
     // Cmd+K and window.agentGalaxy ask for the galaxy here, so every door goes through the same two messages.
     Subscription.make("galaxy", Stream.fromQueue(galaxyAsks).pipe(Stream.map((on) => (on ? PageMessage.ClickedGalaxy() : PageMessage.ClickedBack())))),
   ],
-  view: (h, { page, past, log, online, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status }) => {
+  view: (h, { page, past, log, online, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status, made }) => {
     const { room, origin, who } = h.props;
+    const locked = lockLine(who !== null, made);
     // The map is drawn by galaxyView.ts in its own layer over the page; here only the way back.
     if (galaxy) return h.div.class("galaxy-mode").attr("data-galaxy", "on").children(
       h.button.attr("type", "button").class("galaxy-back").on("click", PageMessage.ClickedBack()).children(icon(h, "back"), "Back to my world"));
@@ -421,6 +445,7 @@ export const ProfilePageNoDeps = Def.make({
     const lines = connectLines(origin, room).map((c) => [c, c.what === "Claude Code" ? "Claude" : c.what] as const);
     const failed = [{ what: "prompt", text: promptText }, { what: "ask", text: on?.ask ?? "" }, ...connectLines(origin, room)]
       .find((c) => copied === `failed: ${c.what}`)?.text;
+    const doc = worldDoc(page);
     return h.div.class("shell", full && "full").children(
       // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
       page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
@@ -428,7 +453,9 @@ export const ProfilePageNoDeps = Def.make({
       }),
       h.main.class("page", page.backdrop && "over").children(
         // The world the agent wrote, sealed: scripts run in an opaque origin, with no reach into this page.
-        h.iframe.class("world").attrs({ srcdoc: worldDoc(page), sandbox: "allow-scripts allow-pointer-lock", referrerpolicy: "no-referrer", title: "Your world", allow: "fullscreen" }),
+        // A changed world gets a fresh frame (keyed by its document): Chrome can drop a new srcdoc set while the last
+        // one is still loading, which left the old world on screen after an agent's quick first write.
+        h.iframe.class("world").key(doc).attrs({ srcdoc: doc, sandbox: "allow-scripts allow-pointer-lock", referrerpolicy: "no-referrer", title: "Your world", allow: "fullscreen" }),
         // Put away (Hide, or ?full on the link), the console leaves one small button to bring it back.
         full && h.button.attr("type", "button").class("full-toggle").attr("title", "Show the console").on("click", PageMessage.ClickedFull()).children("Show"),
       ),
@@ -463,8 +490,10 @@ export const ProfilePageNoDeps = Def.make({
               h.button.attr("type", "button").class("tile").attr("aria-label", "Undo").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children(icon(h, "undo"), "Undo"),
               h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Start over", title: "Start over" }).on("click", PageMessage.ClickedReset()).children(icon(h, "reset"), "Reset"),
               exportButton(h, gif),
-              h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Agent Galaxy", title: "Walk the map of everyone's worlds" }).on("click", PageMessage.ClickedGalaxy()).children(icon(h, "globe"), "Galaxy"),
+              h.button.attr("type", "button").class("tile", locked && "locked").attrs({ "aria-label": locked ? `Agent Galaxy: ${locked}` : "Agent Galaxy", title: locked ?? "Walk the map of everyone's worlds" }).attr("aria-disabled", locked ? "true" : undefined)
+                .on("click", PageMessage.ClickedGalaxy()).children(icon(h, locked ? "lock" : "globe"), "Galaxy"),
             ),
+            locked && h.p.class("lock-line").attr("data-galaxy-lock", locked).children(icon(h, "lock"), locked),
             !gif.busy && gif.says !== "" && h.p.class("muted").attr("role", "status").children(gif.says),
           ),
         ),

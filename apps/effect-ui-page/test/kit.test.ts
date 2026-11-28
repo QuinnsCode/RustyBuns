@@ -64,7 +64,7 @@ test("a world written with @world/kit runs in the sealed frame with no errors an
   expect(await call("page_write_file", { path: "world.js", text: WORLD + probe })).toMatchObject({ ok: true });
   expect(await heard("drew")).toEqual(["error: drew"]);
   await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agent_page: true, player: { x: 0.75, z: 0.5 } }, "*")`);
-  expect(await heard("visitor")).toEqual(["error: drew", `error: visitor [{"x":0.75,"z":0.5},[25,0]]`]);
+  expect(await heard("visitor")).toEqual(["error: drew", `error: visitor [{"x":0.75,"z":0.5},[50,0]]`]);
 });
 
 test("a world built from the kit's building blocks runs with no errors, walls off its buildings, and reacts to a visitor", async () => {

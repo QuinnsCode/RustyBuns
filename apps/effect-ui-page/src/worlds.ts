@@ -1,5 +1,6 @@
 // Worlds already written, for a person to try before any AI is connected: one click loads one, as an undoable change.
 // Each has one thing to ask an AI next. Plain strings: these are the files, drawn on a 2D canvas with no libraries.
+import { FISH_TANK_FILES } from "./fish-tank.ts";
 import { RAIN_CITY_FILES } from "./rain-city.ts";
 
 const index = (title: string, back: string) => `<!doctype html>
@@ -47,32 +48,10 @@ function draw(t, W, H) {
 }
 ${FRAME}`;
 
-const fish = `// A fish tank: change how many fish, their colors, or add something bigger.
-const COLORS = ["#ff7a3d", "#ffd34a", "#ff3d8b", "#3dffa8", "#a67bff"];
-const FISH = Array.from({ length: 14 }, (_, i) => ({ depth: (i * 0.618) % 1, start: (i * 0.377) % 1, speed: 30 + (i * 17) % 50, size: 12 + (i * 7) % 18, way: i % 2 ? 1 : -1, color: COLORS[i % COLORS.length] }));
-function draw(t, W, H) {
-  const water = g.createLinearGradient(0, 0, 0, H);
-  water.addColorStop(0, "#1b7fb5"); water.addColorStop(1, "#062a4a");
-  g.fillStyle = water; g.fillRect(0, 0, W, H);
-  g.fillStyle = "#c9a566"; g.fillRect(0, H - 40, W, 40);
-  g.strokeStyle = "#2fbf71"; g.lineWidth = 7; g.lineCap = "round";
-  for (let x = 40; x < W; x += 90) { g.beginPath(); g.moveTo(x, H - 38); g.quadraticCurveTo(x + Math.sin(t + x) * 30, H - 100, x + Math.sin(t * 1.3 + x) * 20, H - 150 - (x % 70)); g.stroke(); }
-  for (const f of FISH) {
-    const span = W + 100, along = (f.start * span + t * f.speed) % span;
-    const x = f.way > 0 ? along - 50 : W + 50 - along, y = 50 + f.depth * Math.max(0, H - 140) + Math.sin(t * 2 + f.start * 9) * 8, s = f.size, w = f.way;
-    g.fillStyle = f.color;
-    g.beginPath(); g.ellipse(x, y, s, s * 0.6, 0, 0, 7); g.fill();
-    g.beginPath(); g.moveTo(x - w * s * 0.8, y); g.lineTo(x - w * s * 1.6, y - s * 0.6); g.lineTo(x - w * s * 1.6, y + s * 0.6); g.fill();
-    dot(x + w * s * 0.5, y - s * 0.12, s * 0.12, "#05101c");
-  }
-  for (let i = 0; i < 24; i++) dot((i * 211) % W, H - ((t * (25 + i % 5 * 9) + i * 97) % H), 2 + i % 3, "rgba(255,255,255,.35)");
-}
-${FRAME}`;
-
 export interface Ready { readonly name: string; readonly ask: string; readonly files: Readonly<Record<string, string>> }
 
 export const READY: readonly Ready[] = [
   { name: "Rainy city", ask: "make it a thunderstorm with lightning", files: RAIN_CITY_FILES },
   { name: "Solar system", ask: "give the big planet rings and add a comet", files: { "index.html": index("Solar system", "#05060f"), "world.js": solar } },
-  { name: "Fish tank", ask: "add a shark the other fish swim away from", files: { "index.html": index("Fish tank", "#062a4a"), "world.js": fish } },
+  { name: "Fish tank", ask: "add a shark that cruises the tank and makes the other fish scatter", files: FISH_TANK_FILES },
 ];
