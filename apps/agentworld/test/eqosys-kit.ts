@@ -1,6 +1,6 @@
 // A stand-in eqosys for the journeys: its keys (/.well-known/jwks.json, which the dev server checks tokens against
 // through EQOSYS_URL), a /login that signs in whoever `as` names and sends the page back with a code, the code's
-// exchange and the refresh a reloaded page renews with. Tokens are signed with its own key, as Park's tests do.
+// exchange, the refresh a reloaded page renews with, and /q/achieve (the ids asked for, in `unlocked`). Tokens are signed with its own key, as Park's tests do.
 // `signIn` walks a page through "Create your world" against it.
 import { jwksOf, newKey, sign } from "@rustybuns/util/token";
 import { type Tab, waitFor } from "../../../scripts/chrome.ts";
@@ -10,16 +10,24 @@ export interface Person { id: string; email: string; name: string }
 export async function fakeEqosys() {
   const signer = { EQOSYS_SIGNING_KEY: await newKey() };
   let url = "", next: Person | null = null, n = 0;
+  const unlocked = new Set<string>();
   const codes = new Map<string, Person>(), refreshes = new Map<string, Person>();
   const handoff = (p: Person, app: string) => ({ user: p, app, source: app, access: ["member"] });
   /** A token for `p`: for Agent World unless `app` says another, signed `at` (now by default; it lasts ten minutes). */
   const token = async (p: Person, o: { app?: string; at?: number } = {}) => (await sign(signer, url, handoff(p, o.app ?? "agentworld"), o.at ?? Date.now()))!;
-  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET, POST, OPTIONS" };
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type, dpop", "access-control-allow-methods": "GET, POST, OPTIONS" };
   const reply = (v: unknown, status = 200) => Response.json(v, { status, headers: cors });
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => {
     const u = new URL(req.url);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (u.pathname === "/.well-known/jwks.json") return reply(await jwksOf(signer));
+    if (u.pathname === "/q/achieve") {
+      const body: unknown = await req.json().catch(() => null);
+      if (!req.headers.get("authorization") || !body || typeof body !== "object" || !("id" in body) || typeof body.id !== "string") return reply({ error: "send { id } with a token" }, 400);
+      const fresh = !unlocked.has(body.id);
+      unlocked.add(body.id);
+      return reply({ achievement: { id: body.id, name: body.id, blurb: body.id, secret: false, at: Date.now() }, new: fresh });
+    }
     if (u.pathname === "/health") return new Response("ok", { headers: cors });
     if (u.pathname === "/login" && next) {
       const code = `code${++n}`, back = new URL(u.searchParams.get("return") ?? "");
@@ -47,7 +55,7 @@ export async function fakeEqosys() {
     return reply({ error: "not here" }, 404);
   } });
   url = `http://127.0.0.1:${server.port}`;
-  return { url, token, as: (p: Person) => { next = p; }, stop: () => server.stop(true) };
+  return { url, token, unlocked, as: (p: Person) => { next = p; }, stop: () => server.stop(true) };
 }
 
 /** A page on the landing presses "Create your world" with eqosys at `eqosys`, signed in there as whoever it names,

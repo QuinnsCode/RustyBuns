@@ -168,6 +168,20 @@ test("the step strip follows the agent: read, status, write, and a clean load is
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
   })));
 
+test("the console is one thread: connect (the levels offered once), then say what you want, then the achievement and the galaxy", () =>
+  run(Effect.gen(function* () {
+    const card = (name: string) => HtmlLocator.role("region", { name });
+    const peek = Locator.text("Want to see what is possible first?");
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, who: "Ada" });
+    s.expect(card("Connect your agent")).toExist().expect(peek).toExist()
+      .subscription("seen", PageMessage.Saw({ what: "read" }))
+      .expect(card("Connect your agent")).toBeAbsent().expect(peek).toBeAbsent()
+      .expect(card("Tell your agent what you want")).toExist();
+    const made = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, who: "Ada", made: true });
+    made.expect(card("Achievement")).toExist().expect(Locator.text("Achievement unlocked: World builder", { exact: false })).toExist()
+      .expect(HtmlLocator.role("button", { name: "Agent Galaxy" })).toExist();
+  })));
+
 test("the console ends on what to do in your agent, and says nothing while the agent is writing", () => {
   const none = { here: false, asked: false, wrote: false, clean: true, up: false };
   const last = (s: Partial<typeof none>) => termLines("r", true, { ...none, ...s }, []).at(-1);

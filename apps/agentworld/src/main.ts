@@ -15,7 +15,7 @@ import { READY } from "./worlds.ts";
 import { ProfilePage } from "./ProfilePage.ts";
 import { ROOM } from "./tools.ts";
 import { getJson } from "@rustybuns/util/http";
-import { backFromSignIn, login, mine } from "./account.ts";
+import { backFromSignIn, login, mine, worldBuilder } from "./account.ts";
 import { galaxyLock, lockLine } from "./lock.ts";
 import { Made } from "./saved.ts";
 import { startGalaxy } from "./galaxyView.ts";
@@ -41,6 +41,8 @@ const local = kept ? Option.getOrNull(Schema.decodeUnknownOption(Schema.fromJson
 const initial = (unsent ? local ?? fromServer : fromServer ?? local) ?? starter;
 const who = login()?.name ?? null;
 galaxyLock.why = lockLine(who !== null, made);
+// A world made before this sign-in (or before the achievement was there) still counts: yours only, not a shared link's.
+if (who && made && room === mine()) void worldBuilder();
 
 // Before the page mounts, so the first world's load is seen.
 startPictures(room);
@@ -82,8 +84,14 @@ const copy = (text: string) => navigator.clipboard.writeText(text).then(() => "C
 const claudeLine = connectLines(location.origin, room)[0]!.text;
 addCommands([
   // The same buttons a person sees, on the landing and in the dock.
-  ...READY.map((w) => ({ name: `page_try_${w.name.toLowerCase().replaceAll(" ", "_")}`, title: `Try the ${w.name.toLowerCase()}`, group: "Try one", agent: false,
-    description: "Loads this ready-made world. Undo takes it back.", execute: () => document.querySelector<HTMLButtonElement>(`[data-try="${w.name}"]`)?.click() })),
+  // The levels are on the landing and in the console until your agent connects; after that this says so.
+  ...READY.map((w) => ({ name: `page_try_${w.name.toLowerCase().replaceAll(" ", "_")}`, title: `Try the ${w.name.toLowerCase()}`, group: "Try one", agent: false, answers: true,
+    description: "Loads this ready-made world. Undo takes it back.", execute: () => {
+      const b = document.querySelector<HTMLButtonElement>(`[data-try="${w.name}"]`);
+      if (!b) return "The levels are shown before your agent connects, on a world not made yet.";
+      b.click();
+      return `Loaded the ${w.name.toLowerCase()}`;
+    } })),
   { name: "page_copy_claude_line", title: "Copy the Claude Code line", group: "Connect", agent: false, answers: true,
     description: "Puts this room's claude mcp add line on the clipboard.", execute: () => copy(claudeLine) },
   { name: "page_copy_prompt", title: "Copy the prompt for any AI", group: "Connect", agent: false, answers: true,
