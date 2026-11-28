@@ -7,6 +7,9 @@
 //
 //   bun scripts/preflight.ts [--base origin/main] [--json]
 //
+// When three or more of those PRs already wait on each other through their `Merge after` lines, it says so (#6562):
+// yours would be one more in the line, and each landing dirties the rest again. A warning, exit code unchanged.
+//
 // Before all that it names any file the branch rolls back to a copy main had before a recent commit (#5687).
 //
 // Reads git and `gh` only; commit first, it merges HEAD, not the working tree. Exits 1 on a rollback, a card or an
@@ -17,16 +20,18 @@
 // they are expected to clash and are regenerated. It also warns (exit code unchanged) on prose tells in the branch's
 // commit messages: emojis, em dashes, filler words, a closing word on a manual run (scripts/prose-slop.ts, #5953).
 
-import { arr, int, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { arr, int, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { GENERATED } from "../packages/util/src/overlap.ts";
+import { blockers } from "./after-line.ts";
 import { type Board, type Clash, type FileRow, run } from "../apps/codesplitter/scripts/mervin-board.ts";
 import { noteSaved } from "./conflicts-saved.ts";
 import { commitMessages, proseSlop, report } from "./prose-slop.ts";
 
-/** One row of `gh pr list --json number,title,headRefName,headRefOid,files`. */
+/** One row of `gh pr list --json number,title,headRefName,headRefOid,files`, with `body` when it was asked for. */
 export const OpenPr = obj({
   number: int(1, Infinity), title: str(Infinity, { min: 0 }), headRefName: str(Infinity),
   headRefOid: str(40, { min: 40, re: /^[0-9a-f]+$/ }), files: arr(obj({ path: str(Infinity) }), Infinity),
+  body: opt(str(Infinity, { min: 0 })),
 });
 export type OpenPr = Of<typeof OpenPr>;
 export interface Overlap { pr: number; title: string; files: string[] }
@@ -45,6 +50,27 @@ export function overlaps(mine: string[], prs: OpenPr[], branch = ""): { clash: O
   }
   clash.sort((a, b) => b.files.length - a.files.length);
   return { clash, generated };
+}
+
+/**
+ * The most of `prs` tied together by their `Merge after` lines (#6562), oldest first, each with the ones among them it
+ * waits on; empty under three. A line naming a PR that isn't in `prs` (merged, or on other files) ties nothing.
+ */
+export function chain(prs: OpenPr[]): { pr: number; after: number[] }[] {
+  const open = new Set(prs.map((p) => p.number));
+  const rows = prs.map((p) => ({ pr: p.number, after: blockers(p.body ?? "").filter((n) => n !== p.number && open.has(n)) }));
+  let best: typeof rows = [];
+  const seen = new Set<number>();
+  for (const row of rows) {
+    if (seen.has(row.pr)) continue;
+    const tied = [row];
+    seen.add(row.pr);
+    for (const a of tied) // grows while it is walked
+      for (const b of rows)
+        if (!seen.has(b.pr) && (a.after.includes(b.pr) || b.after.includes(a.pr))) { seen.add(b.pr); tied.push(b); }
+    if (tied.length > best.length) best = tied;
+  }
+  return best.length < 3 ? [] : best.sort((a, b) => a.pr - b.pr);
 }
 
 /** This branch's stage on the board, as PR `ME`. */
@@ -105,14 +131,15 @@ if (import.meta.main) {
   const mine = run$(["git", "diff", "--name-only", `${base}...HEAD`]).split("\n").filter(Boolean);
   const branch = run$(["git", "rev-parse", "--abbrev-ref", "HEAD"]).trim();
   const head = run$(["git", "rev-parse", "HEAD"]).trim();
-  const prs = arr(OpenPr, Infinity)(JSON.parse(run$(["gh", "pr", "list", "--state", "open", "--limit", "100", "--json", "number,title,headRefName,headRefOid,files"])));
+  const prs = arr(OpenPr, Infinity)(JSON.parse(run$(["gh", "pr", "list", "--state", "open", "--limit", "100", "--json", "number,title,headRefName,headRefOid,files,body"])));
   const back = rollbacks((...a) => run$(["git", ...a]), base);
   const { clash, generated } = overlaps(mine, prs, branch);
   const others = clash.map((o) => prs.find((p) => p.number === o.pr)!);
   const v = others.length ? verdict(run(undefined, run$(["git", "rev-parse", base]).trim(), [...others, { number: ME, title: "this branch", headRefOid: head, headRefName: branch }]).board) : undefined;
+  const line = chain(others);
   // Each file Mervin settles for this branch is a conflict nobody fights: counted once per branch and file.
   for (const f of v?.settles ?? []) noteSaved("preflight", `preflight ${branch} ${f.path}`);
-  if (args.includes("--json")) console.log(JSON.stringify({ clash, generated, rollbacks: back, ...(v && { mervin: v }) }, null, 2));
+  if (args.includes("--json")) console.log(JSON.stringify({ clash, generated, rollbacks: back, chain: line, ...(v && { mervin: v }) }, null, 2));
   else {
     if (back.length) {
       console.log("This branch puts back older copies of files main has changed since (#5687):");
@@ -133,6 +160,11 @@ if (import.meta.main) {
       if (v.cards.length || v.clashes.length) console.log("\nA person must choose these: wait for those PRs to merge and rebase, or talk to their workers before opening yours.");
       else if (v.settles.length || v.look.length) console.log("\nIt merges, with conflicts Mervin settles: open the PR with the Merge after line below.");
       else console.log("  every shared file merges clean");
+    }
+    if (line.length) {
+      console.log(`\n${line.length} open PRs on your files already wait on each other, and yours would make ${line.length + 1}: each landing dirties the rest again (a warning, #6562).`);
+      for (const l of line) console.log(`  #${l.pr}${l.after.length ? ` after ${l.after.map((n) => `#${n}`).join(", ")}` : ""}`);
+      console.log("Better: wait for them to land and rebase, or hand your change to one of their workers.");
     }
     const prose = commitMessages((...a) => run$(["git", ...a]), base).flatMap(([sha, msg]) => report(sha, proseSlop(msg)));
     if (prose.length) console.log(`\nProse tells in your commit messages (a warning, #5953; check the PR body with bun scripts/prose-slop.ts body.md):\n${prose.join("\n")}`);
