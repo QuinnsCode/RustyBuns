@@ -53,14 +53,17 @@ describe("two friends in one region", () => {
     expect(heard).not.toContain("Bo: pick 40,-2");
     // What she picked and flushed before he came goes to him in one message, with its time on the world clock.
     // At its full size: 30 of each kind and 12 busy dens, about 4 KB, through the room's frame limit in one piece.
+    // Only what is near her gets through, as with `life`: the rest of each kind, kilometres off, is dropped.
     const cells = (n: number, y: number) => Array.from({ length: n }, (_, i) => `${100 + i},${y}`);
     ada.seen({
-      picks: [{ id: "41,-2", at: 120 }, ...cells(29, -3).map((id) => ({ id, at: 119.5 }))],
-      flown: [{ id: "13,34", at: 118, h: 0.5 }, ...cells(29, 35).map((id) => ({ id, at: 117.5, h: -1.25 }))],
-      roost: [{ id: "14,34", x: 1500, z: 1200 }, ...cells(29, 36).map((id) => ({ id, x: 12345.6, z: 23456.7 }))],
-      busy: ["5,5", ...cells(11, 7)],
+      picks: [{ id: "197,80", at: 120 }, ...cells(29, -3).map((id) => ({ id, at: 119.5 }))],
+      flown: [{ id: "125,50", at: 118, h: 0.5 }, ...cells(29, 35).map((id) => ({ id, at: 117.5, h: -1.25 }))],
+      // the second lies near her cell-wise, but says its flock landed 25 km off
+      roost: [{ id: "126,50", x: 13900, z: 5600 }, { id: "125,51", x: 12345.6, z: 23456.7 }, ...cells(28, 36).map((id) => ({ id, x: 12345.6, z: 23456.7 }))],
+      busy: ["69,28", ...cells(11, 7)],
     });
-    await until(() => heard.includes("Bo: pick 41,-2 at 120") && heard.includes("Bo: flush 13,34 at 118") && heard.some((l) => l.startsWith("Bo: seen 14,34,") && l.includes("128,36") && l.includes("busy 5,5,")));
+    await until(() => heard.includes("Bo: pick 197,80 at 120") && heard.includes("Bo: flush 125,50 at 118") && heard.includes("Bo: seen 126,50 busy 69,28"));
+    expect(heard.some((l) => l.startsWith("Bo: pick 100,-3") || l.startsWith("Bo: flush 100,35"))).toBe(false);
     // Ada takes a contract: Bo hears it and can follow the same signs. Its first sign isn't where she stands, so saying
     // she read it gets no further than taking it (the room believes a sign only where it lies, #4165).
     ada.hunt("1.20002.6206", 0); // a board in another region, 20 km off: nothing to tell

@@ -99,16 +99,29 @@ test("a dive bar: two tops and two subs on one 15 A circuit, a power alley down 
   expect(circuitLoad([...plugged, "amp-rack-4u"], CIRCUIT_15A).trips).toBe(true);
 });
 
-test("a 64 x 64 grid of four sources is well under 5 ms", () => {
+// The live heatmap redraws this grid as boxes are dragged. Milliseconds differ by machine (about 3 on an M-series Mac,
+// over 5 on a busy CI runner), so the cost is counted against plain math timed in the same run: the grid's 16,384
+// box-to-point paths against 16,384 turns of a loop doing one distance, log, power, cosine and angle each (about 3x).
+function yardstick(turns: number) {
+  let sum = 0;
+  for (let i = 0; i < turns; i++) {
+    const d = Math.hypot(i % 17, 1.5, 1 + (i % 13));
+    sum += 10 ** ((100 - 20 * Math.log10(d)) / 20) * Math.cos(d * 1.15) + Math.atan2(d, 3);
+  }
+  return sum;
+}
+
+test("a 64 x 64 grid of four sources costs under 10 plain-math turns a path", () => {
   const sources = [-3, -1, 1, 3].map((x) => source("top-12-powered", { x, y: 1.9, z: 0 }));
   const area = { x0: -8, z0: 0.5, x1: 8, z1: 16, y: 1.6, nx: 64, nz: 64 };
-  for (let i = 0; i < 5; i++) coverage(sources, area, "high");
-  const times: number[] = [];
-  for (let i = 0; i < 9; i++) {
-    const t = performance.now();
-    coverage(sources, area, "low");
-    times.push(performance.now() - t);
+  const paths = area.nx * area.nz * sources.length;
+  for (let i = 0; i < 5; i++) { coverage(sources, area, "low"); yardstick(paths); }
+  // The fastest of each, taken turn about: a pause or a busy neighbour only ever adds time.
+  let grid = Infinity, plain = Infinity;
+  const timed = (f: () => unknown) => { const t = performance.now(); f(); return performance.now() - t; };
+  for (let i = 0; i < 15; i++) {
+    grid = Math.min(grid, timed(() => coverage(sources, area, "low")));
+    plain = Math.min(plain, timed(() => yardstick(paths)));
   }
-  times.sort((a, b) => a - b);
-  expect(times[4]).toBeLessThan(5);
+  expect(grid / plain).toBeLessThan(10);
 });

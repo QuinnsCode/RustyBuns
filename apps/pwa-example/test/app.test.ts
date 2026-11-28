@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchChrome, load, openTab, waitFor, type Chrome, type Tab } from "../../../scripts/chrome.ts";
+import { chromeStartMs, launchChrome, load, openTab, waitFor, type Chrome, type Tab } from "../../../scripts/chrome.ts";
 import { tsRoller, wasmRoller } from "../src/roller.ts";
 import { checkAssetLinks } from "../scripts/twa.ts";
 
@@ -39,7 +39,8 @@ beforeAll(async () => {
   });
   chrome = await launchChrome();
   tab = await openTab(chrome.cdp, { w: 412, h: 915 }, true);
-});
+  // The build, then a Chrome start that may stall once: more than a test's 30 s.
+}, chromeStartMs + 30_000);
 afterAll(() => { server?.stop(true); chrome?.stop(); });
 
 const state = () => tab.eval<State>("pocketDice.state()");
