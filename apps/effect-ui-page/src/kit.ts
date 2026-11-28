@@ -8,7 +8,7 @@
 // a sign's letters) are cubes, one mesh a colour. `block` keeps a 32 by 32 grid of where nobody can stand and posts it
 // to the page (`{ agent_page_world: true, kind: "solid", grid }`); buildings and tall boxes mark their own.
 
-import { PLOT } from "./land.ts";
+import { DAY, PLOT } from "./land.ts";
 
 export const KIT = `
 import * as THREE from "https://esm.sh/three@0.170.0";
@@ -129,6 +129,11 @@ export const trees = (n = 30, o = {}) => pair(n, new THREE.CylinderGeometry(0.2,
 export const cactus = (n = 20, o = {}) => pair(n, new THREE.CapsuleGeometry(0.45, 2.6).translate(0, 1.7, 0), o.color ?? "#3f8f52",
   new THREE.CapsuleGeometry(0.28, 1.1).translate(0.85, 2.2, 0), o.color ?? "#3f8f52", o);
 export const rocks = (n = 20, o = {}) => scatter(n, new THREE.DodecahedronGeometry(0.9), mat(o.color ?? "#77747c"), o);
+/** Grass tufts and flowers, n of them, with { area, size, color }. */
+export const grass = (n = 2000, o = {}) => scatter(n, new THREE.ConeGeometry(0.22, 1.1, 4).translate(0, 0.45, 0), mat(o.color ?? "#74a83c"), o);
+export function flowers(n = 300, { colors = ["#ffd24a", "#ff7fa8", "#fff4e0", "#b58cff", "#ff8a3d"], ...o } = {}) {
+  for (const c of colors) scatter(Math.ceil(n / colors.length), new THREE.IcosahedronGeometry(0.38).translate(0, 0.8, 0), mat(c, { emissive: c, emissiveIntensity: 0.3 }), o);
+}
 
 /** The sun and the sky's fill light. at: [x, y, z] of the sun. */
 export function lights({ sun: strength, fill: soft, color, at } = {}) {
@@ -147,6 +152,18 @@ export function lamp({ x = 0, y = 10, z = 0, color = "#ffb547", strength = 500 }
 }
 
 const SKIES = { day: ["#9fd3ff", 1.8, 1.3, "#fff4e0"], dusk: ["#f08a6c", 1.2, 0.8, "#ffb070"], night: ["#070a1f", 0.7, 0.7, "#a8b8ff"] };
+// The air Agent Galaxy gives your land for each sky (land.ts's Mood): what a visitor stands in there.
+const AIR = {
+  day: ${JSON.stringify(DAY)},
+  dusk: { top: "#4f86c9", low: "#ffd9a0", fog: "#f1cfa0", near: 130, far: 560, sun: "#ffcf90", power: 2.1, sky: "#bcd8ff", dirt: "#6b5a36", fill: 0.9, bloom: 0.45, weather: "clear" },
+  night: { top: "#0b0824", low: "#4a1f6b", fog: "#24164a", near: 90, far: 480, sun: "#a48cff", power: 1, sky: "#8d6fe0", dirt: "#2a1640", fill: 1.1, bloom: 0.85, weather: "clear" },
+};
+let air = null, dark = null;
+const chimneys = [];
+let flying = false;
+const hex = (v, or) => (typeof v === "string" ? "#" + new THREE.Color(v).getHexString() : or);
+const within = (v, lo, hi, or) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : or);
+const brightness = (v) => { const c = new THREE.Color(v); return c.r + c.g + c.b; };
 
 /** "day", "night" (stars and a moon) or "dusk". */
 export function sky(type = "day") {
@@ -155,6 +172,8 @@ export function sky(type = "day") {
   scene.background = new THREE.Color(back);
   scene.fog = new THREE.Fog(back, 320, 840);
   lights({ sun: strength, fill: soft, color });
+  air = { ...(AIR[type] ?? AIR.day), weather: air?.weather ?? "clear" };
+  dark = type === "night" || type === "dusk";
   const ball = (r, c, x, y, z) => add(new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), new THREE.MeshBasicMaterial({ color: c, fog: false }))).position.set(x, y, z);
   if (type === "dusk") ball(28, "#ffd27a", -380, 60, -480);
   if (type !== "night") return;
@@ -167,18 +186,26 @@ export function sky(type = "day") {
   add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(at, 3)), new THREE.PointsMaterial({ color: "#dfe6ff", size: 2.8, fog: false })));
 }
 
-/** "rain", "snow", "fog" or "clear". Call after sky. */
+const FALLS = {
+  rain: { n: 8000, speed: 42, drift: 0, color: "#a9c4ff", size: 0.3 },
+  snow: { n: 5000, speed: 6, drift: 2, color: "#ffffff", size: 0.6 },
+  fireflies: { n: 240, speed: 0, drift: 3, color: "#ffe28a", size: 1.1 },
+};
+/** "rain", "snow", "fireflies", "fog" or "clear". Call after sky. */
 export function weather(type = "clear") {
   const { scene } = world();
   if (falling) scene.remove(falling.points);
   falling = null;
-  if (type === "fog") scene.fog = new THREE.Fog(scene.background?.isColor ? scene.background : "#aab4c4", 160, 440);
+  if (type === "fog") scene.fog = new THREE.Fog(scene.background?.isColor ? scene.background : air?.low ?? "#aab4c4", 160, 440);
   else if (scene.fog) { scene.fog.near = 320; scene.fog.far = 840; }
-  if (type !== "rain" && type !== "snow") return;
-  const snow = type === "snow", n = snow ? 5000 : 8000, at = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) at.set([between(-110, 110), between(0, 55), between(-110, 110)], i * 3);
+  air = { ...(air ?? AIR.day), weather: FALLS[type] ? type : "clear" };
+  if (type === "fog") Object.assign(air, { near: 50, far: 260 });
+  const f = FALLS[type];
+  if (!f) return;
+  const at = new Float32Array(f.n * 3), high = f.speed ? 55 : 10;
+  for (let i = 0; i < f.n; i++) at.set([between(-98, 98), between(0.5, high), between(-98, 98)], i * 3);
   const g = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(at, 3));
-  falling = { at, speed: snow ? 6 : 42, drift: snow ? 2 : 0, points: add(new THREE.Points(g, new THREE.PointsMaterial({ color: snow ? "#ffffff" : "#a9c4ff", size: snow ? 0.6 : 0.3, transparent: true, opacity: 0.75 }))) };
+  falling = { at, ...f, points: add(new THREE.Points(g, new THREE.PointsMaterial({ color: f.color, size: f.size, transparent: true, opacity: 0.8 }))) };
 }
 every((t, dt) => {
   if (!falling) return;
@@ -186,10 +213,62 @@ every((t, dt) => {
   for (let i = 0; i < at.length; i += 3) {
     at[i] += Math.sin(t + i) * drift * dt;
     at[i + 1] -= speed * dt;
-    if (at[i + 1] < 0) at[i + 1] += 55;
+    if (!speed) at[i + 2] += Math.cos(t * 0.7 + i) * drift * dt;
+    else if (at[i + 1] < 0) at[i + 1] += 55;
   }
   points.geometry.attributes.position.needsUpdate = true;
 });
+
+/** Your land's own air, here and in Agent Galaxy: { top, low (the sky, up and at the horizon), fog, near, far, sun,
+ *  power, fill, bloom }. Call after sky and weather. */
+export function mood(o = {}) {
+  const { scene } = world(), was = air ?? AIR.day;
+  air = { ...was };
+  for (const k of ["top", "low", "fog", "sun", "sky", "dirt"]) air[k] = hex(o[k], was[k]);
+  for (const [k, lo, hi] of [["near", 40, 800], ["far", 200, 1500], ["power", 0, 4], ["fill", 0, 3], ["bloom", 0, 1.2]]) air[k] = within(o[k], lo, hi, was[k]);
+  const c = document.createElement("canvas");
+  c.width = 2; c.height = 256;
+  const g = c.getContext("2d"), down = g.createLinearGradient(0, 0, 0, 256);
+  down.addColorStop(0, air.top); down.addColorStop(1, air.low);
+  g.fillStyle = down; g.fillRect(0, 0, 2, 256);
+  scene.background = new THREE.CanvasTexture(c);
+  scene.background.colorSpace = THREE.SRGBColorSpace;
+  scene.fog = new THREE.Fog(air.fog, 320, 840);
+  lights({ sun: air.power * 0.8, fill: air.fill, color: air.sun });
+  dark = brightness(air.top) < 0.5 || (dark === true && brightness(air.top) < 1);
+}
+
+// Moving things stay home (land.ts carries still shapes): Agent Galaxy draws its own smoke and cars from the mood.
+const live = (o) => { o.traverse((c) => (c.userData.live = true)); return add(o); };
+/** Chimney smoke rising from x, y, z (y above the ground there). */
+export function smoke(x = 0, y = 10, z = 0) {
+  const at = { x: within(x, -SIZE / 2, SIZE / 2, 0), y: within(height(x, z) + y, 0, 120, 10), z: within(z, -SIZE / 2, SIZE / 2, 0) };
+  if (chimneys.length >= 12) return;
+  chimneys.push(at);
+  const puff = new THREE.MeshStandardMaterial({ color: "#f3ead9", transparent: true, opacity: 0.55, depthWrite: false });
+  for (let i = 0; i < 6; i++) {
+    const m = live(new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 1), puff));
+    every((t) => {
+      const k = (i / 6 + t * 0.12) % 1;
+      m.position.set(at.x + k * 3, at.y + k * 9, at.z);
+      m.scale.setScalar(0.6 + k * 1.8);
+    });
+  }
+}
+/** n little flying cars crossing over the plot. */
+export function flyers(n = 6) {
+  flying = true;
+  for (let i = 0; i < Math.min(12, n); i++) {
+    const car = new THREE.Group(), part = (w, h, d, color, at) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, { emissive: color, emissiveIntensity: 0.8 })); m.position.x = at; car.add(m); };
+    part(5, 1.2, 2.2, "#5a4f8a", 0); part(0.4, 0.5, 1.8, "#dff6ff", 2.6); part(4, 0.2, 0.3, "#ff3b5c", -4);
+    live(car);
+    const way = i % 2 ? 1 : -1, speed = between(10, 22), from = between(0, 180), z = -70 + (i * 37) % 140;
+    every((t) => {
+      car.position.set(((((from + t * speed) % 180) + 180) % 180 - 90) * way, 36 + (i % 3) * 12, z);
+      car.rotation.y = way > 0 ? 0 : Math.PI;
+    });
+  }
+}
 
 /** cb(player, at) as a visitor walks the plot: player is { x, z } from 0 to 1, at is that spot in world units.
  *  cb(null, null) when nobody is there. React to them (light a lamp, open a door); don't draw them. */
@@ -237,9 +316,12 @@ export function block(x, z, w = CELL, d = CELL) {
   }, 30);
 }
 
+// glow: 0 for none, 1 to 3 for a light that blooms in the dark.
+const lit = (color, glow) => (glow ? mat(color, { emissive: color, emissiveIntensity: glow }) : mat(color));
+
 /** A box standing at x, z (on the ground unless y is given). Blocks the way when 2 or more tall. */
-export function box({ x = 0, y, z = 0, w = 4, h = 4, d = 4, color = "#b08d63" } = {}) {
-  const m = add(new THREE.Mesh(BOX, mat(color)));
+export function box({ x = 0, y, z = 0, w = 4, h = 4, d = 4, color = "#b08d63", glow = 0 } = {}) {
+  const m = add(new THREE.Mesh(BOX, lit(color, glow)));
   m.scale.set(w, h, d);
   m.position.set(x, onGround(x, z, y), z);
   if (h >= 2 && typeof y !== "number") block(x, z, w, d);
@@ -247,13 +329,13 @@ export function box({ x = 0, y, z = 0, w = 4, h = 4, d = 4, color = "#b08d63" } 
 }
 
 /** A thing drawn as text: layers from the bottom up, each rows north to south, one letter a cube west to east, coloured by palette. */
-export function voxels(layers, palette, { x = 0, y, z = 0, size = 1, block: stops = true } = {}) {
+export function voxels(layers, palette, { x = 0, y, z = 0, size = 1, block: stops = true, glow = 0 } = {}) {
   const g = new THREE.Group(), pal = colours(palette), at = {};
   const rows = Math.max(1, ...layers.map((l) => l.length)), cols = Math.max(1, ...layers.flatMap((l) => l.map((r) => r.length)));
   layers.forEach((layer, k) => layer.forEach((row, j) => [...row].forEach((ch, i) => {
     if (pal[ch]) (at[ch] ??= []).push([(i - (cols - 1) / 2) * size, k * size, (j - (rows - 1) / 2) * size, size, size, size]);
   })));
-  for (const [ch, spots] of Object.entries(at)) cubes(g, pal[ch], spots);
+  for (const [ch, spots] of Object.entries(at)) cubes(g, pal[ch], spots, lit(pal[ch], glow));
   g.position.set(x, onGround(x, z, y), z);
   if (stops && layers.length * size >= 2 && typeof y !== "number") block(x, z, cols * size, rows * size);
   return add(g);
@@ -294,23 +376,33 @@ export function building({ x = 0, z = 0, w = 12, d = 10, h = 10, color, windows 
   g.add(body, top);
   if (windows) {
     // A pane on each side, a floor every 3.5 units, seven in ten lit.
-    const lit = [], dark = [];
+    const on = [], off = [];
     for (let y = 2; y + 1.6 <= h - 0.5; y += 3.5) {
-      for (let n = Math.max(1, Math.floor((w - 1) / 3)), c = 0; c < n; c++) for (const s of [1, -1]) (rnd() < 0.7 ? lit : dark).push([-w / 2 + (c + 0.5) * (w / n), y, (s * d) / 2, 1.3, 1.6, 0.2]);
-      for (let n = Math.max(1, Math.floor((d - 1) / 3)), c = 0; c < n; c++) for (const s of [1, -1]) (rnd() < 0.7 ? lit : dark).push([(s * w) / 2, y, -d / 2 + (c + 0.5) * (d / n), 0.2, 1.6, 1.3]);
+      for (let n = Math.max(1, Math.floor((w - 1) / 3)), c = 0; c < n; c++) for (const s of [1, -1]) (rnd() < 0.7 ? on : off).push([-w / 2 + (c + 0.5) * (w / n), y, (s * d) / 2, 1.3, 1.6, 0.2]);
+      for (let n = Math.max(1, Math.floor((d - 1) / 3)), c = 0; c < n; c++) for (const s of [1, -1]) (rnd() < 0.7 ? on : off).push([(s * w) / 2, y, -d / 2 + (c + 0.5) * (d / n), 0.2, 1.6, 1.3]);
     }
-    cubes(g, null, lit, LIT);
-    cubes(g, null, dark, UNLIT);
+    // windows may be a colour: this building's own light.
+    cubes(g, null, on, typeof windows === "string" ? glazed(windows) : LIT);
+    cubes(g, null, off, UNLIT);
   }
   g.position.set(x, height(x, z), z);
   block(x, z, w, d);
   return add(g);
 }
-// Windows glow when the sky is dark: sky() sets the scene's background, so this follows whatever it was set to.
-every(() => {
+const tinted = new Map();
+const glazed = (color) => {
+  if (!tinted.has(color)) tinted.set(color, mat("#9fb4c8", { emissive: color, emissiveIntensity: 0 }));
+  return tinted.get(color);
+};
+// Windows glow when the sky is dark: as sky() or mood() said, else whatever the background was set to.
+function windowsOn() {
   const b = made?.scene.background;
-  LIT.emissiveIntensity = b?.isColor && b.r + b.g + b.b < 1.2 ? 1.3 : 0;
-});
+  const on = dark ?? Boolean(b?.isColor && b.r + b.g + b.b < 1.2);
+  LIT.emissiveIntensity = on ? 1.3 : 0;
+  // A building's own colour is bright already: less, so it stays that colour.
+  for (const m of tinted.values()) m.emissiveIntensity = on ? 0.75 : 0;
+}
+every(windowsOn);
 
 const slab = (x, z, w, d, color, t = 0.12, turn = 0) => {
   const m = add(new THREE.Mesh(BOX, mat(color)));
@@ -345,7 +437,7 @@ const FONT = Object.fromEntries(("A010101111101101 B110101110101110 C01110010010
   "?110001010000010 '010010000000000 -000000111000000 :000010000010000 /001001010100100").split(" ").map((s) => [s[0], s.slice(1)]));
 
 /** A wooden sign with pixel letters (A to Z, 0 to 9, . , ! ? ' - : /, "\\n" a new line, 60 at most), facing south unless turned (radians). */
-export function sign(text, { x = 0, z = 0, size = 0.45, turn = 0, board = "#8a5a33", ink = "#fff4e0" } = {}) {
+export function sign(text, { x = 0, z = 0, size = 0.45, turn = 0, board = "#8a5a33", ink = "#fff4e0", glow = 0 } = {}) {
   const lines = String(text).slice(0, 60).toUpperCase().split("\\n").slice(0, 4).map((l) => l.slice(0, 24));
   const cols = Math.max(1, ...lines.map((l) => l.length)), W = (cols * 4 + 3) * size, B = (lines.length * 6 + 3) * size, leg = 6 * size;
   const g = new THREE.Group(), letters = [];
@@ -359,7 +451,7 @@ export function sign(text, { x = 0, z = 0, size = 0.45, turn = 0, board = "#8a5a
       letters.push([px, py, size * 0.55, size, size, size * 0.2], [-px, py, -size * 0.55, size, size, size * 0.2]);
     }
   }));
-  cubes(g, ink, letters);
+  cubes(g, ink, letters, lit(ink, glow));
   g.position.set(x, height(x, z), z);
   g.rotation.y = turn;
   return add(g);
@@ -408,33 +500,65 @@ export function near(x, z, radius, onEnter, onLeave) {
   });
 }
 
-// Agent Galaxy asks for the land as shapes (land.ts): corners, faces, colours and where copies stand. Data only,
-// nothing of this world's code goes with it. Skies, stars, rain and the sun and moon stay home.
-addEventListener("message", (e) => {
-  if (e.source !== parent || e.data?.agent_page !== true || e.data.ask !== "land" || !made) return;
-  const parts = [], to = (n) => (v) => Math.round(v * n) / n;
+// Agent Galaxy asks for the land as shapes (land.ts): corners, faces, colours, glow and where copies stand, with the
+// land's mood. Data only, nothing of this world's code goes with it. Stars, falling rain, the sun and moon, moving
+// smoke and cars stay home: the galaxy draws its own from the mood. Shapes of one colour are merged into one (s), so a
+// busy land stays a few dozen draws; a mesh as wide as the plot (its ground) stays itself.
+const MERGE = 20000;
+function land() {
   made.scene.updateMatrixWorld(true);
+  windowsOn();
+  const parts = [], merged = new Map(), to = (n) => (v) => Math.round(v * n) / n;
   made.scene.traverseVisible((o) => {
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
-    const at = o.isMesh && o.geometry.attributes.position;
-    if (!at || !m?.color || m.fog === false || at.count > 20000 || parts.length >= 300) return;
-    const p = [], v = new THREE.Vector3();
-    for (let i = 0; i < at.count; i++) {
-      v.fromBufferAttribute(at, i);
-      if (!o.isInstancedMesh) v.applyMatrix4(o.matrixWorld);
-      p.push(v.x, v.y, v.z);
-    }
-    let copies;
+    const at = o.isMesh && !o.userData.live && o.geometry.attributes.position;
+    if (!at || !m?.color || m.fog === false || at.count > MERGE) return;
+    const e = m.emissive, glows = m.isMeshBasicMaterial ? 1.2 : e && m.emissiveIntensity >= 0.3 && e.r + e.g + e.b > 0 ? Math.min(4, m.emissiveIntensity) : 0;
+    const look = { c: "#" + (glows && e ? e : m.color).getHexString(), o: m.transparent ? m.opacity : undefined, e: glows || undefined };
+    const index = o.geometry.index?.array, count = o.isInstancedMesh ? o.count : 1, one = new THREE.Matrix4(), v = new THREE.Vector3();
+    const own = () => {
+      const p = [];
+      for (let i = 0; i < at.count; i++) { v.fromBufferAttribute(at, i).applyMatrix4(o.matrixWorld); p.push(v.x, v.y, v.z); }
+      parts.push({ p: p.map(to(100)), i: index ? Array.from(index) : undefined, ...look });
+    };
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    const box = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+    const wide = !o.isInstancedMesh && Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) >= SIZE * 0.45;
+    const key = look.c + look.o + look.e, corners = index ? index.length : at.count;
+    // Copies of one shape in one look (every lit window) join into one part, 3000 copies at most.
     if (o.isInstancedMesh) {
-      const one = new THREE.Matrix4();
-      copies = [];
-      for (let i = 0; i < Math.min(o.count, 3000); i++) {
-        o.getMatrixAt(i, one);
-        copies.push(...one.premultiply(o.matrixWorld).elements.map(to(1000)));
+      for (let n = 0; n < count; n++) {
+        let into = merged.get(key + o.geometry.uuid);
+        if (!into || into.m.length >= 48000) {
+          const p = [];
+          for (let i = 0; i < at.count; i++) p.push(...[at.getX(i), at.getY(i), at.getZ(i)].map(to(100)));
+          into = { p, i: index ? Array.from(index) : undefined, ...look, m: [] };
+          merged.set(key + o.geometry.uuid, into);
+          parts.push(into);
+        }
+        o.getMatrixAt(n, one);
+        into.m.push(...one.premultiply(o.matrixWorld).elements.map(to(1000)));
       }
+      return;
     }
-    parts.push({ p: p.map(to(100)), i: o.geometry.index ? Array.from(o.geometry.index.array) : undefined, c: "#" + m.color.getHexString(), o: m.transparent ? m.opacity : undefined, m: copies });
+    if (wide) return own();
+    {
+      one.copy(o.matrixWorld);
+      let into = merged.get(key);
+      if (!into || into.p.length / 3 + at.count > MERGE || into.i.length + corners > 100000) {
+        into = { p: [], i: [], ...look, s: true };
+        merged.set(key, into);
+        parts.push(into);
+      }
+      const base = into.p.length / 3;
+      for (let i = 0; i < at.count; i++) { v.fromBufferAttribute(at, i).applyMatrix4(one); into.p.push(...[v.x, v.y, v.z].map(to(100))); }
+      for (let i = 0; i < corners; i++) into.i.push(base + (index ? index[i] : i));
+    }
   });
-  parent.postMessage({ agent_page_world: true, kind: "land", land: { parts } }, "*");
+  return { parts: parts.slice(0, 300), mood: air ? { ...air, smoke: chimneys, cars: flying } : undefined };
+}
+addEventListener("message", (e) => {
+  if (e.source !== parent || e.data?.agent_page !== true || e.data.ask !== "land" || !made) return;
+  parent.postMessage({ agent_page_world: true, kind: "land", land: land() }, "*");
 });
 `;

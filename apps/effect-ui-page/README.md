@@ -16,7 +16,7 @@ How it goes, as the landing's **What is Agent World?** card says it:
 
 1. See how it works: try a ready-made world, no AI needed.
 2. Make an account with eqosys: your world follows you to any browser.
-3. Connect your AI and make your world: it asks you three things, then writes the code while you watch.
+3. Pick your land with one tap (a hill village or a neon city, or keep the desert), connect your AI and make it yours: it asks you three things, then writes the code while you watch.
 4. Then the galaxy opens: your world joins one big map you can walk.
 
 Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
@@ -56,7 +56,10 @@ agent writes, and the console lists its calls. A step strip there shows where yo
 AI is here (its first `page_read`), Asking you about your world (a `page_status`), Writing the code (its first write),
 Your world is up (the frame loaded with no errors after a write). The AI asks you three things in its own chat (the
 ground, what is on it, the weather) before it writes; the page never asks. A new room starts with a night desert
-(`src/starter.ts`, built with `@world/kit`, so it stands in 3D in the galaxy) to change or throw away.
+(`src/starter.ts`, built with `@world/kit`, so it stands in 3D in the galaxy) to change or throw away. A signed-in
+person whose world is still that desert is asked to **Pick your land**: **Hill village** (round-doored mound homes,
+smoke, trees, flowers, a pond, lanterns) or **Neon city** (lit towers, signs, stalls, a wet street, rain, flying cars),
+both small kit worlds (`src/lands.ts`) their AI can change.
 
 | Tool | Does |
 |---|---|
@@ -110,7 +113,11 @@ to south, and hills level off at its edges. The building blocks size themselves 
 |---|---|
 | `world({ orbit, distance, angle })` | The scene, a camera looking down at an angle, the renderer, resizing and the loop. Returns `{ scene, camera, renderer }` |
 | `ground({ type, color })` | `flat`, `dunes`, `hills` or `grass`. `heightAt(x, z)` reads it |
-| `sky(type)`, `weather(type)` | `day`, `night` (stars and a moon) or `dusk`; `rain`, `snow`, `fog` or `clear` |
+| `sky(type)`, `weather(type)` | `day`, `night` (stars and a moon) or `dusk`; `rain`, `snow`, `fireflies`, `fog` or `clear` |
+| `mood({ top, low, fog, near, far, sun, power, fill, bloom })` | Your land's own air, here and in the galaxy: call after `sky` and `weather` |
+| `smoke(x, y, z)`, `flyers(n)` | Chimney smoke; little cars flying over the plot |
+| `grass(n)`, `flowers(n)` | Tufts and flowers on the ground |
+| `glow` on `box`, `voxels`, `sign` | 1 to 3 lights it, and it blooms in the galaxy; `windows: "#ff2e97"` on a building colours its light |
 | `water({ y, x, z, width, depth })` | A sheet of water |
 | `trees(n)`, `cactus(n)`, `rocks(n)` | Scattered on the ground, never in water; `{ area, size, color }` |
 | `lights({ sun, fill, color, at })`, `lamp({ x, y, z, color })` | The sun and sky light; a coloured glow |
@@ -153,7 +160,8 @@ C's estimate is 20 tokens (3%) under B's, a tie within 5 percent with the same c
 tokens; C took 6 (two of them refused: code inside a `curl` line trips its shell checks), 31 s and 4,100.
 
 `test/tokens.test.ts` fails when the default door passes the budget in `test/tokens.json`, or stops being tied for
-cheapest. The budget only goes down. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
+cheapest. The budget only goes down, with one exception: it rose from 625 to 655 when the kit gained a land's air
+(`mood`, `smoke`, `flyers`, `grass`, `flowers`, `glow`, about 30 tokens an AI has to be told). For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
 
 From a script or the console, the same tools are on `window.__commands`:
 
@@ -175,9 +183,12 @@ Galaxy** (the Galaxy tile in the console, or Cmd+K) shows your own land under cl
 robot on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
 neighbour's. **Back to my world** brings the console back.
 
-- A world built with `@world/kit` stands there in 3D: its ground, water, trees, rocks and its own meshes. Each world
-  hands over shapes and colours only, from a hidden sealed frame, and a neighbour's code never runs in the shared
-  space. Anything reaching past its own plot is left out. Skies, rain, stars and animation stay home.
+- A world built with `@world/kit` stands there in 3D: its ground, water, trees, rocks and its own meshes, with what
+  glows. It also brings its mood: sky colours, fog, sun, bloom, rain, snow or fireflies, chimney smoke and flying cars.
+  The sky and light blend to whichever land you stand on. Each world hands over shapes, colours and bounded numbers
+  only, from a hidden sealed frame, checked on arrival (`src/land.ts`), and a neighbour's code never runs in the shared
+  space. Anything reaching past its own plot is left out. A world's own animation and stars stay home.
+- A device that can't hold 33 frames a second drops sharpness, then shadows.
 - A world without the kit (a flat canvas drawing, say) shows its latest picture laid on its ground.
 - The middle plot is the common town. Empty plots are open land, with a sign next to you: "Invite someone to build
   here". Every third cell of the spiral stays free for invites (the invite link and sign-in come next).
@@ -276,7 +287,8 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
   `src/keep.ts`: a room's Artifacts repo, written by codeSplitter's git push (`apps/codesplitter/src/git.ts`).
   `src/files.ts`: the files routes.
   `src/galaxyView.ts`: walking and the players in the page. `src/land3d.ts`: the one 3D scene (three.js, loaded when
-  the galaxy opens). `src/land.ts`: a plot's land as data, and what is left out of it.
+  the galaxy opens), and `src/air.ts` its sky, light, bloom, weather, smoke and cars. `src/land.ts`: a plot's land and
+  mood as data, and what is left out of it.
 - `test/keep.test.ts`: a world and a model pushed to a local Artifacts repo and read back.
 - `test/galaxy.test.ts`: two people walking the galaxy in headless Chrome against the dev server.
   `test/land.test.ts`: what a world's frame may put in the shared space.

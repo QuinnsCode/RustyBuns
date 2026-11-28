@@ -295,3 +295,13 @@ button:disabled { opacity: .5; cursor: default; }
 .sign-done { background: #2f8f52; }
 .sign-says { margin: 10px 0 0; font-size: 12px; color: #c9cfe8; }
 .sign-keep { margin-top: 8px; font-size: 12px; color: #c9cfe8; background: none; border: 0; text-decoration: underline; }
+
+/* "Pick your land" (ProfilePage.ts): two big buttons over a new person's world, above the console. */
+.pick { position: fixed; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); box-sizing: border-box; width: min(420px, calc(100% - 32px)); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 18px; border-radius: 22px; background: #0e0c20; color: #fff; text-align: center; box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
+.pick b { grid-column: 1 / -1; font-size: 18px; }
+.pick button { cursor: pointer; border: 0; border-radius: 16px; color: #fff; font: inherit; }
+.pick-land { display: grid; justify-items: center; gap: 8px; padding: 22px 8px; font-weight: 700; }
+.pick-land.hill { background: linear-gradient(#4f86c9, #e9a95c 70%, #4f7f32); }
+.pick-land.neon { background: linear-gradient(#0b0824, #5a1d6e 70%, #ff2e97); }
+.pick-land .l-i { width: 34px; height: 34px; }
+.pick-keep { grid-column: 1 / -1; padding: 6px; background: none; color: #b9bdd8; text-decoration: underline; }
