@@ -1,5 +1,5 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { endWorker, OLD_ORPHAN_S, parseEtime, parseHeavy, parseSwap, processes, type Proc, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
@@ -83,7 +83,9 @@ test("a seated worker's session left stopped is woken on the second round, and a
   const seat = tree("sprocket-6");
   const floor = { dir: repo, workers: { list: () => [{ worktree: { path: path.join(WORKTREES, "sprocket-6") } }] } };
   const stat = (pid: number) => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]).stdout.toString().trim();
-  const session = leave(seat);
+  // a direct child, as a session is its office's: macOS may wake a stopped orphan itself (seen over ssh, #6301)
+  const session = Bun.spawn(["sleep", "120"], { cwd: seat, stdio: ["ignore", "ignore", "ignore"] }).pid;
+  started.push(session);
   process.kill(session, "SIGSTOP");
   const swap = () => null;
   await reapOnce(() => [floor], () => {}, { procs: processes, swap });
@@ -146,9 +148,14 @@ test("the reaper ends a server left in a gone worktree's scratch folder, and a C
   tree("gizmo-6"); tree("pixel-7");
   const [server, kept] = [leave(scratch("gizmo-6")), leave(scratch("pixel-7"))];
   // a watch loop's shell, as Claude Code starts one; its session ended, so it sits under pid 1
-  const shell = Bun.spawn(["/bin/sh", "-c", "source /nowhere/.claude/shell-snapshots/snap.sh 2>/dev/null || true; while true; do sleep 30; done"], { stdout: "ignore", stderr: "ignore" });
+  // the snapshot is a real file: macOS's /bin/sh exits on `source` of a missing one, `|| true` or not
+  const snap = path.join(repo, ".claude", "shell-snapshots", "snap.sh");
+  mkdirSync(path.dirname(snap), { recursive: true });
+  writeFileSync(snap, "");
+  const shell = Bun.spawn(["/bin/sh", "-c", `source ${snap} 2>/dev/null || true; while true; do sleep 30; done`], { stdout: "ignore", stderr: "ignore" });
   started.push(shell.pid);
   await Bun.sleep(300);
+  expect(alive(shell.pid)).toBe(true);
   const floor = { dir: repo, workers: { list: () => [{ worktree: { path: path.join(WORKTREES, "pixel-7") } }] } };
   const procs = ours;
   const n = await reapOnce(() => [floor], () => {}, { procs, swap: () => null });
