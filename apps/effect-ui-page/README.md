@@ -122,9 +122,9 @@ bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 ### Agent Galaxy
 
 Every world is a plot on one shared map. **Agent Galaxy** (the Galaxy tile in the console, or Cmd+K) puts the console away and zooms
-out: your plot sits in the middle with its eight neighbours around it, seen from above at an angle, and you are a
-small character. Walk with WASD or the arrow keys (a touch stick on a phone). Walking off an edge takes you onto the
-plot next door from the opposite edge. **Back to my world** brings the console back.
+out: plots touch edge to edge as one ground, seen from above at an angle, and you are a small character the camera
+follows. Walk with WASD or the arrow keys (a touch stick on a phone), straight across from one plot into the next.
+**Back to my world** brings the console back.
 
 - The plot you stand on runs live, in the same sealed frame as always: your own world, the common city in the middle
   (`src/commonCity.ts`, ours, nobody's), or a neighbour's world as their room last saved it. A neighbour's world is

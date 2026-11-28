@@ -23,8 +23,11 @@ import { worldDoc } from "./world.ts";
 /** Asks for the galaxy (true) or the way back (false), from Cmd+K and window.agentGalaxy: ProfilePage listens. */
 export const galaxyAsks = Effect.runSync(Queue.unbounded<boolean>());
 
-/** A cell is a plot and the ground beside it; K squashes north-south for the view from above at an angle. */
-const PITCH = 1.16, K = 0.6;
+/** Plots touch edge to edge, one ground to walk across; K squashes north-south for the view from above at an angle. */
+const K = 0.6;
+/** How many plots wide (or tall) the screen shows, whichever fits less. */
+const SPAN = 2.4;
+const SAND = "#d4a76a";
 /** Plots a second, walking; how often a position goes out; the size a world's frame is drawn at, then scaled. */
 const SPEED = 0.45, SEND_MS = 100, FRAME_PX = 640;
 
@@ -77,14 +80,13 @@ const picture = (id: string) => {
 const hash = (x: number, y: number, i = 0) => { let h = (x * 374761393 + y * 668265263 + i * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 
 function desert(g: CanvasRenderingContext2D, p: Plot, x0: number, y0: number, w: number, h: number) {
-  const sand = g.createLinearGradient(x0, y0, x0, y0 + h);
-  sand.addColorStop(0, "#e2b97c"); sand.addColorStop(1, "#c8955a");
-  g.fillStyle = sand; g.fillRect(x0, y0, w, h);
+  // One flat sand and dune lines that leave at the height they came in, so desert runs on from plot to plot.
+  g.fillStyle = SAND; g.fillRect(x0, y0, w, h);
   g.strokeStyle = "rgba(120, 72, 30, .28)"; g.lineWidth = Math.max(1, w * 0.006);
   for (let i = 0; i < 4; i++) {
-    const yy = y0 + h * (0.2 + 0.2 * i + 0.05 * hash(p.x, p.y, i));
-    g.beginPath(); g.moveTo(x0 + w * 0.06, yy);
-    g.quadraticCurveTo(x0 + w * 0.5, yy - h * 0.08, x0 + w * 0.94, yy + h * 0.02); g.stroke();
+    const yy = y0 + h * (0.14 + 0.24 * i);
+    g.beginPath(); g.moveTo(x0, yy);
+    g.quadraticCurveTo(x0 + w * (0.3 + 0.4 * hash(p.x, p.y, i)), yy - h * (0.06 + 0.1 * hash(p.x, p.y, 4 + i)), x0 + w, yy); g.stroke();
   }
   // A cactus or two, standing up: the 2.5D view keeps upright things upright.
   for (let i = 0; i < 2; i++) {
@@ -126,10 +128,10 @@ function character(g: CanvasRenderingContext2D, sx: number, sy: number, r: numbe
 }
 
 function layout(g: G) {
-  const W = innerWidth, H = innerHeight, span = 3 * PITCH + 0.3;
-  const S = Math.min(W / span, (H - 56) / (span * K));
+  const W = innerWidth, H = innerHeight;
+  const S = Math.min(W / SPAN, H / (SPAN * K));
   const cam = g.cam ?? { x: 0, z: 0 };
-  return { W, H, S, at: (wx: number, wz: number): [number, number] => [W / 2 + (wx - cam.x) * S, H / 2 + 14 + (wz - cam.z) * S * K] };
+  return { W, H, S, at: (wx: number, wz: number): [number, number] => [W / 2 + (wx - cam.x) * S, H / 2 + (wz - cam.z) * S * K] };
 }
 
 function fit(c: HTMLCanvasElement, W: number, H: number) {
@@ -143,43 +145,34 @@ function fit(c: HTMLCanvasElement, W: number, H: number) {
 function draw(g: G) {
   const { W, H, S, at } = layout(g);
   const ctx = fit(g.ground, W, H);
-  const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, "#1a1830"); sky.addColorStop(1, "#24203d");
-  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
-  // The ground between plots: a dotted path down the middle of each gap.
-  ctx.fillStyle = "rgba(255, 255, 255, .10)";
-  const r0 = Math.max(1.5, S * 0.008), step = S * 0.06;
-  for (const p of g.plots.values()) {
-    const [x0, y0] = at(p.x * PITCH, p.y * PITCH), gx = x0 + S + ((PITCH - 1) * S) / 2, gy = y0 + S * K + ((PITCH - 1) * S * K) / 2;
-    for (let d = 0; d < S * PITCH; d += step) { ctx.fillRect(gx - r0 / 2, y0 + d * K, r0, r0); ctx.fillRect(x0 + d, gy - r0 / 2, r0, r0); }
-  }
+  // Sand beyond what has been fetched yet, so the ground never ends.
+  ctx.fillStyle = SAND; ctx.fillRect(0, 0, W, H);
   const live = g.frame.hidden ? null : key(g.plot.x, g.plot.y);
   const labels: [number, number, string, string][] = [];
   for (const p of [...g.plots.values()].sort((a, b) => a.y - b.y)) {
-    const [x0, y0] = at(p.x * PITCH, p.y * PITCH), w = S, h = S * K;
-    if (x0 > W || y0 > H || x0 + w < 0 || y0 + h + S * 0.08 < 0) continue;
-    ctx.fillStyle = "#2a2140"; ctx.fillRect(x0, y0 + h, w, S * 0.06); // the plot's edge, seen from the front
+    // Whole pixels, each plot ending where the next begins: no hairline between them.
+    const [ax, ay] = at(p.x, p.y), [bx, by] = at(p.x + 1, p.y + 1);
+    const x0 = Math.round(ax), y0 = Math.round(ay), w = Math.round(bx) - x0, h = Math.round(by) - y0;
+    if (x0 > W || y0 > H || x0 + w < 0 || y0 + h < 0) continue;
     const img = p.id && !p.city ? picture(p.id) : null;
     if (key(p.x, p.y) === live) { ctx.fillStyle = "#05060f"; ctx.fillRect(x0, y0, w, h); }
     else if (img) ctx.drawImage(img, x0, y0, w, h);
     else if (p.city) cityTile(ctx, x0, y0, w, h);
-    else { desert(ctx, p, x0, y0, w, h); if (p.empty) sign(ctx, x0, y0, w, h); }
+    else { desert(ctx, p, x0, y0, w, h); if (p.empty && near(p, g.plot)) sign(ctx, x0, y0, w, h); }
     const mine = g.me !== null && p.id === g.me.id;
-    ctx.strokeStyle = mine ? "#21e6ff" : "rgba(255, 255, 255, .16)"; ctx.lineWidth = mine ? 2 : 1;
-    ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
     if (mine) labels.push([x0, y0, "Your world", "#21e6ff"]);
     else if (p.city) labels.push([x0, y0, "The city", "#ffb547"]);
   }
   // The live frame sits on the plot you stand on, drawn at FRAME_PX and scaled down onto it.
-  const [fx, fy] = at(g.plot.x * PITCH, g.plot.y * PITCH);
+  const [fx, fy] = at(g.plot.x, g.plot.y);
   const t = `translate(${fx.toFixed(1)}px, ${fy.toFixed(1)}px) scale(${(S / FRAME_PX).toFixed(4)}, ${((S * K) / FRAME_PX).toFixed(4)})`;
   if (t !== g.frameAt) { g.frame.style.transform = t; g.frameAt = t; }
   const c = fit(g.chars, W, H);
   c.clearRect(0, 0, W, H);
   const r = Math.max(4, S * 0.03);
   const walkers = [...visible(g).map((p) => ({ ...p, me: false })), ...(g.me ? [{ id: g.me.id, color: "#ffffff", x: g.plot.x, y: g.plot.y, px: g.pos.x, pz: g.pos.z, me: true }] : [])]
-    .sort((a, b) => a.y * PITCH + a.pz - (b.y * PITCH + b.pz));
-  for (const w of walkers) { const [sx, sy] = at(w.x * PITCH + w.px, w.y * PITCH + w.pz); character(c, sx, sy, r, w.me ? "#ff3d8b" : w.color, w.me); }
+    .sort((a, b) => a.y + a.pz - (b.y + b.pz));
+  for (const w of walkers) { const [sx, sy] = at(w.x + w.px, w.y + w.pz); character(c, sx, sy, r, w.me ? "#ff3d8b" : w.color, w.me); }
   // Plot names over everything, the live frame included: a small tag in the plot's corner.
   const fs = Math.max(10, Math.min(14, S * 0.04));
   c.font = `600 ${fs}px system-ui, sans-serif`; c.textAlign = "left"; c.textBaseline = "middle";
@@ -264,7 +257,8 @@ function tick(g: G, dt: number, now: number) {
   const len = Math.hypot(vx, vz);
   if (g.me && len > 0.05) void move(g, (vx / Math.max(1, len)) * SPEED * dt, (vz / Math.max(1, len)) * SPEED * dt);
   if (g.me) {
-    const target = { x: g.plot.x * PITCH + 0.5, z: g.plot.y * PITCH + 0.5 };
+    // The camera walks with you, across the seams.
+    const target = { x: g.plot.x + g.pos.x, z: g.plot.y + g.pos.z };
     g.cam = g.cam ? { x: g.cam.x + (target.x - g.cam.x) * Math.min(1, dt * 7), z: g.cam.z + (target.z - g.cam.z) * Math.min(1, dt * 7) } : target;
     say(g, now, false);
   }
