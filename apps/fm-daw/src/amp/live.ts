@@ -102,9 +102,9 @@ export function rigSpec(s: AmpSettings): { spec: RigSpec; shape: string; scale: 
   const front = s.board ? boardLinks(s.board) : null;
   const pedal = !front && def ? { def, drive: s.drive, swaps: s.swaps, edits: s.edits } : undefined;
   const base = s.direct ? deskRig(pedal) : buildRig(amp, s.knobs, pedal, { ...DEFAULT_ROOM, mic: s.mic });
-  const spec = { ...base, ...(front ? { links: [...front.links, ...base.links], blends: front.blends } : {}), loop: s.loop ?? [], machines: MACHINES };
+  const spec = { ...base, ...(front ? { links: [...front.links, ...base.links], blends: front.blends, back: s.back } : {}), loop: s.loop ?? [], machines: MACHINES };
   // A new shape (how many links, which run side by side) is a new chain; a split's blend is just set.
-  const shape = `${s.direct ? "direct" : amp.id}|${front ? `${front.links.length}:${front.blends.map((b) => `${b.at}/${b.lanes.join(",")}`).join(";")}` : def?.id ?? ""}`;
+  const shape = `${s.direct ? "direct" : amp.id}|${front ? `${front.links.length}:${front.blends.map((b) => `${b.at}/${b.lanes.join(",")}`).join(";")}${s.back ? `:${s.back.from}>${s.back.to}` : ""}` : def?.id ?? ""}`;
   return { spec, shape, scale: s.direct ? LINE_SCALE : FULL_SCALE };
 }
 

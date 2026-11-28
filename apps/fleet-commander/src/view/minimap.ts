@@ -38,6 +38,8 @@ export class Minimap {
     }
     for (const m of f.mines) if (sees.has(m.id)) dot(m.x, m.z, 1.2, "#ff7a2a");
     dot(w.lane.x, w.lane.z, 4, "rgba(140,120,230,0.6)");
+    const goal = w.goal?.escort;
+    if (goal) { c.strokeStyle = "#7dffb0"; c.lineWidth = 1.5 * dpr; c.beginPath(); c.arc(u(goal.x), v(goal.z), 5 * dpr, 0, Math.PI * 2); c.stroke(); }
     for (const g of w.wings) {
       if (g.state !== "out" || !g.craft.some((cr) => !cr.dead)) continue;
       if (g.side === "rim" && !sees.has(g.id)) continue;

@@ -114,6 +114,19 @@
   #demo .picks a:hover, #demo .picks a:focus-visible { background: color-mix(in srgb, #fb923c 22%, #101216); box-shadow: 0 0 0 2px #fb923c; outline: none; }
   #demo form { margin: 14px 0 0; text-align: center; }
   #demo .no { padding: 8px 12px; border: 0; background: none; color: #b9b4aa; font: inherit; text-decoration: underline; cursor: pointer; }
+  /* Event forks: Host | Join, two halves of its start (#6551) */
+  .apps .start:has([data-join]) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .apps .start:has([data-join]) a { padding-inline: 6px; gap: 6px; }
+  #join { box-sizing: border-box; width: min(420px, calc(100vw - 32px)); padding: 22px; border: 1px solid #f4f1ea33; border-radius: 20px; background: #101216; color: #f4f1ea; font: 15px/1.4 var(--qs-body), system-ui, sans-serif; }
+  #join::backdrop { background: #000a; backdrop-filter: blur(3px); }
+  #join h2 { margin: 0 0 14px; font: 600 24px/1.1 var(--qs-head), sans-serif; text-align: center; }
+  #join form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  #join input { min-width: 0; padding: 10px 12px; border: 1px solid #f4f1ea55; border-radius: 12px; background: #17191f; color: inherit; font: inherit; font-size: 16px; }
+  #join .go { display: grid; place-items: center; width: 48px; border: 0; border-radius: 12px; background: #fb923c; color: #101216; cursor: pointer; }
+  #join input:focus-visible, #join .go:focus-visible { outline: 2px solid #f4f1ea; outline-offset: 2px; }
+  #join .why { margin: 10px 0 0; color: #ffb4a2; text-align: center; }
+  #join .why:empty { display: none; }
+  #join .back { display: block; margin: 10px auto 0; padding: 8px 12px; border: 0; background: none; color: #b9b4aa; font: inherit; text-decoration: underline; cursor: pointer; }
   /* the tabs: the bar fades in as you scroll, and its tabs show once the lane buttons have slid into them */
   #tabs { position: fixed; z-index: 5; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; box-sizing: border-box; padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); background: rgb(15 16 19 / calc(var(--p, 0) * .8)); border-bottom: 1px solid rgb(255 255 255 / calc(var(--p, 0) * .07)); backdrop-filter: blur(calc(var(--p, 0) * 10px)); pointer-events: none; }
   body.scrolled #tabs { pointer-events: auto; }
@@ -301,6 +314,15 @@
   <h2 id="demo-h">Try one</h2>
   <div class="picks"></div>
   <form method="dialog"><button class="no">Just looking</button></form>
+</dialog>
+<dialog id="join" aria-labelledby="join-h">
+  <h2 id="join-h">Join</h2>
+  <form novalidate>
+    <input name="entry" type="text" placeholder="Code or link" aria-label="The code or link you were sent" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" />
+    <button class="go" type="submit" aria-label="Join" title="Join"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>
+  </form>
+  <p class="why" role="alert"></p>
+  <button class="back" type="button">Back</button>
 </dialog>
 <script type="module" src="/src/front.ts"></script>
 </body></html>

@@ -2,7 +2,7 @@
 import type { Knobs } from "../circuit/amps.ts";
 import type { Swaps } from "../circuit/circuits.ts";
 import type { Edit } from "../circuit/edits.ts";
-import type { LoopSpec, Mic, Netlist, ScopeAt } from "@rustybuns/gear/circuit";
+import type { Back, LoopSpec, Mic, Netlist, ScopeAt } from "@rustybuns/gear/circuit";
 
 /** A pedal on a board: which (a PEDALS id, or "bench" with its netlist), its one knob, 0 to 10, and the player's part swaps and circuit edits. */
 export interface BoardPedal { pedal: string; drive: number; bench?: Netlist; swaps?: Swaps; edits?: Edit[] }
@@ -40,6 +40,8 @@ export interface AmpSettings {
   board?: BoardStep[];
   /** The pedalboard, the amp one of its slots: when set, it plays in place of `pedal`, `bench`, `drive`, `swaps`, `loop` and `board`. */
   chain?: ChainSlot[];
+  /** With `board`: one loop back from a pedal's output into an earlier pedal's input (indices on the board). */
+  back?: Back;
   /** No amp: the pedal and the loop straight into a desk insert's return, at line level (no power stage, no cab). */
   direct?: boolean;
 }

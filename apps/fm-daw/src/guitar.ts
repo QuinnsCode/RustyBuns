@@ -15,6 +15,7 @@ import type { Project } from "./project.ts";
 import { TrackAmp } from "./amp/track-amp.ts";
 import type { AmpSettings } from "./amp/messages.ts";
 import { DEFAULT_MIC } from "@rustybuns/gear/circuit";
+import { BACK_GAIN, type BoardRig } from "./amp/board-rig.ts";
 
 /**
  * Which call a signal is about, from its sender's side: their own guitar going out, or someone's coming in; `pa-out`
@@ -109,6 +110,14 @@ export function guitarSettings(a: TrackAmp | undefined): AmpSettings {
   return {
     amp, pedal: null, drive: 0, swaps: {}, mic: DEFAULT_MIC, bypass: !a, oversample: INSERT_OVERSAMPLE,
     knobs: { gain, bass, mid, treble, master, rate, depth, noise: 0 },
+  };
+}
+/** Your own board (src/amp/board-rig.ts) as settings: its head at the head's own knobs, its pedals in a row, its cab. */
+export function boardSettings(r: BoardRig): AmpSettings {
+  const base = guitarSettings(TrackAmp({ amp: r.amp }));
+  return {
+    ...base, mic: { ...DEFAULT_MIC, box: r.cab }, bypass: false, board: r.pedals.map(({ pedal, drive }) => ({ pedal, drive })),
+    ...(r.back && r.back.from < r.pedals.length && r.back.to <= r.back.from ? { back: { ...r.back, gain: BACK_GAIN } } : {}),
   };
 }
 /**

@@ -1,14 +1,15 @@
 // Who is coming to an event (QOLLAB.md "Events"): RSVPs, the host's CSV, each person's signed tickets and the door that scans
-// them. The pages call these with the signed-in person (../event-pages.ts). The guest list stays the record of who is in
-// (`events.guests`, @rustybuns/util/guests); `event_rsvps` holds the answers and is where the cap is counted, inside the insert.
+// them. The pages call these with the signed-in person (../event-pages.ts, ../event-host.ts). A plain guest's RSVP row is their
+// place at the event, with their name and answers, and is where the cap is counted, inside the insert; the JSON list
+// (`events.guests`, @rustybuns/util/guests, 500 at most) keeps the crew, the blocked and the invite links (`listWith`, ./events.ts).
 import { Answers, type Event, type Scanned } from "@rustybuns/util/events";
 import { check } from "@rustybuns/util/guard";
-import { act, can, GuestList, isIn, LIMITS, nameOf } from "@rustybuns/util/guests";
+import { act, can, GuestList, isIn, LIMITS, nameOf, type GuestAct } from "@rustybuns/util/guests";
 import { unb64url } from "@rustybuns/util/bytes";
 import { b64url, type Env } from "../env.ts";
-import { eventRow } from "./events.ts";
+import { eventRow, listWith } from "./events.ts";
 
-type Rsvp = { user_id: string; plus: number; answers: string; at: number };
+type Rsvp = { user_id: string; name: string; plus: number; answers: string; at: number };
 const NO_CAP = 1e9;
 
 /** Change an event's guest list without losing someone else's change: written only over the list it was read from. */
@@ -40,52 +41,70 @@ export function inviteRole(l: GuestList, code: string, now = Date.now()): string
   return i && (i.until === undefined || i.until > now) && i.left !== 0 ? i.role : null;
 }
 
-/** Put someone on the list: by their invite, or (where no invite is needed) as a guest. Someone already on it stays as they are. */
-function joined(e: Event, who: { id: string; name: string }, code: string, now: number): GuestList | string {
-  const l = e.guests;
-  if (l.blocked[who.id]) return "blocked";
-  if (isIn(l, who.id)) return l;
-  const name = who.name.slice(0, 60) || "Someone";
-  if (code && inviteRole(l, code, now)) {
-    const r = act(l, who.id, { t: "join", code, name }, now);
-    return r.ok ? r.list : "list";
-  }
-  if (e.who.access === "invite") return "invite";
-  if (Object.keys(l.guests).length >= LIMITS.guests) return "list";
-  return { ...l, guests: { ...l.guests, [who.id]: { name, role: "guest", by: l.owner, at: now } }, log: [...l.log, { at: now, by: who.id, act: "join" as const, who: who.id, name }].slice(-LIMITS.log) };
-}
-
-/** RSVP, or change your answers: null when you're on the list, else why not (a key of the pages' words). */
+/** RSVP, or change your answers: null when you're coming, else why not (a key of the pages' words). */
 export async function rsvp(conf: Env, id: string, who: { id: string; name: string }, said: Answers, code = "", now = Date.now()): Promise<string | null> {
   const e = (await eventRow(conf, id))?.event;
   if (!e) return "gone";
-  const first = joined(e, who, code, now);
-  if (typeof first === "string") return first;
+  if (e.guests.blocked[who.id]) return "blocked";
+  const had = await conf.DB.prepare("SELECT 1 AS y FROM event_rsvps WHERE event_id = ? AND user_id = ?").bind(id, who.id).first("y");
+  const on = !!had || isIn(e.guests, who.id), role = on || !code ? null : inviteRole(e.guests, code, now);
+  if (!on && !role && e.who.access === "invite") return "invite";
+  const name = who.name.slice(0, 60) || "Someone";
   // Only what the event asks is kept.
   const asks = e.there.asks, answers: Answers = { plus: asks.includes("plus-one") && said.plus, food: asks.includes("food-needs") ? said.food.trim() : "", song: asks.includes("song") ? said.song.trim() : "" };
-  const had = await conf.DB.prepare("SELECT plus, answers FROM event_rsvps WHERE event_id = ? AND user_id = ?").bind(id, who.id).first<{ plus: number; answers: string }>();
   const places = answers.plus ? 2 : 1;
   // The cap is counted inside the write, so a crowd pressing at once can't get past it.
-  const kept = await conf.DB.prepare(`INSERT INTO event_rsvps (event_id, user_id, plus, answers, at) SELECT ?1, ?2, ?3, ?4, ?5
+  const kept = await conf.DB.prepare(`INSERT INTO event_rsvps (event_id, user_id, plus, answers, at, name) SELECT ?1, ?2, ?3, ?4, ?5, ?8
     WHERE (SELECT COALESCE(SUM(1 + plus), 0) FROM event_rsvps WHERE event_id = ?1 AND user_id <> ?2) + ?6 <= ?7
-    ON CONFLICT (event_id, user_id) DO UPDATE SET plus = excluded.plus, answers = excluded.answers RETURNING user_id`)
-    .bind(id, who.id, places - 1, JSON.stringify(answers), now, places, e.who.cap ?? NO_CAP).first("user_id");
+    ON CONFLICT (event_id, user_id) DO UPDATE SET plus = excluded.plus, answers = excluded.answers, name = excluded.name RETURNING user_id`)
+    .bind(id, who.id, places - 1, JSON.stringify(answers), now, places, e.who.cap ?? NO_CAP, name).first("user_id");
   // A change that asks for a plus-one there is no room for leaves the RSVP as it was.
   if (!kept) return places === 2 && (had || await taken(conf, id) < (e.who.cap ?? NO_CAP)) ? "noplus" : "full";
-  const why = await relist(conf, id, (fresh) => joined(fresh, who, code, now));
-  if (why && !had) await conf.DB.prepare("DELETE FROM event_rsvps WHERE event_id = ? AND user_id = ?").bind(id, who.id).run();
+  // An invite that hands out more than a guest's place puts them on the list in that role; a block that landed meanwhile wins.
+  const why = role && role !== "guest"
+    ? await relist(conf, id, (fresh) => { const r = act(fresh.guests, who.id, { t: "join", code, name }, now); return r.ok ? r.list : fresh.guests.blocked[who.id] ? "blocked" : "list"; })
+    : (await eventRow(conf, id))?.event.guests.blocked[who.id] ? "blocked" : null;
+  if (why && !had) await forget(conf, id, who.id);
   return why;
 }
 
+const forget = (conf: Env, id: string, userId: string) => conf.DB.prepare("DELETE FROM event_rsvps WHERE event_id = ? AND user_id = ?").bind(id, userId).run();
+
 /** "I can't make it": the RSVP goes, and a plain guest leaves the list (the crew stay on it). */
 export async function cancel(conf: Env, id: string, userId: string, now = Date.now()) {
-  await conf.DB.prepare("DELETE FROM event_rsvps WHERE event_id = ? AND user_id = ?").bind(id, userId).run();
-  // At an invite-only event their place on the list is the invitation, so it stays.
-  return relist(conf, id, (e) => {
-    if (e.who.access === "invite" || e.guests.guests[userId]?.role !== "guest") return e.guests;
-    const r = act(e.guests, userId, { t: "leave" }, now);
-    return r.ok ? r.list : e.guests;
+  const e = (await eventRow(conf, id))?.event;
+  if (!e) return "gone";
+  const kept = await listWith(conf, e, userId);
+  await forget(conf, id, userId);
+  return relist(conf, id, ({ who, guests: l }) => {
+    // At an invite-only event their place is the invitation, so it moves to the list, while the list has room.
+    if (who.access === "invite") {
+      const line = kept.guests[userId];
+      return line && !l.guests[userId] && !l.blocked[userId] && Object.keys(l.guests).length < LIMITS.guests ? { ...l, guests: { ...l.guests, [userId]: line } } : l;
+    }
+    if (l.guests[userId]?.role !== "guest") return l;
+    const r = act(l, userId, { t: "leave" }, now);
+    return r.ok ? r.list : l;
   });
+}
+
+/** What a host does to the list from the event's pages: take someone off, block or unblock them, or cancel an invite link. */
+export type HostAct = Extract<GuestAct, { t: "revoke" | "block" | "unblock" | "uninvite" }>;
+/** Run one of them for `by`, by the guest list's own rules: null when done, else why not. Someone taken off or blocked
+ *  loses their RSVP too, so their ticket stops working and their places are free. */
+export async function hostAct(conf: Env, id: string, by: string, a: HostAct, now = Date.now()): Promise<string | null> {
+  const e = (await eventRow(conf, id))?.event;
+  if (!e) return "gone";
+  const who = a.t === "revoke" || a.t === "block" ? a.who : null;
+  const line = who ? (await listWith(conf, e, who)).guests[who] : undefined;
+  const why = await relist(conf, id, ({ guests: l }) => {
+    // A plain guest's line is their RSVP's: put it on for the act, which takes it off again.
+    const seen = who && line && !l.guests[who] && !l.blocked[who] ? { ...l, guests: { ...l.guests, [who]: line } } : l;
+    const r = act(seen, by, a, now);
+    return !r.ok ? r.why : r.list === seen ? l : r.list;
+  });
+  if (!why && who) await forget(conf, id, who);
+  return why;
 }
 
 /** Join the crew by an invite that hands out more than a guest's role: no RSVP, no place taken. */
@@ -130,14 +149,15 @@ const cell = (v: string | number) => `"${String(v).replace(/^[=+\-@\t\r]/, "'$&"
 
 /** The guest list as CSV: everyone on it but the owner, with their answers to what the event asks. */
 export async function guestCsv(conf: Env, e: Event): Promise<string> {
-  const { results } = await conf.DB.prepare("SELECT user_id, plus, answers, at FROM event_rsvps WHERE event_id = ?").bind(e.id).all<Rsvp>();
+  const { results } = await conf.DB.prepare("SELECT user_id, name, plus, answers, at FROM event_rsvps WHERE event_id = ?").bind(e.id).all<Rsvp>();
   const scans = await conf.DB.prepare("SELECT user_id, COUNT(*) AS n FROM event_scans WHERE event_id = ? GROUP BY user_id").bind(e.id).all<{ user_id: string; n: number }>();
   const byWho = new Map(results.map((r) => [r.user_id, r])), came = new Map(scans.results.map((r) => [r.user_id, r.n]));
   const asked = e.there.asks.map((a) => ({ "plus-one": ["Plus-one", "plus"], "food-needs": ["Food needs", "food"], song: ["Song", "song"] } as const)[a]);
   const people = [...new Set([...Object.keys(e.guests.guests), ...byWho.keys()])].filter((id) => !e.guests.blocked[id]);
   const lines = people.map((id) => {
     const r = byWho.get(id), a = r ? check(Answers, JSON.parse(r.answers)) : null;
-    return [nameOf(e.guests, id), e.guests.guests[id]?.role ?? "owner", r ? "yes" : "no", ...asked.map(([, k]) => k === "plus" ? (a ? a.plus ? "yes" : "no" : "") : a?.[k] ?? ""), came.get(id) ?? 0];
+    const listed = e.guests.guests[id], owner = id === e.guests.owner;
+    return [listed || owner ? nameOf(e.guests, id) : r?.name || "Someone", listed?.role ?? (owner ? "owner" : "guest"), r ? "yes" : "no", ...asked.map(([, k]) => k === "plus" ? (a ? a.plus ? "yes" : "no" : "") : a?.[k] ?? ""), came.get(id) ?? 0];
   });
   return [["Name", "Role", "RSVP", ...asked.map(([head]) => head), "Scanned in"], ...lines].map((l) => l.map(cell).join(",")).join("\r\n") + "\r\n";
 }
@@ -181,9 +201,9 @@ export type Look =
 export async function look(conf: Env, e: Event, said: string): Promise<Look> {
   const t = await readTicket(conf, said);
   if (!t || t.id !== e.id) return { state: "bad", who: "" };
-  const a = await rsvpOf(conf, e.id, t.userId);
-  if (!a || !isIn(e.guests, t.userId) || (t.seat === 2 && !a.plus)) return { state: "cancelled", who: "" };
-  const who = `${nameOf(e.guests, t.userId)}${t.seat === 2 ? "'s plus-one" : ""}`;
+  const a = await rsvpOf(conf, e.id, t.userId), l = a ? await listWith(conf, e, t.userId) : e.guests;
+  if (!a || !isIn(l, t.userId) || (t.seat === 2 && !a.plus)) return { state: "cancelled", who: "" };
+  const who = `${nameOf(l, t.userId)}${t.seat === 2 ? "'s plus-one" : ""}`;
   const used = await conf.DB.prepare("SELECT 1 AS y FROM event_scans WHERE event_id = ? AND user_id = ? AND seat = ?").bind(e.id, t.userId, t.seat).first("y");
   return { state: used ? "used" : "ok", who, userId: t.userId, seat: t.seat };
 }

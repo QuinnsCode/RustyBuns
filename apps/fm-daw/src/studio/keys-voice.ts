@@ -11,7 +11,9 @@
 //              the key is down
 //   strings    the ensemble: detuned saws through a gentle low-pass, a slow swell in and a long release, the
 //              three-phase chorus that makes one oscillator a section
-import type { PolyKind } from "@rustybuns/models/polysynth";
+import { POLY_KINDS, type PolyKind } from "@rustybuns/models/polysynth";
+import { clampParam } from "../engine/params.ts";
+import { MIX_PARAMS } from "../grants.ts";
 import { patch } from "../presets.ts";
 import type { Project } from "../project.ts";
 
@@ -49,4 +51,10 @@ export function withKeysVoice(p: Project, kind: PolyKind | null): Project {
   const i = kind ? p.tracks.findIndex((t) => t.kind === "synth" && t.name.toLowerCase().includes("keys")) : -1;
   if (i < 0 || !kind) return p;
   return { ...p, tracks: p.tracks.map((t, k) => (k === i ? { ...t, params: KEYS_VOICES[kind].slice() } : t)) };
+}
+
+/** The family a track's patch is, as one of these (the desk's own settings aside); null for a patch of its own. */
+export function voiceKind(params: readonly number[] | undefined): PolyKind | null {
+  if (!params) return null;
+  return POLY_KINDS.find((k) => KEYS_VOICES[k].every((v, i) => MIX_PARAMS.includes(i) || Math.abs(clampParam(i, v) - params[i]) < 1e-6)) ?? null;
 }
