@@ -463,9 +463,10 @@ const FLOOR = oneOf(["free", "held", "closed"]);
 /**
  * Why a world turned a socket away: every seat in this room is taken, every room is open, the maker
  * closed it, the sesh is private and the code was missing or wrong, this address got it wrong too often lately, or the
- * room is an event's and the event lets in only those who RSVPed or were invited (`unchecked`: its list couldn't be read, #6428).
+ * room is an event's and the event lets in only those who RSVPed or were invited (`unchecked`: its list couldn't be read, #6428),
+ * its four hours are up (`over`), or its maker has another event open (`busy`, #6554).
  */
-export const FULL = ["room", "rooms", "closed", "code", "tries", "blocked", "rsvp", "invite", "unchecked"] as const;
+export const FULL = ["room", "rooms", "closed", "code", "tries", "blocked", "rsvp", "invite", "unchecked", "over", "busy"] as const;
 export type Full = (typeof FULL)[number];
 /** A private sesh's code: what the maker types and every joiner types after. */
 export const CODE = str(32, { min: 4 });

@@ -62,8 +62,9 @@ export const EventMade = obj({ event: Event });
 export type EventMade = Of<typeof EventMade>;
 /** GET /q/events/<id>/door, with the caller's own token or none: who the event lets in, and whether that's the caller.
  *  Nothing else about the event, so an event's room (Qollab Studio's World) asks it for each guest at its door (#6428).
- *  `in` is true for anyone at an `anyone` event who isn't blocked on its list, else only for someone on the list. */
-export const EventDoor = obj({ access: oneOf(ACCESS), in: bool() });
+ *  `in` is true for anyone at an `anyone` event who isn't blocked on its list, else only for someone on the list. `role` is
+ *  the caller's own role on that list ("owner" for the owner), which the room turns into grants (#6554). */
+export const EventDoor = obj({ access: oneOf(ACCESS), in: bool(), role: opt(str(24)) });
 export type EventDoor = Of<typeof EventDoor>;
 
 /** The answers an RSVP carries, to the questions in `there.asks`: `plus` brings one more person, who gets their own ticket. */

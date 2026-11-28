@@ -834,7 +834,7 @@ const fromLocal = (v: string) => { const ms = v ? new Date(v).getTime() : NaN; r
 
 function renderParty() {
   const host = $("party"), p = openParty(parties), x = (attrs: string, name: string) => `<button type="button" class="x" ${attrs} aria-label="${esc(name)}" title="${esc(name)}">${icon(X)}</button>`;
-  const eventButtons = `<button type="button" id="event-open" title="The planned room or field as a jam room, with its PA, guest list and listen link">Open as event</button><button type="button" id="event-walk" title="Walk the site and hear the planned PA before the show">Client walk-through</button>`;
+  const eventButtons = `<button type="button" id="event-open" title="The planned room or field as a studio, with its PA, guest list and listen link">Open as event</button><button type="button" id="event-walk" title="Walk the site and hear the planned PA before the show">Client walk-through</button>`;
   if (!p) {
     host.innerHTML = `<h2>Party</h2>
       ${parties.parties.length ? `<ul class="parties">${parties.parties.map((q) => `<li><button type="button" data-party-open="${q.id}">${esc(q.name)}</button><span class="hint">${esc(whenWords(q.when))}${q.id === parties.live ? " · live" : ""}</span>${x(`data-party-drop="${q.id}"`, `Take ${q.name} away, with every version`)}</li>`).join("")}</ul>` : ""}

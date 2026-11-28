@@ -36,6 +36,16 @@ export const SKIN: Skin = { theme: {
   "--ui-accent": "#ff6b4a", "--ui-on-accent": "#15171b", "--ui-radius": "14px", "--ui-radius-sm": "8px",
 } };
 
+/** What an event's roles (@rustybuns/util/events EVENT_ROLES, and its owner) may do in its room. */
+const EVENT_CANS = new Map<string, Can[]>([["owner", [...CANS]], ["promoter", [...CANS]], ["crew", ["mix", "lights", "speak"]], ["artist", ["play", "speak"]]]);
+
+/** The grant an event's role walks in with, or null for the floor's: a guest, a role the host added, or on a free floor
+ *  anyone who doesn't lead (they can do all of it already, and a grant would only take from them). */
+export function eventCans(role: string, floor: Floor): Can[] | null {
+  const c = EVENT_CANS.get(role);
+  return c && (floor !== "free" || c.includes("lead")) ? c : null;
+}
+
 /** What someone on the list may do in the sesh: the owner leads, a guest gets their role's grants, anyone else none. */
 export const cansOf = (l: GuestList, who: string): Can[] => CANS.filter((c) => can(l, who, c));
 

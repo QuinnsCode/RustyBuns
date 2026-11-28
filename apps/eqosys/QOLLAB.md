@@ -321,6 +321,7 @@ picks an event up for the stage and the sound, and Qollab keeps only the link to
   no Durable Object: nothing about it is live. `edited` moves forward on every change, so a calendar file can follow it.
 - **The crew:** roles on the event's guest list (`@rustybuns/util/guests`, `EVENT_ROLES`: promoter, crew, artist, guest).
   The owner is all of them; a role with `edit` changes the event; only the owner deletes it.
+  `GET /q/events/<id>/door` says who the event lets in and the caller's own role, which its studio turns into grants (#6554).
 - **Routes:** `GET /q/events` lists yours (soonest first, undated last), `POST` makes one from `{ kind, name }` and any parts,
   `GET`, `PUT` (the parts sent replace those parts whole) and `DELETE /q/events/<id>`. Someone not on its list hears 404.
   Up to 50 events an account. `events()` in the same module is a page's side. Deleting the account deletes its events.

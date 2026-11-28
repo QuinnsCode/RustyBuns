@@ -98,7 +98,7 @@ export const PATHS: readonly Path[] = [
   },
   {
     id: "playground", sector: "studio", name: "Playground", features: "Your own room · invite link · jam with friends", does: "Your own sesh: make a room in your studio, send the link, and friends drop in to jam.",
-    href: "/jam.html", first: "The jam room's lobby: make a room", signIn: true,
+    href: "/jam.html", first: "The studio's lobby: make a room", signIn: true,
     icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/>',
   },
   {

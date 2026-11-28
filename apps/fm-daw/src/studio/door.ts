@@ -10,13 +10,15 @@ import type { HubFriend, HubNote } from "@rustybuns/util/eqosys";
 import type { Full } from "../project.ts";
 
 /** A studio as the pickers show it: its id, name, a line on what it is, and the room itself (for its shot). */
-/** Why an event's room turned this page away (world.ts eventDoor, #6428), in plain words for the entry panel; null for
+/** Why an event's room turned this page away or sent it out (world.ts eventDoor and endEvent, #6428, #6554), in plain words for the entry panel; null for
  *  any other reason (the password has its own field). Signed out, the way in is to sign in so the event knows who you are. */
 export function turnedAway(full: Full | undefined, signedIn: boolean): string | null {
   const who = signedIn ? "" : " Sign in with eqosys so it knows who you are.";
   if (full === "rsvp") return `This event lets in people who RSVPed, and you're not on its list yet.${who}`;
   if (full === "invite") return `This event is invite only, and you're not on its list.${signedIn ? " Ask whoever is hosting it." : who}`;
   if (full === "blocked") return "You can't come in to this room.";
+  if (full === "over") return "This event's four hours are up.";
+  if (full === "busy") return "Whoever made this room has another event open, and it's one at a time. Try again when that one is done.";
   if (full === "unchecked") return "This room couldn't check the event's guest list just now. Try again in a minute.";
   return null;
 }

@@ -102,7 +102,7 @@ export function studioTools(pl: Player): Command[] {
   const no = (why: string) => ({ ok: false, why });
   const nope = (can: Can) => no(`The leader hasn't let you ${can === "edit" ? "change the groove" : can}: studio_ask_to_play raises your hand${can === "play" ? "" : ` (can: "${can}")`}`);
   return [
-    { name: "studio_state", title: "Look around the jam room", annotations: { readOnlyHint: true },
+    { name: "studio_state", title: "Look around the studio", annotations: { readOnlyHint: true },
       description: "Who is in the room and where, which seat each sits at, every spot and the track it plays, what you may do (play, edit, mix, lights, speak, lead: the leader's grants, your guest list role, or the floor's), the tempo, the groove's tracks, the instruments made here, and the shared clock (whose it is, your offset to it and round trip in ms, and how you hear the band: a loop late, at the desk or as it comes).",
       execute: () => state(pl) },
     { name: "studio_sit", title: "Sit at a spot", ask: "spot id (studio_state lists them)",

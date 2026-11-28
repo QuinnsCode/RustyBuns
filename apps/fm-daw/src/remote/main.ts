@@ -117,7 +117,7 @@ function draw() {
   const card = $("mine");
   if (t === null) {
     card.className = "card none";
-    card.replaceChildren(el("p", {}, "Sit at an instrument in the jam room, or tap a track's name below: it comes up here."));
+    card.replaceChildren(el("p", {}, "Sit at an instrument in the studio, or tap a track's name below: it comes up here."));
   } else {
     const tr = project.tracks[t], s = strips(project)[t];
     card.className = "card";

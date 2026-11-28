@@ -1328,7 +1328,10 @@ if (here) net = connect({
     const gateWas = gated();
     status = s;
     enforce();
-    if (gated() !== gateWas) door();
+    // turned away from an event's room, or sent out when its time is up: the entry panel says why
+    const away = s.state === "full" && !!turnedAway(s.full, signedIn());
+    if (away && phase === "play") { phase = "menu"; releaseAll(); document.exitPointerLock?.(); menu(); }
+    if (away || gated() !== gateWas) door();
     settings?.render();
   },
   onChat(m) { if (m.t === "chat") rights.me = m.you; },

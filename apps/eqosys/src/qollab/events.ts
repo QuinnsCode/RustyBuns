@@ -47,7 +47,8 @@ async function eventDoor(req: Request, conf: Env, id: string, head: Record<strin
   const bearer = bearerOf(req), t = bearer ? await tokenOf(req, conf, bearer, { home: true }) : null;
   const me = t?.who.id;
   const ok = e.who.access === "anyone" ? !(me && e.guests.blocked[me]) : !!me && isIn(e.guests, me);
-  return json({ access: e.who.access, in: ok } satisfies EventDoor, 200, { ...head, "cache-control": "private, no-store" });
+  const role = !ok || !me ? undefined : e.guests.owner === me ? "owner" : e.guests.guests[me]?.role;
+  return json({ access: e.who.access, in: ok, ...(role ? { role } : {}) } satisfies EventDoor, 200, { ...head, "cache-control": "private, no-store" });
 }
 
 export async function events(req: Request, conf: Env): Promise<Response> {
