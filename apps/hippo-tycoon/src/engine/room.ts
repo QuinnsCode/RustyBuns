@@ -34,8 +34,8 @@ import {
   type ClientMsg, type RoomSeat, type ServerMsg,
 } from "./wire.ts";
 
-/** Survives hibernation. `hello`: said a good hello; `k`: seats asked for; `gone`: closed by us. */
-interface Attachment { uid: string; name: string; hello: boolean; k: number; gone?: boolean }
+/** Survives hibernation. `hello`: said a good hello; `k`: seats asked for; `at`: when accepted; `gone`: closed by us. */
+interface Attachment { uid: string; name: string; hello: boolean; k: number; at: number; gone?: boolean }
 const SNAP_EVERY = 2;          // ticks between snapshots while a round is on (15 Hz)
 const LOBBY_SNAP_EVERY = 30;   // and about once a second in the lobby
 const STORE_KEY = "room";
@@ -45,6 +45,8 @@ export const MSG_RATE = 60, MSG_BURST = 120;
 export const MAX_WATCHERS = 8;
 /** Sockets a room holds from different players: past this an upgrade is refused before it is accepted. */
 export const MAX_SOCKETS = SEATS + MAX_WATCHERS;
+/** A socket this old with no good hello gives up its place to the next one at the door. The client says hello as it opens. */
+export const HELLO_MS = 5_000;
 export const WATCHDOG_MS = 10_000;
 /** A running loop that has not woken for this long is dead. */
 export const STALL_MS = 2_000;
@@ -65,7 +67,7 @@ export interface RoomOpts {
 const attach = (ws: EngineSocket): Attachment | null => {
   const a = ws.deserializeAttachment() as (Attachment & { seated?: boolean }) | null;
   if (!a || typeof a.uid !== "string") return null;
-  return { uid: a.uid, name: a.name, hello: a.hello ?? a.seated ?? false, k: a.k ?? 1, ...(a.gone ? { gone: true } : {}) };   // `seated`: a v1 attachment
+  return { uid: a.uid, name: a.name, hello: a.hello ?? a.seated ?? false, k: a.k ?? 1, at: a.at ?? 0, ...(a.gone ? { gone: true } : {}) };   // `seated`: a v1 attachment
 };
 /** The Match uid and name of a socket's j-th player (0 = the vouched one). */
 const uidAt = (a: Attachment, j: number) => (j === 0 ? a.uid : `${a.uid}+${j + 1}`);
@@ -110,9 +112,21 @@ export class Room {
     if (this.match.humans() > 0) this.run();
   }
 
-  /** Room for one more socket from `uid`? Every seat and the gallery, and a spare for each player's own reconnect. */
+  /**
+   * Room for one more socket from `uid`? Every seat and the gallery, and a spare for each player's own reconnect.
+   * Sockets that never said hello are closed here, when their place is wanted: no timer to lose in hibernation.
+   */
   admits(uid: string) {
-    return this.ctx.getWebSockets().filter((ws) => attach(ws)?.uid !== uid).length < MAX_SOCKETS;
+    let held = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = attach(ws);
+      if (a?.gone) continue;   // closed by us, and may stay listed until the other end answers
+      if (a && !a.hello && this.clock.now() - a.at >= HELLO_MS) {
+        ws.serializeAttachment({ ...a, gone: true } satisfies Attachment);
+        ws.close(1008, "no hello");
+      } else if (a?.uid !== uid) held++;
+    }
+    return held < MAX_SOCKETS;
   }
 
   /** The shell accepted `ws` with this vouched identity. The seat is taken at `hello`. */
@@ -123,7 +137,7 @@ export class Room {
       const o = other !== ws && attach(other);
       if (o && o.uid === uid && !o.hello) { other.serializeAttachment({ ...o, gone: true }); other.close(CLOSE_REPLACED, "replaced"); }
     }
-    ws.serializeAttachment({ uid, name, hello: false, k: 1 } satisfies Attachment);
+    ws.serializeAttachment({ uid, name, hello: false, k: 1, at: this.clock.now() } satisfies Attachment);
   }
 
   webSocketMessage(ws: EngineSocket, raw: string | ArrayBuffer) {
