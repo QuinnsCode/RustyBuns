@@ -324,20 +324,32 @@ picks an event up for the stage and the sound, and Qollab keeps only the link to
 - **Routes:** `GET /q/events` lists yours (soonest first, undated last), `POST` makes one from `{ kind, name }` and any parts,
   `GET`, `PUT` (the parts sent replace those parts whole) and `DELETE /q/events/<id>`. Someone not on its list hears 404.
   Up to 50 events an account. `events()` in the same module is a page's side. Deleting the account deletes its events.
-- **Public page** (`/e/<id>`, `app/events.tsx`): readable signed out by anyone with the link. It shows the event, its QR code,
-  a slot for a picture and "Add to my calendar" (`/e/<id>/event.ics`; its SEQUENCE is `edited` in seconds, so adding the file
-  again after a change moves the entry). The guest list, the plan's link and the crew's times are not on it.
-- **RSVP** (`qollab/rsvp.ts`, signed in with eqosys): puts the guest on the list as a guest, with answers to `there.asks`
-  in `event_rsvps`. `who.cap` counts people and plus-ones, inside the write. `invite` events take only someone on the list or
-  with an invite link; a host (or a role with `invite`) makes links on the page, and a crew link joins without taking a place.
-  The list holds 500 people, so that is the most who can RSVP. Only the owner downloads the CSV (`/e/<id>/list.csv`).
-  A plain guest reading `GET /q/events/<id>` sees their own line only, never the others or any invite code.
+- **Public page** (`/e/<id>`, `app/events.tsx`): readable signed out by anyone with the link. It shows the event, its picture, its
+  QR code and "Add to my calendar" (`/e/<id>/event.ics`; its SEQUENCE is `edited` in seconds, so adding the file again after a
+  change moves the entry). The guest list, the plan's link and the crew's times are not on it.
+- **The host's pages** (`event-host.ts`, `app/event-host.tsx`, signed in with eqosys): `/events` lists the events you own and
+  makes one; `/e/<id>/host` changes it (roles with `edit`: every part, the set times and the picture) and lists its guests, 100 a
+  page with a find by name (roles with `revoke` or `block`: remove, block, unblock, by the guest list's own rank rules). Someone
+  removed or blocked loses their RSVP, so their ticket stops working. Invite links are cancelled where they are listed, on the
+  event's page. Times are the host's own zone where the page's script runs, else UTC. Deleting an event is still the API only.
+- **The picture:** one an event, JPEG, PNG or WebP by its first bytes, 500 KB at most, in D1 (`event_pictures`), public at
+  `/e/<id>/picture`. The page's script shrinks a phone's photo before sending it. At most 25 MB an account (50 events).
+- **RSVP** (`qollab/rsvp.ts`, signed in with eqosys): one row a person in `event_rsvps`, with their name and answers to
+  `there.asks`; for a plain guest that row is their place at the event (`listWith` reads it as a guest's line), so any number up
+  to `who.cap` can come. `who.cap` counts people and plus-ones, inside the write. The JSON guest list (500 at most) keeps the
+  crew, the blocked and the invite links. `invite` events take only someone already on the event or with an invite link; a host
+  (or a role with `invite`) makes links on the page, and a crew link joins without taking a place. Only the owner downloads the
+  CSV (`/e/<id>/list.csv`). A plain guest reading `GET /q/events/<id>` sees their own line only, never the others or any invite
+  code. The API's `guests` no longer names plain RSVPs to the host either: the CSV and the host's page do.
+- **What a big event costs:** each RSVP and page view adds up the places taken from an index, one row read a person coming. A
+  5,000 person event is tens of millions of rows; a full 100,000 one is on the order of 15 billion, about the size of the 25
+  billion a month Workers Paid includes ($0.001 a million after).
 - **Tickets and the door:** one signed QR ticket a person (a plus-one gets their own), on the event's page. Door mode
   (`/e/<id>/door`, roles with `door`) shows who is in against the cap. Scan with the page's camera where the browser can read
   QR codes, or with the phone's camera app (the ticket is a link to the door). A ticket lets one person in, once.
 - **Deleting an account** deletes its events and takes the person off every list they joined.
 - **Not yet:** the hand-off to Qollab Studio (#6076); invite, reminder and thank-you emails (shown as "coming soon", they send
-  nothing); a picture; paid tickets and flyers.
+  nothing); paid tickets and flyers.
 
 ## Status
 

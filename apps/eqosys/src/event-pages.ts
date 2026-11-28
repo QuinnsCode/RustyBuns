@@ -1,17 +1,18 @@
 // An event's public page and door (QOLLAB.md "Events"), the parts that aren't HTML (the pages are app/events.tsx): what each
 // page shows, the calendar file, the CSV and what the forms post. These are eqosys's own pages, so the signed-in person is the
-// session cookie's; reading the page and the calendar file takes no account.
+// session cookie's; reading the page, its picture and the calendar file takes no account. The host's forms are event-host.ts.
 import { Answers, type Event } from "@rustybuns/util/events";
 import { can, isIn, rankOf } from "@rustybuns/util/guests";
+import { hostPost, newEvent, pictureFile, pictureUrl } from "./event-host.ts";
 import { qrSvg } from "@rustybuns/util/qr";
 import { authOn, meOf, type Me } from "./auth.ts";
 import { issuer } from "./door.ts";
 import { crossSite, json, type Env } from "./env.ts";
 import { icsOf } from "./ics.ts";
-import { eventRow } from "./qollab/events.ts";
+import { eventRow, listWith } from "./qollab/events.ts";
 import { cancel, countIn, guestCsv, invite, inviteRole, joinCrew, look, rsvp, rsvpOf, scan, taken, ticketsOf } from "./qollab/rsvp.ts";
 
-const PATH = /^\/e\/([\w-]{1,40})(?:\/(event\.ics|list\.csv|signin|rsvp|cancel|join|invite|scan))?$/;
+const PATH = /^\/e\/([\w-]{1,40})(?:\/(event\.ics|list\.csv|signin|rsvp|cancel|join|invite|scan|edit|picture|guest))?$/;
 
 /** The event this browser was RSVPing to, kept half an hour while its person signs in or makes an account. */
 const BACK = "eqosys.event";
@@ -32,8 +33,10 @@ export async function eventView(req: Request, conf: Env, id: string) {
   const me = await meOf(req, conf), url = `${issuer(req, conf)}/e/${e.id}`, q = new URL(req.url).searchParams;
   const code = q.get("invite")?.match(/^[\w-]{4,40}$/)?.[0] ?? "";
   const role = code ? inviteRole(e.guests, code) : null;
-  const on = !!me && isIn(e.guests, me.id), mine = me ? await rsvpOf(conf, id, me.id) : null;
+  const on = !!me && isIn(await listWith(conf, e, me.id), me.id), mine = me ? await rsvpOf(conf, id, me.id) : null;
   const may = (perm: string) => !!me && can(e.guests, me.id, perm);
+  // Your own invite links, and (a role that revokes) those of anyone below you: the ones you may cancel.
+  const links = me ? e.guests.invites.filter((i) => i.by === me.id || (may("revoke") && rankOf(e.guests, i.by) < rankOf(e.guests, me.id))) : [];
   const roles = me && may("invite") ? e.guests.roles.filter((r) => r.rank < rankOf(e.guests, me.id)) : [];
   const tickets = me ? await Promise.all((await ticketsOf(conf, id, me.id)).map(async (t) => qrSvg(`${url}/door?t=${t}`))) : [];
   return {
@@ -41,14 +44,14 @@ export async function eventView(req: Request, conf: Env, id: string) {
       id: e.id, kind: e.kind, name: e.name, line: e.line, where: { address: e.where.address, pin: e.where.pin }, who: e.who, there: e.there, host: e.guests.ownerName,
       when: { doors: e.when.doors, start: e.when.start, curfew: e.when.curfew, sets: e.when.sets },
     },
-    url, qr: qrSvg(url), dated: (e.when.start ?? e.when.doors) !== undefined, taken: await taken(conf, id),
+    url, qr: qrSvg(url), picture: await pictureUrl(conf, id), dated: (e.when.start ?? e.when.doors) !== undefined, taken: await taken(conf, id),
     me: me ? { name: me.name } : null, said: q.get("said") ?? "", answers: mine, tickets,
     /** The invite this link carries, and whether it hands out a place on the crew. */
-    code: role ? code : "", crewRole: role && role !== "guest" && !on ? e.guests.roles.find((r) => r.id === role)?.name ?? null : null,
+    code: role ? code : "", crewRole: role && role !== "guest" && !(me && isIn(e.guests, me.id)) ? e.guests.roles.find((r) => r.id === role)?.name ?? null : null,
     mayRsvp: e.who.access !== "invite" || on || !!role,
     host: {
-      owner: !!me && e.guests.owner === me.id, door: may("door"), roles: roles.map((r) => ({ id: r.id, name: r.name })),
-      links: may("invite") ? e.guests.invites.filter((i) => i.by === me!.id).map((i) => ({ role: e.guests.roles.find((r) => r.id === i.role)?.name ?? i.role, url: `${url}?invite=${i.code}` })) : [],
+      owner: !!me && e.guests.owner === me.id, door: may("door"), manage: may("edit") || may("revoke") || may("block"), roles: roles.map((r) => ({ id: r.id, name: r.name })),
+      links: links.map((i) => ({ code: i.code, role: e.guests.roles.find((r) => r.id === i.role)?.name ?? i.role, url: `${url}?invite=${i.code}` })),
     },
   };
 }
@@ -72,9 +75,15 @@ const to = (location: string, cookie?: string) => new Response(null, { status: 3
 /** An event's paths that aren't a page, or null. */
 export async function eventPaths(req: Request, conf: Env): Promise<Response | null> {
   const url = new URL(req.url), m = PATH.exec(url.pathname);
+  // POST /events makes one; GET /events is the page worker.tsx renders.
+  if (url.pathname === "/events" && req.method === "POST") {
+    if (crossSite(req, conf)) return json({ error: "cross-site request refused" }, 403);
+    const me = authOn(conf) ? await meOf(req, conf) : null;
+    return me ? newEvent(req, conf, me) : to("/login");
+  }
   if (!m || !m[2]) return null;
   const id = m[1]!, what = m[2], page = `/e/${id}`;
-  const post = !["event.ics", "list.csv", "signin"].includes(what);
+  const post = !["event.ics", "list.csv", "signin"].includes(what) && !(what === "picture" && req.method === "GET");
   if (req.method !== (post ? "POST" : "GET")) return json({ error: post ? "POST" : "GET" }, 405);
   if (post && crossSite(req, conf)) return json({ error: "cross-site request refused" }, 403);
   const e: Event | undefined = (await eventRow(conf, id))?.event;
@@ -83,6 +92,7 @@ export async function eventPaths(req: Request, conf: Env): Promise<Response | nu
     const file = icsOf(e, `${issuer(req, conf)}${page}`);
     return file ? text(file, "text/calendar", "event.ics") : json({ error: "this event has no date yet" }, 404);
   }
+  if (what === "picture" && !post) return (await pictureFile(conf, id)) ?? json({ error: "this event has no picture" }, 404);
   if (!authOn(conf)) return json({ error: "accounts off" }, 503);
   if (what === "signin") {
     const code = url.searchParams.get("invite")?.match(/^[\w-]{4,40}$/)?.[0];
@@ -93,6 +103,7 @@ export async function eventPaths(req: Request, conf: Env): Promise<Response | nu
   if (!me) return wantsJson ? json({ error: "sign in first" }, 401) : to(`${page}/signin`);
   if (what === "list.csv")
     return e.guests.owner === me.id ? text(await guestCsv(conf, e), "text/csv", "guests.csv") : json({ error: "only the host downloads the guest list" }, 403);
+  if (what === "edit" || what === "picture" || what === "guest") return hostPost(req, conf, e, what, me.id);
   const form = await req.formData().catch(() => new FormData());
   const field = (k: string) => String(form.get(k) ?? "");
   const code = field("invite").match(/^[\w-]{4,40}$/)?.[0] ?? "";

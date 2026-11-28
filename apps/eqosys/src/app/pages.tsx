@@ -822,6 +822,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
             <section id="character" className="card character"><p className="mut">Loading your character…</p></section>
             <script type="module" src="/src/app/character.client.ts"></script>
             {STUDIO_DOOR && <p><a className={btn(true)} href={STUDIO_DOOR}>Go to Qollab Studio</a> <span className="mut">· walk in wearing it, make a room and jam with friends</span></p>}
+            <p><a href="/events">Your events</a> <span className="mut">· make one, share its page and see who is coming</span></p>
             <h2>Account</h2>
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
             {ways && <Ways ways={ways} social={social} />}
