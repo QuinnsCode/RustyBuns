@@ -129,6 +129,12 @@
     "blurb": "The smallest Rusty Buns app: one page, static assets only.",
     "cta": "Open"
   },
+  "agent-page": {
+    "name": "Agent Page",
+    "kicker": "Your AI Builds Your World",
+    "blurb": "Get a plot, and your AI writes a world on it while you watch.",
+    "cta": "Open"
+  },
   "cron-swanson": {
     "name": "Cron Swanson",
     "kicker": "Every Timer In One Place",

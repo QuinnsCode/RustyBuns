@@ -19,10 +19,15 @@ export const Call = Schema.Struct({ call: Schema.Number, tool: Schema.String, re
 export type Call = typeof Call.Type;
 
 export interface Report { readonly call: number; readonly error: string | null; readonly page: Page }
+/** An agent's page_read, and what the world's frame said (world.ts), for the page's step strip. */
+export const Seen = Schema.Literals(["read", "start", "loaded", "error"]);
+export type Seen = typeof Seen.Type;
 
 export class Agent extends Context.Service<Agent, {
   /** The agent's calls, in the order they came. */
   readonly calls: Stream.Stream<Call>;
+  /** What the page saw besides calls: an agent read it (page_read), and its frame started, loaded or went wrong. */
+  readonly seen: Stream.Stream<Seen>;
   /** Whether the room's relay is connected: agents in a terminal can reach the page while it is. */
   readonly online: Stream.Stream<boolean>;
   /** What came of a call (0 for a person's click): answers the agent waiting on it. */
@@ -57,6 +62,7 @@ const PALETTE: Readonly<Record<string, { ask?: string }>> = {
 export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect.gen(function* () {
   const queue = yield* Queue.unbounded<Call>();
   const online = yield* Queue.unbounded<boolean>();
+  const seen = yield* Queue.unbounded<Seen>();
   const waiting = new Map<number, (r: Report) => void>();
   let page = initial, next = 1;
   current = initial;
@@ -66,6 +72,8 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     const frame = document.querySelector("iframe.world");
     if (!(frame instanceof HTMLIFrameElement) || e.source !== frame.contentWindow || field(e.data, SAID_KEY) !== true) return;
     const kind = field(e.data, "kind"), text = String(field(e.data, "text") ?? "");
+    if (kind === "start" || kind === "loaded") Queue.offerUnsafe(seen, kind);
+    else if (kind === "error" || kind === "blocked") Queue.offerUnsafe(seen, "error");
     if (kind === "start") said = [];
     // The camera's pictures and frames (pictures.ts) are nothing the agent hears about.
     else if ((kind === "error" || kind === "blocked") && said.length < 20) said.push(`${kind === "blocked" ? "blocked" : "error"}: ${text}`);
@@ -81,7 +89,10 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     });
   };
   const off = addCommands([
-    { ...READ, group: "Page", palette: false, execute: () => looked(page, said) },
+    { ...READ, group: "Page", palette: false, execute: (_args, from) => {
+      if (from === "agent") Queue.offerUnsafe(seen, "read");
+      return looked(page, said);
+    } },
     { ...READ_FILE, group: "Page", palette: false, execute: (args) => fileRead(page, Schema.decodeUnknownSync(ReadFile)(args).path) },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
@@ -99,6 +110,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   return Agent.of({
     calls: Stream.fromQueue(queue),
     online: Stream.fromQueue(online),
+    seen: Stream.fromQueue(seen),
     report: (r) => Effect.sync(() => {
       page = r.page;
       if (r.error === null && current !== r.page) { current = r.page; for (const w of watchers) w(r.page); }

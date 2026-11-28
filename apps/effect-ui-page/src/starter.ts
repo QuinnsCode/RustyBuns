@@ -1,5 +1,6 @@
-// The world a new room starts with: a small isometric rain city on a 2D canvas, in two files, so the agent's first
-// look shows working code to change (or throw away for a three.js scene). Plain strings: these are the files.
+// The world a new room starts with: a night desert on a 2D canvas (low dunes, a moon, twinkling stars, two cactuses
+// and a rock), in two files, so the agent's first look shows working code to change or throw away. Plain strings:
+// these are the files.
 
 const index = `<!doctype html>
 <html lang="en">
@@ -8,71 +9,72 @@ const index = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>My world</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #05060f; overflow: hidden; }
-  canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
-  h1 { position: fixed; left: 24px; bottom: 20px; margin: 0; font: 700 28px ui-monospace, Menlo, monospace; color: #fff; text-shadow: 0 0 8px #21e6ff, 0 0 24px #21e6ff; }
+  html, body { margin: 0; height: 100%; background: #0b1030; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<h1>My world</h1>
 <script src="world.js"></script>
 </body>
 </html>
 `;
 
-const world = `// An isometric night city, drawn small on a pixel grid and scaled up sharp, with rain over it.
-// Change anything: the towers, the colors, the sign. Or replace it all with a three.js scene.
-const PX = 3, NEON = ["#ff3d8b", "#21e6ff", "#ffb547", "#a67bff", "#3dffa8"];
+const world = `// A night desert: dunes under a moon, twinkling stars, two cactuses and a rock. Change anything, or start over in three.js.
 const cv = document.getElementById("c"), g = cv.getContext("2d");
-let seed = 11;
+let W, H, S, stars, seed;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-let city, W, H, drops;
+// A dune's top at x: two slow waves on a base height (0 top of the screen, 1 bottom).
+const DUNES = [[0.66, 0.05, 2.2, "#2a2350"], [0.74, 0.04, 3.1, "#3b2c55"], [0.84, 0.05, 2.6, "#4f3556"]];
+const dune = (x, [b, a, k]) => H * b - S * a * (Math.sin(x / S * k + b * 9) * 0.6 + Math.sin(x / S * k * 2.3 + 1) * 0.4);
+const near = (x) => dune(x, DUNES[2]);
+const circle = (x, y, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); };
 
-function paint(w, h) {
-  const c = document.createElement("canvas"); c.width = w; c.height = h;
-  const x = c.getContext("2d");
-  seed = 11;
-  const tw = 18, th = 9, n = Math.ceil((w + h * 2) / th) + 4, ox = Math.round(w * 0.6), oy = Math.round(-h * 0.5);
-  x.fillStyle = "#070618"; x.fillRect(0, 0, w, h);
-  const poly = (p, fill) => { x.beginPath(); x.moveTo(p[0], p[1]); for (let k = 2; k < p.length; k += 2) x.lineTo(p[k], p[k + 1]); x.closePath(); x.fillStyle = fill; x.fill(); };
-  for (let s = 0; s < 2 * n; s++) for (let i = 0; i <= s; i++) {
-    const j = s - i; if (i >= n || j >= n) continue;
-    const sx = ox + (i - j) * tw / 2, sy = oy + (i + j) * th / 2;
-    if (sx < -tw || sx > w + tw || sy < -th * 2 || sy > h + th) continue;
-    if (i % 5 === 0 || j % 5 === 0) { poly([sx, sy, sx + tw / 2, sy + th / 2, sx, sy + th, sx - tw / 2, sy + th / 2], "#0c0b22"); continue; }
-    const tall = Math.round(6 + rnd() * 30 + rnd() * 50), top = sy - tall, hue = NEON[Math.floor(rnd() * NEON.length)];
-    poly([sx - tw / 2, sy + th / 2 - tall, sx, sy + th - tall, sx, sy + th, sx - tw / 2, sy + th / 2], "#1b1840");
-    poly([sx, sy + th - tall, sx + tw / 2, sy + th / 2 - tall, sx + tw / 2, sy + th / 2, sx, sy + th], "#120f2e");
-    poly([sx, top, sx + tw / 2, top + th / 2, sx, top + th, sx - tw / 2, top + th / 2], "#2a2558");
-    for (let ry = 4; ry < tall - 2; ry += 4) for (let dx = 2; dx < tw / 2 - 1; dx += 3) {
-      if (rnd() < 0.3) { x.fillStyle = rnd() < 0.2 ? hue : "#ffd38a"; x.fillRect(Math.round(sx - tw / 2 + dx), Math.round(sy + th / 2 - tall + dx / 2 + ry), 1, 2); }
-    }
-    if (rnd() < 0.4) { x.strokeStyle = hue; x.beginPath(); x.moveTo(sx - tw / 2, top + th / 2); x.lineTo(sx, top + th); x.lineTo(sx + tw / 2, top + th / 2); x.stroke(); }
-  }
-  return c;
+function size() {
+  const d = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight; S = Math.min(W, H); seed = 7;
+  cv.width = W * d; cv.height = H * d; g.setTransform(d, 0, 0, d, 0, 0);
+  stars = Array.from({ length: Math.round(W * H / 2600) }, () => [rnd() * W, rnd() * H * 0.7, 0.4 + rnd() * 1.2, rnd() * 6.3, 0.4 + rnd() * 1.4]);
 }
 
-function build() {
-  W = innerWidth; H = innerHeight;
-  if (!W || !H) return;
-  cv.width = W; cv.height = H; g.imageSmoothingEnabled = false;
-  city = paint(Math.ceil(W / PX), Math.ceil(H / PX));
-  drops = Array.from({ length: Math.round(W * H / 2400) }, () => ({ x: Math.random() * W, y: Math.random() * H, v: 7 + Math.random() * 8, l: 8 + Math.random() * 14 }));
-}
-
-function draw() {
-  // The frame can be 0 wide on its first tick: paint once it has a size, and again when the size changes.
-  if (innerWidth !== W || innerHeight !== H) build();
-  if (!W || !H) return requestAnimationFrame(draw);
-  g.drawImage(city, 0, 0, city.width * PX, city.height * PX);
-  g.strokeStyle = "rgba(170,190,255,.3)"; g.beginPath();
-  for (const d of drops) { g.moveTo(d.x, d.y); g.lineTo(d.x - 1.5, d.y + d.l); d.y += d.v; if (d.y > H) { d.y = -d.l; d.x = Math.random() * W; } }
+function cactus(x, h) {
+  const y = near(x) + 2, a = h * 0.28;
+  g.strokeStyle = "#1a2a2a"; g.lineCap = g.lineJoin = "round"; g.lineWidth = h * 0.16;
+  g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - h);
+  g.moveTo(x, y - h * 0.45); g.lineTo(x - a, y - h * 0.45); g.lineTo(x - a, y - h * 0.75);
+  g.moveTo(x, y - h * 0.6); g.lineTo(x + a, y - h * 0.6); g.lineTo(x + a, y - h * 0.85);
   g.stroke();
-  requestAnimationFrame(draw);
 }
 
-draw();
+function frame(t) {
+  const sky = g.createLinearGradient(0, 0, 0, H * 0.8);
+  sky.addColorStop(0, "#060a24"); sky.addColorStop(0.6, "#1b1b4a"); sky.addColorStop(1, "#4a2f5e");
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  for (const [x, y, r, p, v] of stars) { g.globalAlpha = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t / 1000 * v + p)); circle(x, y, r, "#fff"); }
+  g.globalAlpha = 1;
+  const mx = W * 0.76, my = H * 0.2 - Math.sin(t / 60000) * S * 0.02, mr = S * 0.07;
+  const halo = g.createRadialGradient(mx, my, mr, mx, my, mr * 4);
+  halo.addColorStop(0, "rgba(255,240,200,.35)"); halo.addColorStop(1, "rgba(255,240,200,0)");
+  g.fillStyle = halo; g.fillRect(mx - mr * 4, my - mr * 4, mr * 8, mr * 8);
+  circle(mx, my, mr, "#fff4d6");
+  for (const [dx, dy, r] of [[-0.3, -0.2, 0.18], [0.25, 0.15, 0.24], [-0.1, 0.4, 0.12]]) circle(mx + dx * mr, my + dy * mr, r * mr, "rgba(200,180,150,.35)");
+  for (const d of DUNES) {
+    g.beginPath(); g.moveTo(0, H);
+    for (let x = 0; x <= W; x += 6) g.lineTo(x, dune(x, d));
+    g.lineTo(W, H); g.fillStyle = d[3]; g.fill();
+    g.strokeStyle = "rgba(255,226,180,.18)"; g.lineWidth = 1.5; g.stroke();
+  }
+  cactus(W * 0.22, S * 0.2); cactus(W * 0.64, S * 0.12);
+  const rx = W * 0.42, ry = near(rx) + 4, rs = S * 0.05;
+  g.fillStyle = "#2b2236"; g.beginPath(); g.moveTo(rx - rs, ry);
+  for (const [px, py] of [[-0.6, -0.7], [0.2, -0.9], [1, -0.3], [1.1, 0]]) g.lineTo(rx + px * rs, ry + py * rs);
+  g.fill();
+  requestAnimationFrame(frame);
+}
+
+addEventListener("resize", size);
+size();
+requestAnimationFrame(frame);
 `;
 
 export const STARTER_FILES: Readonly<Record<string, string>> = { "index.html": index, "world.js": world };
