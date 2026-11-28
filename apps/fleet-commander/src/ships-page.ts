@@ -1,10 +1,14 @@
-// The hull sheets on a turntable: `ships.html?ship=destroyer` (the whole hull), `destroyer~exploded` (its pieces
+// The drawing sheets on a turntable: `ships.html?ship=destroyer` (the whole hull), `destroyer~exploded` (its pieces
 // pulled apart upward, in the order they go on), `destroyer~<piece>` (one piece alone, where it sits) or
-// `destroyer~far` (the far level the Theater's board draws), seen from `&view=three|top|side|front|below|stern`.
+// `destroyer~far` (the far level the Theater's board draws), seen from `&view=three|top|side|front|below|stern`. A
+// craft is `ships.html?ship=navy-bomber` (`rim-scout`, …), and `?ship=craft` lines all eight up, navy over Compact.
 // `window.fleetShips` is the harness (scripts/probe.ts HANDLES): state() says what is shown, show(id, view) changes it.
 import * as THREE from "three";
-import { SHEETS, type SheetKind } from "./view/sheets.ts";
-import { hasSheet, sheetModel, shipPieces } from "./view/ships.ts";
+import type { ShipKind } from "./names.ts";
+import { craftGeometry, craftMaterial } from "./view/craft.ts";
+import { CRAFT_SHEETS, type CraftSheet } from "./view/craft-sheets.ts";
+import { SHEETS } from "./view/sheets.ts";
+import { isShip, sheetModel, shipPieces } from "./view/ships.ts";
 
 type View = "three" | "top" | "side" | "front" | "below" | "stern";
 const VIEWS: Record<View, [number, number, number]> = {
@@ -24,9 +28,26 @@ const camera = new THREE.PerspectiveCamera(30, 1, 1, 20000);
 
 let shown: THREE.Object3D | null = null, now = { id: "destroyer", view: "three" as View };
 
+const CRAFT = Object.values(CRAFT_SHEETS).flatMap((roles) => Object.values(roles));
+const craftId = (s: CraftSheet) => `${s.side}-${s.role}`;
+
+const craftMesh = (s: CraftSheet) => new THREE.Mesh(craftGeometry(s.role, s.side), craftMaterial(s.side));
+
+/** One craft, or all eight side by side: the navy's four over the Compact's, role under role. */
+function buildCraft(id: string): THREE.Object3D | null {
+  const one = CRAFT.find((s) => craftId(s) === id);
+  if (one) return craftMesh(one);
+  if (id !== "craft") return null;
+  const g = new THREE.Group();
+  CRAFT.forEach((s, i) => { const m = craftMesh(s); m.position.set((i % 4) * 26, 0, Math.floor(i / 4) * 24); g.add(m); });
+  return g;
+}
+
 function build(id: string): THREE.Object3D {
+  const craft = buildCraft(id);
+  if (craft) return craft;
   const [kind, which] = id.split("~") as [string, string | undefined];
-  if (!hasSheet(kind)) throw new Error(`no sheet for ${kind}: ${Object.keys(SHEETS).join(", ")}`);
+  if (!isShip(kind)) throw new Error(`no sheet for ${kind}: ${[...Object.keys(SHEETS), ...CRAFT.map(craftId), "craft"].join(", ")}`);
   if (!which) return sheetModel(kind);
   if (which === "far") { const g = sheetModel(kind); const lod = g.children[0] as THREE.LOD; lod.autoUpdate = false; lod.levels.forEach((l, i) => (l.object.visible = i === 1)); return g; }
   const g = new THREE.Group(), sheet = SHEETS[kind];
@@ -47,16 +68,16 @@ function show(id = now.id, view: View = now.view) {
   camera.position.copy(mid).addScaledVector(dir, (r / Math.sin((camera.fov * Math.PI) / 360)) * 0.78);
   camera.up.set(0, view === "top" ? 0 : 1, view === "top" ? -1 : 0);
   camera.lookAt(mid);
-  const kind = id.split("~")[0] as SheetKind, s = SHEETS[kind];
-  caption.textContent = `${s.title} · ${s.length} × ${s.beam} × ${s.height} m · ${id.split("~")[1] ?? "whole"} · ${view}`;
+  const kind = id.split("~")[0]!, s = isShip(kind) ? SHEETS[kind] : CRAFT.find((c) => craftId(c) === kind);
+  caption.textContent = s ? `${s.title} · ${s.length} × ${s.beam} × ${s.height} m · ${id.split("~")[1] ?? "whole"} · ${view}` : `Dart, Maul, Warden, Kite · Hornet, Lancer, Shrike, Moth · ${view}`;
   return state();
 }
 
 function state() {
   let meshes = 0, triangles = 0;
   shown?.traverseVisible((o) => { if (o instanceof THREE.Mesh) { meshes++; triangles += o.geometry.getAttribute("position").count / 3; } });
-  const kind = now.id.split("~")[0] as SheetKind;
-  return { ...now, sheets: Object.keys(SHEETS), pieces: hasSheet(kind) ? shipPieces(kind).map((p) => p.name) : [], meshes, triangles: Math.round(triangles) };
+  const kind = now.id.split("~")[0]!;
+  return { ...now, sheets: Object.keys(SHEETS), craft: CRAFT.map(craftId), pieces: isShip(kind) ? shipPieces(kind as ShipKind).map((p) => p.name) : [], meshes, triangles: Math.round(triangles) };
 }
 
 function frame() {

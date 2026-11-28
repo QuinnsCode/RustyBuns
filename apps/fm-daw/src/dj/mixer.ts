@@ -10,6 +10,7 @@
 // your own speakers play, apart from the master the room's PA hears), the headphone cue/master blend and level, and
 // split cue (one output: the headphones in the left ear, the master in the right). A limiter keeps the master clean.
 // The arithmetic is plain functions at the top, so it can be checked without a browser.
+import { hear } from "../scope-tap.ts";
 import { crossfade, faderGain } from "./analyze.ts";
 
 export const CHANNELS = 4;
@@ -303,6 +304,7 @@ export class Mixer {
     mono(this.phonesGain, 0); mono(limiter, 1);
     this.splitOut = ctx.createGain();
     merger.connect(this.splitOut).connect(speakers);
+    hear(this.toSpeakers); hear(this.splitOut); // one of the two is turned down
     this.apply();
   }
 

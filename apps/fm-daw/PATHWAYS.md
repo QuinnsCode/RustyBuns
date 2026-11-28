@@ -46,6 +46,7 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 4. Finish, and the lesson's rig stays as their own room to keep playing in.
 
 **Works today:**
+- The front door's **First lesson** opens the gear room with the first one already on (`/studio.html?lesson=guitar`, plug a guitar into an amp): the same card and marker, no `?` card to find ([#6551](https://github.com/QuinnsCode/RustyBuns/issues/6551)).
 - Three setup lessons, started from the `?` card's "Learn to set it up" row (`src/studio/lessons.ts`, [#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)): plug a guitar through a pedal into an amp and its cab; patch a sound wall voice (VCO, VCF, VCA, Q Out); set up a small PA (two powered speakers placed apart and aimed at the room's middle, a mic through a mixer, powered on mixer first). All with your hands at the gear wall, on the sesh's own patch. A card at the top left ticks each step off as the gear says so and, when something is in the way, says what and why (straight into the amp, the filter's CV, gain too hot, a speaker facing the wall, a thump). A small warm cone floats over the jack, knob or box the next step is about and moves on as each step goes green; with a cable in your hand it points at where the cable goes ([#6086](https://github.com/QuinnsCode/RustyBuns/issues/6086); `qjam.lesson()` returns its `mark` and `marker`). Leave any time; what you built stays. The steps run on `packages/gear`'s checker (`steps.ts`), the one Sound Guy Simulator's first-minute hints use, and the PA's switch-on order is the catalog's own `thumps`.
 - A fourth, "Know your plugs: XLR" ([#6029](https://github.com/QuinnsCode/RustyBuns/issues/6029)): the mic into the mixer, the mixer into a powered speaker's combo input A, its thru on to the next speaker. Each step reads the connector off `@rustybuns/util/connectors`, the same list Sound Guy Simulator plugs by (what it carries, its pins), and an XLR out into an out is refused with why (an out is male, an in female).
 - A class card for the teacher (**L**, `src/studio/class.ts`, [#6087](https://github.com/QuinnsCode/RustyBuns/issues/6087)): everyone in the jam room, the lesson each is in, a dot per step done, the step they are on and what is in their way, live. Whoever is stuck comes first. A class is the people in one room: the teacher sends the room's link, and nobody needs an account beyond what the jam room already asks.
@@ -100,6 +101,12 @@ is `test/event.test.ts`.
 
 **Being there** (#6535): an event's room starts on Hold, the host grants each person instruments, console, lights, speak or
 nothing, and everyone hears the performer's set on the room's PA (`test/event-world.test.ts`).
+
+**Join** (#6551): the front door's Event start forks **Host | Join**. Join takes that room's link or its code (the `room=`
+name; a party's code also follows its host's scene) and lands the guest in the room (`src/join.ts`,
+`test/event-join-journey.test.ts`). **A set prepped at home** is in the decks' library at the event on the same browser
+(`src/dj/crate.ts`, `test/decks-set-journey.test.ts`). Not carried: another machine's files, cue points, tempos from a
+dropped collection file.
 
 **Missing:** the character is a stand-in until [#4987](https://github.com/QuinnsCode/RustyBuns/issues/4987); the
 rooms' look is a climb ([#5365](https://github.com/QuinnsCode/RustyBuns/issues/5365)). Pedals, amps and cables
