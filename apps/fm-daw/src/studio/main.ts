@@ -112,6 +112,8 @@ import { LanternsHere } from "./lanterns.ts";
 import { Dust } from "./dust.ts";
 import { gear as gearModel } from "@rustybuns/models/gear";
 import { SKIN } from "../guest-list.ts";
+import { mountShow } from "./show.ts";
+import { masterOp } from "../remote/remote.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -1075,6 +1077,16 @@ const xoPanel = crossoverPanel(document.body, {
   onToggle: (open) => { if (open) document.exitPointerLock?.(); else if (phase === "play") lock(); },
 });
 addCommands(crossoverCommands(xo));
+// the show desk (#6474): the room's lights as DMX fixtures, driven by its faders, Cmd+K, WebMCP, MIDI, OSC, and OBS
+const streamView = new URLSearchParams(location.search).get("view") === "stream";
+const show = here ? mountShow({
+  scene, stream: streamView,
+  master: { value: () => project.master ?? 0, set: (db) => { if (!may(player).mix) return "The console isn't yours: the leader grants it"; player.edit(masterOp(db)); return null; } },
+  lesson: (id) => { if (id === null) { lessons.leave(); return null; } const a = say(lessons.start(id, jam)); return a.ok ? null : a.why; },
+  say: (text) => { flash = { text, until: performance.now() + 2500 }; },
+  onOpen: () => { document.exitPointerLock?.(); },
+}) : null;
+if (show) { addCommands(show.commands); $("show-open").addEventListener("click", () => show.open()); }
 mountPalette({ button: true, placeholder: "Sit, stand, graphics…" });
 // Tab, seated: the track's lane over the room (lane.tsx), its edits over the sesh as the player's
 lane = mountLane({
@@ -1846,10 +1858,14 @@ if (here) requestAnimationFrame(frame); // the front door has no room to draw or
 // the menu's lists are sideways rows of cards, like the studios: a wheel or a drag scrolls them, touch swipes
 for (const id of ["rooms", "invites", "friends"]) { $(id).classList.add("cards"); sideways($(id)); }
 menu();
+// ?view=stream, an OBS browser source: the room alone, no menu and no mouse (show.css hides the page's own parts)
+if (here && streamView) { phase = "play"; if (jam.me.cam !== "first") toggleCam(jam); menu(); void startAudio(); }
 
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
+  /** The show desk (show.ts): drive and learn controls, feed it a controller's bytes, connect the bridge or OBS. */
+  show: () => show,
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, viewHeld, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
