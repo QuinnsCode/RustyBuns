@@ -12,6 +12,7 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "./builder.css";
 import { arr, check, obj, or, rec, str } from "@rustybuns/util/guard";
 import { BoardView, fit, svgOf } from "../amp/board.ts";
+import { redraw } from "../circuit/redraw.ts";
 import { mockup, type BoardSide, type Mockup } from "../kit/gerber.ts";
 import { gerbers, kitId, kitZip, sheetOf, type KitFiles } from "../kit/kit.ts";
 import { kitFiles } from "../kit/sheet.ts";
@@ -20,7 +21,7 @@ import { h, iconButton } from "../amp/dom.ts";
 import { icon } from "../amp/icons.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
 import { BUILDER_PEDALS, Edit, INPUT_VOLTS, SR, WINDOW, builderPedal, changes, editLine, editNets, editParts, editedJson, isBuilderPedal, nextName, parseValue, remakeJson, remakeTsx, restAt, scopeNets, swing, theRiff, type AddKind, type BuilderPedal, type Retest, type ScopeNet } from "../circuit/builder.ts";
-import type { Swaps } from "../circuit/circuits.ts";
+import type { BoardId, Swaps } from "../circuit/circuits.ts";
 import { onParts, readParts, writeParts } from "../amp/parts-store.ts";
 import type { BenchReply, Unsent } from "./messages.ts";
 
@@ -114,7 +115,7 @@ const undoAll = h("button", "qb-btn", icon("rotate-ccw", 16), "Stock circuit");
 undoAll.type = "button";
 undoAll.addEventListener("click", () => showEditWhy(setEdits([])));
 const circuit = h("section", "qb-card", h("div", "qb-card-top", icon("split", 16), h("span", "qb-card-title", "Change the circuit")),
-  h("p", "qb-hint", "Add a part between two nets (From starts on the scope's net: click a trace), take one off, or move an end. The schematic stays the stock drawing; your changes are listed here."),
+  h("p", "qb-hint", "Add a part between two nets (From starts on the scope's net: click a trace), take one off, or move an end. The schematic is redrawn with your changes, which are also listed here."),
   h("div", "qb-add", addKind, addValue, addFrom, h("span", "qb-dim", "to"), addTo, addBtn), editWhy, editList, undoAll,
   h("details", "qb-wiring", h("summary", "", "Parts and wiring"), partList));
 
@@ -238,7 +239,7 @@ async function saveKit(): Promise<void> {
 async function printSheet(): Promise<string[]> {
   const d = def(), s = sheetOf(d, kit, swaps()), what = changes(d.board, swaps(), edits()), changed = edits().length > 0;
   const sch = h("div", "qp-art qp-sch");
-  sch.innerHTML = await svgOf(d.board, "schematic");
+  sch.innerHTML = await schematicOf(d.board, edits());
   const sides = (["top", "bottom"] as const).map((x) => {
     const m = mockup(kit, x), f = h("figure", "qp-side");
     if (!m) return null;
@@ -256,7 +257,7 @@ async function printSheet(): Promise<string[]> {
   sheetEl.replaceChildren(
     h("header", "qp-head", h("h1", "", d.name), h("p", "", what ? `Your version: ${what}.` : "Stock parts."), h("p", "qp-dim", d.blurb)),
     h("section", "", h("h2", "", "Schematic"), sch),
-    ...(changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", "Your circuit has new parts or wiring: the stock board doesn't fit it. Route a new layout in tscircuit before ordering. The schematic above is the stock drawing."))] : []),
+    ...(changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", "Your circuit has new parts or wiring: the stock board doesn't fit it. Route a new layout in tscircuit before ordering."))] : []),
     ...(sides.length && !changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", `${m?.size.join(" × ")} mm, drawn from the files a board house takes: ${gerbers(kit).join(", ")}.`), h("div", "qp-sides", ...sides))] : []),
     ...(s.lines.length && !changed ? [h("section", "", h("h2", "", "Parts"), table)] : []),
     h("p", "qp-dim", `Q Builder · ${new Date().toLocaleDateString("en-CA")}`),
@@ -365,8 +366,19 @@ function paintCircuit(): void {
   }));
 }
 
+/** A board's schematic with `e` drawn into it: the stock drawing while there are none. */
+const schematicOf = (b: BoardId, e: readonly Edit[]) => svgOf(b, "schematic").then((svg) => redraw(svg, b, e));
+// One loader for each changed circuit, so the board view redraws the schematic only when the circuit changes.
+let drawing: { of: string; load: () => Promise<string> } | null = null;
+function changedSchematic(): (() => Promise<string>) | undefined {
+  const b = def().board, e = edits(), of = `${b} ${JSON.stringify(e)}`;
+  if (!e.length) return undefined;
+  if (drawing?.of !== of) drawing = { of, load: () => schematicOf(b, e) };
+  return drawing.load;
+}
+
 function showBoard(wont = ""): void {
-  board.show(def().board, `${def().name} · your board`, swaps(), wont ? { hint: `won't play, kept your last parts: ${wont}` } : {});
+  board.show(def().board, `${def().name} · your board`, swaps(), { schematic: changedSchematic(), ...(wont ? { hint: `won't play, kept your last parts: ${wont}` } : {}) });
   board.probe(probe?.key ?? null);
   paint();
 }

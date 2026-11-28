@@ -149,7 +149,7 @@ export class BoardView {
     if (key !== this.drawn) {
       const own = this.side === "pcb" ? this.pcb : this.schematic;
       const svg = await (own ? own() : svgOf(board, this.side));
-      if (board !== this.board || `${board}.${this.side}` !== key) return; // moved on while it loaded
+      if (board !== this.board || `${board}.${this.side}` !== key || own !== (this.side === "pcb" ? this.pcb : this.schematic)) return; // moved on while it loaded
       this.art.innerHTML = svg; // our own file, from circuits/
       this.art.dataset.side = this.side;
       this.drawn = key;

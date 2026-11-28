@@ -81,6 +81,12 @@ test.skipIf(!hasChrome)("add a capacitor across the fuzz's clipping diodes: less
     expect(capped.board.fits).toBe(false);
     expect(await page<boolean>("[...document.querySelectorAll('.qb-act')].find((b) => b.textContent === 'Gerbers').disabled")).toBe(true);
 
+    // #6445: the schematic shows C5, and a click on its wire (the last drawn) scopes the net it is on
+    await waitFor(tab, "C5 on the schematic", "!!document.querySelector('.board-art [data-part=C5]')", 10_000);
+    expect(await page<boolean>("qbuilder.probe('OUT')")).toBe(true);
+    await page("[...document.querySelectorAll('.board-art .sch-trace')].at(-1).querySelector('path').dispatchEvent(new MouseEvent('click', { bubbles: true }))");
+    expect((await state()).probe!.label).toBe("R3 · D3 · D4 · R4 · C5");
+
     const r = await page<State["retest"]>("qbuilder.retest()");
     expect(r!.same).toBe(true);
     expect((await state()).files).toEqual(["fuzz-yours.tsx", "fuzz-yours.circuit.json"]);
@@ -89,6 +95,7 @@ test.skipIf(!hasChrome)("add a capacitor across the fuzz's clipping diodes: less
     expect(await page<string>("qbuilder.add('res', 'lots', 'OUT', 'GND')")).toContain("isn't a value");
     expect(await page<string>("qbuilder.unedit(null)")).toBe("");
     expect((await state()).board.fits).toBe(true);
+    await waitFor(tab, "the stock schematic back", "!document.querySelector('.board-art [data-part=C5]') && !!document.querySelector('.board-art [data-part=D4]')", 10_000);
   } finally { await tab.eval("window.qbuilder?.unedit(null)"); await tab.close(); }
 });
 
