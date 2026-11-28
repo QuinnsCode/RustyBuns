@@ -10,8 +10,7 @@
 // a scene (the builder edits the one on stage, each scene with its own undo), saves versions that stay, and puts one
 // party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z), delay(x, z),
 // download("list" | "plan"), undo(), redo(), event(walk?), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";

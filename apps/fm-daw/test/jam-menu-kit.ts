@@ -71,8 +71,8 @@ async function wayIn(tab: Awaited<ReturnType<typeof openTab>>, w: number, h: num
   // You: the 20 fonts, each in its own; a pick changes this page's headings and is kept
   await page(`(document.getElementById("tab-you").click(), 1)`);
   const fonts = await page<{ name: string; font: string }[]>(`[...document.querySelectorAll("#set-fonts b")].map((b) => ({ name: b.textContent, font: b.style.fontFamily }))`);
-  expect(fonts).toHaveLength(20);
-  expect(fonts[0]?.name).toBe("Saira Condensed");
+  expect(fonts).toHaveLength(21); // Qollab's own face, then the board's 20
+  expect(fonts[0]?.name).toBe("Russo One");
   for (const f of fonts) expect(f.font).toContain(f.name);
   await page(`([...document.querySelectorAll("#set-fonts button")].find((b) => b.textContent === "Oswald").click(), 1)`);
   expect(await page<string>(`getComputedStyle(document.getElementById("room-title")).fontFamily`)).toContain("Oswald");

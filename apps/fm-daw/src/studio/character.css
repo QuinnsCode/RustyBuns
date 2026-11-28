@@ -1,6 +1,6 @@
 /* Your character as a dialog over the room (character.ts): the shared picker's ch- parts in the room's dark look. Every
    width from 390 px up; under 640 px it fills the screen. */
-.qs-ch { width: min(1040px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 16px; border: 1px solid var(--line, #3a3e45); border-radius: 16px; background: var(--card, #1d1f23); color: var(--ink, #f4f1ea); overflow-y: auto; font: 15px/1.35 "IBM Plex Sans", system-ui, sans-serif; }
+.qs-ch { width: min(1040px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 16px; border: 1px solid var(--line, #3a3e45); border-radius: 16px; background: var(--card, #1d1f23); color: var(--ink, #f4f1ea); overflow-y: auto; font: 15px/1.35 var(--q-thin); }
 .qs-ch::backdrop { background: rgba(8, 9, 11, 0.55); }
 .qs-ch .character { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); min-height: 200px; }
 @media (min-width: 820px) { .qs-ch .character { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }

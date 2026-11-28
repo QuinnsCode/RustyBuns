@@ -5,10 +5,7 @@
 // you are playing, and swaps its socketed parts live. The stage button puts the amp on a
 // three.js stage (stage3d.ts, loaded only when it's on), the knobs on the panel under it;
 // without WebGL the page stays 2D.
-import "@fontsource/barlow-condensed/500.css";
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/barlow-condensed/700.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";

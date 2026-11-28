@@ -123,7 +123,7 @@
   #field-back:hover, #field-back:focus-visible { border-color: #3a3e46; outline: none; }
   .tablist { display: flex; align-items: center; gap: 4px; margin: 0 auto; }
   .tablist button { display: inline-flex; align-items: center; height: 42px; box-sizing: border-box; }
-  .tablist button { --tone: #2dd4bf; position: relative; padding: 10px 16px 12px; border: 0; background: none; color: #8b877f; font: var(--wm, 600) calc(20px * var(--sm, 1))/1 var(--fm, var(--qs-head)), sans-serif; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; border-radius: 10px; transition: color .15s, background .15s; }
+  .tablist button { --tone: #2dd4bf; position: relative; padding: 10px 16px 12px; border: 0; background: none; color: #8b877f; font: var(--wm, 600) clamp(13px, 3.6vw, 18px)/1 var(--fm, var(--qs-head)), sans-serif; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; border-radius: 10px; transition: color .15s, background .15s; }
   .tablist button::after { content: ""; position: absolute; left: 16px; right: 16px; bottom: 4px; height: 3px; border-radius: 2px; background: var(--tone); transform: scaleX(0); transition: transform .25s; }
   .tablist button:hover, .tablist button:focus-visible { color: #f4f1ea; background: #ffffff0d; outline: none; }
   .tablist button[aria-selected="true"] { color: var(--tone); text-shadow: 0 0 18px color-mix(in srgb, var(--tone) 60%, transparent); }
@@ -139,7 +139,7 @@
   .sector > .line { justify-self: center; margin: 0 0 24px; padding: 8px 14px; border-radius: 12px; background: #0f1013b8; backdrop-filter: blur(8px); color: #e4dccd; font: var(--wx, 400) calc(17px * var(--sx, 1))/1.5 var(--fx, var(--qs-body)), sans-serif; max-width: 52ch; }
   .sector > .line strong { color: var(--tone); font-size: 1.25em; font-weight: 700; }
   /* Studio's line is a console prompt (#6527): the last word rolls up to the next, a caret blinking after it */
-  .sector > .line.console { font: 700 clamp(18px, 5vw, 28px)/1.4 "JetBrains Mono", "Space Mono", monospace; }
+  .sector > .line.console { font: 700 clamp(18px, 5vw, 28px)/1.4 var(--q-thin), monospace; }
   .said { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .prompt { display: inline-flex; white-space: pre; text-align: left; }
   .roll { height: 1.4em; overflow: hidden; min-width: 8ch; }
@@ -185,7 +185,7 @@
     /* a phone's tabs have room for the chip's button alone: Sign in (or out) as its icon, its word the tooltip */
     #tabs .account .eq-who, #tabs .account [data-part="badge"]:not(.eq-fold) { display: none; }
     #tabs .account .eq-btn { font-size: 0; gap: 0; padding: 0; }
-    .tablist button { padding: 10px 10px 12px; font-size: calc(17px * var(--sm, 1)); letter-spacing: .08em; }
+    .tablist button { padding: 10px 8px 12px; font-size: 13px; letter-spacing: .08em; }
     .tablist button::after { left: 10px; right: 10px; }
     #lane-view { padding-top: 92px; }
     .path .item { width: min(78vw, 300px); }
