@@ -55,3 +55,16 @@ test("one live set per DJ key: a second link waits for the first to end, or for 
   expect(await l.live(DJ, IP, "cccccccccc", NOV + HOUR_MS + SET)).toMatchObject({ ok: false, why: "one" });
   expect(await l.live(DJ, IP, "cccccccccc", NOV + HOUR_MS + SET + LIVE_SLACK_MS)).toMatchObject({ ok: true });
 });
+
+test("sets live at once from one address share its month, and one that ends early gives back what it didn't run", async () => {
+  const l = await lobby();
+  await l.ended({ dj: "f".repeat(64), ip: IP, hours: 10, at: NOV - 1 });
+  expect(await l.live(DJ, IP, "set-one000", NOV)).toMatchObject({ ok: true, endAt: NOV + SET });
+  // a second key at the same moment: 6 left, 4 held by the first
+  expect(await l.live(OTHER, IP, "set-two000", NOV)).toMatchObject({ ok: true, endAt: NOV + 2 * HOUR_MS, endWhy: "month" });
+  const third = "a".repeat(64);
+  expect(await l.live(third, IP, "set-three0", NOV)).toMatchObject({ ok: false, why: "month" });
+  // the first stops after an hour: 11 used, 2 held, 3 free
+  await l.ended({ dj: DJ, ip: IP, hours: 1, at: NOV + HOUR_MS }, "set-one000");
+  expect(await l.live(third, IP, "set-three0", NOV + HOUR_MS)).toMatchObject({ ok: true, endAt: NOV + 4 * HOUR_MS });
+});

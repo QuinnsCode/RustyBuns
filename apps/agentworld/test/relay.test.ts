@@ -2,8 +2,10 @@
 // socket: what an agent's HTTP and MCP calls get back, and what happens when no page is open.
 import { describe, expect, test } from "bun:test";
 import { fromPage, linksFor, Relay } from "../src/relay.ts";
+import { local } from "./app-kit.ts";
 import { slimTools } from "../src/tools.ts";
 
+type Said = { result: { content: [{ text: string }] } };
 const links = linksFor("http://localhost:4799", "testroom0001");
 
 /** A relay whose page answers each call as `answer` says (null: the page is closed). */
@@ -61,6 +63,25 @@ describe("an agent over MCP", () => {
     const bad = await rpc("tools/call", { name: "page_reset", arguments: {} });
     expect(bad.result.isError).toBe(true);
     expect((await rpc("resources/list")).error.code).toBe(-32601);
+  });
+});
+
+// What the person types on the page rides on the reply to the agent's next call, once, through each door.
+describe("a person's note", () => {
+  test("waits past a refused call, then goes with the next reply over MCP, once", async () => {
+    const app = local();
+    const edit = async (find: string) => JSON.parse((await app.rpc("tools/call", { name: "page_edit_file", arguments: { path: "world.js", find, replace: find } }) as Said).result.content[0].text);
+    app.note("make it\nnight");
+    app.note("add a pond");
+    expect(await edit("no such text")).not.toHaveProperty("user_note");
+    expect(await edit("cactus(18,")).toMatchObject({ ok: true, user_note: "make it night / add a pond" });
+    expect(await edit("cactus(18,")).not.toHaveProperty("user_note");
+  });
+
+  test("is a line of its own on the curl doors", async () => {
+    const app = local();
+    app.note("add a pond");
+    expect(await (await app.http("/status", "building")).text()).toBe("ok\nuser_note: add a pond\n");
   });
 });
 

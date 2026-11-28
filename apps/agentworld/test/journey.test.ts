@@ -51,17 +51,26 @@ test("landing to world to galaxy: one bright next step on each screen, and the g
   await pointAt(tab);
   await Bun.sleep(1500);
   expect(await galaxyFetches(tab)).toEqual([]);
+  expect([...eqosys.unlocked]).toEqual([]);
 
   // The AI: looks, says what it's doing, then changes the starter with one edit (no whole-file write).
   await waitFor(tab, "the relay", `!!document.querySelector(".live.on")`, 20_000);
   await tool(tab, "page_read", {});
   await tool(tab, "page_status", { text: "Asking about your world" });
   expect(await tab.eval<string>(`document.querySelector(".strip .said")?.textContent`)).toContain("Asking about your world");
-  await tool(tab, "page_edit_file", { path: "world.js", find: "cactus(18,", replace: "cactus(30," });
+  // A note typed in the console goes to the agent with the reply to its next call.
+  await tab.eval(`(() => { const i = document.querySelector(".note input"); i.value = "add a pond"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+  await tab.eval(`document.querySelector(".note button").click()`);
+  await waitFor(tab, "the note waiting", `document.querySelector(".note-says")?.textContent.includes("add a pond")`);
+  expect(await tool(tab, "page_edit_file", { path: "world.js", find: "cactus(18,", replace: "cactus(30," })).toMatchObject({ ok: true, user_note: "add a pond" });
+  await waitFor(tab, "the note taken", `document.querySelector(".term-out").textContent.includes("your agent got your note")`);
 
   // The world is up: the Galaxy tile unlocks and is the one bright control; the strip says what's next.
   await waitFor(tab, "the galaxy unlocked", `!!document.querySelector("[data-galaxy-tile].next")`, 45_000);
   expect(await tab.eval<string>(`document.querySelector(".strip .next").textContent`)).toBe("Next: open the galaxy");
+  // Made, it is kept on the eqosys account, and eqosys's toast says so.
+  await waitFor(tab, "the achievement toast", `document.querySelector(".eq-toasts")?.textContent.includes("world-builder")`);
+  expect([...eqosys.unlocked]).toEqual(["played", "world-builder"]);
   expect(await tab.eval<boolean>(`document.querySelector(".dock button.big").classList.contains("quiet")`)).toBe(true);
 
   // Pointing at it gets the galaxy ready. Not signed for your land yet, so no plot is claimed, but three.js, the scene

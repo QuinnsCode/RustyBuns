@@ -5,11 +5,13 @@
 // `POST /api/r/<room>/made` saves the same way and marks the world made (an AI wrote it and it loaded clean, lock.ts),
 // for good; `GET` there says whether it is. Agent Galaxy hands a plot only to a world that is made.
 // With Artifacts (keep.ts), each change is also kept in the room's repo, and a `GET` reads it from there. A push waits
-// a few seconds, so an agent writing several files in a row makes one; until it lands, storage is the newer copy.
+// a few seconds, so an agent writing several files in a row makes one; until it lands, storage is the newer copy. A push
+// the app's budget refuses (budget.ts) never lands: the world stays in storage, and the next change asks again.
 import { arr, bool, check, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { json } from "@rustybuns/util/http";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { Option, Schema } from "effect";
+import type { Spend } from "./budget.ts";
 import { keepWorld, keptWorld, type Repos } from "./keep.ts";
 import { FILES_MAX, Page, WORLD_MAX } from "./page.ts";
 import type { Kv } from "./galaxy.ts";
@@ -20,8 +22,8 @@ const INDEX = "w:index", MADE = "w:made";
 const REV = "w:rev", KEPT = "w:kept", NAME = "w:room";
 /** How long a change waits before it is pushed: the changes in between go in the same commit. */
 export const KEEP_AFTER_MS = 10_000;
-/** Where a room's world is kept for good: Artifacts, and a timer that calls `keep()` once, KEEP_AFTER_MS on. */
-export interface Keeper { repos: Repos; later(): unknown }
+/** Where a room's world is kept for good: Artifacts, the budget for what goes in it, and a timer that calls `keep()` once, KEEP_AFTER_MS on. */
+export interface Keeper { repos: Repos; spend: Spend; later(): unknown }
 /** GET /api/r/<room>/made: whether this room's world is made. */
 export const Made = obj({ made: bool() });
 export type Made = Of<typeof Made>;
@@ -65,7 +67,12 @@ export class Saved {
     const s = await this.kv.get([REV, KEPT, NAME]), rev = s.get(REV), room = s.get(NAME);
     if (typeof room !== "string" || rev === s.get(KEPT)) return;
     const page = await this.stored();
-    if (page) await keepWorld(this.keeper.repos, room, page);
+    if (page) {
+      const sizes = Object.values(page.files).map((text) => new TextEncoder().encode(text).length);
+      const refused = await this.keeper.spend(sizes.reduce((a, b) => a + b, 0));
+      if (refused) return console.warn(`agentworld: ${room} not pushed: ${refused}`);
+      await keepWorld(this.keeper.repos, room, page);
+    }
     // The count read before the push: a change that came during it is still unpushed.
     await this.kv.put({ [KEPT]: rev });
   }

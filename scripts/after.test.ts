@@ -82,23 +82,52 @@ const settles: { why: string; file: string; base: string; main: string; branch: 
   // #6015, #6017: a clean merge that leaves a function with no callers would turn CI's lint red after the push
   { why: "a clean merge lint finds unused callers in stops", ...NEXT_DOOR, want: null, unused: "Mervin's merge leaves mouth with no callers", stop: "Mervin's merge leaves mouth with no callers" },
 ];
-test.each(settles)("main's conflict: $why", async ({ file, base, main, branch, want, unused, stop, mergiraf }) => {
+/** A bare origin where branch `mine` and main each changed `file` its own way, and a clone for the pass to work in. */
+function conflicted(file: string, base: string, main: string, branch: string) {
   const root = mkdtempSync(join(tmpdir(), "after-"));
+  const run = (cwd: string, ...a: string[]) => {
+    const r = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd, stdout: "pipe", stderr: "pipe" });
+    return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
+  };
+  const ok = (cwd: string, ...a: string[]) => { const r = run(cwd, ...a); if (r.code !== 0) throw new Error(r.out); return r.out; };
+  const origin = join(root, "origin.git"), dev = join(root, "dev"), ci = join(root, "ci");
+  ok(root, "init", "-q", "--bare", "-b", "main", origin);
+  ok(root, "clone", "-q", origin, dev);
+  const commit = (text: string) => { writeFileSync(join(dev, file), text); ok(dev, "commit", "-qam", "x"); };
+  writeFileSync(join(dev, file), base); ok(dev, "add", "-A"); ok(dev, "commit", "-qm", "base");
+  ok(dev, "push", "-q", "origin", "HEAD:main");
+  ok(dev, "checkout", "-q", "-b", "mine"); commit(branch); ok(dev, "push", "-q", "origin", "mine");
+  ok(dev, "checkout", "-q", "main"); commit(main); ok(dev, "push", "-q", "origin", "main");
+  ok(root, "clone", "-q", origin, ci);
+  return { root, origin, ci, run, ok };
+}
+
+// #6498: a PR whose line still names an open PR gets no checks once main conflicts with it, so it doesn't wait for that.
+const early = [
+  { why: "settled and pushed", ...NEXT_DOOR, first: "#12 merged main in and pushed while it waits on #9", second: "#12 waits on #9", pushes: true },
+  { why: "a card is commented once per head", ...TWO_WAYS, first: "#12 conflicts with main in gear.ts while it waits on #9: commented", second: "#12 conflicts with main in gear.ts while it waits on #9: already commented", pushes: false },
+];
+test.each(early)("main conflicts with a PR still waiting on an open one: $why", async ({ file, base, main, branch, first, second, pushes }) => {
+  const { root, origin, ci, run, ok } = conflicted(file, base, main, branch);
   try {
-    const run = (cwd: string, ...a: string[]) => {
-      const r = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd, stdout: "pipe", stderr: "pipe" });
-      return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
-    };
-    const ok = (cwd: string, ...a: string[]) => { const r = run(cwd, ...a); if (r.code !== 0) throw new Error(r.out); return r.out; };
-    const origin = join(root, "origin.git"), dev = join(root, "dev"), ci = join(root, "ci");
-    ok(root, "init", "-q", "--bare", "-b", "main", origin);
-    ok(root, "clone", "-q", origin, dev);
-    const commit = (text: string) => { writeFileSync(join(dev, file), text); ok(dev, "commit", "-qam", "x"); };
-    writeFileSync(join(dev, file), base); ok(dev, "add", "-A"); ok(dev, "commit", "-qm", "base");
-    ok(dev, "push", "-q", "origin", "HEAD:main");
-    ok(dev, "checkout", "-q", "-b", "mine"); commit(branch); ok(dev, "push", "-q", "origin", "mine");
-    ok(dev, "checkout", "-q", "main"); commit(main); ok(dev, "push", "-q", "origin", "main");
-    ok(root, "clone", "-q", origin, ci);
+    const pr: AfterPr = { number: 12, headRefName: "mine", body: "Merge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [] };
+    const said: string[] = [];
+    const head = (): Head => ({ headRefOid: ok(origin, "rev-parse", "mine").trim(), commits: [], comments: said.map((body) => ({ body })) });
+    const gh: Gh = { open: () => [pr], state: () => "OPEN", comment: (_, t) => { said.push(t); }, setBody: () => { throw new Error("no body change"); }, head, runs: () => [], closedBlockers: () => [] };
+    const before = ok(origin, "rev-parse", "mine");
+    const git = (...a: string[]) => run(ci, ...a);
+    expect(await pass(gh, git, { token: true, lineMerge })).toEqual([first]);
+    expect(ok(origin, "rev-parse", "mine") !== before).toBe(pushes);
+    expect(await pass(gh, git, { token: true, lineMerge })).toEqual([second]);
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain(`\`${file}\``);
+    expect(ok(ci, "status", "--porcelain")).toBe("");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test.each(settles)("main's conflict: $why", async ({ file, base, main, branch, want, unused, stop, mergiraf }) => {
+  const { root, origin, ci, run, ok } = conflicted(file, base, main, branch);
+  try {
     const pr: AfterPr = { number: 12, headRefName: "mine", body: "Merge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [] };
     const said: string[] = [];
     const gh: Gh = { open: () => [pr], state: () => "MERGED", comment: (_, t) => { said.push(t); }, setBody: (_, b) => { pr.body = b; }, head: () => { throw new Error("no head"); }, runs: () => [], closedBlockers: () => [] };
@@ -139,7 +168,8 @@ test("newUnused names a settled file's functions past lint.allow.json's no-unuse
 test("a PR a Claude watch holds is left to it: no push, no body change, picked up once the label goes", async () => {
   const pr: AfterPr = { number: 12, headRefName: "mine", body: "Merge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [{ name: "claude-pr-steward-is-working" }] };
   const gh: Gh = { open: () => [pr], state: () => "OPEN", comment: () => { throw new Error("no comment"); }, setBody: () => { throw new Error("no body change"); }, head: () => { throw new Error("no head"); }, runs: () => [], closedBlockers: () => [] };
-  const git = () => { throw new Error("no git"); };
+  // Held, git is never run; unheld, every git call succeeds, so main merges clean and it just waits.
+  const git = () => { if (pr.labels[0]!.name !== "bug") throw new Error("no git"); return { code: 0, out: "" }; };
   expect(await pass(gh, git)).toEqual(["#12 skipped: a Claude watch holds it (claude-pr-steward-is-working) and merges main in itself"]);
   pr.labels = [{ name: "bug" }];
   expect(await pass(gh, git)).toEqual(["#12 waits on #9"]);

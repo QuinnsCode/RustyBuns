@@ -6,6 +6,9 @@
 // the PR body when other open PRs change the same files. Each pass reads every open PR with that line; once every PR it
 // names has merged (or closed), it merges `main` into the branch and pushes, so the branch is current with what it
 // waited on and CI runs on the result. The line then reads `Merged main in after #12, #34`, so the next pass skips it.
+// While some it names are still open, the PR is left alone unless main already conflicts with it (`git merge-tree`):
+// GitHub runs no checks on a conflicted PR, so it would sit looking quiet (#6498). Then main gets the same merge as
+// below; the line stays `Merge after`, and cards are commented once per head (an `<!-- after:conflict <sha> -->` marker).
 // When git's merge of main conflicts, each conflicted file goes through Mervin's line merge (`lineMerge` in
 // apps/codesplitter/scripts/shadow.ts, loaded at run time since it needs the packages installed). A file he leaves cards
 // in gets one run of Mergiraf, his second opinion (`mergiraf` in apps/codesplitter/src/mergiraf.ts, the binary on PATH:
@@ -96,6 +99,7 @@ export const CHECK_AFTER = 300, FOLLOW_UP = 180;
 export const KICK_MESSAGE = "Start CI (after-bot push started no checks)";
 const MERGED_LINE = /^merged main in after #\d+/im;
 const flagMark = (sha: string) => `<!-- after:unchecked ${sha} -->`;
+const conflictMark = (sha: string) => `<!-- after:conflict ${sha} -->`;
 
 /**
  * `lineMerge`: Mervin's, which settles git's conflicts; without it every conflict goes to a person. `mergiraf`: asked
@@ -241,15 +245,15 @@ export async function pass(gh: Gh, git: Git, opts: PassOpts = {}): Promise<strin
     return out;
   }));
 
-  /** A `Merge after` PR: wait while what it names is open, then merge main in. */
+  /** A `Merge after` PR: wait while what it names is open (unless main conflicts already), then merge main in. */
   function landed(pr: AfterPr, after: number[]) {
     return Effect.gen(function* () {
       const waiting: number[] = [];
       for (const n of after) if ((yield* call(() => gh.state(n))) === "OPEN") waiting.push(n);
-      if (waiting.length) return `#${pr.number} waits on ${waiting.map((n) => `#${n}`).join(", ")}`;
+      if (waiting.length) return yield* waits(pr, waiting.map((n) => `#${n}`).join(", "));
       if (dry) return `#${pr.number} would merge main in`;
       const named = after.map((n) => `#${n}`).join(", ");
-      const { conflicts: files, settled } = yield* mergeMain(pr, named);
+      const { conflicts: files, settled } = yield* mergeMain(pr, `after ${named} landed`);
       if (!files.length) {
         yield* call(() => gh.setBody(pr.number, marked(pr.body, "Merged main in after")));
         return yield* pushed(pr, settled, settled ? " (settled its conflicts)" : "");
@@ -259,13 +263,31 @@ export async function pass(gh: Gh, git: Git, opts: PassOpts = {}): Promise<strin
       return `#${pr.number} conflicts with main in ${files.map(fileOf).join(", ")}: commented`;
     });
   }
+  /** A PR still waiting on `open`: left alone while main merges clean, otherwise merged in or told, so it isn't left with no checks. */
+  function waits(pr: AfterPr, open: string) {
+    return Effect.gen(function* () {
+      const n = pr.number, waiting = `#${n} waits on ${open}`;
+      yield* must("fetch", "-q", "origin", "main", pr.headRefName);
+      const trial = git("merge-tree", "--write-tree", "origin/main", `origin/${pr.headRefName}`);
+      if (trial.code === 0) return waiting;
+      if (trial.code !== 1) return yield* new Failed({ message: `git merge-tree: ${trial.out.trim()}` });
+      if (dry) return `${waiting}, and would merge main in: they conflict`;
+      const head = (yield* must("rev-parse", `origin/${pr.headRefName}`)).trim();
+      const { conflicts: files, settled } = yield* mergeMain(pr, `conflicted while waiting on ${open}`);
+      if (!files.length) return yield* pushed(pr, `Main conflicted with this branch while it waits on ${open}, and GitHub runs no checks on a conflicted PR.${settled ? `\n\n${settled}` : ""}`, ` while it waits on ${open}`);
+      const where = `#${n} conflicts with main in ${files.map(fileOf).join(", ")} while it waits on ${open}`;
+      if ((yield* call(() => gh.head(n))).comments.some((c) => c.body.includes(conflictMark(head)))) return `${where}: already commented`;
+      yield* call(() => gh.comment(n, `${conflictMark(head)}\n@${pr.author.login} this branch waits on ${open}, but main already no longer merges clean into it, not even through Mervin's line merge and Mergiraf, so GitHub runs no checks on it. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push.`));
+      return `${where}: commented`;
+    });
+  }
   /** A PR a fixed blocker held red: main merged in once (its comment's mark says it was), so its checks rerun on the fix. */
   function unblocked(pr: AfterPr, issue: number, test: string) {
     return Effect.gen(function* () {
       const n = pr.number;
       if ((yield* call(() => gh.head(n))).comments.some((c) => c.body.includes(unblockMark(issue)))) return null;
       if (dry) return `#${n} would merge main in: blocker #${issue} is fixed`;
-      const { conflicts: files, settled } = yield* mergeMain(pr, `the fix for #${issue}`);
+      const { conflicts: files, settled } = yield* mergeMain(pr, `after the fix for #${issue} landed`);
       if (!files.length) return yield* pushed(pr, `${unblockMark(issue)}\nThe test that held this PR red (${test}) is fixed on main (#${issue} closed), so main is merged in and its checks rerun on the fix.${settled ? `\n\n${settled}` : ""}`, ` after blocker #${issue}`);
       yield* call(() => gh.comment(n, `${unblockMark(issue)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue}), but main no longer merges clean into this branch, not even through Mervin's line merge and Mergiraf. A person must choose in:\n\n${files.map((f) => `- ${f}`).join("\n")}\n\nMerge main in (or rebase) and push.`));
       return `#${n} conflicts with main in ${files.map(fileOf).join(", ")} after blocker #${issue}: commented`;
@@ -280,7 +302,7 @@ export async function pass(gh: Gh, git: Git, opts: PassOpts = {}): Promise<strin
     return Effect.gen(function* () {
       yield* must("fetch", "-q", "origin", "main", pr.headRefName);
       yield* must("checkout", "-q", "-B", `after-${pr.number}`, `origin/${pr.headRefName}`);
-      if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${why} landed)`, "origin/main").code === 0) {
+      if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (${why})`, "origin/main").code === 0) {
         yield* must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
         return { conflicts: [], settled: "" };
       }
