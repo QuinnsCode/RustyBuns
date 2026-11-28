@@ -19,7 +19,7 @@ const eqosys = await fakeEqosys();
 beforeAll(async () => {
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
-  server = Bun.spawn(["bun", "scripts/dev.ts", "--port", String(port)], { cwd: join(import.meta.dir, ".."), env: { ...process.env, EQOSYS_URL: eqosys.url }, stdout: "ignore", stderr: "inherit" });
+  server = Bun.spawn(["bun", "scripts/dev.ts", "--port", String(port), "--with-parent"], { cwd: join(import.meta.dir, ".."), env: { ...process.env, EQOSYS_URL: eqosys.url }, stdout: "ignore", stderr: "inherit" });
   chrome = await launchChrome();
   for (let i = 0; i < 300; i++) { if (await fetch(base).then((r) => r.ok, () => false)) break; await Bun.sleep(100); }
 });
@@ -57,7 +57,12 @@ test("landing to world to galaxy: one bright next step on each screen, and the g
   await tool(tab, "page_read", {});
   await tool(tab, "page_status", { text: "Asking about your world" });
   expect(await tab.eval<string>(`document.querySelector(".strip .said")?.textContent`)).toContain("Asking about your world");
-  await tool(tab, "page_edit_file", { path: "world.js", find: "cactus(18,", replace: "cactus(30," });
+  // A note typed in the console goes to the agent with the reply to its next call.
+  await tab.eval(`(() => { const i = document.querySelector(".note input"); i.value = "add a pond"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+  await tab.eval(`document.querySelector(".note button").click()`);
+  await waitFor(tab, "the note waiting", `document.querySelector(".note-says")?.textContent.includes("add a pond")`);
+  expect(await tool(tab, "page_edit_file", { path: "world.js", find: "cactus(18,", replace: "cactus(30," })).toMatchObject({ ok: true, user_note: "add a pond" });
+  await waitFor(tab, "the note taken", `document.querySelector(".term-out").textContent.includes("your agent got your note")`);
 
   // The world is up: the Galaxy tile unlocks and is the one bright control; the strip says what's next.
   await waitFor(tab, "the galaxy unlocked", `!!document.querySelector("[data-galaxy-tile].next")`, 45_000);

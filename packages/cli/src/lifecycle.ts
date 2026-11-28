@@ -81,14 +81,14 @@ export const spawnScoped = (cmd: string[], opts: SpawnOptions.OptionsObject<"inh
     (p) => Effect.promise(() => stopChild(p, cmd[0]!.split("/").at(-1)!)),
   ).pipe(Effect.flatMap((p) => Effect.promise(() => p.exited)));
 
-/** `spawnScoped` with stdin closed and stdout shown as it comes and kept: the exit code and everything it printed. */
-export const spawnScopedTee = (cmd: string[], env: Record<string, string | undefined>, onStart?: (pid: number) => void): Effect.Effect<{ code: number; out: string }, never, Scope.Scope> =>
+/** `spawnScoped` with stdin closed and stdout kept (and shown as it comes, unless `show` is off): the exit code and everything it printed. */
+export const spawnScopedTee = (cmd: string[], env: Record<string, string | undefined>, onStart?: (pid: number) => void, show = true): Effect.Effect<{ code: number; out: string }, never, Scope.Scope> =>
   Effect.acquireRelease(
     Effect.sync(() => { const p = Bun.spawn(cmd, { stdio: ["ignore", "pipe", "inherit"], env }); onStart?.(p.pid); return p; }),
     (p) => Effect.promise(() => stopChild(p, cmd[0]!.split("/").at(-1)!)),
   ).pipe(Effect.flatMap((p) => Effect.promise(async () => {
     let out = "";
     const text = new TextDecoder();
-    for await (const chunk of p.stdout) { process.stdout.write(chunk); out += text.decode(chunk, { stream: true }); }
+    for await (const chunk of p.stdout) { if (show) process.stdout.write(chunk); out += text.decode(chunk, { stream: true }); }
     return { code: await p.exited, out };
   })));

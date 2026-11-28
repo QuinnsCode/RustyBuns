@@ -1528,6 +1528,17 @@ $("make").addEventListener("submit", (e) => {
   // the first in with a key is the sesh's maker (its leader), and that's you: you walk in before anyone has the link
   location.assign(inviteLink(location.origin, room, studio, label));
 });
+// the front door's "Walk in and play" (paths.ts STUDIO_START, ?start=keys): no form. A room of your own in the live room,
+// where the keys, the drums, the bass, the booth and the desk all stand in view, and Enter sits you at what `start`
+// names. Signed out where eqosys is on, the door asks for the sign-in first, and its reload lands here again.
+const startAsked = new URLSearchParams(location.search).get("start");
+if (!here && startAsked && (signedIn() || !eq.canSignIn())) {
+  const room = roomId("My studio");
+  saveRecent(remember(loadRecent(), { room, name: "My studio", studio: LIVE_ROOM.id, mine: true, at: Date.now() }));
+  location.replace(`${inviteLink(location.origin, room, LIVE_ROOM.id, "My studio")}&sit=${encodeURIComponent(startAsked)}`);
+}
+/** The spot a link asks Enter to sit you at (?sit=keys), once. */
+let sitAsked = new URLSearchParams(location.search).get("sit");
 // eqosys opens in a small window beside the room (sign in, or make an account there), and the page stays on this
 // invite. The login back, the same address opens fresh, so the room's socket carries the token. A blocked window
 // makes the whole-page trip instead, which comes back to this address too (`finishSignIn` below).
@@ -1630,7 +1641,16 @@ function tryCode(): boolean {
   return true;
 }
 $("code-gate").addEventListener("submit", (e) => { e.preventDefault(); tryCode(); });
-function play() { if (!here) return; if (gated()) { tryCode(); return; } phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
+function play() {
+  if (!here) return; if (gated()) { tryCode(); return; } phase = "play"; menu();
+  // walked up to it first: sit() only takes a spot within reach
+  const spot = sitAsked ? spotOf(jam, sitAsked) : null;
+  sitAsked = null;
+  if (spot && !jam.me.seat) { jam.me.x = spot.at[0]; jam.me.z = spot.at[1]; sit(jam, spot.id); live(body(jam)); }
+  // walked in from the front door and sat down: the keys under your hands, not the card of every key (? brings it)
+  if (help.firstTime() && !spot) help.open(); else lock();
+  void startAudio();
+}
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => void character.open());
 mountControls({

@@ -46,7 +46,7 @@ const hours = (n: number) => `${Number(n.toFixed(2))} hour${n === 1 ? "" : "s"}`
 /** A limit in plain words: a title and a line, for the card the decks or a listener's page show. */
 export function limitSays(why: Limit, n: number): { title: string; says: string } {
   if (why === "hours") return { title: "Your free set hit its time", says: `A free set runs up to ${hours(n)}, so this one ended. Go live again to start a new one.` };
-  if (why === "month") return { title: "This month's free hours are used", says: `Free sets get ${hours(n)} a month for each DJ and each connection. They come back on the 1st (UTC).` };
+  if (why === "month") return { title: "This month's free hours are used", says: `Free sets get ${hours(n)} a month for each DJ and each connection, and a set that's live now counts at its full length. The month starts over on the 1st (UTC).` };
   if (why === "one") return { title: "You're live on another link", says: "A free DJ plays one set at a time. Stop the other one, or wait for it to end, then go live here." };
   return { title: "This set is full", says: `A free set takes ${n} listeners at once, and they're all here. Try again in a bit.` };
 }

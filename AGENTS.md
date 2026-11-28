@@ -51,7 +51,7 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
 - A fix's or a feature's tests should fail on the old code: `bun scripts/test-bites.ts` runs your changed test files on
   `origin/main`'s source and names the ones that pass there anyway (exit 1); `--lines` lists the changed lines they
   never ran. It runs tests, so with the valve shut: `bun run builder run . bun scripts/test-bites.ts --lines`.
-- Before `gh pr create`, commit and run `bun scripts/preflight.ts` (the guard hook turns the create away until it has run on HEAD): it lists open PRs that change your files and how Mervin's board merges your branch after them (#3118), and names any file your branch puts back to an older copy main has since changed (a worktree reset onto a newer main, #5687): take main's copy unless you meant the revert. Paste the `Merge after #N` line it prints into the PR body (the guard turns the create away without it): the `after` workflow (`scripts/after.ts`, #5344) merges main into your branch and pushes once those land, or comments and tags you if main no longer merges clean. A `card` or `clash` (exit 1) is a warning, not a stop: open the PR with the `Merge after` line, and Mervin and the `after` workflow order the merges.
+- Before `gh pr create`, commit and run `bun scripts/preflight.ts` (the guard hook turns the create away until it has run on HEAD): it lists open PRs that change your files and how Mervin's board merges your branch after them (#3118), and names any file your branch puts back to an older copy main has since changed (a worktree reset onto a newer main, #5687): take main's copy unless you meant the revert. Paste the `Merge after #N` line it prints into the PR body (the guard turns the create away without it): the `after` workflow (`scripts/after.ts`, #5344) merges main into your branch and pushes once those land (sooner if main already conflicts with it), or comments and tags you if main no longer merges clean. A `card` or `clash` (exit 1) is a warning, not a stop: open the PR with the `Merge after` line, and Mervin and the `after` workflow order the merges.
 - After pushing, `bun run pr <n> --no-wait` once to see the checks started, then finish (below). Don't wait on CI or tend your PR: a red check later is the PR agent's to fix or hire for.
 - Claude Code's `/ship` and `/steward` (2.1.330+) keep tending a PR until it merges: they fix red checks, merge main in
   when it conflicts and answer review comments. They never merge. Only a line the owner types starts one. Open the PR
@@ -188,8 +188,9 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
 - Every app with a page has a Cmd+K menu (owner, 2026-11-27): `mountPalette({ button: true })` from `@rustybuns/util/palette`,
   over the same `addCommands` list its WebMCP tools use, so what an agent can call a person can press. A new app
   starts with one. A command that is a button the page has is `buttonCommand(selector, ...)` from
-  `@rustybuns/util/commands`: listed while that button is on screen. Agent Office keeps its own Cmd+K; the framework
-  samples and the parked tscircuit-desktop have none yet (#6513).
+  `@rustybuns/util/commands`: listed while that button is on screen. Agent Office keeps its own Cmd+K. The framework
+  samples (`apps/frameworks/*`) have no menu, on purpose (owner, 2026-11-27): don't add one. The parked
+  tscircuit-desktop gets one when it is brought back.
 - `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
   `@rustybuns/util`: import them. A game world's `TokenBucket`, `RoomMintGate` and `originAllowed` are `@rustybuns/util/limits`; its socket type,
   `WebSocketPair`, upgrade, attachment and fan-out are `Sockets` in `@rustybuns/util/room` (no `declare const WebSocketPair`, no `ws: any`);

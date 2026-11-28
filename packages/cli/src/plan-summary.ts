@@ -5,6 +5,7 @@
 // `[Worker] update` line a resource), reads those lines back, and ends with one row a resource and a verdict:
 // KEEP and UPDATE are safe, REPLACE makes a new one and deletes the old one with its data, DELETE deletes; both are black on
 // red-orange, so a row that loses data (a database above all) can't be scrolled past.
+// `deploy` runs the same plan quietly first and prints only the rows that lose data.
 import { stripVTControlCharacters } from "node:util";
 
 export type PlanAction = "create" | "update" | "adopted" | "replace" | "delete" | "orphaned" | "noop";
@@ -36,11 +37,14 @@ const WORDS: Record<PlanAction, { tag: string; says: string; color: string }> = 
   orphaned: { tag: "LET GO", says: "left on the account, no longer managed by this stack", color: "\x1b[33m" },
 };
 
+/** The rows that lose data. */
+export const losses = (rows: PlanRow[]) => rows.filter((r) => r.action === "replace" || r.action === "delete");
+
 /**
  * The block printed after the plan. `types` names each id's kind (from the generated stack), `kept` the ids
  * `protect: true` covers. Empty when no row could be read, so a change in Alchemy's log never prints a false "safe".
  */
-export function formatPlanSummary(rows: PlanRow[], types: Record<string, string> = {}, kept: ReadonlySet<string> = new Set(), color = true): string {
+export function formatPlanSummary(rows: PlanRow[], types: Record<string, string> = {}, kept: ReadonlySet<string> = new Set(), color = true, then = "Don't deploy until you know why."): string {
   if (!rows.length) return "";
   const paint = (c: string, s: string) => (color ? `${c}${s}\x1b[0m` : s);
   const idW = Math.max(...rows.map((r) => r.id.length + (types[r.id] ? types[r.id]!.length + 3 : 0)));
@@ -52,12 +56,12 @@ export function formatPlanSummary(rows: PlanRow[], types: Record<string, string>
     // A row that loses data is filled end to end; a safe one colours its word only.
     lines.push(w.color === ALARM ? `  ${paint(ALARM, `${tag}  ${name}  ${w.says}`)}` : `  ${paint(w.color, tag)}  ${name}  ${w.says}`);
   }
-  const lost = rows.filter((r) => r.action === "replace" || r.action === "delete");
+  const lost = losses(rows);
   if (!lost.length) lines.push(paint("\x1b[1;32m", "safe: nothing is replaced or deleted."));
   else {
     const hit = lost.filter((r) => kept.has(r.id));
     lines.push(paint(ALARM,
-      `STOP: ${lost.map((r) => `${r.id} is ${r.action === "replace" ? "replaced" : "deleted"}`).join(", ")}. Its data goes with it. Don't deploy until you know why.`));
+      `STOP: ${lost.map((r) => `${r.id} is ${r.action === "replace" ? "replaced" : "deleted"}`).join(", ")}. Its data goes with it. ${then}`));
     if (hit.length) lines.push(paint(ALARM, `  ${hit.map((r) => r.id).join(", ")} ${hit.length === 1 ? "is" : "are"} protected (protect: true), which only covers destroy.`));
   }
   return lines.join("\n");
