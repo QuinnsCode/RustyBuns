@@ -72,7 +72,7 @@ import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, 
 import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unexportedClasses, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, spawnScopedTee, step } from "./lifecycle.ts";
 import { noPlanNote } from "./no-plan.ts";
-import { formatPlanSummary, readPlanRows } from "./plan-summary.ts";
+import { formatPlanSummary, losses, readPlanRows, type PlanRow } from "./plan-summary.ts";
 import { isProtected } from "./protect.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
@@ -1176,17 +1176,20 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     yield* step(() => prof.finish());
     return;
   }
+  // Alchemy's plain log (stdin closed), read back for what happens to each resource (plan-summary.ts).
+  const planLog = (a: string[], show: boolean) => step(() => alchemyCommand(["plan", "--config", ".rustybuns/alchemy.run.ts", ...a], cfg, buildEnv, cf))
+    .pipe(Effect.flatMap(({ cmd, env }) => spawnScopedTee(cmd, env, (pid) => lockBase && noteChild(lockBase, pid), show)));
+  const summarise = (rows: PlanRow[], then?: string) => {
+    const types = Object.fromEntries(plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8")).map((r) => [r.id, r.type.replace(/^Cloudflare\./, "")]));
+    const kept = new Set(Object.entries(cfg.bindings ?? {}).filter(([, b]) => isProtected(b)).map(([n]) => n));
+    return formatPlanSummary(rows, types, kept, !!process.stdout.isTTY && !process.env.NO_COLOR, then);
+  };
   if (sub === "plan") {
-    // Alchemy's plain log (stdin closed), read back for the summary of what happens to each resource (plan-summary.ts).
-    const tee = step(() => alchemyCommand(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg, buildEnv, cf))
-      .pipe(Effect.flatMap(({ cmd, env }) => spawnScopedTee(cmd, env, (pid) => lockBase && noteChild(lockBase, pid))));
-    const { code, out } = yield* timed(prof, "alchemy plan", tee);
+    const { code, out } = yield* timed(prof, "alchemy plan", planLog(args, true));
     yield* step(() => prof.finish());
     if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
     yield* step(() => Bun.write(stampFile, hash));
-    const types = Object.fromEntries(plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8")).map((r) => [r.id, r.type.replace(/^Cloudflare\./, "")]));
-    const kept = new Set(Object.entries(cfg.bindings ?? {}).filter(([, b]) => isProtected(b)).map(([n]) => n));
-    const summary = formatPlanSummary(readPlanRows(out), types, kept, !!process.stdout.isTTY && !process.env.NO_COLOR);
+    const summary = summarise(readPlanRows(out));
     console.log("\n" + (summary || "couldn't read each resource's change from the plan above: read it before you deploy.") + "\n\n" + mode);
     return;
   }
@@ -1197,6 +1200,16 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
     console.log("\n" + mode);
     return;
+  }
+  // Alchemy's deploy prints its own plan, with no alarm, and with --yes goes straight on. So plan first, quietly, and
+  // say what is replaced or deleted before it is. A stage with no state has nothing to lose.
+  if (sub === "deploy" && !args.includes("--dry-run") && existsSync(join(".alchemy", "state", cfg.name, stage))) {
+    // `alchemy plan` refuses deploy's own flags.
+    const yes = args.includes("--yes") || args.includes("-y");
+    const { code, out } = yield* timed(prof, "alchemy plan", planLog(args.filter((a) => !["--yes", "-y", "--detect-drift"].includes(a)), false));
+    const rows = code === 0 ? readPlanRows(out) : [];
+    if (!rows.length) console.warn("warning: couldn't check what this deploy replaces or deletes: read Alchemy's plan. `rustybuns plan` shows why.");
+    else if (losses(rows).length) console.log("\n" + summarise(losses(rows), yes ? "--yes: Alchemy goes ahead without asking." : "Say no when Alchemy asks, unless you mean it.") + "\n");
   }
   // The old build's rooms hear about it before it goes: a deploy restarts every Durable Object, a busy one within
   // 5 minutes (REFERENCE.md, "What a deploy does to live sessions").
