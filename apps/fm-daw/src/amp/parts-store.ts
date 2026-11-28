@@ -11,7 +11,7 @@ import { Edit } from "../circuit/edits.ts";
 export const PARTS_KEY = "q-amp-parts";
 /** Q Amp's own store, where the knobs and swaps lived before they had their key: read once if that key is empty. */
 const OLD_KEY = "q-amp";
-/** Q Builder's own store, where the circuit edits lived before they came here (#6446): read once, the same way. */
+/** Q Builder's own store, where the circuit edits lived before they came here (#6446). */
 const OLD_EDITS_KEY = "qbuilder:v1";
 
 /** Each pedal's knob where nobody has turned it, by pedal id (5 for the rest). */
@@ -32,7 +32,11 @@ const stored = (): unknown => {
   try {
     const kept = parse(localStorage.getItem(PARTS_KEY)) ?? parse(localStorage.getItem(OLD_KEY)) ?? {};
     const old = parse(localStorage.getItem(OLD_EDITS_KEY));
-    return isRecord(kept) && !kept.edits && isRecord(old) ? { ...kept, edits: old.edits } : kept;
+    if (!isRecord(kept) || kept.edits || !isRecord(old) || !old.edits) return kept;
+    // Written at once: Q Builder's next save of its own store leaves the edits out.
+    const moved = check(Parts, { ...kept, edits: old.edits });
+    if (moved) localStorage.setItem(PARTS_KEY, JSON.stringify(moved));
+    return moved ?? kept;
   } catch { return {}; }
 };
 const partsOf = (v: unknown): Parts => {
