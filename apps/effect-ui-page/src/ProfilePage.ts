@@ -217,7 +217,7 @@ type Show =
   | { kind: "flow"; items: readonly (readonly [string, string])[]; loop?: boolean }
   | { kind: "data"; rows: readonly (readonly [string, string])[] }
   | { kind: "shelf"; items: readonly string[] };
-const PIECES: readonly { c: string; tag: string; title: string; says: string; show: Show; soon?: boolean }[] = [
+const PIECES: readonly { c: string; tag: string; title: string; says: string; show: Show }[] = [
   { c: "pink", tag: "WebMCP · MCP", title: "The tools",
     says: `Your AI gets ${listTools().length} tools and uses them for you. There is nothing here for you to press.`,
     show: { kind: "data", rows: [["write", "puts a file in your world"], ["read", "reads a file back"], ["look", "checks for errors"], ["undo", "takes a change back"], ["reset", "starts over"], ["backdrop", "puts a page behind it"]] } },
@@ -233,9 +233,9 @@ const PIECES: readonly { c: string; tag: string; title: string; says: string; sh
   { c: "amber", tag: "Cloudflare", title: "Your room",
     says: "Your AI reaches this tab through a secret link. Anyone with the link can change your world, so keep it private.",
     show: { kind: "flow", items: [["Your AI", ""], ["Your room", "Cloudflare Worker"], ["Your world", "this tab"]] } },
-  { c: "amber", tag: "Cloudflare Artifacts · coming", title: "The world of worlds", soon: true,
-    says: "Soon: your world is kept in Artifacts and joins everyone else's.",
-    show: { kind: "shelf", items: ["your world", "your 3D character", "everyone's worlds"] } },
+  { c: "amber", tag: "Cloudflare Artifacts", title: "Kept for good",
+    says: "Every change is kept in your room's own git repo, so it opens on any browser.",
+    show: { kind: "shelf", items: ["your world", "your 3D character", "every version"] } },
 ];
 
 const showView = Def.fragment((h, s: Show) => {
@@ -255,7 +255,7 @@ const deepView = Def.fragment((h) => h.section.class("l-deep").attrs({ id: "how"
     h.h2("How it's built"),
     h.p("You say ", h.q("make me a rainy city"), ". Here is what happens next, piece by piece."),
   ),
-  ...PIECES.map((p) => h.article.class("l-piece", `c-${p.c}`, p.soon === true && "soon").key(p.title).children(
+  ...PIECES.map((p) => h.article.class("l-piece", `c-${p.c}`).key(p.title).children(
     h.div.class("l-tell").children(h.span.class("l-ptag").children(p.tag), h.h3(p.title), h.p(p.says)),
     showView(h, p.show),
   )),

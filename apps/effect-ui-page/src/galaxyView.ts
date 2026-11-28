@@ -12,7 +12,7 @@ import { check } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { Effect, Option, Queue, Schema } from "effect";
-import { currentPage, watchPage } from "./agent.ts";
+import { currentPage, unsavedKey, watchPage } from "./agent.ts";
 import { COMMON_CITY } from "./commonCity.ts";
 import type { Land } from "./land.ts";
 import type { Content, Person, Scene3d } from "./land3d.ts";
@@ -46,16 +46,22 @@ const decodePage = Schema.decodeUnknownOption(Page);
 // ---------- saving the world for the neighbours ----------
 
 const saveWorld = (room: string, page: Page | null) => page
-  ? fetch(`/api/r/${room}/world`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(page) }).then((r) => r.ok, () => false)
+  ? fetch(`/api/r/${room}/world`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(page) }).then((r) => {
+    if (r.ok && currentPage() === page) try { localStorage.removeItem(unsavedKey(room)); } catch { /* private window */ }
+    return r.ok;
+  }, () => false)
   : Promise.resolve(false);
 
 /** Send the world after each change that lands, a second after the last one (an agent writes files in a row). */
 function keepSaved(room: string) {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  watchPage((p) => {
+  const send = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => void saveWorld(room, p).then((ok) => { if (!ok) timer = setTimeout(() => void saveWorld(room, currentPage()), 4000); }), 1000);
-  });
+    timer = setTimeout(() => void saveWorld(room, currentPage()).then((ok) => { if (!ok) timer = setTimeout(() => void saveWorld(room, currentPage()), 4000); }), 1000);
+  };
+  watchPage(send);
+  // A change the last visit never got to the server.
+  try { if (localStorage.getItem(unsavedKey(room)) !== null) send(); } catch { /* private window */ }
 }
 
 // ---------- the land ----------
