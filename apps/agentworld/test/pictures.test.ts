@@ -12,7 +12,7 @@ setDefaultTimeout(120_000);
 
 let server: ReturnType<typeof serve>, url: string, chrome: Chrome;
 const downloads = mkdtempSync(join(tmpdir(), "agentworld-gif-"));
-const serve = () => Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/dev.ts"), "--port", "0"], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "inherit" });
+const serve = () => Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/dev.ts"), "--port", "0", "--with-parent"], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "inherit" });
 
 beforeAll(async () => {
   server = serve();

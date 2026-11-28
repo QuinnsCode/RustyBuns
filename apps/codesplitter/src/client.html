@@ -1738,7 +1738,7 @@ function phoneDrawer(link = "") {
     <p class="muted small">Restarting the desktop signs paired phones out. Pair again after.</p>`);
   $("#serve-cmd").addEventListener("click", () => copy(serveCmd, "Command copied"));
   $("#pair-copy")?.addEventListener("click", () => copy(link, "Link copied"));
-  // Drawn here (/qr.js, built from src/qr.ts), so it works with the desktop offline.
+  // Drawn here (/qr.js, built from @rustybuns/util/qr), so it works with the desktop offline.
   if (link) import("/qr.js").then(({ qrSvg }) => { const el = $("#pair-qr"); if (el) { el.innerHTML = qrSvg(link); el.hidden = false; } }).catch(() => {});
   $("#pair").addEventListener("submit", async (e) => {
     e.preventDefault();

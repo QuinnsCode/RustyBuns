@@ -52,6 +52,7 @@
     "./privacy": "./src/privacy.ts",
     "./protocol": "./src/protocol.ts",
     "./report": "./src/report.ts",
+    "./qr": "./src/qr.ts",
     "./quality": "./src/quality.ts",
     "./room": "./src/room.ts",
     "./secrets": "./src/secrets.ts",

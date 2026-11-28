@@ -324,8 +324,20 @@ picks an event up for the stage and the sound, and Qollab keeps only the link to
 - **Routes:** `GET /q/events` lists yours (soonest first, undated last), `POST` makes one from `{ kind, name }` and any parts,
   `GET`, `PUT` (the parts sent replace those parts whole) and `DELETE /q/events/<id>`. Someone not on its list hears 404.
   Up to 50 events an account. `events()` in the same module is a page's side. Deleting the account deletes its events.
-- **Not yet:** the public page, QR and calendar file (#6073); RSVPs, the attendee list and CSV (#6074); signed tickets and door mode (#6075); the
-  hand-off to Qollab Studio (#6076). Emails, paid tickets and flyers wait for their own issues.
+- **Public page** (`/e/<id>`, `app/events.tsx`): readable signed out by anyone with the link. It shows the event, its QR code,
+  a slot for a picture and "Add to my calendar" (`/e/<id>/event.ics`; its SEQUENCE is `edited` in seconds, so adding the file
+  again after a change moves the entry). The guest list, the plan's link and the crew's times are not on it.
+- **RSVP** (`qollab/rsvp.ts`, signed in with eqosys): puts the guest on the list as a guest, with answers to `there.asks`
+  in `event_rsvps`. `who.cap` counts people and plus-ones, inside the write. `invite` events take only someone on the list or
+  with an invite link; a host (or a role with `invite`) makes links on the page, and a crew link joins without taking a place.
+  The list holds 500 people, so that is the most who can RSVP. Only the owner downloads the CSV (`/e/<id>/list.csv`).
+  A plain guest reading `GET /q/events/<id>` sees their own line only, never the others or any invite code.
+- **Tickets and the door:** one signed QR ticket a person (a plus-one gets their own), on the event's page. Door mode
+  (`/e/<id>/door`, roles with `door`) shows who is in against the cap. Scan with the page's camera where the browser can read
+  QR codes, or with the phone's camera app (the ticket is a link to the door). A ticket lets one person in, once.
+- **Deleting an account** deletes its events and takes the person off every list they joined.
+- **Not yet:** the hand-off to Qollab Studio (#6076); invite, reminder and thank-you emails (shown as "coming soon", they send
+  nothing); a picture; paid tickets and flyers.
 
 ## Status
 

@@ -33,11 +33,14 @@ hand. Connecting your AI is in the console, where it is the next step. **How it'
 the landing. A room this browser already kept opens straight on its page. The console is a terminal window in the middle of
 the screen (**Hide** puts it away, **Show** brings it back): on the left what happened, the way a command line shows it
 (connecting to the relay, connected, each call and how it went), ending in what you have to do in your own agent
-("type what you want into your agent": nothing can be typed in the console). On the right: whether your agent is connected (it also
+("type what you want into your agent": a note typed in the console waits for its next call). On the right: whether your agent is connected (it also
 says so in its own chat); the ready-made worlds as photo cards under **Choose a level to see** (a level replaces your
 world; Undo brings it back until you reload); **Or start telling your agent what to do** (copy the prompt, paste into
-your agent, watch it build); and **Do something cool** (Save a GIF, Walk galaxy). The console only goes one way: your
-agent talks to the page, and you talk to your agent in its own chat. Under Copy prompt, a button for each way in:
+your agent, watch it build); and **Do something cool** (Save a GIF, Walk galaxy). A page cannot start a turn in your
+agent, so you talk to it in its own chat. Once it is here you can also **send it a note** from the console (or "Send a
+note to your agent" in Cmd+K): the note waits, and goes with the reply to the agent's next call, as `user_note`, so
+it hears you while it is still working. If it has stopped, nothing happens until you say something in its chat. Anyone
+who opens the room's link can send one, and your agent is told to follow it for the world only. Under Copy prompt, a button for each way in:
 
 - **Add it as an MCP server** (the default: the landing's line, and the Claude, Codex and opencode buttons copy these):
   - Claude Code: `claude mcp add --transport http agentworld <room>/mcp`
@@ -161,11 +164,11 @@ prompt once and every reply; written is every call's arguments, the world's code
 | Door | Read | Written | Total | Round trips |
 |---|---|---|---|---|
 | A: the full MCP tool list (how it was) | 1,325 | 196 | 1,521 | 8 |
-| **B: code mode, `world_build` and `world_edit` (the default)** | 465 | 173 | **638** | **3** |
-| C: the skill and `curl` | 370 | 248 | 618 | 3 |
-| D: write the file, `curl` it to `/build` | 463 | 269 | 732 | 6 |
+| **B: code mode, `world_build` and `world_edit` (the default)** | 482 | 173 | **655** | **3** |
+| C: the skill and `curl` | 379 | 248 | 627 | 3 |
+| D: write the file, `curl` it to `/build` | 510 | 269 | 779 | 6 |
 
-C's estimate is 20 tokens (3%) under B's, a tie within 5 percent with the same calls on paper. Real Claude Code runs
+C's estimate is 28 tokens (4%) under B's, a tie within 5 percent with the same calls on paper. Real Claude Code runs
 (Sonnet, one run each, 2026-11-27) broke it: B took 3 calls (loading the tools, build, edit), 13 s and 1,307 output
 tokens; C took 6 (two of them refused: code inside a `curl` line trips its shell checks), 31 s and 4,100.
 

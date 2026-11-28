@@ -98,6 +98,15 @@ export const HOLDERS: Holder<Subject>[] = [
     export: ({ conf, me }) => rows(conf, "SELECT s.id, s.name, s.kind, m.role, m.at FROM studio_members m JOIN studios s ON s.id = m.studio_id WHERE m.user_id = ?", me.id),
   },
   {
+    id: "events", what: "The events you host, the ones you are on, your RSVP answers (a plus-one, food needs, a song) and when your tickets were scanned",
+    why: "So hosts know who is coming and the door can let you in", basis: "contract", keep: `${UNTIL}, or the host deletes the event`,
+    export: async ({ conf, me }) => ({
+      lists: await rows(conf, "SELECT id, json_extract(body, '$.name') AS name, owner_id = ?1 AS yours FROM events WHERE owner_id = ?1 OR instr(guests, ?2) > 0", me.id, JSON.stringify(me.id)),
+      rsvps: await rows(conf, "SELECT event_id, plus, answers, at FROM event_rsvps WHERE user_id = ?", me.id),
+      scans: await rows(conf, "SELECT event_id, seat, at FROM event_scans WHERE user_id = ?", me.id),
+    }),
+  },
+  {
     id: "parties", what: "The party rooms you sat in", why: "So deleting your account can tell each one to forget you", basis: "contract", keep: "24 hours",
     export: ({ conf, me }) => rows(conf, "SELECT code, at FROM party_seats WHERE user_id = ?", me.id),
   },

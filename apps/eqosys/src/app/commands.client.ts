@@ -5,6 +5,7 @@
 import { addCommands, type Command, type Hints, type InputSchema } from "@rustybuns/util/commands";
 import { arr, bool, check, maybe, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
 import { mountPalette } from "@rustybuns/util/palette";
+import { mountDoor } from "./door.client.ts";
 import { mountFolds } from "./folds.client.ts";
 import { mountSpaces } from "./spaces.client.ts";
 import { mountReel, mountTiles } from "./trailers.client.ts";
@@ -71,6 +72,10 @@ if (typeof document !== "undefined") {
   mountPalette({ foot: "Every command here is an eqosys tool an agent in the browser can call too." });
   void startCommands();
   mountFolds(document);
+  // An event's times (app/events.tsx) in the reader's own zone, and the door's camera.
+  for (const t of document.querySelectorAll<HTMLTimeElement>("time[data-local]")) t.textContent = new Date(t.dateTime).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+  const door = document.getElementById("door-camera");
+  if (door) mountDoor(door);
   mountTiles(document);
   const reel = mountReel(document);
   if (reel) Object.assign(window, { __reel: reel });
