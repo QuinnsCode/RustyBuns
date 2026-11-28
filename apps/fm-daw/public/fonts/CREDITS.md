@@ -35,3 +35,4 @@ the SIL Open Font License 1.1 (https://openfontlicense.org), but Permanent Marke
 | Special Elite | Astigmatic |
 | Courier Prime | Alan Dague-Greene |
 | Source Serif 4 | Frank Grießhammer |
+| Russo One | Jovanny Lemonad |

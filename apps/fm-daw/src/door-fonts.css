@@ -3,6 +3,8 @@
    names), buttons, and text. Learn is a workshop bench (brush lettering, handwritten labels), Studio a dot-matrix lab
    meter, Event a typewritten set list taped to the stage floor. door.html reads them on each lane's section, tab and field
    button as --ft/--wt/--st (thematic family, weight, scale), --fm (menu titles), --fb (buttons) and --fx (text). */
+/* the door's explanation text, in capitals, whatever the lane (the owner's pick, #6527) */
+@font-face { font-family: "Russo One"; font-weight: 400; font-display: swap; src: url("/fonts/russo-one-400.woff2") format("woff2"); }
 @font-face { font-family: "Caveat Brush"; font-weight: 400; font-display: swap; src: url("/fonts/caveat-brush-400.woff2") format("woff2"); }
 @font-face { font-family: "Patrick Hand SC"; font-weight: 400; font-display: swap; src: url("/fonts/patrick-hand-sc-400.woff2") format("woff2"); }
 @font-face { font-family: "Patrick Hand"; font-weight: 400; font-display: swap; src: url("/fonts/patrick-hand-400.woff2") format("woff2"); }
