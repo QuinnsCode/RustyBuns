@@ -29,7 +29,7 @@ async function heard(line: string, ms = 45_000) {
 }
 
 beforeAll(async () => {
-  server = Bun.spawn(["bun", "scripts/dev.ts", "--port", "0"], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "inherit", stdin: "ignore" });
+  server = Bun.spawn(["bun", "scripts/dev.ts", "--port", "0", "--with-parent"], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "inherit", stdin: "ignore" });
   const out = server.stdout.getReader();
   for (let text = ""; !origin;) {
     const { value, done } = await out.read();

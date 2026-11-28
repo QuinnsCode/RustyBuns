@@ -19,7 +19,7 @@ const eqosys = await fakeEqosys();
 beforeAll(async () => {
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
-  server = Bun.spawn(["bun", "scripts/dev.ts", "--port", String(port)], { cwd: join(import.meta.dir, ".."), env: { ...process.env, EQOSYS_URL: eqosys.url }, stdout: "ignore", stderr: "inherit" });
+  server = Bun.spawn(["bun", "scripts/dev.ts", "--port", String(port), "--with-parent"], { cwd: join(import.meta.dir, ".."), env: { ...process.env, EQOSYS_URL: eqosys.url }, stdout: "ignore", stderr: "inherit" });
   chrome = await launchChrome();
   for (let i = 0; i < 300; i++) { if (await fetch(base).then((r) => r.ok, () => false)) break; await Bun.sleep(100); }
 });

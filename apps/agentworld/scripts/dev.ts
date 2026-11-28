@@ -2,6 +2,8 @@
 // the deployed one (http://localhost:4799/r/<room>, the Connect box's lines). Bun bundles index.html itself. Rooms,
 // their saved worlds and Agent Galaxy live in memory for as long as the server runs, and each room's Artifacts repo
 // in a temp folder that goes with it (needs `git`). `--port 4799` (or `--port 0`).
+// `--with-parent` (the tests): exit once whoever started it has, so a bailed test run, which skips `afterAll`, doesn't
+// leave this holding its output open until CI's 10 minute kill.
 // Sign-in tokens are checked against EQOSYS_URL's keys (a local eqosys, or a test's), else the live eqosys's.
 import { onPortOrFree, portArg } from "@rustybuns/util/ports";
 import { json, parseJson } from "@rustybuns/util/http";
@@ -22,6 +24,10 @@ import { ROOM } from "../src/tools.ts";
 import { EQOSYS, whoSent } from "../src/who.ts";
 
 const port = portArg(process.argv[process.argv.indexOf("--port") + 1], "agentWorld");
+if (process.argv.includes("--with-parent")) {
+  const parent = process.ppid;
+  setInterval(() => { if (process.ppid !== parent) process.exit(0); }, 500).unref();
+}
 /** A socket is a room's page, or a player walking the galaxy (the same limits as the Durable Object's). */
 type Tag = { room: string; walker?: Walker; bucket?: TokenBucket };
 
