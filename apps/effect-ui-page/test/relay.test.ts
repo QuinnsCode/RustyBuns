@@ -2,7 +2,7 @@
 // socket: what an agent's HTTP and MCP calls get back, and what happens when no page is open.
 import { describe, expect, test } from "bun:test";
 import { fromPage, linksFor, Relay } from "../src/relay.ts";
-import { listTools, slimTools } from "../src/tools.ts";
+import { slimTools } from "../src/tools.ts";
 
 const links = linksFor("http://localhost:4799", "testroom0001");
 

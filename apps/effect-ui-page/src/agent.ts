@@ -75,11 +75,11 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   let said: string[] = [];
   let up = false;
   const frameWatch = new Set<(kind: unknown) => void>();
-  /** The frame's next load: true once it has started again and loaded, false when it takes too long. */
-  const nextLoad = () => {
+  /** The frame's next load: true once it has loaded (having started again first, unless it already has), false when it
+   *  takes too long. */
+  const nextLoad = (started = false) => {
     let end: (loaded: boolean) => void = () => {};
     const done = new Promise<boolean>((resolve) => {
-      let started = false;
       const watch = (kind: unknown) => {
         if (kind === "start") started = true;
         else if (kind === "loaded" && started) setTimeout(() => end(true), SETTLE_MS);
@@ -118,10 +118,10 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     const load = nextLoad();
     const r = await call(tool, args);
     if (!r.ok) { load.cancel(); return checked([r.error ?? "refused"]); }
-    // The same document doesn't reload: what the frame already said stands.
+    // The same document doesn't reload: what the frame said stands, once it has finished loading it.
     const same = worldDoc(page) === before;
     if (same) load.cancel();
-    const loaded = same ? up : await load.done;
+    const loaded = same ? up || await nextLoad(true).done : await load.done;
     return checked(loaded ? said : [...said, SLOW]);
   };
   const off = addCommands([
@@ -150,6 +150,8 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     online: Stream.fromQueue(online),
     seen: Stream.fromQueue(seen),
     report: (r) => Effect.sync(() => {
+      // A new document is on its way to the frame: it isn't up until it says so.
+      if (up && worldDoc(r.page) !== worldDoc(page)) up = false;
       page = r.page;
       if (r.error === null && current !== r.page) { current = r.page; for (const w of watchers) w(r.page); }
       try { localStorage.setItem(savedKey(room), JSON.stringify(r.page)); } catch { /* private window: kept for this visit only */ }
