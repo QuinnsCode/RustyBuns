@@ -77,10 +77,9 @@ export class BoardView {
 
   /**
    * `onSwap(socket, choice)`: a choice of null puts the stock part back; socket null resets the whole board. With `onNet`,
-   * a click on a schematic trace that isn't on a socket hands over its net's connectivity key (Q Builder's scope).
+   * a click on a schematic trace that isn't on a socket hands over its net's connectivity key (the scope's).
    */
   constructor(private readonly onSwap: (socket: string | null, choice: string | null) => void, private readonly onNet?: (key: string) => void) {
-    this.el.classList.toggle("nets", !!onNet);
     this.menu.hidden = true;
     this.menu.setAttribute("role", "menu");
     this.tabs = SIDES.map((s) => {
@@ -113,6 +112,7 @@ export class BoardView {
     const changed = swaps ? this.sockets.filter((s) => swaps[s.id] !== undefined).length : 0;
     this.hint.textContent = swaps ? (changed ? `your version · ${changed} part${changed > 1 ? "s" : ""} changed` : "click a diode, capacitor or resistor to change it") : "set by the amp · switch a pedal on to swap parts";
     if (o.hint) this.hint.textContent = o.hint;
+    this.el.classList.toggle("nets", !!this.onNet && !!swaps); // an amp's or loop machine's board has no net to scope
     this.reset.hidden = !swaps || this.readOnly;
     this.reset.disabled = !changed;
     if (board !== this.board) { this.board = board; this.menu.hidden = true; }
