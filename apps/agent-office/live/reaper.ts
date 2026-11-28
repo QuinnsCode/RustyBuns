@@ -94,7 +94,12 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catc
 
 /** TERM each pid (then CONT, so a stopped one gets it), KILL whichever still run after `graceMs`. Resolves with how many were signalled. */
 export async function end(pids: number[], graceMs = 2000): Promise<number> {
-  const sent = pids.filter((p) => { try { process.kill(p, "SIGTERM"); process.kill(p, "SIGCONT"); return true; } catch { return false; } });
+  const sent = pids.filter((p) => {
+    try { process.kill(p, "SIGTERM"); } catch { return false; }
+    // an orphan can be gone, and reaped by init, before this reaches it: it was still signalled (#6589)
+    try { process.kill(p, "SIGCONT"); } catch {}
+    return true;
+  });
   const t0 = Date.now();
   while (sent.some(alive) && Date.now() - t0 < graceMs) await Bun.sleep(100);
   for (const p of sent.filter(alive)) try { process.kill(p, "SIGKILL"); } catch {}
