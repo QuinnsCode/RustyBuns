@@ -2,13 +2,13 @@ import { HtmlLocator, HtmlScene } from "@effect/ui/html/testing";
 import { Locator, Story } from "@effect/ui/testing";
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { decode, inputSchema, TOOLS } from "../src/tools.ts";
+import { decode, inputSchema, type Request, TOOLS } from "../src/tools.ts";
 import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
 import { worldDoc, WORLD_CSP } from "../src/world.ts";
-import { connectLines, CopyText, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { connectLines, CopyText, CreateWorld, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
-const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false };
+const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false, who: null };
 const run = <A>(e: Effect.Effect<A, never, import("effect").Scope.Scope>) => Effect.runPromise(Effect.scoped(e));
 const write = (path: string, text: string) => ({ call: { call: 1, tool: "page_write_file", request: { _tag: "WriteFile" as const, path, text } } });
 
@@ -104,13 +104,68 @@ test("a copy button copies its agent's line for this room, and says so", () =>
       .expect(HtmlLocator.role("button", { name: "Copied the Claude Code line" })).toExist();
   })));
 
-test("Full screen puts the dock away and Show dock brings it back", () =>
+test("Hide puts the console away, Show brings it back, and ?full opens with it put away", () =>
   run(Effect.gen(function* () {
     const s = yield* HtmlScene.make(ProfilePageNoDeps, props);
-    s.click(HtmlLocator.role("button", { name: "Full screen" }))
-      .expect(HtmlLocator.role("button", { name: "Show dock" })).toExist();
-    s.click(HtmlLocator.role("button", { name: "Show dock" }))
-      .expect(HtmlLocator.role("button", { name: "Full screen" })).toExist();
+    s.click(HtmlLocator.role("button", { name: "Hide" }))
+      .expect(HtmlLocator.role("complementary", { name: "Console" })).toBeAbsent()
+      .click(HtmlLocator.role("button", { name: "Show" }))
+      .expect(HtmlLocator.role("complementary", { name: "Console" })).toExist();
+    const full = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, full: true });
+    full.expect(HtmlLocator.role("button", { name: "Show" })).toExist();
+  })));
+
+test("the step strip follows the agent: read, status, write, and a clean load is \"Your world is up\"; a frame error stops short", () =>
+  run(Effect.gen(function* () {
+    const now = (says: string) => Locator.inside(Locator.attr("aria-current", "step"), Locator.text(says));
+    const call = (n: number, request: Request) => PageMessage.ReceivedAgentCall({ call: { call: n, tool: "agent", request } });
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, props);
+    s.expect(now("Waiting for your AI")).toExist()
+      .subscription("seen", PageMessage.Saw({ what: "read" })).expect(now("Your AI is here")).toExist()
+      .subscription("agent", call(1, { _tag: "Status", text: "Asking about the ground" }))
+      .resolve(ReportPage, PageMessage.CompletedReportPage())
+      .expect(now("Asking you about your world")).toExist()
+      .expect(Locator.text("Asking about the ground")).toExist()
+      .subscription("agent", call(2, { _tag: "WriteFile", path: "world.js", text: "// dunes" }))
+      .resolve(ReportPage, PageMessage.CompletedReportPage())
+      .expect(now("Writing the code")).toExist()
+      .subscription("seen", PageMessage.Saw({ what: "start" }))
+      .subscription("seen", PageMessage.Saw({ what: "error" }))
+      .subscription("seen", PageMessage.Saw({ what: "loaded" }))
+      .expect(now("Writing the code")).toExist()
+      .subscription("seen", PageMessage.Saw({ what: "start" }))
+      .subscription("seen", PageMessage.Saw({ what: "loaded" }))
+      .expect(now("Your world is up")).toExist();
+    // A status changes no file and leaves nothing to undo.
+    const story = yield* Story.make(ProfilePageNoDeps, props);
+    story.send(call(1, { _tag: "Status", text: "Asking about the weather" }));
+    expect([story.model.status, story.model.past.length, story.model.page]).toEqual(["Asking about the weather", 0, starter]);
+    story.resolve(ReportPage, PageMessage.CompletedReportPage());
+  })));
+
+test("What is Agent World? opens in place on the landing and closes again", () =>
+  run(Effect.gen(function* () {
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, landing: true });
+    const card = HtmlLocator.role("button", { name: /What is Agent World/ });
+    s.click(card).expect(HtmlLocator.role("region", { name: "What is Agent World?" })).toExist()
+      .click(card).expect(HtmlLocator.role("region", { name: "What is Agent World?" })).toBeAbsent();
+  })));
+
+test("Create your world signs in, or says in one line that it can't, and Skip to the page still works", () =>
+  run(Effect.gen(function* () {
+    const s = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, landing: true });
+    const create = HtmlLocator.role("button", { name: /Create your world/ });
+    s.click(create).expectExact(CreateWorld);
+    expect(s.pending[0]!.command.args).toEqual({ room: props.room });
+    s.resolve(CreateWorld, PageMessage.CreatedWorld({ went: "off" }))
+      .expect(Locator.text("Sign-in isn't reachable", { exact: false })).toExist()
+      .click(HtmlLocator.role("button", { name: "Skip to the page" }))
+      .expect(HtmlLocator.role("complementary", { name: "Console" })).toExist();
+    // Signed in already: the card opens this browser's world.
+    const signedIn = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, landing: true, who: "Ada" });
+    signedIn.expect(Locator.text("Signed in as Ada", { exact: false })).toExist()
+      .click(create).resolve(CreateWorld, PageMessage.CreatedWorld({ went: "here" }))
+      .expect(HtmlLocator.role("complementary", { name: "Console" })).toExist();
   })));
 
 test("a person tries a ready-made world from the landing, no AI connected, and Undo takes it back", () =>

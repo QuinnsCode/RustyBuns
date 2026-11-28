@@ -23,7 +23,7 @@ export const WORLD_CSP = [
   "base-uri 'none'",
 ].join("; ");
 
-/** What a world's frame says to the page, under this key: it started, or something went wrong. */
+/** What a world's frame says to the page, under this key: it started, it loaded, or something went wrong. */
 export const SAID_KEY = "agent_page_world";
 
 // Runs first in the frame. Errors with the file they came from (each inlined file carries a sourceURL), loads the
@@ -31,6 +31,7 @@ export const SAID_KEY = "agent_page_world";
 const REPORTER = `(() => {
   const say = (kind, text) => { try { parent.postMessage({ ${SAID_KEY}: true, kind, text: String(text).slice(0, 400) }, "*"); } catch {} };
   say("start", "");
+  addEventListener("load", () => say("loaded", ""));
   addEventListener("error", (e) => {
     if (e.target && e.target !== window) return say("error", "couldn't load " + (e.target.src || e.target.href || e.target.tagName));
     const at = e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : "";
