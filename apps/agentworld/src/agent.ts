@@ -57,6 +57,8 @@ const socketUrl = (room: string) => `${location.protocol === "https:" ? "wss" : 
 /** How long world_build waits for the frame to load, and then for its first frames' errors. */
 const LOAD_MS = 5000, SETTLE_MS = 400;
 const SLOW = "not loaded after 5 s: send it again to check";
+/** An Undo, a Start over or a later change got to the frame first: what it said is about another world. */
+const MOVED = "the world changed before this loaded (Undo, Start over or a later change): page_read it";
 
 /** A command's answer as a reply frame: a write that the page refused (`{ ok: false, error }`) is a refusal. */
 const replyOf = (id: number, r: unknown): FromPage =>
@@ -119,8 +121,8 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
   const call = (tool: Tool, args: unknown) => {
     const request = decode(tool, args);
     const id = next++;
-    return new Promise<ReturnType<typeof changed>>((done) => {
-      waiting.set(id, (r) => done(changed(r.error, r.page)));
+    return new Promise<Report>((done) => {
+      waiting.set(id, done);
       Queue.offerUnsafe(queue, { call: id, tool: tool.name, request });
     });
   };
@@ -129,11 +131,13 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     const before = worldDoc(page);
     const load = nextLoad();
     const r = await call(tool, args);
-    if (!r.ok) { load.cancel(); return checked([r.error ?? "refused"]); }
+    if (r.error !== null) { load.cancel(); return checked([r.error]); }
+    const wrote = worldDoc(r.page);
     // The same document doesn't reload: what the frame said stands, once it has finished loading it.
-    const same = worldDoc(page) === before;
+    const same = wrote === before;
     if (same) load.cancel();
     const loaded = same ? up || await nextLoad(true).done : await load.done;
+    if (worldDoc(page) !== wrote) return checked([MOVED]);
     return checked(loaded ? said : [...said, SLOW]);
   };
   const offNote = addCommands([{ name: "page_send_note", title: "Send a note to your agent", group: "Connect", agent: false, answers: true,
@@ -147,7 +151,7 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     } },
     { ...READ_FILE, group: "Page", palette: false, execute: (args) => fileRead(page, decodeReadFile(args).path) },
     ...TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
-      annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args) })),
+      annotations: t.hints, palette: t.name in PALETTE, ask: PALETTE[t.name]?.ask, execute: (args) => call(t, args).then((r) => changed(r.error, r.page)) })),
     ...BUILD_TOOLS.map((t): Command => ({ name: t.name, title: t.title, group: "Page", description: t.description, inputSchema: inputSchema(t.schema),
       palette: false, execute: (args) => built(t, args) })),
   ] satisfies Command[]).map(carrying));
