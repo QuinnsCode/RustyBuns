@@ -834,6 +834,11 @@ function learn(id: string) {
   return say(a);
 }
 const lessonCard = mountLessonCard($("hud"), lessons);
+/** Start the lesson a link asked for (?lesson=), waiting up to ten seconds for the sesh's gear where the lesson brings a kit. */
+function learnWhenReady(id: string, tries = 40) {
+  if ((id === "pa" || id === "plugs" || id === "rack") && !atWall.joined && tries > 0) { setTimeout(() => learnWhenReady(id, tries - 1), 250); return; }
+  learn(id); lessonCard.frame();
+}
 let lessonTick = 0, lessonMark: Mark | null = null;
 /** Your lesson as the room last heard it (class.ts): said when it changes, and again when someone new comes in. */
 let myLine = lessonLine(null, []), saidLine = JSON.stringify(myLine);
@@ -1598,10 +1603,12 @@ $("make").addEventListener("submit", (e) => {
 // where the keys, the drums, the bass, the booth and the desk all stand in view, and Enter sits you at what `start`
 // names. Signed out where eqosys is on, the door asks for the sign-in first, and its reload lands here again.
 const startAsked = new URLSearchParams(location.search).get("start");
-if (!here && startAsked && (signedIn() || !eq.canSignIn())) {
+// a lesson's link from the door's Learn card (paths.ts LESSON_GROUPS, ?lesson=guitar) makes the same room and starts that lesson on Enter
+let lessonAsked = new URLSearchParams(location.search).get("lesson");
+if (!here && (startAsked || lessonAsked) && (signedIn() || !eq.canSignIn())) {
   const room = roomId("My studio");
   saveRecent(remember(loadRecent(), { room, name: "My studio", studio: LIVE_ROOM.id, mine: true, at: Date.now() }));
-  location.replace(`${inviteLink(location.origin, room, LIVE_ROOM.id, "My studio")}&sit=${encodeURIComponent(startAsked)}`);
+  location.replace(`${inviteLink(location.origin, room, LIVE_ROOM.id, "My studio")}${startAsked ? `&sit=${encodeURIComponent(startAsked)}` : ""}${lessonAsked ? `&lesson=${encodeURIComponent(lessonAsked)}` : ""}`);
 }
 /** The spot a link asks Enter to sit you at (?sit=keys), once. */
 let sitAsked = new URLSearchParams(location.search).get("sit");
@@ -1714,7 +1721,9 @@ function play() {
   sitAsked = null;
   if (spot && !jam.me.seat) { jam.me.x = spot.at[0]; jam.me.z = spot.at[1]; sit(jam, spot.id); live(body(jam)); }
   // walked in from the front door and sat down: the keys under your hands, not the card of every key (? brings it)
-  if (help.firstTime() && !spot) help.open(); else lock();
+  const lesson = lessonAsked; lessonAsked = null;
+  if (help.firstTime() && !spot && !lesson) help.open(); else lock();
+  if (lesson) learnWhenReady(lesson);
   void startAudio();
 }
 $("play").addEventListener("click", play);

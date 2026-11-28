@@ -4,7 +4,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
-import { DEMOS, DOOR, PATHS, SECTORS, type PathId } from "../src/paths.ts";
+import { DEMOS, DOOR, LESSONS, PATHS, SECTORS, type PathId } from "../src/paths.ts";
 
 // the gear room and the jam room are 3D scenes, drawn in software on CI's runners
 setDefaultTimeout(300_000); // walks each of nine cards in headless Chrome
@@ -70,6 +70,8 @@ test.skipIf(!hasChrome)("someone new: the demo picker offers four apps, an agent
     await until(tab, "!!window.qdoor");
     // every lane's way in is on its card, on the screen
     const { starts } = await tab.eval<{ starts: { lane: string; href: string; shown: boolean }[] }>("qdoor.starts()");
+    // Learn's card lists every lesson as a link that starts it (a phone's card has room for the first four; the shelf below has all)
+    expect((await tab.eval<{ lessons: { id: string; href: string; shown: boolean }[] }>("qdoor.starts()")).lessons).toEqual(LESSONS.map((l, i) => ({ id: l.id, href: l.href, shown: i < 4 })));
     // Learn's card says more is coming, on a line that is no link
     expect(await tab.eval<unknown>("qdoor.starts().soon")).toEqual([{ lane: "learn", say: "… soon", links: 0 }]);
     expect(starts).toEqual(SECTORS.map((s) => expect.objectContaining({ lane: s.id, href: s.start.href, shown: true })));
@@ -81,7 +83,8 @@ test.skipIf(!hasChrome)("someone new: the demo picker offers four apps, an agent
     await tab.eval("document.querySelector('#demo .no').click()");
     expect(await tab.eval<boolean>("qdoor.starts().demo.open")).toBe(false);
     // an agent's first read names the lanes and where each starts; an id nothing has is answered with the ids
-    const offers = await tab.eval<{ lanes: { id: string; start: { href: string }; apps: { id: string }[] }[] }>("window.__commands.run('qdoor_offers')");
+    const offers = await tab.eval<{ lessons: { id: string }[]; lanes: { id: string; start: { href: string }; apps: { id: string }[] }[] }>("window.__commands.run('qdoor_offers')");
+    expect(offers.lessons.map((l) => l.id)).toEqual(LESSONS.map((l) => `lesson-${l.id}`));
     expect(offers.lanes.map((l) => [l.id, l.start.href, l.apps.length])).toEqual(SECTORS.map((s) => [s.id, s.start.href, PATHS.filter((p) => p.sector === s.id).length]));
     expect(await tab.eval<{ ok: boolean; ids: string[] }>("window.__commands.run('qdoor_open', { id: 'tuba' })")).toMatchObject({ ok: false, ids: expect.arrayContaining(["studio", "daw", "mix"]) });
     // Studio's start: a room of your own with no form, and Enter sits you at the keys
@@ -89,5 +92,17 @@ test.skipIf(!hasChrome)("someone new: the demo picker offers four apps, an agent
     await until(tab, `location.pathname === "/jam.html" && new URLSearchParams(location.search).get("sit") === "keys" && !!window.qjam && !!document.getElementById("play")`);
     await tab.eval("document.getElementById('play').click()");
     await until(tab, `qjam.state().phase === "play" && qjam.state().you.seat === "keys"`);
+  } finally { await tab.close(); }
+});
+
+test.skipIf(!hasChrome)("a lesson's link on Learn's card starts that lesson: a room with no form, and Enter puts its card up", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
+  try {
+    await load(chrome.cdp, tab, `${vite.url}${DOOR.slice(1)}`, 0);
+    await until(tab, "!!window.qdoor");
+    await tab.eval(`document.querySelector('.lane a[data-lesson="voice"]').click()`);
+    await until(tab, `location.pathname === "/jam.html" && new URLSearchParams(location.search).get("lesson") === "voice" && !!window.qjam && !!document.getElementById("play")`);
+    await tab.eval("document.getElementById('play').click()");
+    await until(tab, `qjam.lesson().lesson?.id === "voice"`);
   } finally { await tab.close(); }
 });
