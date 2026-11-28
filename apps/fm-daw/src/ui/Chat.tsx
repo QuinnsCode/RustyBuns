@@ -34,14 +34,14 @@ export function useChat() {
 }
 
 /** The dock, wired to the room: your name goes to the room whenever it differs from what the room has. */
-export function ChatDock({ chat, net, online }: { chat: ReturnType<typeof useChat>; net: Net | null; online: boolean }) {
+export function ChatDock({ chat, net, online, quiet }: { chat: ReturnType<typeof useChat>; net: Net | null; online: boolean; quiet: boolean }) {
   const { view, me } = chat;
   const roomHas = view.you ? view.names[view.you] : undefined;
   useEffect(() => {
     if (online && view.you && me.name && roomHas !== me.name) net?.chat({ t: "rename", name: me.name });
   }, [online, view.you, me.name, roomHas, net]);
   return (
-    <Chat view={view} layout={me.chat} name={me.name} online={online && !!view.you}
+    <Chat view={view} layout={me.chat} name={me.name} online={online && !!view.you} quiet={quiet}
       onSay={(text) => net?.chat({ t: "say", text })}
       onRename={(name) => chat.update({ ...me, name })}
       onUnsay={(id) => net?.chat({ t: "unsay", id })}
@@ -74,7 +74,7 @@ const hue = (who: string) => parseInt(who.slice(0, 6), 16) % 360;
 const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 export function Chat(props: {
-  view: ChatView; layout: ChatLayout; name: string; online: boolean;
+  view: ChatView; layout: ChatLayout; name: string; online: boolean; /** Listen only: you read, you don't send. */ quiet?: boolean;
   onSay(text: string): void; onRename(name: string): void; onUnsay(id: number): void; onLayout(l: ChatLayout): void;
 }) {
   const { view, layout } = props;
@@ -99,7 +99,7 @@ export function Chat(props: {
 
   function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!draft.trim() || !props.online) return;
+    if (!draft.trim() || !props.online || props.quiet) return;
     props.onSay(draft);
     setDraft("");
     atBottom.current = true;
@@ -161,8 +161,8 @@ export function Chat(props: {
       </ol>
       <form className="chat-say" onSubmit={send}>
         <input value={draft} maxLength={LINE_MAX} onChange={(e) => setDraft(e.currentTarget.value)} aria-label="Message"
-          placeholder={props.online ? "Say something" : "Offline: chat comes back with the room"} disabled={!props.online} />
-        <button className="ghost icon-btn" disabled={!props.online || !draft.trim()} title="Send" aria-label="Send"><Icon name="send" /></button>
+          placeholder={!props.online ? "Offline: chat comes back with the room" : props.quiet ? "Listen only: the leader grants Speak" : "Say something"} disabled={!props.online || props.quiet} />
+        <button className="ghost icon-btn" disabled={!props.online || props.quiet || !draft.trim()} title="Send" aria-label="Send"><Icon name="send" /></button>
       </form>
     </aside>
   );

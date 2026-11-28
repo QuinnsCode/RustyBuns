@@ -65,7 +65,9 @@ import { Overlay, bendEvent, keyMap } from "./overlay.ts";
 import { TouchControls, touchScreen } from "./touch.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
 import { heard as heardAt, loadLevels, peerLevel, saveLevels, setPeer } from "./levels.ts";
-import { isMuted, leaders, may as mayDo, type GrantServer } from "../grants.ts";
+import { floorCans, isMuted, leaders, type Can, type GrantServer } from "../grants.ts";
+import { mayHere } from "../guest-list.ts";
+import { BEAM_WORDS, HOUSE_LIGHTS, LEVEL_GAIN, LIGHT_LEVELS, type StageLights } from "./stage-lights.ts";
 import { check } from "@rustybuns/util/guard";
 import { mayCue, runs as runsDecks, Spin, type SpinServer } from "../spin.ts";
 import { spinCard } from "./spin-card.ts";
@@ -647,11 +649,12 @@ async function guitar() {
     opusOut?.close(); opusOut = null;
     return void say({ ok: false, why: `Your ${myInput} is out` });
   }
-  if (!may(player).play) return void say({ ok: false, why: "Listen only: the leader hasn't let you play. H raises your hand" });
+  // standing in the vocal booth it's the mic, anywhere else your guitar: the same line either way. Someone who may
+  // speak but not play gets their mic wherever they stand
+  const allow = may(player), seat = spotOf(jam, jam.me.seat), input = allow.play ? inputAt(seat?.kind) : "mic";
+  if (input === "mic" && !allow.speak) return void say({ ok: false, why: allow.play ? "The leader hasn't let you speak to the room" : "Listen only: the leader hasn't let you play or speak. H raises your hand" });
   await startAudio();
   if (!guitars) return;
-  // standing in the vocal booth it's the mic, anywhere else your guitar: the same line either way
-  const seat = spotOf(jam, jam.me.seat), input = inputAt(seat?.kind);
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: capture(input) });
@@ -875,7 +878,74 @@ const mutes = noMutes();
 let peerIds: Record<string, string> = {};
 /** The World's last grants message: the grants, the raised hands, who's in. */
 let lastGrants: GrantServer | null = null;
-const marksOf = (who: string | undefined) => marks(lastGrants, status.floor?.state, who);
+const marksOf = (who: string | undefined) => marks(lastGrants, status.floor?.state, who, rights.guests);
+/** A grant taken back stops what it let out: your mic or guitar comes out, your set comes off the PA. */
+function enforce() {
+  const allow = may(player);
+  if (myGuitar !== null && !(myInput === "mic" ? allow.speak : allow.play)) void guitar();
+  if (myPa && !allow.play) void playToRoom(null);
+  lightDesk();
+}
+/** The room's lamps and the truss as the light desk has them (stage-lights.ts), and the desk's own buttons. */
+const lampBase = new WeakMap<THREE.Light, number>();
+let lit0: number | null = null, lightsWere = "";
+function lightRoom() {
+  const l = project.lights ?? HOUSE_LIGHTS, key = JSON.stringify(l);
+  // a room nobody has touched the desk of is left as it was built
+  if (key === lightsWere || (!lightsWere && !project.lights)) return lightDesk();
+  lightsWere = key;
+  const gain = LEVEL_GAIN[l.level];
+  scene.traverse((o) => {
+    if (!(o instanceof THREE.Light)) return;
+    const base = lampBase.get(o) ?? o.intensity;
+    lampBase.set(o, base);
+    o.intensity = base * gain;
+  });
+  lit0 ??= scene.environmentIntensity;
+  scene.environmentIntensity = lit0 * gain;
+  picture.stage?.(l);
+  lightDesk();
+}
+function setLights(change: Partial<StageLights>) {
+  if (!may(player).lights) return say({ ok: false, why: "The lights aren't yours to run: the leader grants Lights" });
+  player.edit({ t: "lights", lights: { ...(project.lights ?? HOUSE_LIGHTS), ...change } });
+  return { ok: true as const };
+}
+function lightDesk() {
+  const l = project.lights ?? HOUSE_LIGHTS, yours = may(player).lights, row = (id: string, label: string, picks: [string, boolean, Partial<StageLights>][]) => {
+    $(id).replaceChildren(...(yours ? [Object.assign(document.createElement("span"), { textContent: label }), ...picks.map(([name, on, change]) => toggle(name, on, () => void setLights(change)))] : []));
+  };
+  row("light-level", "Room", LIGHT_LEVELS.map((v) => [v[0]!.toUpperCase() + v.slice(1), l.level === v, { level: v }]));
+  const truss = !!def.outdoor?.truss;
+  $("light-beam").hidden = $("light-lasers").hidden = !truss;
+  if (truss) {
+    row("light-beam", "Heads", ["Mixed", ...BEAM_WORDS].map((name, i) => [name, l.beam === i - 1, { beam: i - 1 }]));
+    row("light-lasers", "Lasers", [["On", l.lasers, { lasers: true }], ["Off", !l.lasers, { lasers: false }]]);
+  }
+  $("light-none").hidden = yours;
+}
+function toggle(name: string, on: boolean, act: () => void) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "ghost"; b.textContent = name; b.setAttribute("aria-pressed", String(on));
+  b.addEventListener("click", act);
+  return b;
+}
+/** The words on the leader's switches for each person: what they may do, none of them on being listen only. */
+const SWITCHES: [Can, string][] = [["play", "Instruments"], ["edit", "Groove"], ["mix", "Console"], ["lights", "Lights"], ["speak", "Speak"]];
+function switches(who: string, name: string) {
+  const has = (c: Can) => mayHere(rights.guests, rights.grants!, status.floor?.state ?? "free", who, false, c);
+  const row = document.createElement("div");
+  row.className = "cans"; row.setAttribute("role", "group"); row.setAttribute("aria-label", `What ${name} may do`);
+  // someone on the guest list has their role's grants: the list changes them, not these switches
+  if (rights.guests?.guests[who]) {
+    row.textContent = `On the guest list: ${SWITCHES.filter(([c]) => has(c)).map(([, w]) => w).join(", ") || "Listen only"}`;
+    return row;
+  }
+  const now = () => SWITCHES.map(([c]) => c).filter(has);
+  for (const [c, word] of SWITCHES) row.append(toggle(word, has(c), () => net?.grant({ t: "grant", who, can: has(c) ? now().filter((x) => x !== c) : [...now(), c] })));
+  row.append(toggle("Listen only", !now().length, () => net?.grant({ t: "grant", who, can: [] })));
+  return row;
+}
 /** H, or the button on the room's page: raise your hand to play. */
 function raise() {
   if (may(player).play) return void say({ ok: false, why: "You may play already" });
@@ -919,13 +989,14 @@ function people() {
         a.addEventListener("click", () => net?.grant({ t: "answer", who, yes }));
         li.append(a);
       }
+      if (who && rights.grants && !leaders(rights.grants).includes(who)) li.append(switches(who, o.name || "Someone"));
     }
     list.append(li);
   }
   $("people-none").hidden = jam.others.size > 0;
   hereLine();
   const me = marksOf(rights.me ?? undefined);
-  $("me-may").textContent = !lastGrants ? "" : me.lead ? "You lead" : me.listen ? (me.hand === "play" ? "Hand up" : "Listening") : "You play";
+  $("me-may").textContent = !lastGrants ? "" : me.lead ? "You lead" : me.listen ? (me.hand === "play" ? "Hand up" : me.as) : "You play";
   $("raise").hidden = !lastGrants || !me.listen || me.hand === "play";
 }
 $("mute-room").addEventListener("click", () => muteAll());
@@ -969,7 +1040,7 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); lightRoom(); }
 /** The sesh's built room: kept for this sesh, and walked into again when it isn't the one standing here. */
 function keepBuilt(p: Project) {
   if (!here) return;
@@ -1028,7 +1099,7 @@ function rigOver(p: Project) {
 const TOPS_MOVE: Record<Tops, string> = { subs: "Stacking the tops on the subs", pole: "Putting the tops up on poles", stands: "Setting the tops on their stands" };
 
 // ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----
-const rights: Rights = { floor: null, grants: null, me: null, asked: null };
+const rights: Rights = { floor: null, grants: null, me: null, asked: null, guests: null };
 const back = lookBack((ago) => net?.rewind(ago));
 const player: Player = {
   jam, base: def, name,
@@ -1128,7 +1199,7 @@ function onSpin(m: SpinServer) {
 const roomNow = () => band.clock.leaderTime(wall());
 /** Your peer number on the live line, from the World's grants. */
 const myPeer = () => Number(Object.keys(peerIds).find((p) => peerIds[p] === rights.me) ?? 0);
-const mayPlayDecks = (who: string | undefined) => !!who && !!rights.grants && mayDo(rights.grants, status.floor?.state ?? "free", who, false, "play");
+const mayPlayDecks = (who: string | undefined) => !!who && !!rights.grants && mayHere(rights.guests, rights.grants, status.floor?.state ?? "free", who, false, "play");
 /** Everyone in the room for the DJ list: you first, then each person, and whether they may play the decks. */
 function djList(): Dj[] {
   const list: Dj[] = rights.me ? [{ id: rights.me, name: name || "You", on: may(player).play, you: true }] : [];
@@ -1137,7 +1208,7 @@ function djList(): Dj[] {
 }
 /** The leader lets someone play the decks (the play grant), or takes them off; the rest of their grant stays. */
 function setDj(who: string, on: boolean) {
-  const own = rights.grants?.who[who] ?? (status.floor?.state === "free" ? (["play", "edit", "mix"] as const) : []);
+  const own = rights.grants?.who[who] ?? floorCans(status.floor?.state ?? "free");
   net?.grant({ t: "grant", who, can: on ? [...new Set([...own, "play" as const])] : own.filter((c) => c !== "play") });
 }
 /** A deck as its screen shows it: from the decks when they're up, else from what the booth heard. */
@@ -1193,7 +1264,8 @@ settings = mountSettings({
 $("settings-open").addEventListener("click", () => { $("menu").hidden = true; settings?.open(); });
 
 if (here) net = connect({
-  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); roomStudios(); card.draw(); },
+  onGuests(list) { rights.guests = list; enforce(); people(); },
+  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; enforce(); people(); roomStudios(); card.draw(); },
   onSpin,
   onRewound: back.answer,
   onStudio(m) {
@@ -1219,6 +1291,7 @@ if (here) net = connect({
     if (s.state === "online" && status.state !== "online") net?.studio({ t: "drop" });
     const gateWas = gated();
     status = s;
+    enforce();
     if (gated() !== gateWas) door();
     settings?.render();
   },
@@ -1809,6 +1882,7 @@ const harness = {
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, viewHeld, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
+    lights: project.lights ?? HOUSE_LIGHTS,
     gear: atWall.state(jam), lanterns: lit.state(jam), venue: venue.state, levels: harness.levels(),
     /** The PA as planned (the same boxes as the builder's qrooms.pa().sources), the walk-through, and each stack as heard here. */
     pa: { stacks: rigStacks(def), sources: paBoxes(def), walk: walking, testSet: !!walkSet, heard: paRoom?.state() ?? null } }),
@@ -1844,6 +1918,8 @@ const harness = {
   /** The class card (L, class.ts): open or close it (left out: as it is); then whether it's open and the class as this page heard it. */
   class: (open?: boolean) => { if (open !== undefined) classCard.toggle(open); sayLesson(); classCard.frame(); return { open: classCard.open, class: classOf(jam, myLine) }; },
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
+  /** The light desk, as the Lights buttons work it (stage-lights.ts); needs the lights grant. */
+  lights: (change: Partial<StageLights>) => setLights(change),
   walkTo: (x: number, z: number) => { const s = walkTo(jam, x, z); live(body(jam)); return s; },
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },
   sit: (id?: string) => { const a = id ? sit(jam, id) : (sitOrStand(), { ok: !!jam.me.seat }); live(body(jam)); return a; },

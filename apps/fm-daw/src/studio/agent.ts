@@ -8,7 +8,10 @@ import type { Command } from "@rustybuns/util/commands";
 import type { Avatar } from "@rustybuns/util/avatar";
 import { apply, decodeServer, loopBeats, type ClientMsg, type Live, type Op, type Project } from "../project.ts";
 import { decodeChatServer, type ChatClient } from "../chat.ts";
-import { decodeGrantServer, may as granted, noGrants, type Can, type GrantClient, type Grants } from "../grants.ts";
+import { CANS, decodeGrantServer, noGrants, type Can, type GrantClient, type Grants } from "../grants.ts";
+import { decodeGuestServer, mayHere } from "../guest-list.ts";
+import type { GuestList } from "@rustybuns/util/guests";
+import { HOUSE_LIGHTS, StageLights } from "./stage-lights.ts";
 import { RUNG, RUNGS, rungName, type Rung } from "../rewind.ts";
 import type { FloorState } from "../ui/net.ts";
 import { P } from "../engine/params.ts";
@@ -19,7 +22,7 @@ import { decodeClockServer, type ClockClient, type ClockState } from "../clock.t
 import { Band } from "./band.ts";
 
 /** Who may do what, as the sesh last said: the floor, the leader's grants and who this player is (its person id). */
-export interface Rights { floor: FloorState | null; grants: Grants | null; me: string | null; asked: Can | null }
+export interface Rights { floor: FloorState | null; grants: Grants | null; me: string | null; asked: Can | null; guests?: GuestList | null }
 
 /** What a player lends the tools: its jam, the groove, its rights, and its wires into the sesh. */
 export interface Player {
@@ -64,15 +67,15 @@ export const syncRoom = (pl: Pick<Player, "jam" | "base" | "project">) => { pl.j
 /** What this player may do, by the same rule the World checks. A sesh with no leader (the desktop): everything. */
 export function may(pl: Pick<Player, "rights">): Record<Can, boolean> {
   const r = pl.rights();
-  const one = (can: Can) => !r.floor || granted(r.grants ?? noGrants(), r.floor.state, r.me ?? undefined, r.floor.host, can);
-  return { play: one("play"), edit: one("edit"), mix: one("mix"), lead: one("lead") };
+  const one = (can: Can) => !r.floor || mayHere(r.guests, r.grants ?? noGrants(), r.floor.state, r.me ?? undefined, r.floor.host, can);
+  return Object.fromEntries(CANS.map((c) => [c, one(c)])) as Record<Can, boolean>;
 }
 
 const MAX_BEATS = 32;
 const Note = obj({ n: int(0, 127), at: num(0, MAX_BEATS, 0), len: num(0.05, 8, 0.5), vel: num(0.05, 1, 0.8) });
 const PlayArgs = obj({ notes: arr(Note, 64, { min: 1 }) });
 const SitArgs = obj({ spot: str(24) });
-const AskArgs = obj({ can: opt(oneOf(["play", "edit", "mix"])) });
+const AskArgs = obj({ can: opt(oneOf(["play", "edit", "mix", "lights", "speak"])) });
 const BackArgs = obj({ ago: RUNG });
 const read = <T>(g: Guard<T>, v: unknown, what: string): T | { error: string } => check(g, v) ?? { error: `Those aren't ${what}. The tool's inputSchema says what it takes.` };
 
@@ -100,7 +103,7 @@ export function studioTools(pl: Player): Command[] {
   const nope = (can: Can) => no(`The leader hasn't let you ${can === "edit" ? "change the groove" : can}: studio_ask_to_play raises your hand${can === "play" ? "" : ` (can: "${can}")`}`);
   return [
     { name: "studio_state", title: "Look around the jam room", annotations: { readOnlyHint: true },
-      description: "Who is in the room and where, which seat each sits at, every spot and the track it plays, what you may do (play, edit, mix, lead: the leader's grants, or the floor's), the tempo, the groove's tracks, the instruments made here, and the shared clock (whose it is, your offset to it and round trip in ms, and how you hear the band: a loop late, at the desk or as it comes).",
+      description: "Who is in the room and where, which seat each sits at, every spot and the track it plays, what you may do (play, edit, mix, lights, speak, lead: the leader's grants, your guest list role, or the floor's), the tempo, the groove's tracks, the instruments made here, and the shared clock (whose it is, your offset to it and round trip in ms, and how you hear the band: a loop late, at the desk or as it comes).",
       execute: () => state(pl) },
     { name: "studio_sit", title: "Sit at a spot", ask: "spot id (studio_state lists them)",
       description: "Walk up to a spot (keys, drums, bass, a made instrument, the desk, the couch) and sit: what you play then goes to that spot's track.",
@@ -148,8 +151,8 @@ export function studioTools(pl: Player): Command[] {
         return { ok: true, played: hits.length, at: s.label, track: p.tracks[hits[0].track].name, seconds: Math.round(now) / 1000 };
       } },
     { name: "studio_ask_to_play", title: "Ask to play",
-      description: "Raise your hand: ask the sesh's leader to let you play (or, with can, to edit the groove or mix the desk). The leader answers Yes or No; studio_state's you.may says when it's yes.",
-      inputSchema: { type: "object", properties: { can: { type: "string", enum: ["play", "edit", "mix"] } } },
+      description: "Raise your hand: ask the sesh's leader to let you play (or, with can, to edit the groove, mix the desk, run the lights or speak). The leader answers Yes or No; studio_state's you.may says when it's yes.",
+      inputSchema: { type: "object", properties: { can: { type: "string", enum: ["play", "edit", "mix", "lights", "speak"] } } },
       execute: (a) => {
         const args = read(AskArgs, a, "an ask");
         if ("error" in args) return args;
@@ -175,6 +178,19 @@ export function studioTools(pl: Player): Command[] {
         pl.edit(made.op);
         syncRoom(pl);
         return { ok: true, spot: made.inst.id, track: made.inst.track, name: made.inst.name, voice: made.inst.voice, at: made.inst.at };
+      } },
+    { name: "studio_lights", title: "Set the lights", ask: "full, dim or dark",
+      description: "Work the room's light desk, for everyone: level full, dim or dark; beam, the truss's moving heads' colour (-1 each its own, 0 magenta, 1 cyan, 2 amber, 3 violet); lasers on or off. Only what you give changes. It needs the lights grant.",
+      inputSchema: { type: "object", properties: { level: { type: "string", enum: ["full", "dim", "dark"] }, beam: { type: "integer" }, lasers: { type: "boolean" } } },
+      execute: (a) => {
+        const p = pl.project();
+        if (!p) return no("The sesh hasn't sent its groove yet");
+        if (!may(pl).lights) return nope("lights");
+        // the palette's one answer is the level
+        const lights = check(StageLights, { ...(p.lights ?? HOUSE_LIGHTS), ...(typeof a === "object" && a !== null ? a : { level: a }) });
+        if (!lights) return no("Those aren't lights: level full, dim or dark, beam -1 to 3, lasers true or false");
+        pl.edit({ t: "lights", lights });
+        return { ok: true, lights };
       } },
     { name: "studio_wind_back", title: "Wind back (preview)", ask: `minutes back: ${RUNGS.join(", ")}`, annotations: { readOnlyHint: true },
       description: `Look at the groove as it was some minutes back (${RUNGS.join(", ")}), for you alone: a preview, nothing changes for anyone. Only the leader brings everyone back there, from FM DAW's Wind back.`,

@@ -1,22 +1,34 @@
-// Qollab Studio's guest list (@rustybuns/util/guests): its roles, the sesh's four grants as permissions beside the list's own,
+// Qollab Studio's guest list (@rustybuns/util/guests): its roles, the sesh's grants as permissions beside the list's own,
 // and the studio's eqosys skin, so its panel looks like the jam room. `cansOf` reads someone's grants off the list.
 // The sesh World keeps one list beside the grants (packages/desktop/world.ts): `GuestClient` asks it to act, `GuestServer`
 // is the list it fans out and its answer to the asker. `mayHere` is who may do what with the list counted in.
 import type { Skin } from "@rustybuns/util/skin";
 import { bool, check, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
-import { can, GuestAct, GuestList, rankOf, type Role } from "@rustybuns/util/guests";
+import { can, GuestAct, GuestList, LIMITS, rankOf, type Role } from "@rustybuns/util/guests";
 import { CANS, may, type Can, type Grants } from "./grants.ts";
 import type { Floor } from "./project.ts";
 
 /** The studio's permissions and their words in the Roles tab: the grants of src/grants.ts. */
-export const STUDIO_PERMS: Record<Can, string> = { play: "Play", edit: "Edit groove", mix: "Mix", lead: "Lead" };
+export const STUDIO_PERMS: Record<Can, string> = { play: "Play", edit: "Edit groove", mix: "Mix", lights: "Lights", speak: "Speak", lead: "Lead" };
 
 export const STUDIO_ROLES: Role[] = [
-  { id: "lead", name: "Co-lead", rank: 60, perms: ["play", "edit", "mix", "lead", "invite", "revoke", "block", "roles"] },
-  { id: "band", name: "Band", rank: 40, perms: ["play", "edit", "mix", "invite"] },
-  { id: "player", name: "Player", rank: 20, perms: ["play"] },
+  { id: "lead", name: "Co-lead", rank: 60, perms: ["play", "edit", "mix", "lights", "speak", "lead", "invite", "revoke", "block", "roles"] },
+  { id: "band", name: "Band", rank: 40, perms: ["play", "edit", "mix", "lights", "speak", "invite"] },
+  { id: "player", name: "Player", rank: 20, perms: ["play", "speak"] },
+  { id: "console", name: "Console", rank: 20, perms: ["mix", "speak"] },
+  { id: "lighting", name: "Lights only", rank: 20, perms: ["lights"] },
+  { id: "guest", name: "Guest", rank: 10, perms: ["speak"] },
   { id: "listener", name: "Listener", rank: 0, perms: [] },
 ];
+
+/** A list kept from before speak and lights were grants: its roles may speak (but its listeners), who mixed runs the
+ *  lights, and the roles it hasn't got are added. A list that already names either is as it is. */
+export function withNewPerms(l: GuestList): GuestList {
+  if (l.roles.some((r) => r.perms.includes("speak") || r.perms.includes("lights"))) return l;
+  const had = l.roles.map((r) => r.id === "listener" ? r : { ...r, perms: [...r.perms, "speak", ...(r.perms.includes("mix") ? ["lights"] : [])] });
+  const added = STUDIO_ROLES.filter((r) => !had.some((h) => h.id === r.id));
+  return { ...l, roles: [...had, ...added].slice(0, LIMITS.roles).sort((a, b) => b.rank - a.rank) };
+}
 
 /** The jam room's look for every eqosys surface, the guest list's included. */
 export const SKIN: Skin = { theme: {
@@ -24,7 +36,7 @@ export const SKIN: Skin = { theme: {
   "--ui-accent": "#ff6b4a", "--ui-on-accent": "#15171b", "--ui-radius": "14px", "--ui-radius-sm": "8px",
 } };
 
-/** What someone on the list may do in the sesh: the owner leads, a guest gets their role's grants, anyone else listens. */
+/** What someone on the list may do in the sesh: the owner leads, a guest gets their role's grants, anyone else none. */
 export const cansOf = (l: GuestList, who: string): Can[] => CANS.filter((c) => can(l, who, c));
 
 /** Whether this person may do this: someone on the list gets their role's grants, anyone else the sesh's grants and floor (src/grants.ts). */

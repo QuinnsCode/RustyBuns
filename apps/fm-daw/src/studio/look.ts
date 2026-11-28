@@ -29,6 +29,7 @@ import { floorAt, propBlocks, thingBox, wallPieces, type Side, type Spot, type S
 import { inFootprint } from "./gear-wall.ts";
 import { MATERIALS, type Material } from "./sound.ts";
 import { ALL_LIGHTS, pickGraphics, qualityOf, type Graphics, type Quality, type Running } from "./graphics.ts";
+import type { StageLights } from "./stage-lights.ts";
 
 export type { Quality };
 /** Kept per browser: the knobs as JSON (an older visit kept "low" or "high" here, which still reads). */
@@ -1651,7 +1652,7 @@ export function practicals(def: StudioDef): [number, number][] {
 export interface LookState { quality: Quality; graphics?: Graphics; running?: Running & { level: number }; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" | "none" }
 
 /** The renderer set up for one room: call `render` every frame and `resize` with the canvas. */
-export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality }
+export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality; /** The light desk's colour and lasers, where the room has a truss. */ stage?(l: StageLights): void }
 
 export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, g: Graphics): Look {
   const quality = qualityOf(g), high = quality === "high", full = g.shadows === "full";
@@ -1869,6 +1870,7 @@ export function runningLook(look: Look, renderer: THREE.WebGLRenderer, g: Graphi
       look.render(cam);
     },
     resize(w, h) { size = [w, h]; look.resize(w, h); },
+    stage: (l) => look.stage?.(l),
     run(r, level) {
       if (r.scale !== now.scale) { renderer.setPixelRatio(Math.min(r.scale, devicePixelRatio)); look.resize(...size); }
       // frozen, the cans' shadow maps stop being drawn every frame: what stands still keeps its shadow, and no shader recompiles

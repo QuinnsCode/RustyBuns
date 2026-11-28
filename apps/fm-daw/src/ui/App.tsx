@@ -214,7 +214,7 @@ export function App() {
   const deskPlayers = useMemo(() => [...new Map(heardPlayers.map((h) => [h.who, { who: h.who, name: h.name }])).values()], [heardPlayers]);
   const [deskFeed] = useState(() => new DeskFeed((m) => audioRef.current?.send(m)));
   const may1 = (c: Can, track?: number) => !floor || (grants ? mayHere(guests, grants.grants, floor.state, chat.view.you ?? undefined, floor.host, c, track) : floor.state === "free" || floor.host);
-  const allowed = { play: may1("play"), edit: may1("edit"), mix: may1("mix"), lead: may1("lead") };
+  const allowed = { play: may1("play"), edit: may1("edit"), mix: may1("mix"), lights: may1("lights"), speak: may1("speak"), lead: may1("lead") };
   // a grant of some tracks plays the selected track when it is one of them
   const locked = !may1("play", selected);
   const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, view, transportOn, countIn, repeat, bend, locked, floor, allowed });
@@ -1276,7 +1276,7 @@ export function App() {
       </footer>
 
       <Cursors />
-      {roomName() && !solo && <ChatDock chat={chat} net={net.current} online={netStatus.state === "online"} />}
+      {roomName() && !solo && <ChatDock chat={chat} net={net.current} online={netStatus.state === "online"} quiet={!allowed.speak} />}
       {netStatus.state === "full" && !solo && (
         <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={goSolo}
           onRetry={() => { setSolo(false); setAttempt((a) => a + 1); }} />

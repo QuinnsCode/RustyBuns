@@ -1,6 +1,7 @@
 // The world's limits on a fake platform: sockets per room, messages per socket,
 // and an online room left empty long enough is deleted (the desktop's never is).
 import { expect, test, setSystemTime, afterEach } from "bun:test";
+import type { Can } from "../src/grants.ts";
 import { heard, setup, useWorld, type Sock } from "./world-kit.ts";
 import { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby from "../src/lobby.ts";
@@ -812,7 +813,7 @@ test("hands in the jam room: on a held floor Bo is listen only, raises his hand,
   // what each page shows, read from its socket as the page reads it
   const grants = (p: typeof amy) => decodeGrantServer(p.ws.sent.findLast((m) => m.t === "grants"));
   const shows = (p: typeof amy, of: typeof amy) => words(marks(grants(p), "held", of.id));
-  expect(shows(bo, bo)).toEqual(["Listen only"]);
+  expect(shows(bo, bo)).toEqual(["Talk only"]);
   expect(shows(bo, amy)).toEqual(["Leads"]);
   // his note goes nowhere; he raises his hand, and Amy sees it over him and in her list
   amy.ws.sent = [];
@@ -821,7 +822,7 @@ test("hands in the jam room: on a held floor Bo is listen only, raises his hand,
   said(bo.ws, { t: "ask", can: "play" });
   await settle();
   expect(handsUp(grants(amy))).toEqual([bo.id]);
-  expect(shows(amy, bo)).toEqual(["Hand up to play", "Listen only"]);
+  expect(shows(amy, bo)).toEqual(["Hand up to play", "Talk only"]);
   // Yes: the hand comes down, he may play, and Amy hears him
   said(amy.ws, { t: "answer", who: bo.id, yes: true });
   await settle();
@@ -940,7 +941,7 @@ test("jam room agent: no grant, it raises its hand; the leader says yes, and it 
   expect(await call("studio_ask_to_play", { can: "edit" })).toMatchObject({ asked: "edit" });
   await tick();
   await answer("edit");
-  expect((await call("studio_state")).you.may).toEqual({ play: false, edit: true, mix: false, lead: false });
+  expect((await call("studio_state")).you.may).toEqual({ play: false, edit: true, mix: false, lights: false, speak: true, lead: false });
 
   // the bot makes a synth, and Amy's room grows a seat at its track with the patch on it
   read();
@@ -1150,4 +1151,39 @@ test("jam room lane: sit at the keys, open its lane, turn a patch knob, and the 
   stand(pl.jam);
   lane.refresh();
   expect(lane.isOpen()).toBe(false);
+});
+
+test("who can do what: speak is a mic and the chat, lights is the light desk alone, nothing is listen only", async () => {
+  const { world, join } = await setup({}, "amber-quick-heron");
+  const said = (ws: Sock, m: object) => world.webSocketMessage(ws, JSON.stringify(m));
+  const people = [];
+  for (const k of ["a", "b"]) {
+    const ws = (await join({}, k.repeat(32))).ws;
+    said(ws, { t: "hello", key: k.repeat(48), name: "" });
+    people.push({ ws, id: (await heard(ws, "chat")).you as string });
+  }
+  const [amy, bo] = people;
+  said(amy.ws, { t: "init", project: demoProject() });
+  /** What of Bo's reaches Amy: a note, a mic, a mic's slice of sound, a line in the chat, the lights, the desk. */
+  const reaches = async (can: Can[]) => {
+    said(amy.ws, { t: "grant", who: bo.id, can });
+    await settle();
+    const got = async (m: object) => { amy.ws.sent = []; said(bo.ws, m); await settle(); return amy.ws.sent.length > 0; };
+    const dim = { level: "dim", beam: -1, lasers: true }, full = { ...dim, level: "full" };
+    said(amy.ws, { t: "op", op: { t: "lights", lights: full } });
+    return {
+      note: await got({ t: "live", e: { t: "on", track: 0, midi: 60, vel: 0.8 } }),
+      mic: await got({ t: "live", e: { t: "guitar", track: -1, mic: true } }),
+      slice: await got({ t: "live", e: { t: "sound", track: -1, b: 4, data: "AAAA" } }),
+      chat: await got({ t: "say", text: `hello ${can.join(" ")}` }),
+      lights: await got({ t: "op", op: { t: "lights", lights: dim } }),
+      desk: await got({ t: "op", op: { t: "track", track: 0, mute: true } }),
+    };
+  };
+  const none = { note: false, mic: false, slice: false, chat: false, lights: false, desk: false };
+  expect(await reaches([])).toEqual(none);
+  expect(await reaches(["speak"])).toEqual({ ...none, mic: true, slice: true, chat: true });
+  expect(await reaches(["lights"])).toEqual({ ...none, lights: true });
+  expect(await reaches(["mix"])).toEqual({ ...none, desk: true });
+  expect(await reaches(["play"])).toEqual({ ...none, note: true, slice: true });
 });

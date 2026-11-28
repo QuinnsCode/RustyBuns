@@ -601,7 +601,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   walk();
   if (!high) plain(group);
 
-  let frames = 0, fps = 0, since = performance.now(), count = 0;
+  let frames = 0, fps = 0, since = performance.now(), count = 0, lasersOn = true;
   const lights = 2 + heads.length + flames.length + (fire ? 1 : 0);
   return {
     quality,
@@ -620,12 +620,21 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
       lasers.forEach((l, i) => {
         const spread = ((i / (LASERS - 1)) - 0.5) * 1.3;
         l.rotation.set(-0.06 - Math.abs(Math.sin(t * 0.7)) * 0.12, spread + Math.sin(t * 0.9) * 0.25, 0);
-        l.visible = Math.sin(t * 0.25) > -0.3; // they go out now and then, and come back
+        l.visible = lasersOn && Math.sin(t * 0.25) > -0.3; // they go out now and then, and come back
       });
       for (const l of flames) l.intensity = 12 * flameAt(l.userData.i as number, t);
       fire?.tick(t);
       clothTime.value = t;
       if (composer) composer.render(); else renderer.render(scene, cam);
+    },
+    stage(l) {
+      lasersOn = l.lasers && l.level !== "dark";
+      heads.forEach((h, i) => {
+        const colour = BEAMS[l.beam < 0 ? i % BEAMS.length : l.beam];
+        for (const m of [h.beam.material, ...h.head.children.map((c) => (c instanceof THREE.Mesh ? c.material : null))]) if (m instanceof THREE.MeshBasicMaterial) m.color.set(colour);
+        h.light.color.set(colour);
+        h.beam.visible = l.level !== "dark";
+      });
     },
     resize(wpx, hpx) {
       renderer.setSize(wpx, hpx, false);
