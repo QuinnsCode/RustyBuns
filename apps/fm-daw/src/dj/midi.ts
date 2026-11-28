@@ -6,36 +6,15 @@
 // it, the common layout. A learned control is driven as a hand drives it (a press, a fader's input, a knob's drag), so
 // the decks' and mixer's own code stays as it is.
 import "./midi.css";
-import { check, rec, str } from "@rustybuns/util/guard";
+import { learnedMap } from "../control/map.ts";
+import { keyLabel, msgKey, parseMidi, type MidiMsg } from "../control/midi.ts";
 import { button, el, svg } from "./dom.ts";
 import { midiJog, TICKS_PER_TURN } from "./player.ts";
 import type { Jog } from "./player-panel.ts";
 
-// ---- messages
-
-/** A note or a CC off a controller: its channel (0 to 15), number and value (0 to 127; a note off is 0). */
-export interface MidiMsg { type: "note" | "cc"; ch: number; n: number; v: number }
-export function parseMidi(data: ArrayLike<number>): MidiMsg | null {
-  if (data.length < 3) return null;
-  const kind = data[0]! & 0xf0, ch = data[0]! & 0x0f, n = data[1]!, v = data[2]!;
-  if (kind === 0x90 || kind === 0x80) return { type: "note", ch, n, v: kind === 0x80 ? 0 : v };
-  if (kind === 0xb0) return { type: "cc", ch, n, v };
-  return null;
-}
-/** The key a learned pairing is kept under ("cc:0:33"), and how a tag says it ("CC 33 ch1"). */
-export const msgKey = (m: MidiMsg) => `${m.type}:${m.ch}:${m.n}`;
-export function keyLabel(key: string): string {
-  const [type, ch, n] = key.split(":");
-  return `${type === "cc" ? "CC" : "Note"} ${n} ch${Number(ch) + 1}`;
-}
-
-// ---- the learned map, kept in this browser: controller name -> message key -> control id
+// ---- the learned map, kept in this browser: controller name -> message key -> control id (control/map.ts)
 
 const KEY = "qdj.midi.map";
-const MidiMap = rec(rec(str(200), 512), 64);
-export type MidiMap = Record<string, Record<string, string>>;
-function loadMap(): MidiMap { try { const s = localStorage.getItem(KEY); return (s && check(MidiMap, JSON.parse(s))) || {}; } catch { return {}; } }
-function saveMap(m: MidiMap) { try { localStorage.setItem(KEY, JSON.stringify(m)); } catch { /* private window: this visit only */ } }
 
 // ---- the controls a controller can drive
 
@@ -65,7 +44,7 @@ function controlsIn(root: HTMLElement): Control[] {
 /** What a controller does: the decks' jogs, the root the decks and mixer sit in, and the page's flash line. */
 export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog]; flash: (text: string) => void }) {
   const { root, flash } = o, jogs = (side: 0 | 1) => o.jogs()[side];
-  let map = loadMap();
+  const map = learnedMap(KEY);
   let access: MIDIAccess | null = null;
   /** Controllers fed by hand (the probe's), as if plugged in. */
   const fakes = new Set<string>();
@@ -131,15 +110,12 @@ export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog
     if (!m) return;
     const key = msgKey(m);
     if (armed && (m.type === "cc" || m.v > 0)) {
-      const mine = (map[device] ??= {});
-      for (const k of Object.keys(mine)) if (mine[k] === armed) delete mine[k];
-      mine[key] = armed;
-      saveMap(map);
+      map.pair(device, key, armed);
       flash(`${device} · ${keyLabel(key)} now drives ${armed}`);
       armed = null;
       return;
     }
-    const id = map[device]?.[key];
+    const id = map.get(device, key);
     const c = id ? controlsIn(root).find((x) => x.id === id) : undefined;
     if (c) { drive(c, m); return; }
     const j = midiJog(data);
@@ -206,7 +182,7 @@ export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog
     const ox = box.left + root.clientLeft, oy = box.top + root.clientTop;
     const cs = controlsIn(root);
     const lines = new Map<string, { text: string; device: string; key: string | null; gone: boolean }[]>();
-    for (const [device, keys] of Object.entries(map)) for (const [key, id] of Object.entries(keys)) {
+    for (const [device, keys] of Object.entries(map.all())) for (const [key, id] of Object.entries(keys)) {
       const l = lines.get(id) ?? []; l.push({ text: `${device} · ${keyLabel(key)}`, device, key, gone: !seen.get(device) }); lines.set(id, l);
     }
     for (const c of cs) if (c.kind === "jog" && c.side !== null) for (const d of here()) {
@@ -247,10 +223,7 @@ export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog
   }
 
   function clear(device: string, key: string) {
-    if (!map[device]?.[key]) return false;
-    delete map[device][key];
-    if (!Object.keys(map[device]).length) delete map[device];
-    saveMap(map);
+    if (!map.forget(device, key)) return false;
     paint();
     return true;
   }
@@ -259,7 +232,7 @@ export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog
     buttons: [connectB, showB] as const,
     connect,
     /** The controllers, the learned pairings, whether the tags show and which control waits for a message. */
-    state: () => ({ devices: devices(), mappings: structuredClone(map), shown, armed, tags: [...tags.keys()] }),
+    state: () => ({ devices: devices(), mappings: structuredClone(map.all()), shown, armed, tags: [...tags.keys()] }),
     show,
     /** The controls a controller can drive: their ids and kinds. */
     controls: () => controlsIn(root).map((c) => ({ id: c.id, kind: c.kind })),
