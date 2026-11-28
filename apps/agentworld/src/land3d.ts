@@ -11,13 +11,14 @@ import { robot } from "./robot.ts";
 import type { Point } from "./sign.ts";
 import { signBoard } from "./signBoard.ts";
 import type { Page } from "./page.ts";
-import { SAID_KEY, worldDoc } from "./world.ts";
+import { ROOM_FILES, SAID_KEY, worldDoc } from "./world.ts";
+import { hand } from "./world-frame.ts";
 
 // ---------- asking a world for its land ----------
 
 /** Run a world in a hidden sealed frame, ask it for its land and take the frame away. Null for a world that isn't
- *  built with the kit, or that doesn't answer. */
-export function landOf(page: Page, ms = 20_000): Promise<Land | null> {
+ *  built with the kit, or that doesn't answer. `files` is where the models it asks for are fetched from. */
+export function landOf(page: Page, files: string, ms = 20_000): Promise<Land | null> {
   if (!Object.values(page.files).some((t) => t.includes("@world/kit"))) return Promise.resolve(null);
   const frame = document.createElement("iframe");
   // The same seal as the page's own world frame: scripts only, an opaque origin.
@@ -31,8 +32,15 @@ export function landOf(page: Page, ms = 20_000): Promise<Land | null> {
     const finish = (land: Land | null) => {
       clearTimeout(late); clearInterval(again); removeEventListener("message", hear); frame.remove(); done(land);
     };
+    // No more than a room keeps, so a neighbour's code can't set this browser fetching without end.
+    const given = new Set<string>();
     const hear = (e: MessageEvent) => {
-      if (e.source === frame.contentWindow && field(e.data, SAID_KEY) === true && field(e.data, "kind") === "land") finish(landFrom(field(e.data, "land")));
+      if (e.source !== frame.contentWindow || field(e.data, SAID_KEY) !== true) return;
+      if (field(e.data, "kind") === "land") return finish(landFrom(field(e.data, "land")));
+      const name = String(field(e.data, "name"));
+      if (field(e.data, "kind") !== "file" || given.has(name) || given.size >= ROOM_FILES) return;
+      given.add(name);
+      void hand(frame.contentWindow!, files, name);
     };
     const late = setTimeout(() => finish(null), ms);
     addEventListener("message", hear);

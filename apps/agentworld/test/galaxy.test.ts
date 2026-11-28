@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { type Cdp, freePort, launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
 import { cellOf, keptFree, spiral } from "../src/galaxy.ts";
 import { enterSigned, fakeEqosys, signIn } from "./eqosys-kit.ts";
+import { triangle } from "./session.ts";
 
 setDefaultTimeout(120_000); // Bun bundles the page cold, then two tabs walk it
 
@@ -172,8 +173,10 @@ describe("two rooms in Agent Galaxy", () => {
     await a.enter();
   });
 
-  test("a world built with the kit stands in 3D, for its owner and for a neighbour's next visit", async () => {
-    await a.page(`__commands.run("page_write_file", { path: "a.js", text: 'import { ground, trees } from "@world/kit"; ground({ type: "hills" }); trees(20);' })`);
+  test("a world built with the kit stands in 3D, the .glb its room keeps and all, for its owner and for a neighbour's next visit", async () => {
+    expect((await fetch(`${base}/api/r/${a.room}/files/hero.glb`, { method: "PUT", body: triangle() })).ok).toBe(true);
+    // Nothing but the model: there is land to show only if its shapes got into it.
+    await a.page(`__commands.run("page_write_file", { path: "a.js", text: 'import { model } from "@world/kit"; model("hero.glb", { h: 40 });' })`);
     await a.page(`__commands.run("page_write_file", { path: "index.html", text: '<!doctype html><script type="module" src="a.js"></script>' })`);
     for (let i = 0; i < 100; i++) {
       const saved = await fetch(`${base}/api/r/${a.room}/world`).then((r) => (r.ok ? r.json() : null));
@@ -185,6 +188,9 @@ describe("two rooms in Agent Galaxy", () => {
     await b.leave();
     await b.enter();
     await waitFor(b.tab, "A's land from B's plot", plot, 45_000, "agentGalaxy.state()");
+    // The door the neighbour's browser used: by the plot's public id, and for models only.
+    expect((await fetch(`${base}/api/galaxy/file/${meA.id}/hero.glb`)).status).toBe(200);
+    expect((await fetch(`${base}/api/galaxy/file/${meA.id}/world.json`)).status).toBe(404);
   });
 });
 
