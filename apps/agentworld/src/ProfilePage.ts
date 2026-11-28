@@ -61,6 +61,7 @@ export const MarkMade = Command.make("agentworld/MarkMade", { args: { room: Sche
   Effect.promise(() => fetch(`/api/r/${room}/made`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(page) }).then((r) => r.ok, () => false))
     .pipe(Effect.map((made) => {
       if (made) galaxyLock.why = lockLine(signedIn, true);
+      if (made) void import("./account.ts").then((a) => a.worldBuilder());
       // Open now: claim the plot and build the galaxy hidden, a moment later, when the browser is idle.
       if (made && signedIn) setTimeout(() => void preloadGalaxy(), 600);
       return PageMessage.MadeWorld({ made });

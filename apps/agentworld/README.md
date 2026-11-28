@@ -26,7 +26,8 @@ UI, WebMCP, Cloudflare Artifacts, Effect), the three steps as pictures, and one 
 signs you in with eqosys and opens your world: the server keeps one per account (`POST /api/me/world`), the room you
 first signed in from, so signing in on another browser lands you in the same world, its files from the server. Signed
 in already, it goes straight there, and where eqosys can't be reached (local dev) it says so in one line. Signed out,
-everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Under it, three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
+everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Once your AI has built it, your eqosys account keeps
+the **World builder** achievement (built signed out, it is sent when you sign in). Under Create your world, three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
 one click with no AI connected, on the landing, in the console and in Cmd+K, each with one thing to ask your AI next.
 When your AI first reads the page or changes it, the landing gives way to your world; "Skip to the page" does it by
 hand. Connecting your AI is in the console, where it is the next step. **How it's built** opens the longer story under
