@@ -6,6 +6,8 @@ import * as THREE from "three";
 import type { Look } from "./galaxy.ts";
 import { isGround, type Land, landFrom, PLOT } from "./land.ts";
 import { robot } from "./robot.ts";
+import type { Point } from "./sign.ts";
+import { signBoard } from "./signBoard.ts";
 import type { Page } from "./page.ts";
 import { SAID_KEY, worldDoc } from "./world.ts";
 
@@ -145,6 +147,8 @@ export function scene3d(canvas: HTMLCanvasElement) {
   const SELF = 1;
   for (const light of [sun, ...scene.children.filter((c) => c instanceof THREE.HemisphereLight)]) light.layers.enable(SELF);
   const still = matchMedia("(prefers-reduced-motion: reduce)");
+  /** The signs standing on plots, apart from the plots' own content, which comes and goes. `on` is the content a sign's height was read from. */
+  const signs = new Map<string, { at: THREE.Group; on: THREE.Group | undefined }>();
 
   // The cloud: soft puffs laid around your own land.
   const cloud = new THREE.SpriteMaterial({ transparent: true, depthWrite: false, fog: false, map: painted(128, 128, (c) => {
@@ -190,6 +194,25 @@ export function scene3d(canvas: HTMLCanvasElement) {
 
   let size = "";
   return {
+    /** Stand this signature on the plot at (x, y), a little north-west of its middle; null takes the sign away. */
+    setSign(x: number, y: number, strokes: readonly Point[][] | null) {
+      const k = `${x},${y}`, had = signs.get(k);
+      if (had) { scene.remove(had.at); dispose(had.at); signs.delete(k); }
+      if (!strokes) return;
+      const at = signBoard(strokes);
+      at.position.set((x + 0.5) * PLOT - 11, 0, (y + 0.5) * PLOT - 26);
+      at.visible = false;
+      scene.add(at);
+      signs.set(k, { at, on: undefined });
+    },
+    /** Where the foot of that plot's sign is on screen, in CSS pixels; null when it isn't in view. */
+    signSpot(x: number, y: number): { x: number; y: number } | null {
+      const s = signs.get(`${x},${y}`);
+      if (!s?.at.visible) return null;
+      const p = s.at.position.clone().add(new THREE.Vector3(0, 3.5, 0)).project(camera);
+      if (p.z > 1 || Math.abs(p.x) > 0.95 || Math.abs(p.y) > 0.9) return null;
+      return { x: ((p.x + 1) / 2) * canvas.clientWidth, y: ((1 - p.y) / 2) * canvas.clientHeight };
+    },
     /** What the plot at (x, y) shows. `shows` names it, so the same thing isn't built twice. */
     setPlot(x: number, y: number, shows: string, content: Content) {
       const k = `${x},${y}`, had = plots.get(k);
@@ -248,6 +271,11 @@ export function scene3d(canvas: HTMLCanvasElement) {
           if (building !== null) had.g.rotation.y = Math.PI + Math.sin(t * 0.8) * 0.35;
           had.g.getObjectByName("marker")!.visible = building === null;
         }
+      }
+      for (const [k, s] of signs) {
+        const on = plots.get(k)?.at;
+        if (on && on !== s.on) { on.updateMatrixWorld(true); s.at.position.y = heightAt(s.at.position.x, s.at.position.z); s.on = on; }
+        s.at.visible = e > 0.5;
       }
       const x = cam.x * PLOT, z = cam.z * PLOT, y = heightAt(x, z);
       // A tall screen stands further back, so as much land is across it.

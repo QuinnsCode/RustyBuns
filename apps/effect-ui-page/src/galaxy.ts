@@ -21,6 +21,7 @@ import { TokenBucket } from "@rustybuns/util/limits";
 import { MAKE_FIRST } from "./lock.ts";
 import { fromPage } from "./relay.ts";
 import { Made } from "./saved.ts";
+import { SIGN_FIRST, type SignReply, Signs } from "./sign.ts";
 import { ROOM } from "./tools.ts";
 
 // ---------- the spiral ----------
@@ -56,8 +57,9 @@ export const keptFree = (n: number) => n > 0 && n % 3 === 0;
 // ---------- what goes over the wire ----------
 
 const Coord = int(-10_000, 10_000);
-/** A plot as the page sees it: where it is, its public id (null when empty), and whether it is the common city. */
-export const Plot = obj({ x: Coord, y: Coord, id: nul(str(32)), empty: bool(), city: bool() });
+/** A plot as the page sees it: where it is, its public id (null when empty), whether it is the common city, and its
+ *  sign's version (sign.ts; 0 for none). */
+export const Plot = obj({ x: Coord, y: Coord, id: nul(str(32)), empty: bool(), city: bool(), signed: int(0, 1_000_000_000) });
 export type Plot = Of<typeof Plot>;
 export const Plots = obj({ plots: arr(Plot, 64) });
 export type Plots = Of<typeof Plots>;
@@ -135,7 +137,8 @@ export class Galaxy {
   // A burst of claims (a script making rooms) can't fill the map: a few a second.
   private claims = new TokenBucket(3, 30, Date.now());
   /** `who`: the person behind a request, `eq:<sub>`, or null (who.ts, with the platform's eqosys origin). */
-  constructor(private kv: Kv, private who: (req: Request) => Promise<string | null> = async () => null) {}
+  constructor(private kv: Kv, private who: (req: Request) => Promise<string | null> = async () => null) { this.signs = new Signs(kv); }
+  private signs: Signs;
 
   /** The plot at the cell `key` points to (`o:<owner>` or `r:<room>`), or null. */
   private async plotAt(key: string): Promise<Claimed | null> {
@@ -202,11 +205,22 @@ export class Galaxy {
     const cells: { x: number; y: number; n: number }[] = [];
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) cells.push({ x: x + dx, y: y + dy, n: cellOf(x + dx, y + dy) });
     const got = await this.kv.get(cells.filter((c) => c.n > 0).map((c) => `c:${c.n}`));
-    return cells.map((c) => {
-      if (c.n === 0) return { x: c.x, y: c.y, id: "city", empty: false, city: true };
-      const cell = check(Cell, got.get(`c:${c.n}`));
-      return { x: c.x, y: c.y, id: cell?.id ?? null, empty: cell === null, city: false };
+    const held = cells.map((c) => check(Cell, got.get(`c:${c.n}`)));
+    const signed = await this.signs.versions(held.map((cell) => cell?.owner ?? ""));
+    return cells.map((c, i) => {
+      if (c.n === 0) return { x: c.x, y: c.y, id: "city", empty: false, city: true, signed: 0 };
+      const cell = held[i];
+      return { x: c.x, y: c.y, id: cell?.id ?? null, empty: !cell, city: false, signed: signed[i] ?? 0 };
     });
+  }
+
+  /** The signature standing on the plot with this public id, or null. */
+  private async signOn(id: string) {
+    const room = await this.roomOf(id);
+    if (!room) return null;
+    const n = (await this.kv.get([`r:${room}`])).get(`r:${room}`);
+    const cell = typeof n === "number" ? check(Cell, (await this.kv.get([`c:${n}`])).get(`c:${n}`)) : null;
+    return cell ? this.signs.read(cell.owner) : null;
   }
 
   /** The room behind a plot's public id, or null. */
@@ -266,9 +280,18 @@ export class Galaxy {
       if (had) return json(had satisfies Claimed);
       const made = await readJson(await forward(body.room, "/made"), Made);
       if (!made?.made) return json({ error: MAKE_FIRST }, 409);
+      if (!(await this.signs.read(person))) return json({ error: SIGN_FIRST }, 409);
       if (!this.claims.take(Date.now())) return json({ error: "too many new plots at once: try again in a moment" }, 429);
       return json((await this.claim(person, body.room)) satisfies Claimed);
     }
+    if (rest === "/sign") {
+      if (req.method !== "GET" && !fromPage(req)) return json({ error: "only this site's page may sign" }, 403);
+      const person = await this.who(req);
+      if (!person) return json({ error: "Sign in with eqosys first: a sign is a signed-in person's." }, 401);
+      return this.signs.http(req, person);
+    }
+    const sign = rest.match(/^\/sign\/([a-z0-9]{1,32})$/);
+    if (sign && req.method === "GET") return json({ strokes: await this.signOn(sign[1]!) } satisfies SignReply);
     const m = rest.match(/^\/(picture|world)\/([a-z0-9]{1,32})$/);
     if (m && req.method === "GET") {
       const room = await this.roomOf(m[2]!);

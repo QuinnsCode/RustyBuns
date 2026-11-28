@@ -177,7 +177,17 @@ neighbour's. **Back to my world** brings the console back.
   scene draws it; a world is never told what anyone looks like.
 - The map never sends a room's link: a plot is known by a one-way hash of it, since the link is the room's key.
 
-From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()`, `robot()` and `walk(dx, dz)`:
+**You sign for your land.** Before your first visit a card-reader pad comes up: scrawl on the X with a finger or a
+mouse, **Clear** to start over, **Done** (greyed out until something is drawn). Your scrawl then stands as a wooden sign
+on your land, and your neighbours see it. **Sign again** (top right, or "Sign for your land" in Cmd+K) replaces it.
+Every other person's sign has a **Hide this** button: it goes for you only, and this browser keeps it hidden.
+
+- Only the pen strokes are saved (points on a 600 by 300 pad, at most 60 strokes and 1,500 points), never a picture,
+  and no text or upload is taken. `POST /api/galaxy/sign` writes the signed-in sender's own, a few at a time;
+  `GET /api/galaxy/sign/<plot id>` reads a plot's, and the page checks it before drawing it (`src/sign.ts`).
+- The server gives out no plot until you have signed.
+
+From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()`, `robot()` and `walk(dx, dz)` and `sign()` (before your first visit `enter()` answers `signing: true`, the pad up for a person):
 
 ```
 bun run probe effect-ui-page --url http://127.0.0.1:4799/r/<room> --js 'await agentGalaxy.enter()' --shot galaxy.png
