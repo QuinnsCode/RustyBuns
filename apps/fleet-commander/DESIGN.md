@@ -82,7 +82,8 @@ Short battles, each built round one idea, easiest first. The list (menu, *Levels
 starts, and the banner says it again as it does. Each level is data on the seeded sim (`src/sim/levels.ts`): who is
 where, and a `goal` that says what the clock running out means (most: you were too slow and lose; the last stand:
 you held and win) and, for an escort, which ship must reach where. Each also carries `plan`, its intended play as a
-brain. `test/levels.test.ts` plays every level with its plan (it wins) and with no orders (it loses).
+brain. `test/levels.test.ts` plays every level with its plan (it wins) and with no orders (it loses), and the
+levels built on a mechanic (Slingshot, Into the Rift, Hold the Lane) with the obvious wrong play (it loses too).
 
 | # | Level | Stars | The idea | What it is |
 | --- | --- | --- | --- | --- |
@@ -90,21 +91,17 @@ brain. `test/levels.test.ts` plays every level with its plan (it wins) and with 
 | 2 | Through the Screen | 1 | The role triangle | A carrier behind three interceptor flights. Hunt them with escorts first, then the bombers go in. |
 | 3 | Split Shields | 2 | Shield arcs and the pincer | A bulwark whose deep forward shields soak a straight run. A pincer from both flanks splits them. |
 | 4 | Escort Run | 2 | Guarding a ship that isn't yours to fly | The Argus flies itself to a relay while bomber waves come for it from both sides. Fighters on it, hunt the bombers. |
-| 5 | Into the Rift | 3 | Fog and scouts | An ambush (a cruiser and a bulwark) waits in a rift round a relay, mines across its mouth. Scouts ride ahead; the guns follow. |
-| 6 | Hold the Lane | 4 | The interdictor | Two waves come through the lane. The interdictor on its mouth drags them out dazed, shields down, for the bombers. |
-| 7 | Guns or Land | 4 | Rake vs ships | Two bulwarks and a cruiser over a small base, a short clock. Their shields outlast it; the base doesn't. Rake. |
-| 8 | Last Stand | 5 | Focus fire and broadsides | A hurt flagship, three cruisers and bomber waves, three minutes until relief. Break the gun line one cruiser at a time. |
+| 5 | Slingshot | 2 | Gravity as a drive | A gate past a planet closes at 4:50. A destroyer with no wings: only a route round the rim gets there. |
+| 6 | Into the Rift | 3 | Fog and scouts | Two cruisers and a bulwark posted round a relay in a rift, mines across its mouth. The scouts wait at the start until sent. |
+| 7 | Hold the Lane | 4 | The interdictor | A destroyer at half hull, two waves of three through the lane. The interdictor on its mouth drags them out torn and dazed. |
+| 8 | Guns or Land | 4 | Rake vs ships | Two bulwarks and a cruiser over a small base, a short clock. Their shields outlast it; the base doesn't. Rake. |
+| 9 | Last Stand | 5 | Focus fire and broadsides | A hurt flagship, three cruisers and bomber waves, three minutes until relief. Break the gun line one cruiser at a time. |
 
-How much each idea matters today, from the intended play against the obvious wrong one over four seeds: hunting
-first wins Through the Screen where a straight torpedo run loses three times in four; the pincer wins Split Shields in
-86 s where torpedo runs take 230 s or lose; the escort, the rake and the last stand are lost without their move. Two
-are weaker. Into the Rift is also won going in blind, because the ambush gives itself away when it fires. Hold the
-Lane is won without the interdictor too; with it the win comes about 10 s sooner and with more hull left. Both are
-tuning work for a later round (#6100).
-
-Left out: a slingshot level. A destroyer routed round a planet's rim reaches a gate 10 to 30% later than one flying
-straight, in every layout tried (its turn rate and the well's 1.8x top boost don't make up the longer path), so a
-level teaching it would teach something untrue. It waits on #6100.
+How much each idea matters, from the intended play against the obvious wrong one over four seeds: hunting first wins
+Through the Screen where a straight torpedo run loses three times in four; the pincer wins Split Shields in 86 s where
+torpedo runs take 230 s or lose; the escort, the rake and the last stand are lost without their move. Round the rim
+reaches the Slingshot gate at 268 s of 290; straight through and wide round are both still short when it closes. Into
+the Rift with the scouts never sent is lost, and so is Hold the Lane with the interdictor fighting in the gun line.
 
 ## The battle, minute to minute
 
@@ -130,7 +127,7 @@ level teaching it would teach something untrue. It waits on #6100.
 | Campaign: bigger sectors | The same, with two more sectors | New Compact hulls (a battlecarrier, minelayers), new craft for you (boarding shuttles, drone swarms), a bonus mission in the middle (a convoy, a rescue) and an end battle | Next |
 | Drawn plays | Routes you draw on the table | Right-drag a route for the picked wings; Shift adds an arm that strikes with the last | **Built** |
 | Playbook | Your own plays | Save a drawn play as a card of its own (its arms by role, relative to the target), plus earned plays that unlock as you win | Next |
-| Levels | One idea per battle | Eight short battles, easiest first, each with the line it teaches; a fleet with no orders loses every one | **Built** |
+| Levels | One idea per battle | Nine short battles, easiest first, each with the line it teaches; a fleet with no orders loses every one | **Built** |
 | Armada | A dreadnought, three destroyers with captains, its own wings | The fractal: plays and doctrines now go to captains, who call plays for their own wings | **Built (quick battle)** |
 | Theater | The fleet, two destroyers, the interdictor and a sensor ship, over a whole star system | Fog of war, gravity wells, rifts and heat shear, scouts, pings, mines, strongpoints and supply, box select and a minimap | **Built (first cut)** |
 | Admiral | Several armadas over a sector | One level further: sector plays (a pincer of two fleets on one system, a feint on a mine), battles you can fight or let your captains settle by doctrine | Later |

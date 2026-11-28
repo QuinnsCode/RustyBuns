@@ -3,6 +3,8 @@ import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
 import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, SpacesPage, tabOf } from "./app/pages.tsx";
 import { DoorPage, EventPage } from "./app/events.tsx";
+import { HostPage, MyEvents } from "./app/event-host.tsx";
+import { hostView, mineView } from "./event-host.ts";
 import { doorView, eventView } from "./event-pages.ts";
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
@@ -152,6 +154,18 @@ const app = defineApp([
       const v = await doorView(request, e(request), params.id);
       if (!v) { response.status = 404; return <ErrorPage status={404} />; }
       return <DoorPage v={v} />;
+    }),
+    // A host's side (event-host.ts): your events, and one event's form and guests.
+    route("/events", async ({ request, response }) => {
+      const conf = e(request);
+      if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
+      const v = await mineView(request, conf);
+      return v ? <MyEvents v={v} /> : see("/login");
+    }),
+    route("/e/:id/host", async ({ request, params, response }) => {
+      const v = await hostView(request, e(request), params.id);
+      if (!v) { response.status = 404; return <ErrorPage status={404} />; }
+      return <HostPage v={v} />;
     }),
     route("/privacy", () => <Privacy />),
     route("/deleted", ({ request }) => <Deleted app={new URL(request.url).searchParams.get("app") ?? undefined} />),
