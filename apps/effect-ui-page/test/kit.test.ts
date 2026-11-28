@@ -86,18 +86,18 @@ creature({ voxels: [["bb", "bb"], ["hh", ".."]], palette: { b: "#a8743f", h: "#b
 sign("Hello, neighbour!\\nCome in", { x: -8, z: 8 });
 near(0, 0, SIZE * 0.06, () => console.error("walked up"), () => console.error("walked off"));
 let n = 0;
-every(() => { if (++n === 5) console.error("drew"); });
+every(() => { if (++n === 5) console.error("blocks drew"); });
 `;
   await tab.eval(`(window.__solid = null, addEventListener("message", (e) => { if (e.data?.kind === "solid") window.__solid = e.data.grid; }), true)`);
   expect(await call("page_write_file", { path: "world.js", text })).toMatchObject({ ok: true });
-  expect(await heard("drew")).toEqual(["error: drew"]);
+  expect(await heard("blocks drew")).toEqual(["error: blocks drew"]);
   // Where nobody can stand, 32 by 32 across the plot: the building and the box are walls, the street is not.
   const grid = await tab.eval<string | null>("window.__solid");
   expect(grid).toMatch(/^[01]{1024}$/);
   const at = (x: number, z: number) => grid![Math.floor(z * 32) * 32 + Math.floor(x * 32)];
   expect([at(0.75, 0.25), at(0.2, 0.2), at(0.8, 0.8), at(0.5, 0.7)]).toEqual(["1", "1", "1", "0"]);
   await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agent_page: true, player: { x: 0.5, z: 0.52 } }, "*")`);
-  expect(await heard("walked up")).toEqual(["error: drew", "error: walked up"]);
+  expect(await heard("walked up")).toEqual(["error: blocks drew", "error: walked up"]);
   await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agent_page: true, player: null }, "*")`);
-  expect(await heard("walked off")).toEqual(["error: drew", "error: walked up", "error: walked off"]);
+  expect(await heard("walked off")).toEqual(["error: blocks drew", "error: walked up", "error: walked off"]);
 });
