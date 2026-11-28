@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { addCommands, askArgs, buttonCommand, rankCommands, runCommand } from "../src/commands.ts";
 
 // A browser with WebMCP: document.modelContext keeps what is registered until the signal aborts.
@@ -12,6 +12,8 @@ Reflect.set(globalThis, "document", {
   },
 });
 Reflect.set(globalThis, "window", globalThis);
+// Every test file shares one process: left behind, this half a `document` makes a later file think it can paint.
+afterAll(() => { for (const k of ["document", "window"]) Reflect.deleteProperty(globalThis, k); });
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 test("a page's commands are WebMCP tools and window.__commands until taken away", async () => {

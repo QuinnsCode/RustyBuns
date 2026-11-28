@@ -766,7 +766,7 @@ function distro(): Build {
   const [w, h, d] = GEAR_SIZES["distro-box"], b: Build = { pieces: [], marks: [] }, body = h - 0.04;
   b.pieces.push(box("rubber", [w, body, d], [0, body / 2, 0], { bevel: 0.025 }));
   b.pieces.push(...handle("rubber", [0, body, 0], "y", 0.18, 0.035));
-  for (const sx of [-1, 1]) b.pieces.push(box("metal", [0.03, 0.12, 0.012], [sx * w * 0.3, body * 0.72, -d / 2 - 0.006])); // hanging brackets
+  for (const sx of [-1, 1]) b.pieces.push(box("metal", [0.03, 0.12, 0.006], [sx * w * 0.3, body * 0.72, -d / 2 - 0.003])); // hanging brackets
   b.pieces.push(box("panel", [w - 0.05, body * 0.7, 0.008], [0, body * 0.47, d / 2]));
   b.pieces.push(box("mesh", [w * 0.6, 0.04, 0.004], [0, body * 0.84, d / 2 + 0.004])); // the breakers' window
   const rows = [body * 0.62, body * 0.42], cols = [-w * 0.3, 0, w * 0.3];
@@ -782,8 +782,8 @@ function distro(): Build {
   jacks(b, outs.slice(3), "front", [cols[0]! - 0.008, rows[1]!, d / 2 + 0.012], [w * 0.3, 0, 0], 0.012);
   b.pieces.push(disc("knob", 0.03, 0.012, "z", [0, body * 0.2, d / 2 + 0.006], 16)); // the L6-30's collar
   jacks(b, ["power-out-7"], "front", [0, body * 0.2, d / 2 + 0.013], [0, 0, 0], 0.02);
-  b.pieces.push(disc("knob", 0.04, 0.03, "x", [-w / 2 - 0.012, body * 0.5, 0], 16)); // the 50 A inlet's housing
-  jacks(b, ["power-in"], "left", [-w / 2 - 0.028, body * 0.5, 0], [0, 0, 0], 0.024);
+  b.pieces.push(disc("knob", 0.04, 0.03, "x", [-w / 2 - 0.006, body * 0.5, 0], 16)); // the 50 A inlet's housing
+  jacks(b, ["power-in"], "left", [-w / 2 - 0.022, body * 0.5, 0], [0, 0, 0], 0.024);
   mark(b, "grab", [0, h, 0]);
   return b;
 }

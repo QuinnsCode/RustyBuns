@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { countOf, failedSibling, firstFailure, hung, limits, limitOf, notice, reported, slow, testFiles } from "./ci-test-count.ts";
+import { countOf, failedSibling, firstFailure, hung, limits, limitOf, notice, reported, slow, testFiles, unfinished } from "./ci-test-count.ts";
 
 const parallelOut = "bun test v1.4.3 8x PARALLEL\n\ntest/a.test.ts:\n(pass) a1\n\n\x1b[1mtest/d.test.ts:\x1b[0m\n(pass) d1\n";
 
@@ -133,4 +133,16 @@ test("a lane whose sibling failed stops its tests and says which lane went red f
     expect(out).toContain("::error title=stopped::test fm-daw 2/6 failed first, so test fm-daw 1/6 stopped");
     expect(Date.now() - started).toBeLessThan(10_000);
   } finally { api.stop(true); }
+});
+
+// #5949: a handler left behind by an import exited 0 mid-run, and the packages job passed for it.
+test("a run that exits 0 before bun's closing line fails", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-cut-"));
+  writeFileSync(join(dir, "a.test.ts"), 'import { test } from "bun:test";\ntest("leaves early", () => process.exit(0));\n');
+  const p = Bun.spawn(["bun", join(import.meta.dir, "ci-test-count.ts"), "bun test ./a.test.ts"], { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...process.env, GITHUB_STEP_SUMMARY: "", LANE: "" } });
+  const out = await new Response(p.stdout).text();
+  expect(await p.exited).toBe(1);
+  expect(out).toContain("::error title=cut short::bun test exited 0");
+  // A group job is held to one closing line per app: the next app's can't stand in for it.
+  expect(unfinished("ci-group: apps/a\ntest/a.test.ts:\nci-group: apps/b\nRan 2 tests across 1 file. [3.00ms]\n")).toEqual(["apps/a"]);
 });
