@@ -270,9 +270,11 @@ export class Online {
   }
 
   /** The patches we picked and flocks we flushed lately, with their world-clock times, for a friend who just arrived
-   *  (their pose isn't in yet, so no region check). */
+   *  (their pose isn't in yet, so no region check). Ours goes first: the room passes on only what is near it. */
   seen(s: Seen) {
-    if ((s.picks.length || s.flown.length || s.roost.length || s.busy.length) && this.ghosts.size)
+    if (!(s.picks.length || s.flown.length || s.roost.length || s.busy.length) || !this.ghosts.size) return;
+    this.refresh();
+    if (this.sendPose())
       this.link?.send({ e: "seen", picks: s.picks.slice(-30), flown: s.flown.slice(-30), roost: s.roost.slice(-30), busy: s.busy.slice(-12) });
   }
   /** Is a friend in the region we stand in? */

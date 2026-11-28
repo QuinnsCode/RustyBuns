@@ -103,3 +103,5 @@ body > #desk { position: fixed; z-index: 32; max-height: calc(100% - 72px); }
 #speakers svg { width: 20px; height: 20px; }
 /* a tip is a black label in both looks */
 :root[data-theme="light"] .tip::after { color: #f4f1ea; }
+/* the lesson card (?lesson=guitar): on a narrow window it would cover the start card, so it waits until you walk in */
+@media (max-width: 899px) { main:has(#menu:not([hidden])) #lesson { display: none; } }

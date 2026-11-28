@@ -713,6 +713,8 @@ Each with a test.
   there.
 - #6228: a modified client that closes its party socket stays in the party's voice room, off the member list.
 - #6229: leads no verifier settled (Qlave relaying a peer's `server-mute`, and smaller ones).
+- #6292 (from #6229), fixed after the round: a Mythic Masters region took a `seen` catch-up for patches, flocks and busy
+  dens anywhere on the map. It now keeps only what is near the teller, as for `life` (`online.test.ts`).
 
 ### Known limits
 

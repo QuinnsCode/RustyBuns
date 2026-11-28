@@ -10,6 +10,7 @@
 // a scene (the builder edits the one on stage, each scene with its own undo), saves versions that stay, and puts one
 // party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z), delay(x, z),
 // download("list" | "plan"), undo(), redo(), event(walk?), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
+import { hear } from "../scope-tap.ts";
 import "../brand.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
@@ -707,6 +708,8 @@ function clap() {
   const src = ctx.createBufferSource(); src.buffer = hit;
   const out = ctx.createGain(); out.gain.value = 0.5;
   src.connect(conv).connect(out).connect(ctx.destination);
+  const off = hear(out);
+  src.addEventListener("ended", () => setTimeout(off, buf.duration * 1000)); // the room rings on after the hit
   src.start();
 }
 

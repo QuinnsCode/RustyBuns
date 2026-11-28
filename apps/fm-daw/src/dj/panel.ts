@@ -32,6 +32,7 @@ import { Jog, playerFace } from "./player-panel.ts";
 import { mountMidi, type MidiPanel } from "./midi.ts";
 import { button, el, svg } from "./dom.ts";
 import { loadShelf, saveShelf, shelveTube, TubeDeck, tubeTitle, tubeVolume, videoId, type Shelved } from "./youtube.ts";
+import { CRATE_MAX, forgetTrack, keepTrack, keptTracks } from "./crate.ts";
 import { fileKey, FROM_LABEL, readCollection, settle, type Tempo } from "./tags.ts";
 
 /** The waveforms' colours: deck A fire, deck B blue, what's played greyed, the cue and the four hot cues. */
@@ -172,6 +173,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   /** Someone else's deck on `side`, or null when it's yours or free. */
   const far = (side: Side) => room?.booth.sides[side] ?? null;
   const shelf: Shelf[] = [];
+  /** Names the crate holds (crate.ts). */
+  const kept = new Set<string>();
   /** Tempos from collection files the DJ dropped, by file name. */
   const known = new Map<string, Tempo>();
   /** Each track's peaks at a few resolutions (player.ts), so the close-up draws a few hundred bars at any zoom. */
@@ -206,7 +209,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   });
   const addDir = button(`${ICON.folder}<span>Folder</span>`, `Add a folder of music: every track in it goes in the library, the first ${PRELOAD} read ahead so they load at once`, "dj-add-dir");
   src.append(add, addDir, tubeIn, tubeA, tubeB);
-  const libB = button(`${ICON.list}<span class="dj-count">0</span>`, "The library: what you've added (YouTube links stay for next time), to send to A or B", "dj-lib-open");
+  const libB = button(`${ICON.list}<span class="dj-count">0</span>`, "The library: what you've added (it stays for next time), to send to A or B", "dj-lib-open");
   const prefsB = button(ICON.cog, "Settings: the nudge amount, locks, the waveform and the keys", "dj-prefs-open");
   const prefsBox = el("div", { class: "dj-people dj-prefs", role: "dialog", "aria-label": "Deck settings" });
   prefsBox.hidden = true;
@@ -590,6 +593,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   }
   /** A folder track not read yet, sent to a deck: read it now, onto that deck. */
   function sendWaiting(side: Side, f: File) {
+    if (!canLoad(side)) return; // a busy deck: the track keeps its row
     const i = waiting.indexOf(f);
     if (i >= 0) waiting.splice(i, 1);
     drawList();
@@ -613,6 +617,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       const toA = button("A", `Load on deck A`), toB = button("B", `Load on deck B`);
       toA.addEventListener("click", () => put(0, s.track)); toB.addEventListener("click", () => put(1, s.track));
       li.append(n, bpm, toA, toB);
+      if (kept.has(s.track.name)) li.append(forgetFile(s.track.name));
       list.append(li);
     }
     for (const s of tubeShelf) {
@@ -634,12 +639,13 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
         const toA = button("A", "Load on deck A"), toB = button("B", "Load on deck B");
         toA.addEventListener("click", () => sendWaiting(0, f)); toB.addEventListener("click", () => sendWaiting(1, f));
         li.append(toA, toB);
+        if (kept.has(f.name)) li.append(forgetFile(f.name));
       }
       list.append(li);
     }
     count.textContent = String(shelf.length + tubeShelf.length + waiting.length + (reading ? 1 : 0));
     if (!shelf.length && !tubeShelf.length && !waiting.length && !reading) {
-      const li = el("li", { class: "none" }, "<span>Add music, or drop files here or on a deck. Your files stay on this computer; the room hears your set as you play it.</span>");
+      const li = el("li", { class: "none" }, "<span>Add music, or drop files here or on a deck. Your files stay on this computer, and are here next time; the room hears your set as you play it.</span>");
       const demo = button("Demo tracks", "Two short tracks made here, to try the decks");
       demo.addEventListener("click", () => demos());
       li.append(demo);
@@ -652,6 +658,34 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     DEMOS.forEach((d, i) => { const t = decks.fromSamples(d.name, demoTrack(d, rate), rate); shelve(t); put(i === 0 ? 0 : 1, t); });
   }
   drawList();
+  // the tracks kept from before (crate.ts): in the library by name, each read when it is sent to a deck
+  void keptTracks().then((files) => {
+    const have = new Set([...shelf.map((s) => s.track.name), ...waiting.map((f) => f.name)]);
+    for (const f of files) { kept.add(f.name); if (!have.has(f.name)) waiting.push(f); }
+    if (files.length) drawList();
+  });
+  /** A track that was read: into the crate for next time, and its not-read-yet row goes. */
+  function keep(f: File) {
+    for (let i = waiting.length - 1; i >= 0; i--) if (waiting[i]!.name === f.name) waiting.splice(i, 1);
+    drawList();
+    void keepTrack(f).then((ok) => {
+      if (!ok) return flash(`${f.name}: here for this visit only (the library keeps ${CRATE_MAX} tracks)`);
+      kept.add(f.name);
+      drawList();
+    });
+  }
+  /** A kept track's x: out of the library and the crate (a deck playing it plays on). */
+  function forgetFile(name: string) {
+    const b = button(ICON.x, "Take this track out of the library", "dj-forget");
+    b.addEventListener("click", () => {
+      kept.delete(name);
+      void forgetTrack(name);
+      for (let i = shelf.length - 1; i >= 0; i--) if (shelf[i]!.track.name === name) shelf.splice(i, 1);
+      for (let i = waiting.length - 1; i >= 0; i--) if (waiting[i]!.name === name) waiting.splice(i, 1);
+      drawList();
+    });
+    return b;
+  }
   /** Whether this deck can take a track: free, yours, or someone else's that's stopped (theirs goes). */
   function canLoad(side: Side): boolean {
     const r = room?.booth.mayLoad(side);
@@ -688,9 +722,10 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       if (!t) { flash(`Couldn't read ${f.name}`); return; }
       shelve(t);
       flash(t.grid ? `${f.name}: ${t.grid.bpm} BPM` : `${f.name}: no steady beat found`);
+      keep(f);
       return;
     }
-    await load(to, f.name, await f.arrayBuffer()).catch(() => {});
+    if (await load(to, f.name, await f.arrayBuffer()).catch(() => null)) keep(f);
   }
 
   // ---- drawing

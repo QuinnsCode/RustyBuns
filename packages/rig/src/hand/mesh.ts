@@ -8,18 +8,25 @@ import { buildSkin, type SkinMesh } from "./skin.ts";
 
 export type Side = -1 | 1;
 
-/** The skin, meshed once for both hands (the left is it mirrored). */
-let skinGeo: { right: THREE.BufferGeometry; left: THREE.BufferGeometry; nails: SkinMesh["nails"] } | null = null;
-function skinGeometry() {
-  if (skinGeo) return skinGeo;
-  const s = buildSkin(), g = new THREE.BufferGeometry();
+/** The skin, meshed once per cell size for both hands (the left is it mirrored). */
+const skinGeos = new Map<number, { right: THREE.BufferGeometry; left: THREE.BufferGeometry; nails: SkinMesh["nails"] }>();
+/** The skin's cell (m) for a hand seen up close: your own, first person. 50k triangles a hand. */
+export const NEAR_CELL = 0.0016;
+/** For a hand seen across a room, someone else's: 14k triangles, and no finger reads any thinner from there. */
+export const FAR_CELL = 0.003;
+function skinGeometry(cell: number) {
+  const kept = skinGeos.get(cell);
+  if (kept) return kept;
+  const s = buildSkin(cell), g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(s.positions, 3));
   g.setAttribute("normal", new THREE.BufferAttribute(s.normals, 3));
   g.setAttribute("color", new THREE.BufferAttribute(s.colors, 3));
   g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(s.joints, 4));
   g.setAttribute("skinWeight", new THREE.BufferAttribute(s.weights, 4));
   g.setIndex(new THREE.BufferAttribute(s.index, 1));
-  return (skinGeo = { right: g, left: mirrored(g), nails: s.nails });
+  const geo = { right: g, left: mirrored(g), nails: s.nails };
+  skinGeos.set(cell, geo);
+  return geo;
 }
 
 /** A geometry mirrored in x, its triangles turned back round so they still face out. */
@@ -35,9 +42,10 @@ export const SKIN_TONE = new THREE.Color().setRGB(0.71 ** 2.2, 0.48 ** 2.2, 0.35
 
 export type HandMesh = { root: THREE.Group; bones: THREE.Bone[]; side: Side; mats: THREE.Matrix4[] };
 
-/** One hand: a joint per bone (its matrix set by `placeHand`), the skin over them, and a nail riding each last joint. */
-export function handMesh(side: Side, skin: THREE.Material, nail: THREE.Material): HandMesh {
-  const root = new THREE.Group(), geo = skinGeometry();
+/** One hand: a joint per bone (its matrix set by `placeHand`), the skin over them, and a nail riding each last joint.
+ *  `cell`: how fine the skin is meshed, NEAR_CELL or FAR_CELL. */
+export function handMesh(side: Side, skin: THREE.Material, nail: THREE.Material, cell = NEAR_CELL): HandMesh {
+  const root = new THREE.Group(), geo = skinGeometry(cell);
   const m = (v: V3): V3 => [v[0] * side, v[1], v[2]];
   const bones = HAND.bones.map(() => { const o = new THREE.Bone(); o.matrixAutoUpdate = false; root.add(o); return o; });
   // Bound at rest: each joint where the skeleton puts it, turned the way the skin was meshed.

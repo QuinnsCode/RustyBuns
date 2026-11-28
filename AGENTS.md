@@ -26,8 +26,8 @@ The rule for any repo, and how to copy it: [notes/COW_WORKTREES.md](notes/COW_WO
 
 ## Tests: CI runs the suite
 
-CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each app a PR touched (`apps.yml`;
-`bun test packages` when `packages/` or the lockfile moved; every app's suite runs hourly on `main`, `desktop-hourly.yml`). Commands: `scripts/ci-apps.ts`.
+CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each app a PR touched or whose imports reach
+`packages/` code it changed (`apps.yml`; `bun test packages` when `packages/` or the lockfile moved; every app's suite runs hourly on `main`, `desktop-hourly.yml`). Commands: `scripts/ci-apps.ts`.
 
 - Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
 - The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
@@ -105,8 +105,9 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
 - `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
   and what it does; `--shot out.png` when you need to see it; `--url` for a server already running.
-  A PR that changes how an app looks runs `--before-after <dir>` (origin/main's copy of the app next to your working
-  tree, one `before-after.html`), publishes that page as an artifact and links it under `Before / after` in its body. A new game gets a handle on
+  A PR that changes how an app looks runs `--before-after <dir> --push` (origin/main's copy of the app next to your
+  working tree) and pastes the `Before / after` markdown it prints into its body. The pictures go to the `shots` branch
+  of the private manual-run repo, so only people who can read it see them (owner's pick, #5951): shoot no secrets. A new game gets a handle on
   `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
 - `bun run blender add <script.py> [args] --out <dir>`: a Blender job queued for Bob, who runs them one at a time in order
   (`bun run blender` lists them, `bun run blender wait <id>` brings the output back). Blender never runs on this Mac:

@@ -1,0 +1,6 @@
+/* The scope button and its floating screen (scope-button.ts). Dark in both looks, as the app's other screens are. */
+#q-scope { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); z-index: 55; display: grid; place-items: center; flex: none; width: 36px; height: 36px; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 999px; background: rgba(21,23,27,.82); color: #f4f1ea; box-shadow: 0 2px 8px rgba(0,0,0,.35); cursor: pointer; }
+#q-scope.q-scope-in { position: static; align-self: center; margin-left: auto; }
+#q-scope[aria-pressed="true"] { background: #0f766e; }
+#q-scope-view { position: fixed; z-index: 55; width: min(240px, calc(100vw - 16px)); height: 110px; border: 1px solid rgba(244,241,234,.14); border-radius: 12px; background: rgba(14,16,19,.94); box-shadow: 0 8px 24px rgba(0,0,0,.45); pointer-events: none; }
+#q-scope-view[hidden] { display: none; }

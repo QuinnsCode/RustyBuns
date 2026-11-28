@@ -7,7 +7,7 @@
 // flushed or a contract read): a move is fanned out the moment it arrives, and the latest pose of each player rides on
 // their socket's attachment, so the object can hibernate whenever the party stands still and wake with everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { denNear, holds, landing, signBelieved } from "../net/dens.ts";
+import { denNear, holds, landing, seenNear, signBelieved } from "../net/dens.ts";
 import { believeHurt, coopDen, keepSeen, sharedDen, COOP_MS, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, REST_DM, restMs, WORLD_CYCLE, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
@@ -181,10 +181,11 @@ export class Region {
     if (ev?.e === "rival") { if (!seat.loose) this.sockets.broadcast({ t: "rival", id: seat.id, f: ev.f }, ws, others); return; }
     if (ev?.e === "open") { this.sockets.attach(ws, { ...seat, open: [...new Set(ev.rs)] }); return; }
     // The wilds are one world only if nobody can strip them from afar: a patch picked or a flock flushed is told only by
-    // someone the room vouches for, standing by it. The page tells its catch-up again on `vouch`, so nothing true is lost.
+    // someone the room vouches for, standing by it, in a catch-up too. The page tells its catch-up again on `vouch`.
     if (ev?.e === "seen") {
       if (seat.loose) return;
-      const s: Seen = { picks: ev.picks, flown: ev.flown, roost: ev.roost, busy: ev.busy };
+      const s = seenNear(ev, seat.p);
+      if (seenEmpty(s)) return;
       this.sockets.broadcast({ t: "seen", id: seat.id, ...s }, ws, others);
       this.keepWilds(s);
       return;

@@ -6,6 +6,7 @@
 // parts into the board (circuit JSON and tscircuit source, ../circuit/builder.ts), plays the same riff through the
 // remake and through your board, and says whether they match. Build it draws the board from its kit's Gerbers (../kit/gerber.ts), prints the sheet, and saves the files.
 // The riff runs in a worker (worker.ts). window.qbuilder drives it (scripts/probe.ts).
+import { hear } from "../scope-tap.ts";
 import "../brand.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./builder.css";
@@ -411,6 +412,7 @@ async function togglePlay(): Promise<void> {
   for (let i = 0; i < ch.length; i++) ch[i] = Math.max(-1, Math.min(1, wave.out[i] * 0.5));
   const s = ctx.createBufferSource();
   s.buffer = buf; s.connect(ctx.destination);
+  s.addEventListener("ended", hear(s));
   s.onended = () => { if (src === s) src = null; paint(); draw(); };
   src = s; started = ctx.currentTime;
   s.start();

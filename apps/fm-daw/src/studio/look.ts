@@ -50,10 +50,18 @@ export function saveGraphics(g: Graphics) { try { localStorage.setItem(KEY, JSON
 interface Painted { map: THREE.Texture; bump?: THREE.Texture; rough?: THREE.Texture; metres: number }
 type Paint = (g: CanvasRenderingContext2D, n: number, rnd: () => number, base: THREE.Color) => void;
 
+/** With no GPU, Chrome rasters a 2D canvas through the same software GL as the room: the desert floor's grains took 8 s
+ *  of a room's load there, and every other page on that GL waited behind them (#6555). There they're painted on the CPU. */
+let paintOnCpu = false;
+/** Where the room's textures are painted, from the renderer they're for: call it before the room is built. */
+export function paintFor(renderer: THREE.WebGLRenderer) {
+  const gl = renderer.getContext(), info = gl.getExtension("WEBGL_debug_renderer_info");
+  paintOnCpu = /swiftshader|llvmpipe|software/i.test(String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : ""));
+}
 function canvasTex(n: number, draw: (g: CanvasRenderingContext2D) => void, color: boolean, tall = n): THREE.CanvasTexture {
   const c = document.createElement("canvas");
   c.width = n; c.height = tall;
-  const g = c.getContext("2d");
+  const g = c.getContext("2d", paintOnCpu ? { willReadFrequently: true } : undefined);
   if (!g) throw new Error("no 2d canvas");
   draw(g);
   const t = new THREE.CanvasTexture(c);
@@ -1864,16 +1872,11 @@ export interface Governed extends Look { run(r: Running, level: number): void }
 export function runningLook(look: Look, renderer: THREE.WebGLRenderer, g: Graphics): Governed {
   let now: Running & { level: number } = { scale: g.scale, freezeShadows: false, cap: g.cap, level: 0 }, size: [number, number] = [1, 1], last = 0;
   renderer.setPixelRatio(Math.min(g.scale, devicePixelRatio)); // the open air sets its own: the knob wins
-  // With no GPU every draw is the processor's, and drawn back to back they leave the page no time for its clicks and its
-  // room's messages (#6555: three rooms in headless Chrome never got in). One a second; the frames between still walk and listen.
-  const gl = renderer.getContext(), info = gl.getExtension("WEBGL_debug_renderer_info");
-  const software = /swiftshader|llvmpipe|software/i.test(String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : ""));
   return {
     quality: look.quality,
     render(cam) {
       // a cap skips a draw, never the frame: walking and the clock still run every frame
-      const cap = software ? 1 : now.cap;
-      if (cap) { const t = performance.now(); if (t - last < 1000 / cap - 2) return; last = t; }
+      if (now.cap) { const t = performance.now(); if (t - last < 1000 / now.cap - 2) return; last = t; }
       look.render(cam);
     },
     resize(w, h) { size = [w, h]; look.resize(w, h); },

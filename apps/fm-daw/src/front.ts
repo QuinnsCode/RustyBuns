@@ -15,6 +15,7 @@ import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "./account.ts";
 import { SKIN } from "./guest-list.ts";
 import { CHAIN, DEMOS, ICON, iconSvg, LIVE, PATHS, pathOf, PITCHES, SECTORS, type PathId, type Sector, type SectorId } from "./paths.ts";
+import { joinTarget } from "./join.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { check, obj, str } from "@rustybuns/util/guard";
@@ -63,8 +64,16 @@ const appList = (id: SectorId) => {
   // the lane's one way in for someone new, ahead of its apps
   const start = SECTORS.find((s) => s.id === id)!.start, first = document.createElement("li"), link = document.createElement("a");
   first.className = "start";
-  link.href = start.href; link.dataset.start = id; link.innerHTML = iconSvg(start.icon, 18); link.append(start.say);
+  link.href = start.href; link.dataset.start = id; link.innerHTML = iconSvg(start.icon, 18); link.append(start.fork?.host ?? start.say);
   first.append(link); ul.append(first);
+  // Event forks (#6551): host, or join with the code or link you were sent (the dialog below)
+  if (start.fork) {
+    const join = document.createElement("a");
+    join.href = "#join"; join.dataset.join = ""; join.setAttribute("aria-haspopup", "dialog");
+    join.innerHTML = iconSvg(start.fork.icon, 18); join.append(start.fork.join);
+    join.addEventListener("click", (e) => { e.preventDefault(); askToJoin(); });
+    first.append(join);
+  }
   for (const p of appsOf(id)) {
     const li = document.createElement("li"), a = document.createElement("a");
     a.href = p.href; a.dataset.app = p.id; a.textContent = p.name; a.title = p.does;
@@ -208,6 +217,24 @@ for (const d of DEMOS) {
 document.getElementById("demo-ask")!.addEventListener("click", () => demo.showModal());
 demo.addEventListener("click", (e) => { if (e.target === demo) demo.close(); }); // a click on the dark around it
 
+// Event's Join (join.ts): a code or a link in, that room or listen page out; a bad entry says why and stays here
+function askToJoin() {
+  const d = document.querySelector<HTMLDialogElement>("#join")!;
+  d.querySelector(".why")!.textContent = "";
+  d.showModal();
+}
+/** Goes where `entry` (a code or a link) says, or says why not. */
+function joinWith(entry: string) {
+  const to = joinTarget(entry, location.host);
+  if (to.ok) location.assign(to.href);
+  else document.querySelector("#join .why")!.textContent = to.why;
+  return to;
+}
+const join = document.querySelector<HTMLDialogElement>("#join")!;
+join.addEventListener("click", (e) => { if (e.target === join) join.close(); });
+join.querySelector(".back")!.addEventListener("click", () => join.close());
+join.querySelector("form")!.addEventListener("submit", (e) => { e.preventDefault(); joinWith(join.querySelector("input")!.value); });
+
 /** What the door offers, in words: each lane, its way in and its apps, and the demos. What an agent reads first. */
 const offers = () => ({
   what: "Qollab Studio's front door. Three lanes: Learn (how to set gear up), Studio (make music and plan the sound), Event (play it live with people).",
@@ -219,6 +246,7 @@ const offers = () => ({
   demos: DEMOS.map((d) => ({ id: d.id, say: d.say, href: pathOf(d.path).href })),
 });
 const Pick = obj({ id: str(40) });
+const Entry = obj({ entry: str(2000) });
 /** Goes where `id` names (an app, a lane's way in, or a demo), or says what the ids are. */
 const openById = (args: unknown) => {
   const id = check(Pick, args)?.id ?? "";
@@ -231,6 +259,7 @@ addCommands([
   { name: "qdoor_offers", title: "What can I do here?", group: "Qollab Studio", description: "The front door in words: the three lanes (Learn, Studio, Event), each lane's way in for someone new, its apps (what each does, its address, whether it asks for a sign-in) and the one-click demos. Read this first, match it to what the person wants, then call qdoor_open.", annotations: { readOnlyHint: true }, execute: offers },
   { name: "qdoor_open", title: "Open…", group: "Qollab Studio", ask: "learn, studio, event, an app or a demo", description: "Go to a lane's way in (learn, studio, event), an app (planner, daw, instruments, amps, builder, speakers, playground) or a demo (beat, mix, amp, stage) by its id from qdoor_offers. Studio's way in is a room of your own, sat at the keys.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, execute: openById },
   { name: "qdoor_demo", title: "Not sure? Try a demo", group: "Qollab Studio", description: "Opens the demo picker a person sees: four things that make a sound in one click.", agent: false, execute: () => demo.showModal() },
+  { name: "qdoor_join", title: "Join with a code or link", group: "Start", ask: "the code or link you were sent", description: "Join an event or a room as a guest: `entry` is the link you were sent (a room's or a listen page's) or the room's code (words joined by dashes). Goes there, or says why it can't.", inputSchema: { type: "object", properties: { entry: { type: "string" } }, required: ["entry"] }, execute: (args: unknown) => { const e = check(Entry, args); if (!e) { askToJoin(); return { ok: false, why: "Give an entry: the code or the link." }; } return joinWith(e.entry); } },
   ...SECTORS.map((s) => ({ name: `qdoor_${s.id}`, title: `${s.word}: ${s.start.say.toLowerCase()}`, group: "Start", description: `${s.word}'s way in.`, agent: false, execute: () => location.assign(s.start.href) })),
 ]);
 mountPalette({ button: true, placeholder: "Learn, Studio, Event…" });

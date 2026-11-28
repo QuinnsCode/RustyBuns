@@ -7,6 +7,7 @@
 // channel on that desk from here: `desk` sets its level (gain, fader, mute, solo), and `sendsTo` taps it after that
 // level into the audio thread's aux buses, where Space and the aux 2 return play what the channel sends them.
 import ampWorkletUrl from "../amp/worklet.ts?worker&url";
+import { NEAR } from "./hear.ts";
 import shapeWorkletUrl from "./shape-worklet.ts?worker&url";
 import type { EqDoc } from "../engine/eq.ts";
 import type { AmpSettings, ToAmp } from "../amp/messages.ts";
@@ -304,7 +305,7 @@ export class GuitarLine {
     // an amp whose audio thread threw plays silence and says nothing else: say it, so a silent guitar has a reason
     amp.onprocessorerror = (e) => console.error(`Q Amp stopped on ${who === "me" ? "your" : `player ${who}'s`} guitar`, e);
     const gain = new GainNode(ctx, { gain: 1 });
-    const pan = who === "me" ? null : new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1.5, rolloffFactor: 0.7 });
+    const pan = who === "me" ? null : new PannerNode(ctx, { panningModel: "HRTF", ...NEAR });
     amp.port.onmessage = (e: MessageEvent<unknown>) => this.metered(who, e.data);
     // the channel's Shape after the amp, as the desk's audio thread runs it on a player's channel (shape-worklet.ts)
     const shape = new AudioWorkletNode(ctx, "q-shape", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
