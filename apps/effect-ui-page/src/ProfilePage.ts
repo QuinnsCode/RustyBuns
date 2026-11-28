@@ -15,8 +15,8 @@ import { linksFor, prompt } from "./relay.ts";
 import { listTools } from "./tools.ts";
 import { worldDoc } from "./world.ts";
 import { READY } from "./worlds.ts";
-import { galaxyAsks } from "./galaxyView.ts";
-import { galaxyLock, lockLine } from "./lock.ts";
+import { galaxyAsks, preloadGalaxy } from "./galaxyView.ts";
+import { galaxyLock, lockLine, SIGN_IN_FIRST } from "./lock.ts";
 
 export const PageMessage = UiSchema.TaggedEnum({
   ReceivedAgentCall: { call: Call },
@@ -52,7 +52,12 @@ export const CreateWorld = Command.make("effect-ui-page/CreateWorld", { args: { 
  *  galaxy to a signed-in person (lock.ts) and lets the server hand it a plot. */
 export const MarkMade = Command.make("effect-ui-page/MarkMade", { args: { room: Schema.String, page: Page, signedIn: Schema.Boolean } }, ({ room, page, signedIn }) =>
   Effect.promise(() => fetch(`/api/r/${room}/made`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(page) }).then((r) => r.ok, () => false))
-    .pipe(Effect.map((made) => { if (made) galaxyLock.why = lockLine(signedIn, true); return PageMessage.MadeWorld({ made }); })));
+    .pipe(Effect.map((made) => {
+      if (made) galaxyLock.why = lockLine(signedIn, true);
+      // Open now: claim the plot and build the galaxy hidden, a moment later, when the browser is idle.
+      if (made && signedIn) setTimeout(() => void preloadGalaxy(), 600);
+      return PageMessage.MadeWorld({ made });
+    })));
 
 /** Record the world as a GIF (pictures.ts); how it goes comes back as ChangedGif. */
 export const ExportGif = Command.make("effect-ui-page/ExportGif", { args: { room: Schema.String } }, ({ room }) =>
@@ -276,12 +281,21 @@ const STRIP: readonly (readonly [Icon, string])[] = [
   ["hourglass", "Waiting for your AI"], ["bot", "Your AI is here"], ["ask", "Asking you about your world"], ["code", "Writing the code"], ["globe", "Your world is up"],
 ];
 const stepOf = (s: Model["steps"]) => (s.up ? 4 : s.wrote ? 3 : s.asked ? 2 : s.here ? 1 : 0);
-const stripView = Def.fragment((h, steps: Model["steps"], status: string | null) => {
+/** What happens next, under the strip, in a few words: one per step, and the galaxy's once the world is up. */
+export const nextLine = (steps: Model["steps"], locked: string | null): string => [
+  "Next: copy the prompt and paste it into your AI",
+  "Next: your AI asks you about your world",
+  "Next: answer in your AI's chat, then it writes",
+  steps.clean ? "Next: your world loads" : "Next: your AI fixes the error",
+  locked === null ? "Next: open the galaxy" : locked === SIGN_IN_FIRST ? "Next: press Galaxy to sign in" : "Saving your world…",
+][stepOf(steps)]!;
+const stripView = Def.fragment((h, steps: Model["steps"], status: string | null, locked: string | null) => {
   const now = stepOf(steps);
   return h.section.class("strip").attr("aria-label", "Where your AI is").children(
     h.ol.children(...STRIP.map(([i, says], n) => h.li.key(says).class(n < now && "done", n === now && "now").attr("aria-current", n === now ? "step" : undefined)
       .children(icon(h, i), h.span(says)))),
-    status !== null && h.p.class("said").attr("role", "status").children(h.b("Your AI: "), status),
+    h.p.class("next").attr("role", "status").children(nextLine(steps, locked)),
+    status !== null && h.p.class("said").children(h.b("Your AI: "), status),
   );
 });
 
@@ -289,14 +303,14 @@ const stripView = Def.fragment((h, steps: Model["steps"], status: string | null)
 const cardsView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: string | null) => h.div.class("l-cards").children(
   h.button.attr("type", "button").class("l-card", "c-cyan").attrs({ "aria-expanded": explain ? "true" : "false", "aria-controls": "l-explain" })
     .on("click", PageMessage.ClickedExplain()).children(icon(h, "info"), h.b("What is Agent World?"), h.span("Read it in 20 seconds")),
-  h.button.attr("type", "button").class("l-card", "c-pink").on("click", PageMessage.ClickedCreate())
-    .children(icon(h, "sparkles"), h.b("Create your world"), h.span(who ? `Signed in as ${who}` : "Sign in with eqosys to get your plot")),
+  h.button.attr("type", "button").class("l-card", "c-pink", "bright").on("click", PageMessage.ClickedCreate())
+    .children(icon(h, "sparkles"), h.b("Create your world"), h.span(who ? `Signed in as ${who}` : "Sign in with eqosys to get your land")),
   explain && h.div.class("l-explain").attrs({ id: "l-explain", role: "region", "aria-label": "What is Agent World?" }).children(
     h.ol.children(
       h.li("See how it works: try a ready-made world below, no AI needed."),
       h.li("Make an account with eqosys: your world follows you to any browser."),
       h.li("Connect your AI and make your world: it asks you three things, then writes the code while you watch."),
-      h.li("Then the galaxy opens: your world joins one big map you can walk."),
+      h.li("Then the galaxy opens: your land sits next to everyone else's, and you can walk across."),
     ),
   ),
   noSignIn && h.p.class("l-alt").attr("role", "alert").children("Sign-in isn't reachable from here, so your world stays in this browser: Skip to the page below."),
@@ -404,7 +418,12 @@ export const ProfilePageNoDeps = Def.make({
       case "ChangedGif": return $.evolve({ gif: { busy: message.busy, says: message.says } });
       case "CompletedExportGif": return $.model;
       // Shut until the world is made: the tile's line says why (and Cmd+K and window.agentGalaxy say it too).
-      case "ClickedGalaxy": return lockLine($.props.who !== null, $.model.made) ? $.model : $.evolve({ galaxy: true, landing: false });
+      case "ClickedGalaxy": {
+        const why = lockLine($.props.who !== null, $.model.made);
+        // Signed out, the locked tile is the way to sign in: the next step.
+        if (why === SIGN_IN_FIRST) return $.run(CreateWorld.make({ room: $.props.room }));
+        return why ? $.model : $.evolve({ galaxy: true, landing: false });
+      }
       case "MadeWorld": return $.evolve({ made: message.made });
       case "ClickedBack": return $.evolve({ galaxy: false });
     }
@@ -414,9 +433,9 @@ export const ProfilePageNoDeps = Def.make({
     const { model, error } = step($.model, r);
     // The agent's first change that lands, or a world the person picks, takes the landing down.
     const landing = model.landing && !((call > 0 || r._tag === "Load") && error === null);
-    // An agent's call says it is here; its page_status that it is asking; its first write that lands that it is writing.
+    // An agent's call says it is here; its page_status that it is asking; its first write or edit that lands that it is writing.
     const s = model.steps;
-    const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || (r._tag === "WriteFile" && error === null) } : s;
+    const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || ((r._tag === "WriteFile" || r._tag === "EditFile") && error === null) } : s;
     return $.set({ ...model, landing, steps, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
       .run(ReportPage.make({ call, error, page: model.page }));
   },
@@ -466,12 +485,12 @@ export const ProfilePageNoDeps = Def.make({
           h.h2.children(h.span.class("t-dot", online && "on").attr("aria-hidden", "true"), "agent-page", h.span.class("t-path").children(` ~/r/${room}`)),
           h.button.attr("type", "button").class("hide").attr("title", "Put the console away to see your world").on("click", PageMessage.ClickedFull()).children("Hide"),
         ),
-        stripView(h, steps, status),
+        stripView(h, steps, status, locked),
         h.div.class("term-body").children(
           termView(h, termLines(room, online, steps, log)),
           h.div.class("term-side").children(
             stepsView(h, copied !== null && copied !== "ask" && !copied.startsWith("failed"), log.find((l) => l.call > 0)),
-            h.button.attr("type", "button").class("big").on("click", PageMessage.ClickedCopy({ what: "prompt", text: promptText }))
+            h.button.attr("type", "button").class("big", (steps.here || made) && "quiet").on("click", PageMessage.ClickedCopy({ what: "prompt", text: promptText }))
               .attr("title", "Paste it into Claude Code, Codex, opencode or T3 Code")
               .children(icon(h, copied === "prompt" ? "check" : "copy"), copied === "prompt" ? "Copied" : "Copy prompt"),
             h.div.class("chips").attrs({ role: "group", "aria-label": "Or add it as an MCP server" }).children(
@@ -490,7 +509,7 @@ export const ProfilePageNoDeps = Def.make({
               h.button.attr("type", "button").class("tile").attr("aria-label", "Undo").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children(icon(h, "undo"), "Undo"),
               h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Start over", title: "Start over" }).on("click", PageMessage.ClickedReset()).children(icon(h, "reset"), "Reset"),
               exportButton(h, gif),
-              h.button.attr("type", "button").class("tile", locked && "locked").attrs({ "aria-label": locked ? `Agent Galaxy: ${locked}` : "Agent Galaxy", title: locked ?? "Walk the map of everyone's worlds" }).attr("aria-disabled", locked ? "true" : undefined)
+              h.button.attr("type", "button").class("tile", locked ? "locked" : "next").attrs({ "data-galaxy-tile": "", "aria-label": locked ? `Agent Galaxy: ${locked}` : "Agent Galaxy", title: locked ?? "Walk the galaxy: your land next to everyone's" }).attr("aria-disabled", locked ? "true" : undefined)
                 .on("click", PageMessage.ClickedGalaxy()).children(icon(h, locked ? "lock" : "globe"), "Galaxy"),
             ),
             locked && h.p.class("lock-line").attr("data-galaxy-lock", locked).children(icon(h, "lock"), locked),

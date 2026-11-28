@@ -262,3 +262,28 @@ button:disabled { opacity: .5; cursor: default; }
 @media (pointer: coarse) { .galaxy-stick { display: block; } .galaxy-hint { display: none; } }
 .galaxy-back { position: fixed; top: 56px; left: 14px; z-index: 21; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #fff; background: rgba(8, 8, 24, .8); border-color: rgba(255, 255, 255, .3); }
 @media (min-width: 700px) { .galaxy-back { top: 12px; } }
+
+/* One bright control a screen, and it is the next step (#6487): Create your world on the landing; Copy prompt in the
+   console until your AI is here; the Galaxy tile once your world is made, with one short glow. The rest is quieter. */
+.landing button.l-card.bright { background: var(--pink); border-color: var(--pink); color: var(--night); box-shadow: 0 0 24px color-mix(in srgb, var(--pink) 55%, transparent); }
+.landing button.l-card.bright:hover { background: color-mix(in srgb, var(--pink) 88%, #fff); }
+.landing button.l-card.bright b, .landing button.l-card.bright .l-i { color: var(--night); }
+.landing button.l-card.bright span { color: color-mix(in srgb, var(--night) 75%, transparent); }
+.landing button.l-go { color: var(--pink); background: transparent; border: 1px solid color-mix(in srgb, var(--pink) 70%, transparent); box-shadow: none; }
+.landing button.l-go:hover { background: color-mix(in srgb, var(--pink) 14%, transparent); }
+.strip .next { margin: 8px 0 0; font-size: 12px; color: var(--t-ink); }
+.dock button.big.quiet { background: var(--t-panel); border-color: var(--t-line); color: var(--t-ink); font-size: 14px; padding: 10px; }
+.dock .tile.next { border-color: var(--t-call); color: #fff; background: color-mix(in srgb, var(--t-call) 16%, var(--t-panel)); animation: g-glow 1.4s ease-out 1; }
+.dock .tile.next .l-i { color: var(--t-call); }
+@keyframes g-glow { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--t-call) 70%, transparent); } 60% { box-shadow: 0 0 22px 6px color-mix(in srgb, var(--t-call) 45%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .dock .tile.next { animation: none; } }
+/* A phone: the strip is its icons and the one step it is on, so the console's buttons fit on the screen. */
+@media (max-width: 720px) {
+  .strip ol { display: flex; }
+  .strip li { flex: none; flex-direction: row; padding: 6px; }
+  .strip li:not(.now) span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .strip li.now { flex: 1; min-width: 0; justify-content: flex-start; text-align: left; }
+  .term-out { min-height: 0; max-height: 18vh; }
+  .term-side { gap: 10px; }
+  .dock .go { display: none; }
+}
