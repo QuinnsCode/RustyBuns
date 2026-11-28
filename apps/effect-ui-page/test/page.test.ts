@@ -5,10 +5,11 @@ import { Effect } from "effect";
 import { decode, inputSchema, type Request, TOOLS } from "../src/tools.ts";
 import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
 import { worldDoc, WORLD_CSP } from "../src/world.ts";
-import { connectLines, CopyText, CreateWorld, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { READY } from "../src/worlds.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
-const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false, who: null };
+const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false, who: null, made: false };
 const run = <A>(e: Effect.Effect<A, never, import("effect").Scope.Scope>) => Effect.runPromise(Effect.scoped(e));
 const write = (path: string, text: string) => ({ call: { call: 1, tool: "page_write_file", request: { _tag: "WriteFile" as const, path, text } } });
 
@@ -135,12 +136,43 @@ test("the step strip follows the agent: read, status, write, and a clean load is
       .expect(now("Writing the code")).toExist()
       .subscription("seen", PageMessage.Saw({ what: "start" }))
       .subscription("seen", PageMessage.Saw({ what: "loaded" }))
-      .expect(now("Your world is up")).toExist();
+      .expect(now("Your world is up")).toExist()
+      // Up after the AI's write: the page saves the world as made.
+      .resolve(MarkMade, PageMessage.MadeWorld({ made: true }));
     // A status changes no file and leaves nothing to undo.
     const story = yield* Story.make(ProfilePageNoDeps, props);
     story.send(call(1, { _tag: "Status", text: "Asking about the weather" }));
     expect([story.model.status, story.model.past.length, story.model.page]).toEqual(["Asking about the weather", 0, starter]);
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
+  })));
+
+test("the Galaxy is locked until your world is made: a ready-made world doesn't make it, your AI's clean write does", () =>
+  run(Effect.gen(function* () {
+    for (const [who, made, name] of [
+      [null, false, "Agent Galaxy: Sign in and make your world first"],
+      [null, true, "Agent Galaxy: Sign in and make your world first"],
+      ["Ada", false, "Agent Galaxy: Make your world first"],
+      ["Ada", true, "Agent Galaxy"],
+    ] as const) (yield* HtmlScene.make(ProfilePageNoDeps, { ...props, who, made })).expect(HtmlLocator.role("button", { name })).toExist();
+
+    const s = yield* Story.make(ProfilePageNoDeps, { ...props, who: "Ada" });
+    const loads = () => { s.send(PageMessage.Saw({ what: "start" })); s.send(PageMessage.Saw({ what: "loaded" })); };
+    s.send(PageMessage.ClickedGalaxy());
+    expect(s.model.galaxy).toBe(false);
+    // A person's click on a ready-made world: it loads clean, and nothing is made.
+    s.send(PageMessage.ClickedTry({ name: READY[0]!.name }));
+    s.resolve(ReportPage, PageMessage.CompletedReportPage());
+    loads();
+    expect([s.model.made, s.pending.length]).toEqual([false, 0]);
+    // The AI's write loads clean: the page saves it as made, and the galaxy opens.
+    s.send(PageMessage.ReceivedAgentCall(write("world.js", "// dunes")));
+    s.resolve(ReportPage, PageMessage.CompletedReportPage());
+    loads();
+    s.expectExact(MarkMade);
+    expect(s.pending[0]!.command.args).toMatchObject({ room: props.room, signedIn: true, page: { files: { "world.js": "// dunes" } } });
+    s.resolve(MarkMade, PageMessage.MadeWorld({ made: true }));
+    s.send(PageMessage.ClickedGalaxy());
+    expect([s.model.made, s.model.galaxy]).toEqual([true, true]);
   })));
 
 test("What is Agent World? opens in place on the landing and closes again", () =>
