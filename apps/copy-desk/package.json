@@ -11,7 +11,8 @@
     "deploy": "vite build && bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app copy-desk"
   },
   "dependencies": {
-    "@rustybuns/cms": "^0.1.12"
+    "@rustybuns/cms": "^0.1.12",
+    "@rustybuns/util": "^0.1.12"
   },
   "devDependencies": {
     "vite": "^6.4.4"

@@ -135,8 +135,8 @@ export function App() {
         <section>
           <h2>Model</h2>
           <div className="row wrap">
-            {SAMPLES.map((s) => <button key={s.id} onClick={() => open(s.id)} disabled={!!busy}>{s.label}</button>)}
-            <label className="button">Open .glb…<input type="file" accept=".glb,.gltf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open("file", f); e.target.value = ""; }} /></label>
+            {SAMPLES.map((s) => <button key={s.id} data-cmd={s.id} onClick={() => open(s.id)} disabled={!!busy}>{s.label}</button>)}
+            <label className="button" data-cmd="open">Open .glb…<input type="file" accept=".glb,.gltf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open("file", f); e.target.value = ""; }} /></label>
           </div>
           {model && <p className="dim">{model.name} · {model.triangles.toLocaleString()} triangles · {model.parts.length} mesh{model.parts.length > 1 ? "es" : ""}</p>}
           {model?.credit && <p className="credit">{model.credit}</p>}
@@ -154,7 +154,7 @@ export function App() {
               <option value="auto">Fastest available</option>
               {(Object.keys(LANES) as Lane[]).map((l) => <option key={l} value={l} disabled={l !== "page-ts" && !host}>{LANES[l]}</option>)}
             </select>
-            <button className="primary" onClick={() => rig()} disabled={!model || !!busy}>Rig it</button>
+            <button className="primary" data-cmd="rig" onClick={() => rig()} disabled={!model || !!busy}>Rig it</button>
           </div>
           {run && t && (
             <div className="stats">
@@ -168,7 +168,7 @@ export function App() {
               </tbody></table>
             </div>
           )}
-          <button onClick={raceLanes} disabled={!model || !!busy}>Race the engines</button>
+          <button data-cmd="race" onClick={raceLanes} disabled={!model || !!busy}>Race the engines</button>
           {race && (
             <table className="race"><tbody>
               {race.map((r) => (
@@ -194,16 +194,16 @@ export function App() {
             </ul>
             {st.clasped && <p>Clasped: tips {st.tips.findIndex((x) => x.index === st.clasped![0]) + 1} and {st.tips.findIndex((x) => x.index === st.clasped![1]) + 1} <button className="small" onClick={() => stage.current!.unclasp()}>let go</button></p>}
             <div className="row">
-              <button onClick={() => stage.current!.resetPose()}>Reset pose</button>
-              <button onClick={exportGlb}>Download rigged .glb</button>
+              <button data-cmd="reset-pose" onClick={() => stage.current!.resetPose()}>Reset pose</button>
+              <button data-cmd="download" onClick={exportGlb}>Download rigged .glb</button>
             </div>
           </section>
         )}
 
         <section>
           <h2>View</h2>
-          <label className="check"><input type="checkbox" checked={show.weights} onChange={() => toggle("weights")} /> Skin weights</label>
-          <label className="check"><input type="checkbox" checked={show.skeleton} onChange={() => toggle("skeleton")} /> Skeleton and handles</label>
+          <label className="check"><input type="checkbox" data-cmd="weights" checked={show.weights} onChange={() => toggle("weights")} /> Skin weights</label>
+          <label className="check"><input type="checkbox" data-cmd="skeleton" checked={show.skeleton} onChange={() => toggle("skeleton")} /> Skeleton and handles</label>
         </section>
       </aside>
       <main ref={view}>

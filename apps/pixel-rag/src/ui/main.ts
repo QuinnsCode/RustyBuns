@@ -12,6 +12,7 @@ import { askFace, sameFaces, type Face, type FaceMatch } from "../faces/face.ts"
 import { faceLane, type FaceLane } from "../faces/lanes.ts";
 import { raceOnHost } from "../actions/race.ts";
 import "./app.css";
+import "./menu.ts";
 
 installUi();
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -89,10 +90,12 @@ $("#root").append(
     const sample = el("button", "ui-btn icon");
     sample.title = "Sample photos";
     sample.append(icon(Users, "Sample photos"));
+    sample.dataset.cmd = "samples";
     sample.onclick = () => void samplePhotos();
     const tools = el("div", "tools");
     const add = el("label", "ui-btn icon");
     add.title = "Add pics";
+    add.dataset.cmd = "add";
     add.append(icon(ImagePlus, "Add pics"));
     const file = el("input"); file.type = "file"; file.accept = "image/*"; file.multiple = true; file.hidden = true;
     file.onchange = () => { if (file.files?.length) void addFiles([...file.files]); file.value = ""; };

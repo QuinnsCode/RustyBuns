@@ -1,4 +1,5 @@
 import { greeting } from "./greeting.ts";
+import "./menu.ts";
 
 // A mini app made to be edited: agents rewrite these lines live in the codeSplitter welcome tour.
 let waves = 0;

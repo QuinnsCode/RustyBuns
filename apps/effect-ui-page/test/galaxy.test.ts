@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { join } from "node:path";
 import { type Cdp, freePort, launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
 import { cellOf, keptFree, spiral } from "../src/galaxy.ts";
-import { fakeEqosys, signIn } from "./eqosys-kit.ts";
+import { enterSigned, fakeEqosys, signIn } from "./eqosys-kit.ts";
 
 setDefaultTimeout(120_000); // Bun bundles the page cold, then two tabs walk it
 
@@ -28,6 +28,8 @@ interface Galaxy {
   players: { id: string; x: number; y: number; px: number; pz: number }[];
   live: { kind: string; id: string | null; files: { path: string; bytes: number }[] } | null;
   shows: Record<string, string>;
+  look: { paint: number; head: string; eyes: string; top: string; feet: string } | null; building: boolean;
+  air: { weather: string; fps: number; top: string; bloom: number } | null;
 }
 
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -58,7 +60,7 @@ async function open(cdp: Cdp, room: string, who: string) {
   const until = (what: string, expr: string) => waitFor(tab, what, expr, 15_000, "agentGalaxy.state()", 50);
   return {
     room, tab, page, until,
-    enter: () => page<Galaxy>("agentGalaxy.enter()"),
+    enter: () => enterSigned<Galaxy>(tab),
     leave: () => page<Galaxy>("agentGalaxy.leave()"),
     walk: (dx: number, dz: number) => page<Galaxy>(`agentGalaxy.walk(${dx}, ${dz})`),
     state: () => page<Galaxy>("agentGalaxy.state()"),
@@ -98,6 +100,25 @@ describe("two rooms in Agent Galaxy", () => {
     await a.until("B moved", `agentGalaxy.state().players.some((p) => p.id === ${JSON.stringify(meB.id)} && Math.abs(p.px - 0.7) < 0.01)`);
   });
 
+  test("a robot is built with picture buttons, seen by a neighbour, and kept for next time", async () => {
+    // Neither has built one, so the builder came up by itself once the cloud lifted.
+    await a.until("A's builder", "agentGalaxy.state().building");
+    const press = (...names: string[]) => a.page(`${JSON.stringify(names)}.forEach((n) => document.querySelector('.robot-shop button[aria-label="' + n + '"]').click())`);
+    await press("Green paint", "Dome head", "One big eye", "Propeller", "Hover");
+    const built = { paint: 3, head: "dome", eyes: "one", top: "propeller", feet: "hover" };
+    await b.until("A's robot on B's screen", `agentGalaxy.state().players.some((p) => p.id === ${JSON.stringify(meA.id)} && p.look.paint === 3 && p.look.feet === "hover")`);
+    await press("Done");
+    expect(await a.state()).toMatchObject({ building: false, look: built });
+    await a.leave();
+    expect(await a.enter()).toMatchObject({ look: built });
+    await a.until("the cloud gone again", "(await new Promise((r) => setTimeout(r, 3000)), true)");
+    expect((await a.state()).building).toBe(false);
+    // The button brings it back.
+    await a.page(`document.querySelector(".galaxy-robot").click()`);
+    expect((await a.state()).building).toBe(true);
+    await press("Done");
+  });
+
   test("walking east off your plot lands you on the west edge of the plot next door", async () => {
     const s = await a.walk(0.6, 0);
     expect(s.plot).toEqual({ x: meA.x + 1, y: meA.y });
@@ -124,6 +145,33 @@ describe("two rooms in Agent Galaxy", () => {
     expect([...a.errors(), ...b.errors()]).toEqual([]);
   });
 
+  test("a new person picks a land with one tap, their AI changes it, and its weather is a visitor's too", async () => {
+    // A and B stand aside meanwhile: CI draws every 3D page on its processor.
+    await a.leave();
+    await b.leave();
+    const room = roomName("c"), tab = await openTab(chrome.cdp, { w: 390, h: 844 }, false, true);
+    await load(chrome.cdp, tab, `${base}/r/${room}`, 0);
+    await waitFor(tab, "the galaxy handle", "!!window.agentGalaxy");
+    eqosys.as({ id: "u_cy", email: "cy@example.com", name: "cy" });
+    await signIn(tab, eqosys.url);
+    await waitFor(tab, "the land picker", `!!document.querySelector('[data-land="Neon city"]')`, 15_000);
+    await tab.eval(`document.querySelector('[data-land="Neon city"]').click()`);
+    await waitFor(tab, "the picker gone", `!document.querySelector("[data-land]")`, 15_000);
+    // An edit counts as the AI's write: the world is made.
+    expect(await tab.eval<boolean>(`__commands.run("page_edit_file", { path: "world.js", find: "flyers(9)", replace: "flyers(8)" }).then((r) => r.ok)`)).toBe(true);
+    await waitFor(tab, "the world made", `!document.querySelector("[data-galaxy-lock]")`, 90_000);
+    const mine = (await enterSigned<Galaxy>(tab)).me!;
+    await waitFor(tab, "rain on my own land", `agentGalaxy.state().air?.weather === "rain"`, 45_000, "agentGalaxy.state().air");
+    await tab.eval("agentGalaxy.leave().then(() => 1)");
+    // B walks over from its own plot, and back again for the tests after this one.
+    const from = (await b.enter()).plot!;
+    await b.walk(mine.x - from.x, mine.y - from.y);
+    await waitFor(b.tab, "the visitor in the rain", `agentGalaxy.state().shows["${mine.x},${mine.y}"] === "land" && agentGalaxy.state().air.weather === "rain"`, 45_000, "agentGalaxy.state().air");
+    await b.walk(from.x - mine.x, from.y - mine.y);
+    await tab.close();
+    await a.enter();
+  });
+
   test("a world built with the kit stands in 3D, for its owner and for a neighbour's next visit", async () => {
     await a.page(`__commands.run("page_write_file", { path: "a.js", text: 'import { ground, trees } from "@world/kit"; ground({ type: "hills" }); trees(20);' })`);
     await a.page(`__commands.run("page_write_file", { path: "index.html", text: '<!doctype html><script type="module" src="a.js"></script>' })`);
@@ -147,6 +195,8 @@ test("a page from another site can't claim a plot, save a room's world or open a
   const save = await fetch(`${base}/api/r/evilroom0001/world`, { method: "PUT", headers: evil, body: JSON.stringify({ files: { "index.html": "<p>hi" } }) });
   expect(save.status).toBe(403);
   expect((await fetch(`${base}/api/r/evilroom0001/world`)).status).toBe(404);
+  const dress = await fetch(`${base}/api/galaxy/robot`, { method: "PUT", headers: evil, body: JSON.stringify({ look: { paint: 0, head: "box", eyes: "two", top: "ears", feet: "legs" } }) });
+  expect(dress.status).toBe(403);
   const socket = await fetch(`${base}/api/galaxy/socket?room=evilroom0001`, { headers: { ...evil, upgrade: "websocket", connection: "upgrade" } });
   expect(socket.status).toBe(403);
 });

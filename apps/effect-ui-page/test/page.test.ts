@@ -2,10 +2,10 @@ import { HtmlLocator, HtmlScene } from "@effect/ui/html/testing";
 import { Locator, Story } from "@effect/ui/testing";
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { decode, decodeReadFile, inputSchema, type Request, TOOLS } from "../src/tools.ts";
+import { BUILD_TOOLS, decode, decodeReadFile, inputSchema, type Request, TOOLS } from "../src/tools.ts";
 import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
 import { worldDoc, WORLD_CSP } from "../src/world.ts";
-import { connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { step, connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 import { READY } from "../src/worlds.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
@@ -35,6 +35,9 @@ describe("an agent's write", () => {
       ["page_set_backdrop", { codesplitter: "../me" }, 'codesplitter: a codeSplitter handle like ada, or "" for none'],
       ["page_status", { text: "" }, "text: a few words, 80 characters at most"],
     ] as const) expect(() => decode(tool(name), args)).toThrow(why);
+    const door = (name: string) => BUILD_TOOLS.find((t) => t.name === name)!;
+    expect(() => decode(door("world_build"), {})).toThrow("code: world.js's whole code");
+    expect(() => decode(door("world_edit"), { find: "", replace: "" })).toThrow('find: the exact text to replace');
     expect(() => decodeReadFile({})).toThrow("path: a file name like world.js");
   });
 
@@ -94,6 +97,14 @@ describe("the sealed frame's document", () => {
   test("says what to do when there is no index.html", () => {
     expect(world({ "world.js": "" })).toContain("No index.html yet");
   });
+});
+
+test("world_build on a ready-made world gives it an index.html that runs a module, and one undo takes both back", () => {
+  const page = { files: READY[0]!.files };
+  const built = step({ page, past: [] }, { _tag: "Build", code: "// mine" });
+  expect(built.model.page.files["world.js"]).toBe("// mine");
+  expect(built.model.page.files["index.html"]).toBe(starter.files["index.html"]!);
+  expect(step(built.model, { _tag: "Undo" }).model.page).toEqual(page);
 });
 
 test("a person's Start over shows in the agent's log", () =>
@@ -186,12 +197,15 @@ test("the Galaxy is locked until your world is made: a ready-made world doesn't 
     expect([s.model.made, s.model.galaxy]).toEqual([true, true]);
   })));
 
-test("What is Agent World? opens in place on the landing and closes again", () =>
+test("the landing is one screen: the three steps and Create your world; How it's built opens under it and closes again", () =>
   run(Effect.gen(function* () {
     const s = yield* HtmlScene.make(ProfilePageNoDeps, { ...props, landing: true });
-    const card = HtmlLocator.role("button", { name: /What is Agent World/ });
-    s.click(card).expect(HtmlLocator.role("region", { name: "What is Agent World?" })).toExist()
-      .click(card).expect(HtmlLocator.role("region", { name: "What is Agent World?" })).toBeAbsent();
+    const how = HtmlLocator.role("button", { name: "How it's built" });
+    for (const says of ["Connect your agent", "Ask for your world", "Walk the galaxy"]) s.expect(Locator.text(says)).toExist();
+    s.expect(HtmlLocator.role("button", { name: /Create your world/ })).toExist()
+      .expect(HtmlLocator.role("region", { name: "How it's built" })).toBeAbsent()
+      .click(how).expect(HtmlLocator.role("region", { name: "How it's built" })).toExist()
+      .click(how).expect(HtmlLocator.role("region", { name: "How it's built" })).toBeAbsent();
   })));
 
 test("Create your world signs in, or says in one line that it can't, and Skip to the page still works", () =>
@@ -223,17 +237,9 @@ test("a person tries a ready-made world from the landing, no AI connected, and U
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
   })));
 
-test("a fresh room lands on the landing: Copy copies its Claude Code line, and the AI's first write brings up the world", () =>
+test("a fresh room lands on the landing, and the AI's first write brings up the world", () =>
   run(Effect.gen(function* () {
-    const fresh = { ...props, landing: true };
-    const s = yield* HtmlScene.make(ProfilePageNoDeps, fresh);
-    s.expect(Locator.text("How it works")).toExist();
-    s.expect(Locator.text("How it's built")).toExist();
-    s.click(HtmlLocator.role("button", { name: "Copy" }))
-      .expectExact(CopyText);
-    expect(s.pending[0]!.command.args).toMatchObject({ text: connectLines(props.origin, props.room)[0]!.text });
-    s.resolve(CopyText, PageMessage.CompletedCopy({ what: "Claude Code" })).expect(HtmlLocator.role("button", { name: "Copied" })).toExist();
-    const story = yield* Story.make(ProfilePageNoDeps, fresh);
+    const story = yield* Story.make(ProfilePageNoDeps, { ...props, landing: true });
     story.send(PageMessage.ReceivedAgentCall(write("world.js", "// mine")));
     expect(story.model.landing).toBe(false);
     story.resolve(ReportPage, PageMessage.CompletedReportPage());

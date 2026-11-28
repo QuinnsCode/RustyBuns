@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { addCommands, askArgs, rankCommands, runCommand } from "../src/commands.ts";
+import { addCommands, askArgs, buttonCommand, rankCommands, runCommand } from "../src/commands.ts";
 
 // A browser with WebMCP: document.modelContext keeps what is registered until the signal aborts.
 const live = new Map<string, { execute(a: unknown): unknown }>();
@@ -62,6 +62,26 @@ test("the palette finds commands by what a person types", () => {
     ["zzz", []],
   ];
   for (const [q, want] of cases) expect(rankCommands(cmds, q).map((c) => c.name)).toEqual(want);
+});
+
+test("a button command presses the button on screen, and is listed only while there is one", async () => {
+  let pressed = 0;
+  const button = { shown: true, off: false, matches: (s: string) => s === ":disabled" && button.off, getClientRects: () => (button.shown ? [{}] : []), click: () => void pressed++ };
+  Reflect.set(Reflect.get(globalThis, "document"), "querySelectorAll", () => [button]);
+  const c = buttonCommand("#go", { name: "g_go", title: "Go", description: "press Go" });
+  const off = addCommands([c]);
+
+  await runCommand("g_go", {}, "palette");
+  expect([c.palette, pressed]).toEqual([true, 1]);
+
+  // Another screen, or greyed out: not offered, and a caller is told.
+  for (const gone of [{ shown: false, off: false }, { shown: true, off: true }]) {
+    Object.assign(button, gone);
+    expect(c.palette).toBe(false);
+    await expect(runCommand("g_go")).rejects.toThrow("can't be done from this screen");
+  }
+  expect(pressed).toBe(1);
+  off();
 });
 
 test("the palette's one line fills the first argument", () => {

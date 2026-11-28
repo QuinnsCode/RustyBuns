@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { arr, bool, obj, opt, str } from "@rustybuns/util/guard";
 import { join } from "node:path";
 import { chromeStartMs, launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
-import { WORLD } from "./session.ts";
+import { FIND, REPLACE, VILLAGE, WORLD } from "./session.ts";
 
 setDefaultTimeout(60_000);
 
@@ -99,4 +99,30 @@ every(() => { if (++n === 5) console.error("blocks drew"); });
   expect(await heard("walked up")).toEqual(["error: blocks drew", "error: walked up"]);
   await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agent_page: true, player: null }, "*")`);
   expect(await heard("walked off")).toEqual(["error: blocks drew", "error: walked up", "error: walked off"]);
+});
+
+// The build doors answer from the real frame, in the same reply: no page_read after them.
+test("each door builds the village in the frame with no errors, and a mistake comes back in the same reply", async () => {
+  const api = `${origin}/api/r/${ROOM}`;
+  const post = async (path: string, body: string) => (await fetch(`${api}${path}`, { method: "POST", body })).text();
+  const clean = { ok: true, errors: [] };
+  // A: write, then look.
+  expect(await call("page_write_file", { path: "world.js", text: VILLAGE })).toMatchObject({ ok: true });
+  expect(await heard("no errors")).toHaveLength(1);
+  // B (and C, whose curl lines are these routes), then D.
+  expect(JSON.parse(await post("/tools/world_build", JSON.stringify({ code: VILLAGE })))).toEqual(clean);
+  expect(JSON.parse(await post("/tools/world_edit", JSON.stringify({ find: FIND, replace: REPLACE })))).toEqual(clean);
+  expect(await post("/build", VILLAGE)).toBe("ok\n");
+  const mistake = `${VILLAGE}\nnope();`;
+  expect(JSON.parse(await post("/tools/world_build", JSON.stringify({ code: mistake })))).toMatchObject({ ok: false, errors: [expect.stringContaining("nope is not defined")] });
+  await post("/build", VILLAGE);
+  expect(await post("/build", mistake)).toContain("nope is not defined");
+  expect((await fetch(`${api}/socket`, { headers: { origin: "https://evil.example" } })).status).toBe(403);
+  expect((await fetch(`${origin}/api/r/NOPE/build`, { method: "POST", body: VILLAGE })).status).toBe(404);
+});
+
+test("the About page ends in the shared links, this year's © and the way back to QNTBR", async () => {
+  await load(chrome.cdp, tab, `${origin}/about`, 500);
+  expect(await tab.eval<string>(`document.querySelector(".site-foot").innerText`)).toContain(`© ${new Date().getFullYear()}`);
+  expect(await tab.eval<boolean>(`!!document.querySelector('.site-foot a[href="https://qntbr.com"]')`)).toBe(true);
 });

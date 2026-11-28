@@ -80,7 +80,7 @@ test("an agent's world gets a picture, its link previews it, and Export GIF hand
   // The camera's messages are not the agent's business.
   expect((await (await read(room)).json()).said).toEqual(["nothing: no errors since it loaded"]);
 
-  expect(await card(`/r/${room}`)).toMatchObject({ "og:image": `${url}/api/r/${room}/picture`, "twitter:card": "summary_large_image", "og:title": "Agent Page" });
+  expect(await card(`/r/${room}`)).toMatchObject({ "og:image": `${url}/api/r/${room}/picture`, "twitter:card": "summary_large_image", "og:title": "Agent World" });
   expect((await card("/"))["og:image"]).toBe(`${url}/og.jpg`);
   expect((await fetch(`${url}/og.jpg`)).headers.get("content-type")).toBe("image/jpeg");
 

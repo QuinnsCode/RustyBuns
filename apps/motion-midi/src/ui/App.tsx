@@ -52,7 +52,7 @@ export function App() {
       </header>
 
       <section className="transport" aria-label="Playback">
-        <button className="play" onClick={() => {
+        <button className="play" data-cmd="play" onClick={() => {
           if (!render) return renderSong();
           const a = audio.current!;
           if (a.paused) { a.play(); } else { a.pause(); }
@@ -96,7 +96,7 @@ export function App() {
       </section>
 
       <section className="bench-open">
-        <button className="ghost" aria-expanded={showBench} onClick={() => setShowBench((s) => !s)}>
+        <button className="ghost" data-cmd="compare" aria-expanded={showBench} onClick={() => setShowBench((s) => !s)}>
           {showBench ? "Hide engine comparison" : "Compare engines"}
         </button>
         {showBench && <Benchmark available={available} unison={unison} setUnison={setUnison} songSeconds={dur} />}

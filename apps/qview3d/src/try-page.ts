@@ -9,6 +9,7 @@ import { Shop } from "./api.ts";
 import { act as acting, copyBox as copying, el, embedTag, productForm } from "./shop-ui.ts";
 import { problem } from "./widget/upload.ts";
 import "./widget/index.ts";
+import "./menu.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T; // the page's own elements, by id
 const status = $<HTMLDivElement>("status"), main = $<HTMLDivElement>("sandbox"), lost = $<HTMLElement>("lost");

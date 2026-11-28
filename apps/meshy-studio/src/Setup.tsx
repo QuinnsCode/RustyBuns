@@ -44,7 +44,7 @@ function FolderStep({ status, onDone }: { status: Status; onDone: () => void }) 
     <section className="step plate">
       <h2><span className="stepnum">2</span> A workspace folder</h2>
       <p className="muted">The app makes four folders in it: <code>000_to_be_meshyd</code> for your images, <code>already done</code> inside it for sent ones, <code>001_has_been_meshyd</code> for Meshy's raw models and <code>002_ready</code> for the scaled ones.</p>
-      <div className="row"><button className="primary" onClick={pick}>Choose folder…</button></div>
+      <div className="row"><button className="primary" data-cmd="choose-folder" onClick={pick}>Choose folder…</button></div>
       {error && <p className="error" role="alert">{error}</p>}
       {status.recent.length > 0 && (
         <>

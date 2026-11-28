@@ -1,0 +1,17 @@
+body.about { margin: 0; background: #05060f; color: #e9ecf8; font: 200 14px/1.65 "Martian Mono", ui-monospace, Menlo, monospace; color-scheme: dark; }
+.about main { width: min(820px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 56px; display: grid; gap: 40px; }
+.about section { display: grid; gap: 10px; scroll-margin-top: 16px; min-width: 0; }
+.about h1, .about h2 { margin: 0; font-family: "Audiowide", "Arial Black", system-ui, sans-serif; font-weight: 400; text-transform: uppercase; color: #fff; }
+.about h1 { font-size: clamp(30px, 7vw, 52px); line-height: 1.05; text-shadow: 0 0 14px #ff3d8b; }
+.about h2 { font-size: clamp(19px, 3.4vw, 26px); text-shadow: 0 0 10px #21e6ff; }
+.about h3 { margin: 8px 0 0; font-size: 14px; color: #ffb547; }
+.about p, .about ol, .about ul { margin: 0; }
+.about ol, .about ul { padding-left: 20px; }
+.about a { color: #21e6ff; }
+.about .dim { color: #9aa0c4; font-size: 12px; }
+.about .scroll { overflow-x: auto; }
+.about table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.about th, .about td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.12); }
+.about th { color: #9aa0c4; font-weight: 400; }
+.about tr.win td { color: #3dffa8; font-weight: 600; }
+.about pre { margin: 0; overflow-x: auto; padding: 12px 14px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; background: rgba(255,255,255,.04); font-size: 12px; line-height: 1.55; }

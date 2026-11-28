@@ -14,7 +14,7 @@ export function NetLobby({ frame, driver, info, onExit }: { frame: Frame; driver
       <div className="podium"><div className="card" style={{ textAlign: "center" }}>
         <h1 className="title" style={{ fontSize: 30 }}>{status === "refused" ? "CAN'T JOIN" : status === "connecting" ? "CONNECTING" : "CONNECTION LOST"}</h1>
         <p className="tag">{net?.message ?? (status === "online" ? "Taking a seat…" : status === "connecting" ? "Knocking on the door…" : "Trying again…")}</p>
-        <button className="btn" onClick={onExit}>Back</button>
+        <button className="btn" data-cmd="back" onClick={onExit}>Back</button>
       </div></div>
     );
   }
@@ -47,8 +47,8 @@ export function NetLobby({ frame, driver, info, onExit }: { frame: Frame; driver
         </>}
         <div className="row">
           {you >= 0 && <button className="btn" style={{ flex: 1 }} autoFocus aria-pressed={!!frame.seats[you]?.ready} onClick={() => driver.input(you, 0, false, true)} title="Or bellow: Q">{frame.seats[you]?.ready ? "Not ready" : "Ready"}</button>}
-          {host ? <button className="btn go" style={{ flex: 1 }} onClick={() => driver.command({ t: "start" })}>Start round</button> : <span className="hint" style={{ flex: 1, margin: 0 }}>Host starts</span>}
-          <button className="btn" onClick={onExit}>Leave</button>
+          {host ? <button className="btn go" data-cmd="start" style={{ flex: 1 }} onClick={() => driver.command({ t: "start" })}>Start round</button> : <span className="hint" style={{ flex: 1, margin: 0 }}>Host starts</span>}
+          <button className="btn" data-cmd="back" onClick={onExit}>Leave</button>
         </div>
         {net?.ping !== undefined && <p className="hint" style={{ margin: 0 }}>ping {net.ping} ms</p>}
       </div>

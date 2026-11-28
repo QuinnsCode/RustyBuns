@@ -46,9 +46,9 @@ export function Workspace({ status, onClose }: { status: Status; onClose: () => 
       <aside className="library" aria-label="Scene library">
         <header>
           <strong title={status.library?.dir}>{status.library?.name}</strong>
-          <button className="link" onClick={() => confirmDiscard() && onClose()}>Switch</button>
+          <button className="link" data-cmd="switch" onClick={() => confirmDiscard() && onClose()}>Switch</button>
         </header>
-        <button className="new" onClick={() => open(null)}>Empty editor</button>
+        <button className="new" data-cmd="empty-editor" onClick={() => open(null)}>Empty editor</button>
         {scenes === null && <p className="muted">Scanning…</p>}
         {scenes?.length === 0 && <p className="muted">No splat files in this folder yet. Drop .ply, .spz, .sog or .splat files into it and they'll appear here.</p>}
         <ul className="plain scenes">

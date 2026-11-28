@@ -1,4 +1,4 @@
-# Agent Page
+# Agent World
 
 > **What it proves:** a world any coding agent writes while you watch (Claude Code, Codex, opencode, T3 Code, or a
 > browser agent with WebMCP), the way codeSplitter's profile page works: the agent writes real code (a canvas city, a
@@ -12,46 +12,65 @@ cd apps/effect-ui-page
 bun run dev              # http://127.0.0.1:4799
 ```
 
-How it goes, as the landing's **What is Agent World?** card says it:
+The pitch, as the landing says it: **Your agent builds your world. Then you walk the galaxy everyone built.** Three
+steps: Connect your agent, Ask for your world, Walk the galaxy. How it goes:
 
 1. See how it works: try a ready-made world, no AI needed.
 2. Make an account with eqosys: your world follows you to any browser.
-3. Connect your AI and make your world: it asks you three things, then writes the code while you watch.
+3. Pick your land with one tap (a hill village or a neon city, or keep the desert), connect your AI and make it yours: it asks you three things, then writes the code while you watch.
 4. Then the galaxy opens: your world joins one big map you can walk.
 
 Open the page. It gives itself a room (`/r/<room>` in the address bar) and lands on one screen over a rainy night
-city. Two cards at the top: **What is Agent World?** opens a short explainer in place, and **Create your world**
+city, all of it on one screen with no scrolling: the sign, the pitch, the four parts it's built from (Effect
+UI, WebMCP, Cloudflare Artifacts, Effect), the three steps as pictures, and one bright button. **Create your world**
 signs you in with eqosys and opens your world: the server keeps one per account (`POST /api/me/world`), the room you
 first signed in from, so signing in on another browser lands you in the same world, its files from the server. Signed
 in already, it goes straight there, and where eqosys can't be reached (local dev) it says so in one line. Signed out,
-everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Below them: the four parts it's built from (Effect UI, WebMCP, Cloudflare Artifacts, Effect), one line to copy, and four
-pictures of what that line does. Three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
+everything but the galaxy works as before, in a room this browser keeps; sign in later and that room becomes your world. Under it, three ready-made worlds (rainy city, solar system, fish tank; `src/worlds.ts`) load in
 one click with no AI connected, on the landing, in the console and in Cmd+K, each with one thing to ask your AI next.
 When your AI first reads the page or changes it, the landing gives way to your world; "Skip to the page" does it by
-hand. A room this browser already kept opens straight on its page. The console is a terminal window in the middle of
+hand. Connecting your AI is in the console, where it is the next step. **How it's built** opens the longer story under
+the landing. A room this browser already kept opens straight on its page. The console is a terminal window in the middle of
 the screen (**Hide** puts it away, **Show** brings it back): on the left what happened, the way a command line shows it
 (connecting to the relay, connected, waiting for your AI, each call and how it went); on the right pictures and
 buttons: Copy, Paste, Watch across the top, then a button for each way in:
 
-- **Paste into any agent.** "Copy prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
-  T3 Code. They tell the agent to call the page's tools with `curl`, so there's nothing to install or configure.
-- **Or add it as an MCP server** (the Claude, Codex and opencode buttons copy these), so the tools show up as the
-  agent's own:
+- **Add it as an MCP server** (the default: the landing's line, and the Claude, Codex and opencode buttons copy these):
   - Claude Code: `claude mcp add --transport http agent-page <room>/mcp`
   - Codex: `codex mcp add agent-page --url <room>/mcp`
   - opencode: `opencode mcp add agent-page --url <room>/mcp`
   - T3 Code runs Claude Code or Codex underneath, so add the server to whichever one it runs.
-- **In the browser:** an agent with WebMCP (`document.modelContext`) sees the same tools on the page itself.
+
+  The agent is listed three tools: `world_build`, `world_edit` and `page_status`.
+- **Paste into any agent.** "Copy prompt" gives you a few lines that say: use `world_build` if you have it, and if not,
+  write `world.js` and post it with `curl`. Nothing to install.
+- **A skill,** for an agent that has skills and can run `curl`. One file per room, holding the kit's calls:
+  `curl -s --create-dirs -o ~/.claude/skills/agent-page/SKILL.md <room>/skill.md` (the same text works pasted).
+- **A CLI line:** `curl -sS --data-binary @world.js <room>/build` answers `ok`, or each error on a line.
+  `<room>/kit.txt` is the kit's calls as plain text, and `curl -sd 'few words' <room>/status` says what it's doing.
+- **The full tool list,** every tool below: listed at `GET <room>/tools`, and each answers by name over MCP and HTTP.
+- **In the browser:** an agent with WebMCP (`document.modelContext`) sees all of them on the page itself.
+
+(`<room>` is the room's API link, `/api/r/<room>`.)
 
 Then ask for a world: "make me a rainy neon city in three.js, slowly orbiting". The world reloads with each file the
 agent writes, and the console lists its calls. A step strip there shows where your AI is: Waiting for your AI, Your
-AI is here (its first `page_read`), Asking you about your world (a `page_status`), Writing the code (its first write),
-Your world is up (the frame loaded with no errors after a write). The AI asks you three things in its own chat (the
+AI is here (its first `page_read`), Asking you about your world (a `page_status`), Writing the code (its first write
+or edit), Your world is up (the frame loaded with no errors after a write or an edit). Under it, one line says what
+happens next ("Next: open the galaxy"). Each screen has one bright control, the next step: Create your world on the
+landing; back from signing in, Copy prompt, already focused so one press copies; once your world is up, the Galaxy
+tile, with one short glow (none when the system asks for less motion), which takes the focus on from Copy. Signed in
+already, the site's root opens your world, not the landing. The AI asks you three things in its own chat (the
 ground, what is on it, the weather) before it writes; the page never asks. A new room starts with a night desert
-(`src/starter.ts`, built with `@world/kit`, so it stands in 3D in the galaxy) to change or throw away.
+(`src/starter.ts`, built with `@world/kit`, so it stands in 3D in the galaxy) to change or throw away. A signed-in
+person whose world is still that desert is asked to **Pick your land**: **Hill village** (round-doored mound homes,
+smoke, trees, flowers, a pond, lanterns) or **Neon city** (lit towers, signs, stalls, a wet street, rain, flying cars),
+both small kit worlds (`src/lands.ts`) their AI can change.
 
 | Tool | Does |
 |---|---|
+| `world_build` | Run `code` as `world.js` (an `index.html` that opens it is made when needed), wait for the frame to load (5 s at most) and answer in the same reply: `{ ok, errors }` |
+| `world_edit` | Swap the one exact match of `find` in `world.js` for `replace`; answers like `world_build` |
 | `page_read` | Each file's path and size, the backdrop, and what the frame said since it last loaded: errors with their file, loads it blocked |
 | `page_read_file` | One file's whole text |
 | `page_write_file` | Set one file (`index.html`, `world.js`, `lib/noise.js`, ...) to this text; `""` takes it away. Its description tells the agent how files load and what the frame allows |
@@ -66,7 +85,7 @@ link opens with the console put away.
 
 **Pictures.** A moment after the world loads with no errors, the page takes a picture of its largest `<canvas>` and
 keeps it on the room, at `GET <room>/picture` (the `/api/r/<room>` link). Share your `/r/<room>` link and the preview
-shows that picture; a room with none shows the Agent Page sign. A world with no canvas has no picture of its own.
+shows that picture; a room with none shows the Agent World sign. A world with no canvas has no picture of its own.
 **Export GIF** (in the console and in Cmd+K) records three seconds of the canvas and downloads them as an animated GIF,
 `<room>.gif`. Keep the tab in front while it records. The file's name is the room's key, so rename it before you pass it
 on.
@@ -100,7 +119,11 @@ to south, and hills level off at its edges. The building blocks size themselves 
 |---|---|
 | `world({ orbit, distance, angle })` | The scene, a camera looking down at an angle, the renderer, resizing and the loop. Returns `{ scene, camera, renderer }` |
 | `ground({ type, color })` | `flat`, `dunes`, `hills` or `grass`. `heightAt(x, z)` reads it |
-| `sky(type)`, `weather(type)` | `day`, `night` (stars and a moon) or `dusk`; `rain`, `snow`, `fog` or `clear` |
+| `sky(type)`, `weather(type)` | `day`, `night` (stars and a moon) or `dusk`; `rain`, `snow`, `fireflies`, `fog` or `clear` |
+| `mood({ top, low, fog, near, far, sun, power, fill, bloom })` | Your land's own air, here and in the galaxy: call after `sky` and `weather` |
+| `smoke(x, y, z)`, `flyers(n)` | Chimney smoke; little cars flying over the plot |
+| `grass(n)`, `flowers(n)` | Tufts and flowers on the ground |
+| `glow` on `box`, `voxels`, `sign` | 1 to 3 lights it, and it blooms in the galaxy; `windows: "#ff2e97"` on a building colours its light |
 | `water({ y, x, z, width, depth })` | A sheet of water |
 | `trees(n)`, `cactus(n)`, `rocks(n)` | Scattered on the ground, never in water; `{ area, size, color }` |
 | `lights({ sun, fill, color, at })`, `lamp({ x, y, z, color })` | The sun and sky light; a coloured glow |
@@ -127,19 +150,24 @@ kit's scene, so anything that hands the scene's shapes on carries them too. Thin
 
 ### What a world costs in tokens
 
-A fixed "build me a world" session (`test/session.ts`: `page_read`, read the starter's two files, write a small rainy
-town, look, one fix, look) counted with the instructions and tool list once, each call's arguments and each reply, at
-four characters a token (`scripts/mcp-session.ts`, the same session code as codeSplitter's `tool-tokens.ts`):
+One job, "make a night village with a pond, then make the houses taller", through four doors that end in the same
+checked write (`test/session.ts`, four characters a token, `scripts/mcp-session.ts`). Read is the tool list, skill or
+prompt once and every reply; written is every call's arguments, the world's code included.
 
-| | Tool list and instructions | Whole session |
-|---|---|---|
-| Before: three.js by hand, whole files resent | 682 | 4,473 |
-| After: `@world/kit` and `page_edit_file` | 612 | 2,119 |
-| The starter desert written with the kit too | 701 | 1,530 |
-| Now: the kit's building blocks in the tool text, and the rain town written with them | 790 | 1,531 |
+| Door | Read | Written | Total | Round trips |
+|---|---|---|---|---|
+| A: the full MCP tool list (how it was) | 1,325 | 196 | 1,521 | 8 |
+| **B: code mode, `world_build` and `world_edit` (the default)** | 465 | 173 | **638** | **3** |
+| C: the skill and `curl` | 370 | 248 | 618 | 3 |
+| D: write the file, `curl` it to `/build` | 463 | 269 | 732 | 6 |
 
-`test/tokens.test.ts` fails when the session passes the budget in `test/tokens.json`. A change that earns more tokens
-raises it there, in the same PR. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
+C's estimate is 20 tokens (3%) under B's, a tie within 5 percent with the same calls on paper. Real Claude Code runs
+(Sonnet, one run each, 2026-11-27) broke it: B took 3 calls (loading the tools, build, edit), 13 s and 1,307 output
+tokens; C took 6 (two of them refused: code inside a `curl` line trips its shell checks), 31 s and 4,100.
+
+`test/tokens.test.ts` fails when the default door passes the budget in `test/tokens.json`, or stops being tied for
+cheapest. The budget only goes down, with one exception: it rose from 625 to 655 when the kit gained a land's air
+(`mood`, `smoke`, `flyers`, `grass`, `flowers`, `glow`, about 30 tokens an AI has to be told). For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
 
 From a script or the console, the same tools are on `window.__commands`:
 
@@ -149,7 +177,7 @@ bun run probe effect-ui-page --js 'await __commands.run("page_read", {})'
 
 ### Agent Galaxy
 
-Every world is a plot of land in one shared space, and the galaxy opens once your world is made: you are signed in, and your AI's write
+Every world is a plot of land in one shared space, and the galaxy opens once your world is made: you are signed in, and your AI's write or edit
 loaded with no errors (the step strip's "Your world is up"), which the page saves on the server
 (`POST /api/r/<room>/made`). Until then the Galaxy tile has a lock and one line under it ("Sign in and make your world
 first", or "Make your world first"), and Cmd+K and `agentGalaxy.enter()` say the same; the server answers a claim with
@@ -158,31 +186,88 @@ person's (`eq:<sub>`, the token's checked against eqosys's keys, `src/who.ts`), 
 
 Everyone's land in one 3D space, like rural neighbours: plots touch edge to edge with no streets or fences. **Agent
 Galaxy** (the Galaxy tile in the console, or Cmd+K) shows your own land under cloud, then the cloud lifts and you are a
-simple shape on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
+robot on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
 neighbour's. **Back to my world** brings the console back.
 
-- A world built with `@world/kit` stands there in 3D: its ground, water, trees, rocks and its own meshes. Each world
-  hands over shapes and colours only, from a hidden sealed frame, and a neighbour's code never runs in the shared
-  space. Anything reaching past its own plot is left out. Skies, rain, stars and animation stay home.
+The galaxy is ready before you press it: pointing at the Galaxy tile (hover, keyboard focus or a finger on it), and
+a moment after your world is made, the page loads three.js and, once you have signed for your land, claims your plot,
+fetches the plots around you and your robot, reads your land and your neighbours' (before you have signed, your own
+land only), and builds the scene on a canvas nobody sees yet, a little at a time when the browser
+is idle. The click then shows it and lifts the cloud. Never for a signed-out person or a locked tile, never twice, and
+let go if you leave the page. `agentGalaxy.state().preload` says how far it got (`none`, `warming`, `ready`, `used`)
+and whose lands are read. Signed out, the locked tile is the way to sign in.
+
+- A world built with `@world/kit` stands there in 3D: its ground, water, trees, rocks and its own meshes, with what
+  glows. It also brings its mood: sky colours, fog, sun, bloom, rain, snow or fireflies, chimney smoke and flying cars.
+  The sky and light blend to whichever land you stand on. Each world hands over shapes, colours and bounded numbers
+  only, from a hidden sealed frame, checked on arrival (`src/land.ts`), and a neighbour's code never runs in the shared
+  space. Anything reaching past its own plot is left out. A world's own animation and stars stay home.
+- A device that can't hold 33 frames a second drops sharpness, then shadows.
 - A world without the kit (a flat canvas drawing, say) shows its latest picture laid on its ground.
 - The middle plot is the common town. Empty plots are open land, with a sign next to you: "Invite someone to build
   here". Every third cell of the spiral stays free for invites (the invite link and sign-in come next).
 - Your page saves your world to the server a second after each change that lands (`PUT /api/r/<room>/world`, checked
   with the same Schema and limits as a write), so your neighbours see what you built.
-- You see the other people on your plot and the ones touching it. They have a colour and no name.
+- You see the other people on your plot and the ones touching it. They are robots with no names.
+- **Your robot** is your body there, with no skin and no human shape: 8 paints; a box, dome or screen head; two eyes, a
+  visor or one big eye; an antenna, propeller or ears; wheels, legs or hover. The builder is picture buttons, opens the
+  first time you walk in, and comes back from the robot button or Cmd+K ("My robot"). It is kept for your account
+  (`GET`/`PUT /api/galaxy/robot`) and only ever a pick from those lists (`src/galaxy.ts`'s `Look`). The galaxy's own
+  scene draws it; a world is never told what anyone looks like.
 - The map never sends a room's link: a plot is known by a one-way hash of it, since the link is the room's key.
 
-From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()` and `walk(dx, dz)`:
+**You sign for your land.** Before your first visit a card-reader pad comes up: scrawl on the X with a finger or a
+mouse, **Clear** to start over, **Done** (greyed out until something is drawn). Your scrawl then stands as a wooden sign
+on your land, and your neighbours see it. **Sign again** (top right, or "Sign for your land" in Cmd+K) replaces it.
+Every other person's sign has a **Hide this** button: it goes for you only, and this browser keeps it hidden.
+
+- Only the pen strokes are saved (points on a 600 by 300 pad, at most 60 strokes and 1,500 points), never a picture,
+  and no text or upload is taken. `POST /api/galaxy/sign` writes the signed-in sender's own, a few at a time;
+  `GET /api/galaxy/sign/<plot id>` reads a plot's, and the page checks it before drawing it (`src/sign.ts`).
+- The server gives out no plot until you have signed.
+
+From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()`, `robot()` and `walk(dx, dz)` and `sign()` (before your first visit `enter()` answers `signing: true`, the pad up for a person):
 
 ```
 bun run probe effect-ui-page --url http://127.0.0.1:4799/r/<room> --js 'await agentGalaxy.enter()' --shot galaxy.png
 ```
 
+## Kept for good, in Cloudflare Artifacts
+
+Every room has a git repo of its own in Artifacts (namespace `agent-page`), so its world opens the same on any
+browser. Ten seconds after a change the Room pushes one commit: `world/` holds the world's files and `world.json` its
+backdrop. Opening a room reads them back from the repo (from the Room's own storage while a push is still waiting, or
+if Artifacts can't be reached). A browser holding a change that never reached the server keeps its own copy and sends
+it again.
+
+An agent can keep a model beside the world, a character say. A file is a `.glb` of 4 MB at most, 8 a room:
+
+```
+curl -X PUT --data-binary @hero.glb <origin>/api/r/<room>/files/hero.glb
+curl <origin>/api/r/<room>/files            # {"files":["hero.glb"]}
+curl -O <origin>/api/r/<room>/files/hero.glb
+curl -X DELETE <origin>/api/r/<room>/files/hero.glb
+```
+
+The room's link is the key, as for the tools. The world's own code can't load these files yet: its frame has no
+network. `bun run dev` keeps the same repos in a temp folder (it needs `git`) until it stops.
+
+**About** (`/about`, `about.html`) says it for a person: what the page is, what it keeps, and what a world costs an AI,
+with the before and after. Its numbers are written in by hand with their date. The landing and About end in the same
+links (`src/foot.ts`).
+
 ## Deploy it
 
 `bun run deploy` builds the page and ships it with the relay as one Worker (`wrangler.jsonc`). It has one small
 Durable Object per room, which keeps one picture (150 KB at most) and the room's saved world (a key per file) in its
-storage, and one `Galaxy` Durable Object for the whole map, and no AI or other paid bindings.
+storage, and one `Galaxy` Durable Object for the whole map, and no AI.
+
+Artifacts needs the Workers Paid plan. Its [price](https://developers.cloudflare.com/artifacts/platform/pricing/) as read on
+2026-11-27: 10,000 operations and 1 GB-month free each month, then $0.15 per 1,000 operations and $0.50 per GB-month.
+A commit is about one to two operations (the push, plus reads at 100 to 1 and a token at 5 to 1), and a repo costs
+only what it stores. git keeps every version, so what a room stores only grows (1 GB a repo at most). What limits
+one room: a push each 10 seconds at most, and 5 uploads in a row then one each half minute. Nothing limits the number
+of rooms.
 The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 
 ## How it's put together
@@ -197,7 +282,8 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
   (`bearer`) and your world as the server keeps it (`myWorld`). `src/who.ts`: the server's side, the token checked
   against eqosys's keys (`EQOSYS_URL`) for app `agent-page`. `src/lock.ts`: when the galaxy opens, and its two lines.
 - `src/answers.ts`: what the tools answer, shared by the page and the tests' stand-in for it (`test/app-kit.ts`).
-- `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP) and the frames between the relay and the page.
+- `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP), the kit's calls as an agent is told them, and
+  the frames between the relay and the page. `src/doors.ts`: the skill, the kit sheet and the `curl` lines.
 - `src/agent.ts`: the `Agent` service in the page. Its Layer puts the WebMCP tools up (`@rustybuns/util/commands`)
   and keeps a socket to the room's relay while the page is mounted. A call from either becomes a message on a queue
   and waits for the page's report.
@@ -216,15 +302,19 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 - `src/galaxy.ts`: Agent Galaxy with no platform in it: the spiral, `claim`, the plots around a point, the players'
   moves (each to the same and touching plots only) and the wire guards both ends import. `src/edge/galaxy.ts` runs it
   in a Durable Object; `scripts/dev.ts` runs it in memory. `src/saved.ts`: a room's saved world, the same way.
+  `src/keep.ts`: a room's Artifacts repo, written by codeSplitter's git push (`apps/codesplitter/src/git.ts`).
+  `src/files.ts`: the files routes.
   `src/galaxyView.ts`: walking and the players in the page. `src/land3d.ts`: the one 3D scene (three.js, loaded when
-  the galaxy opens). `src/land.ts`: a plot's land as data, and what is left out of it.
+  the galaxy opens), and `src/air.ts` its sky, light, bloom, weather, smoke and cars. `src/land.ts`: a plot's land and
+  mood as data, and what is left out of it.
+- `test/keep.test.ts`: a world and a model pushed to a local Artifacts repo and read back.
 - `test/galaxy.test.ts`: two people walking the galaxy in headless Chrome against the dev server.
   `test/land.test.ts`: what a world's frame may put in the shared space.
 
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
   `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a
   missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview and Export
-  GIF. `test/tokens.test.ts`: the token budget. `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in
+  GIF. `test/tokens.test.ts`: what each door costs, and the budget. `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in
   the frame and a kit world running there.
 
 Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit

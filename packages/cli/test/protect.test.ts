@@ -29,6 +29,9 @@ test("the report says KEPT and REMOVED per resource, and nothing for a config wi
   expect(out).toContain("[KEPT]    Vectorize shop-index");
   expect(out).toContain("[KEPT]    R2 shop-files");
   expect(out).toContain("[REMOVED] D1 shop-db");
+  // In colour, destroy's removals are on the alarm background; a plan's "if you ever destroy" lines stay quiet.
+  expect(protectReport(cfg(), "destroy", true)).toContain("\x1b[1;38;5;16;48;5;202m[REMOVED] D1 shop-db");
+  expect(protectReport(cfg(), "plan", true)).not.toContain("\x1b[");
   expect(protectReport({ bindings: { NAME: { type: "var", value: "x" } } }, "plan")).toBe("");
   expect(protectReport({ bindings: { DB: { type: "d1", databaseName: "db" } } }, "plan")).toContain("nothing is protected");
   // Another app's D1 is a ref into its stack: this destroy never touches it.

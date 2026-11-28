@@ -6,6 +6,7 @@ import { createElement, Dices, Download, Share2, Wifi, WifiOff, type IconNode } 
 import wasmUrl from "./dice.wasm?url";
 import { arr, check, int, obj, type Of } from "@rustybuns/util/guard";
 import { loadRoller, tsRoller, type Roller } from "./roller.ts";
+import "./menu.ts";
 
 const COUNTS = [1, 2, 3, 4, 5, 6];
 const SIDES = [4, 6, 8, 10, 12, 20];

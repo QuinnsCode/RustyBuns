@@ -101,26 +101,35 @@ const BASE = `
 `;
 
 /**
- * eqosys's own mark, the same in every game whatever its skin: a badge tag, "eqosys" on black, then a punched strip of
- * oil-slick sunset that drifts like slow weather (three gradient blobs on registered properties, one long cycle each).
- * The strip ends in a punched hole (--eq-hole) that shows what is behind it; its edge fades over most of a pixel, so it
- * is round on a 1x screen as on a 3x one. The hole's rim is its own ring on the badge, outside the strip's mask:
- * near-black with a pale hairline, so it reads on a bright brass plate and on a dark one alike.
- * Kept after the skin's rules and off the `--ui-*` tokens on purpose; still under prefers-reduced-motion.
+ * eqosys's own mark, "Horizon", the same in every game whatever its skin: a little round window onto the login sky, the
+ * sun going down behind a ridge, then the word in rounded strokes of the surface's ink. Drawn in CSS and inline SVG, so
+ * it loads nothing and no page's CSP can block it. A signed-in chip shows the window alone. Signed out, the chip is a
+ * pill in the skin's ink on its background, so the word reads over any game. Kept after the skin's rules on purpose.
  */
 const BADGE = `
-@property --eq-ax{syntax:"<percentage>";inherits:false;initial-value:18%}@property --eq-ay{syntax:"<percentage>";inherits:false;initial-value:30%}
-@property --eq-bx{syntax:"<percentage>";inherits:false;initial-value:78%}@property --eq-by{syntax:"<percentage>";inherits:false;initial-value:70%}
-@property --eq-tilt{syntax:"<angle>";inherits:false;initial-value:200deg}
-.eq .eq-badge{--eq-hole:radial-gradient(circle at calc(100% - 7px) 50%,transparent 3px,#000 3.7px);display:inline-flex;opacity:1;align-items:stretch;flex:none;height:20px;border-radius:5px;overflow:hidden;font:700 10px/20px ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:.16em;color:#ecebf2;box-shadow:0 0 0 1px #0000004d,0 1px 2px #0000003d;user-select:none}
-.eq .eq-badge b{display:block;text-transform:lowercase;letter-spacing:.16em;padding:0 6px 0 7px;background:linear-gradient(#1a1a1f,#050506);font:inherit;box-shadow:inset 0 1px 0 #ffffff21}
-.eq .eq-badge i{display:block;position:relative;width:34px;background:radial-gradient(60% 80% at var(--eq-ax) var(--eq-ay),#ff8a5c,transparent 70%),radial-gradient(70% 90% at var(--eq-bx) var(--eq-by),#7d5bd6,transparent 70%),conic-gradient(from var(--eq-tilt) at 50% 50%,#f6b24e,#e2557b,#5a8fd8,#3ec7b6,#f6b24e);filter:saturate(.7) brightness(.92);animation:eq-drift 41s ease-in-out infinite alternate,eq-turn 67s linear infinite;-webkit-mask:var(--eq-hole);mask:var(--eq-hole)}
-.eq .eq-badge i::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at calc(100% - 7px) 50%,transparent 3px,#000000b3 3.3px,#00000040 4.2px,transparent 5px),repeating-linear-gradient(0deg,#ffffff0d 0 1px,transparent 1px 3px),linear-gradient(90deg,#00000059,transparent 45%)}
-@keyframes eq-drift{0%{--eq-ax:18%;--eq-ay:30%;--eq-bx:78%;--eq-by:70%}33%{--eq-ax:62%;--eq-ay:12%;--eq-bx:30%;--eq-by:88%}66%{--eq-ax:40%;--eq-ay:84%;--eq-bx:86%;--eq-by:22%}100%{--eq-ax:82%;--eq-ay:52%;--eq-bx:14%;--eq-by:40%}}
-@keyframes eq-turn{to{--eq-tilt:560deg}}
-.eq .eq-badge{position:relative}.eq .eq-badge::after{content:"";position:absolute;right:3px;top:calc(50% - 4px);width:8px;height:8px;border-radius:50%;border:1.5px solid #0b0b0ee6;box-shadow:0 0 0 .75px #ffffff73,inset 0 1px 1.5px #000000b3;pointer-events:none}
-@media (prefers-reduced-motion:reduce){.eq .eq-badge i{animation:none}}
-@media (prefers-color-scheme:dark){.eq .eq-badge{box-shadow:0 0 0 1px #ffffff2e,0 1px 2px #0000007a}}
+.eq .eq-badge{display:inline-flex;align-items:center;gap:7px;flex:none;opacity:1;user-select:none}
+.eq .eq-badge i{display:block;position:relative;flex:none;width:24px;height:24px;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 50% 65%,#ffe3a3 0 5.2px,transparent 5.8px),linear-gradient(#4b3f8f,#f08a5d 65%)}
+.eq .eq-badge i::after{content:"";position:absolute;inset:0;background:#17151f;clip-path:polygon(0 67%,25% 61%,46% 71%,71% 58%,100% 69%,100% 100%,0 100%)}
+.eq .eq-badge svg{display:block;flex:none;width:55px;height:16px;margin-top:2px;color:inherit;filter:none}
+.eq.eq-chip.in .eq-badge svg{display:none}
+.eq.eq-chip:not(.in):not(:empty){width:fit-content;max-width:100%;padding:4px;border-radius:999px;background:var(--ui-bg);box-shadow:var(--ui-shadow)}
+.eq.eq-chip:not(.in):has(.eq-note){border-radius:16px}
+.eq .eq-fold{border-radius:999px}
+`;
+
+/**
+ * The chip's frame where a game brings no rules of its own (the house look, or tokens alone): one pill, the name beside
+ * the mark, and Sign out as a bare icon rather than a box inside the box.
+ */
+const CHIP = `
+.eq.eq-chip.in{gap:8px;padding:4px;border-width:1px;border-color:color-mix(in srgb,var(--ui-ink) 14%,transparent);border-radius:999px}
+.eq.eq-chip:not(.in):not(:empty){border:1px solid color-mix(in srgb,var(--ui-ink) 14%,transparent)}
+.eq.eq-chip .eq-btn{min-height:28px;min-width:28px;border:0;border-radius:999px}
+.eq.eq-chip .eq-btn.icon{background:none;color:var(--ui-dim)}
+.eq.eq-chip .eq-btn.icon:hover,.eq.eq-chip .eq-btn.icon:focus-visible{background:var(--ui-soft);color:var(--ui-ink)}
+.eq.eq-chip .eq-btn.icon svg{width:16px;height:16px}
+.eq.eq-chip:not(.in) .eq-btn{background:var(--ui-ink);color:var(--ui-bg);font-size:12px;padding:0 11px}
+.eq.eq-chip:not(.in) .eq-btn svg{display:none}
 `;
 
 /** The whole stylesheet for one skin: house tokens, the skin's tokens, the rules, then the skin's own rules. */
@@ -134,15 +143,14 @@ export const DARK: Theme = {
 /**
  * The house look's own rules, worn through the same door as a game's (`css`) when a page gives no skin: one even
  * outline on every tile, button and field (no second, thicker edge under it, which read as a broken border on dark),
- * buttons that press in, an accent line under each heading, and the chip's name behind an accent dot. Every colour is
+ * buttons that press in, an accent line under each heading. Every colour is
  * a token, so it follows light and dark.
  */
 export const HOUSE = `.eq-btn:active{transform:scale(.97)}.eq-btn:disabled{transform:none}
 .eq-title,.rb-spaces h2{text-decoration:underline 3px var(--ui-accent);text-underline-offset:4px}
-.eq-chip.in .eq-who::before{content:"";display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:var(--ui-accent)}
 .rb-lobby-code{background:var(--ui-accent-soft)}`;
 
-export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n@media (prefers-color-scheme:dark){:where(.eq){${decls(DARK)}}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.theme || skin.css ? skin.css ?? "" : HOUSE}\n${BADGE}`;
+export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n@media (prefers-color-scheme:dark){:where(.eq){${decls(DARK)}}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.theme || skin.css ? skin.css ?? "" : HOUSE}\n${skin.css ? "" : CHIP}\n${BADGE}`;
 
 let worn: Skin = {};
 /**
@@ -185,11 +193,16 @@ export const ICONS = {
   "phone-off": svg('<path d="M10.1 13.9a14 14 0 0 0 3.732 2.668 1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2 18 18 0 0 1-12.728-5.272"/><path d="M22 2 2 22"/><path d="M4.76 13.582A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 .244.473"/>'),
 } as const;
 
-/** eqosys's badge tag (see BADGE): the word on black and a slow oil-slick strip, the same in every game. */
+// "eqosys" in round strokes on a 79 by 23 grid: no font to load, the same shapes everywhere.
+const S = "M8.5 6.2C7.5 4.6 2 4.4 2 7.5S9 10 9 12.5 3.5 15.6 1.5 13.6", O = "M11 10a5 5 0 1 1-10 0a5 5 0 1 1 10 0";
+const WORD = `<svg viewBox="0 0 79 23" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
+  ([["M1 10H11A5 5 0 1 0 9.6 13.5", 0], [`${O}M11 5V20`, 14], [O, 28], [S, 41], ["M1 5L6 15M11 5L4 20", 53], [S, 67]] as const).map(([d, x]) => `<path transform="translate(${x} 0)" d="${d}"/>`).join("")}</svg>`;
+
+/** eqosys's badge (see BADGE): the horizon window and the word, the same shapes in every game. */
 export function eqBadge(): HTMLElement {
-  const b = Object.assign(document.createElement("span"), { className: "eq-badge", title: "eqosys" });
+  const b = Object.assign(document.createElement("span"), { className: "eq-badge", title: "eqosys", innerHTML: `<i></i>${WORD}` });
   b.setAttribute("aria-label", "eqosys");
-  b.append(Object.assign(document.createElement("b"), { textContent: "eqosys" }), document.createElement("i"));
+  b.setAttribute("role", "img");
   return b;
 }
 

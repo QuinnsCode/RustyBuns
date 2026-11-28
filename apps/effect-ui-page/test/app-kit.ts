@@ -2,11 +2,11 @@
 // stand-in page behind it that does what the open page does with a call: the same check (decode), the same change and
 // undo history (step), the same answers (answers.ts). The sealed frame doesn't run, so page_read hears no errors.
 import { parseJson } from "@rustybuns/util/http";
-import { changed, fileRead, looked } from "../src/answers.ts";
+import { changed, checked, fileRead, looked } from "../src/answers.ts";
 import { type Page, starter } from "../src/page.ts";
 import { step } from "../src/ProfilePage.ts";
 import { linksFor, Relay } from "../src/relay.ts";
-import { decode, decodeReadFile, READ, READ_FILE, ToPage, TOOLS } from "../src/tools.ts";
+import { BUILD_TOOLS, decode, decodeReadFile, READ, READ_FILE, ToPage, TOOLS } from "../src/tools.ts";
 import type { Rpc } from "../../../scripts/mcp-session.ts";
 
 export function local() {
@@ -18,8 +18,11 @@ export function local() {
       const r = fileRead(model.page, decodeReadFile(args).path);
       return { ok: !("error" in r), result: r, error: "error" in r ? r.error : undefined };
     }
-    const out = step(model, decode(TOOLS.find((t) => t.name === name)!, args));
+    const build = BUILD_TOOLS.find((t) => t.name === name);
+    const out = step(model, decode(build ?? TOOLS.find((t) => t.name === name)!, args));
     model = out.model;
+    // No frame runs here, so a change that lands has nothing to report.
+    if (build) return { ok: true, result: checked(out.error === null ? [] : [out.error]) };
     return { ok: out.error === null, result: changed(out.error, model.page), error: out.error ?? undefined };
   };
   const relay: Relay = new Relay(() => (frame) => {
@@ -28,5 +31,7 @@ export function local() {
   });
   let id = 0;
   const rpc: Rpc = async (method, params) => (await relay.mcp({ jsonrpc: "2.0", id: ++id, method, params }, links)).json();
-  return { rpc, page: () => model.page };
+  /** The room's plain HTTP doors: a POST when there is a body. */
+  const http = (path: string, body?: string) => relay.http(new Request(`${links.api}${path}`, body === undefined ? {} : { method: "POST", body }), path, links);
+  return { rpc, http, links, page: () => model.page };
 }

@@ -1,5 +1,5 @@
 // Remake public/og.jpg, the link preview of the main page and of a world with no picture yet: the landing's neon
-// AGENT PAGE sign over its rain city, 1200 by 630, shot in headless Chrome. Run it when the landing changes:
+// AGENT WORLD sign over its rain city, 1200 by 630, shot in headless Chrome. Run it when the landing changes:
 //
 //   cd apps/effect-ui-page && bun scripts/og.ts            writes public/og.jpg
 //   bun scripts/og.ts --out /tmp/og.jpg                    somewhere else, to look first

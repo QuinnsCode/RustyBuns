@@ -39,6 +39,7 @@ const vite = await createServer({
         if (req.url?.startsWith("/v1/admin.js")) req.url = `/@fs${join(app, "src/admin.ts")}`;
         if (req.url?.startsWith("/v1/orgs.js")) req.url = `/@fs${join(app, "src/orgs-page.ts")}`;
         if (req.url?.startsWith("/v1/try.js")) req.url = `/@fs${join(app, "src/try-page.ts")}`;
+        if (req.url?.startsWith("/v1/menu.js")) req.url = `/@fs${join(app, "src/menu.ts")}`;
         next();
       });
     },

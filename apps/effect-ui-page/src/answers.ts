@@ -1,6 +1,10 @@
 // What the page's tools answer, as plain data: the page (agent.ts) sends these, and the tests' stand-in page
 // (test/app-kit.ts) sends the same, so the token count (test/tokens.test.ts) measures what an agent really reads.
 import { listing, type Page } from "./page.ts";
+import type { Checked } from "./tools.ts";
+
+/** world_build and world_edit: ok, or what went wrong. Nothing else. */
+export const checked = (errors: readonly string[]) => ({ ok: errors.length === 0, errors: [...errors] }) satisfies Checked;
 
 /** page_read: the files by path and size, the backdrop, and what the frame said since it last loaded. */
 export const looked = (page: Page, said: readonly string[]) =>
