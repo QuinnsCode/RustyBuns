@@ -4,7 +4,9 @@
 import * as THREE from "three";
 import type { Role, Side } from "../names.ts";
 import { HULL, alive, type Fx, type Ship, type World } from "../sim/world.ts";
-import { ENGINE, craftGeometry, craftMaterial, dotTexture, planetTexture, shipModel } from "./models.ts";
+import { craftGeometry, craftMaterial } from "./craft.ts";
+import { ENGINE, dotTexture, planetTexture } from "./models.ts";
+import { sheetModel } from "./ships.ts";
 import { Fog } from "./fog.ts";
 
 export type Look = "cinema" | "holo";
@@ -238,7 +240,7 @@ export class Bridge {
     for (const s of w.ships) {
       let g = this.ships.get(s.id);
       if (!g) {
-        g = shipModel(s.kind, s.side); g.userData.side = s.side; this.paint(g);
+        g = sheetModel(s.kind); g.userData.side = s.side; this.paint(g);
         this.scene.add(g); this.ships.set(s.id, g);
         const bubble = new THREE.Mesh(new THREE.SphereGeometry(HULL[s.kind].r * 1.15, 24, 16), new THREE.MeshBasicMaterial({ color: s.side === "navy" ? 0x8fd0ff : 0xffc28a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
         bubble.scale.y = 0.35; this.scene.add(bubble);
