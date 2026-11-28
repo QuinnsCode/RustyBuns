@@ -53,7 +53,7 @@ for (const f of await readdir("src/city-shops")) await copyFile(`src/city-shops/
 // The avatar parts and drawing (packages/util/src/avatar.ts), which the profile editor and the code city both import.
 const av = await Bun.build({ entrypoints: ["../../packages/util/src/avatar.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "avatar.js" });
 if (!av.success) { for (const l of av.logs) console.error(l); process.exit(1); }
-const qr = await Bun.build({ entrypoints: ["src/qr.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "qr.js" });
+const qr = await Bun.build({ entrypoints: ["../../packages/util/src/qr.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "qr.js" });
 if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
 // Self-heal: the "copy a fix prompt for your agent" text (src/fix-prompt.ts) behind a failure's toast.
 const fp = await Bun.build({ entrypoints: ["src/fix-prompt.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "fix-prompt.js" });
