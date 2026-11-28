@@ -9,10 +9,12 @@ import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../ge
 
 // The sound and power math's catalog (lane B). It imports nothing, so the models package can read it without a
 // dependency on it; this pins the join: the same ids, sizes and jack names on both sides.
+// The band night's mics, stage box, fan and backline are in the catalog only: Load In draws them itself (`hasModel`).
+const UNMODELLED = ["mic-dynamic", "mic-kick", "stage-box-12", "snake-fan-12", "drum-kit", "bass-amp", "guitar-combo"];
 const book = new Map(catalogIds.map((id) => [id, catalogGear(id)]));
 
 test("the models and the catalog list the same gear at the same sizes", () => {
-  expect<string[]>([...GEAR_IDS].sort()).toEqual([...catalogIds].sort());
+  expect<string[]>([...GEAR_IDS, ...UNMODELLED].sort()).toEqual([...catalogIds].sort());
   for (const id of GEAR_IDS) { const { w, h, d } = book.get(id)!.size; expect<number[]>([...GEAR_SIZES[id]]).toEqual([w, h, d]); }
 });
 
@@ -23,7 +25,8 @@ test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing 
   size.forEach((s, i) => expect(Math.abs(s - GEAR_SIZES[id][i]) / GEAR_SIZES[id][i]).toBeLessThan(0.1));
   expect(Math.abs(box.min.y)).toBeLessThan(0.005);
   // the DJ table's mixer is seen from 40 cm under the DJ's hands, every control of the decks page's Qone face on it
-  expect(triangles(g)).toBeLessThan(id === "mixer-club-4" ? 6500 : 5000);
+  // and the touring rack carries its amps' real fronts
+  expect(triangles(g)).toBeLessThan(id === "mixer-club-4" || id === "amp-rack-12u" ? 7000 : 5000);
 
   const jacks = gearJacks(g);
   expect([...jacks.keys()].sort()).toEqual(jackNames(book.get(id)!).sort());
@@ -152,7 +155,8 @@ test("a stompbox builds at the size asked, its jacks out of each end and its foo
     const g = stompbox(size);
     g.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(g), got = box.getSize(new THREE.Vector3()).toArray();
-    got.forEach((s, i) => expect(Math.abs(s - size[i])).toBeLessThan(0.004));
+    // each end's jack stands 8.5 mm proud of the box, so it is that much wider
+    got.forEach((s, i) => expect(Math.abs(s - size[i] - (i === 0 ? 0.017 : 0))).toBeLessThan(0.004));
     expect(Math.abs(box.min.y)).toBeLessThan(0.001);
     const jacks = gearJacks(g);
     expect(jacks.get("in")!.position.x).toBeGreaterThan(size[0] / 2);

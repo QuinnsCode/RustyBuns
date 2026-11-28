@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { arr, bool, obj, opt, str } from "@rustybuns/util/guard";
 import { join } from "node:path";
 import { chromeStartMs, launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
-import { FIND, REPLACE, VILLAGE, WORLD } from "./session.ts";
+import { FIND, REPLACE, triangle, VILLAGE, WORLD } from "./session.ts";
 
 setDefaultTimeout(60_000);
 
@@ -119,6 +119,24 @@ test("each door builds the village in the frame with no errors, and a mistake co
   expect(await post("/build", mistake)).toContain("nope is not defined");
   expect((await fetch(`${api}/socket`, { headers: { origin: "https://evil.example" } })).status).toBe(403);
   expect((await fetch(`${origin}/api/r/NOPE/build`, { method: "POST", body: VILLAGE })).status).toBe(404);
+});
+
+/** The smallest .glb that shows something: one triangle, 2 wide and 4 tall. */
+test("a world shows a .glb the room keeps, h units tall, and says so when the room keeps no such file", async () => {
+  expect((await fetch(`${origin}/api/r/${ROOM}/files/hero.glb`, { method: "PUT", body: triangle() })).ok).toBe(true);
+  const text = `import { model, every, THREE } from "@world/kit";
+const hero = model("hero.glb", { x: 10, z: 20, h: 12 });
+model("nobody.glb");
+let told = false;
+every(() => {
+  if (told || !hero.children.length) return;
+  told = true;
+  const box = new THREE.Box3().setFromObject(hero);
+  console.error("stands " + JSON.stringify([box.min.toArray(), box.max.toArray()].map((v) => v.map(Math.round))));
+});`;
+  expect(await call("page_write_file", { path: "world.js", text })).toMatchObject({ ok: true });
+  await heard("stands");
+  expect((await heard("nobody")).sort()).toEqual(["error: model nobody.glb: the room keeps no nobody.glb", "error: stands [[7,0,20],[13,12,20]]"]);
 });
 
 test("the About page ends in the shared links, this year's © and the way back to QNTBR", async () => {

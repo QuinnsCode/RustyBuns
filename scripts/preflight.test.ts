@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../apps/codesplitter/scripts/mervin-board.ts";
-import { ME, OpenPr, overlaps, rollbacks, verdict } from "./preflight.ts";
+import { chain, ME, OpenPr, overlaps, rollbacks, verdict } from "./preflight.ts";
 
 const SHA = "a".repeat(40);
 const pr = (number: number, headRefName: string, ...files: string[]): OpenPr => ({ number, title: `t${number}`, headRefName, headRefOid: SHA, files: files.map((path) => ({ path })) });
@@ -19,6 +19,14 @@ test("open PRs sharing a file are listed, most shared first; generated-only and 
   const r = overlaps(["x.ts", "y.ts", "bun.lock"], prs, "me");
   expect(r.clash.map((o) => o.pr)).toEqual([2, 1]);
   expect(r.generated.map((o) => o.pr)).toEqual([3]);
+});
+
+test("three open PRs tied by Merge after lines are a chain; a pair, or a line to a merged PR, is not", () => {
+  const waits = (number: number, body = "") => ({ ...pr(number, `b${number}`, "x.ts"), body });
+  // #6487's three: the first waits only on a PR that has merged, the others on each other. #9 is on its own.
+  const tied = [waits(6497, "Merge after #6495, #6494, #6493"), waits(6495, "Merge after #6493, #6494"), waits(6493, "Merge after #6492"), waits(9)];
+  expect(chain(tied)).toEqual([{ pr: 6493, after: [] }, { pr: 6495, after: [6493] }, { pr: 6497, after: [6495, 6493] }]);
+  expect(chain([waits(1), waits(2, "Merge after #1"), waits(3, "Merge after #100")])).toEqual([]);
 });
 
 test("a gh row without its files list is refused, not read as no files", () => {

@@ -75,7 +75,7 @@ function nameTag(name: string): THREE.Sprite {
   const g = c.getContext("2d");
   if (g) {
     g.fillStyle = "rgba(21,23,27,0.75)"; g.beginPath(); g.roundRect(0, 4, 256, 40, 12); g.fill();
-    g.fillStyle = "#f4f1ea"; g.font = "600 26px 'Barlow Condensed', sans-serif"; g.textAlign = "center"; g.fillText(name.slice(0, 18), 128, 33);
+    g.fillStyle = "#f4f1ea"; g.font = "600 26px 'Russo One', sans-serif"; g.textAlign = "center"; g.fillText(name.slice(0, 18), 128, 33, 244);
   }
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
   s.scale.set(0.8, 0.15, 1);

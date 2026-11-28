@@ -29,7 +29,7 @@ const TAP_PX = 12, TAP_MS = 350;
 const REACH = 46;
 
 const CSS = `
-.qt{position:fixed;inset:0;pointer-events:none;z-index:6;font:600 14px 'Barlow Condensed',sans-serif;color:#f4f1ea;user-select:none;-webkit-user-select:none}
+.qt{position:fixed;inset:0;pointer-events:none;z-index:6;font:600 14px var(--q-thin);color:#f4f1ea;user-select:none;-webkit-user-select:none}
 .qt [hidden]{display:none!important}
 .qt-stick{position:absolute;left:calc(22px + env(safe-area-inset-left));bottom:calc(28px + env(safe-area-inset-bottom));width:124px;height:124px;border-radius:50%;background:rgba(21,23,27,.3);border:1px solid rgba(244,241,234,.3);pointer-events:auto;touch-action:none}
 .qt-stick i{pointer-events:none;position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(244,241,234,.55)}

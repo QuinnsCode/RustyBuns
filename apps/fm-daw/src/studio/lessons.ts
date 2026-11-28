@@ -6,9 +6,13 @@
 // kept off the signal runs. Each lesson is a list of steps on
 // @rustybuns/gear's checker (Sound Guy Simulator's), read from the patch as it stands: a step is done when the gear says
 // so, and the next one not done says what to do and, when something is in the way, what and why in plain words. The
+// And, out of doors on the tri-amp stack, set its crossover and line the sub up (#6473: the steps are
+// @rustybuns/gear's crossover-lesson.ts, Sound Guy Simulator's too; the room's PA plays what you set). The
 // PA's switch-on order is the catalog's own `thumps`, its aim the catalog speaker's coverage. Nothing is reset or locked:
 // leave whenever you like, and what you built stays, the room's own rig to keep playing. Pure: no DOM.
 import { type Cable, type Checked, type Flick, type Step, aimTo, cableFor, checkSteps, compile, gear as catalog, jackKind, offAxisLoss, thumps } from "@rustybuns/gear";
+import { type ChannelDsp } from "@rustybuns/gear/crossover";
+import { CROSSOVER_STEPS, LESSON_RIG, SUB_AHEAD_M, lessonStart } from "@rustybuns/gear/crossover-lesson";
 import { CONNECTORS } from "@rustybuns/util/connectors";
 import { type Answer, type GearDef, type Room, type Vec3, bringKit, gearOf, hand, heldId, inCase, item, knobValue, listen, placedNow, toWorld } from "../room/room.ts";
 import { GEAR_ROOM, type Bounds } from "../room/frame.ts";
@@ -22,12 +26,23 @@ export const LESSONS = [
   { id: "pa", title: "Set up a PA for a small room", blurb: "Place two speakers, aim them, cable a mic through a mixer, and power on in order" },
   { id: "plugs", title: "Know your plugs: XLR", blurb: "What an XLR carries and its pins: a mic into the mixer, a speaker's combo input, its thru on to the next box" },
   { id: "rack", title: "Run an amp rack: power apart from audio", blurb: "Mains off a distro on powerCON and IEC, the mixer into the amps, speakON out to two passive speakers, and the power kept off the signal" },
+  { id: "crossover", title: "Set a tri-amp stack's crossover", blurb: "Out on the sand: set the three splits of the tri-amp stack, then delay the sub into line with the tops" },
 ] as const;
 export type LessonId = (typeof LESSONS)[number]["id"];
 const isLesson = (id: string): id is LessonId => LESSONS.some((l) => l.id === id);
 
 /** What a step reads: the sesh's patch, the box in your hands, the room's walls, and the PA's switch flicks in order. */
-export type At = { patch: Patch; held: string | null; bounds: Bounds; flicks: readonly Flick[] };
+export type At = { patch: Patch; held: string | null; bounds: Bounds; flicks: readonly Flick[]; xo?: { bands: readonly ChannelDsp[]; subAheadM: number } | null };
+
+/** The room's rig and its crossover, as the page plays it (the crossover lesson's). */
+export type XoRoom = {
+  rig(): string | null;
+  bands(): readonly ChannelDsp[] | null;
+  set(bands: readonly ChannelDsp[]): boolean;
+  subAheadM(): number;
+  setSubAhead(metres: number): void;
+  reset(): void;
+};
 type End = readonly [string, string];
 /** What a step is about, for the room's marker over it: a jack or knob on a box, or the whole box (no part). */
 export type Mark = { id: string; part?: string };
@@ -431,7 +446,14 @@ const RACK: Lesson = [
   },
 ];
 
-const STEPS: Record<LessonId, Lesson> = { guitar: GUITAR, voice: VOICE, pa: PA, plugs: PLUGS, rack: RACK };
+/** The shared crossover steps, read from the room's rig. */
+const CROSSOVER: Lesson = CROSSOVER_STEPS.map((st) => ({
+  job: typeof st.job === "string" ? st.job : "",
+  done: ({ xo }) => !!xo && st.done(xo),
+  why: ({ xo }) => (xo ? st.why?.(xo) ?? null : "The speakers are down: turn them up to set their crossover"),
+  mark: () => null,
+}));
+const STEPS: Record<LessonId, Lesson> = { guitar: GUITAR, voice: VOICE, pa: PA, plugs: PLUGS, rack: RACK, crossover: CROSSOVER };
 
 /** Every step of a lesson checked against what is in the room now. */
 export const checkLesson = (id: LessonId, s: At): Checked[] => checkSteps(STEPS[id], s);
@@ -453,12 +475,16 @@ export class Lessons {
   private flicks: Flick[] = [];
   private seen = new Set<string>();
 
-  constructor(private hands: GearHands) {}
+  constructor(private hands: GearHands, private xo?: XoRoom) {}
 
   /** Start a lesson (the PA one brings its kit to the floor in front of you); a lesson already on is left for it. */
   start(id: string, j: Jam): Answer {
     if (!isLesson(id)) return { ok: false, why: `no lesson ${id}` };
-    if (id === "pa" || id === "plugs" || id === "rack") {
+    if (id === "crossover") {
+      if (this.xo?.rig() !== LESSON_RIG) return { ok: false, why: "This one is on the tri-amp stack out of doors: in Desert Gathering, pick it in Settings, The gathering" };
+      if (!this.xo.set(lessonStart())) return { ok: false, why: "Turn the speakers up first: the crossover is the amps'" };
+      this.xo.setSubAhead(SUB_AHEAD_M);
+    } else if (id === "pa" || id === "plugs" || id === "rack") {
       if (!this.hands.joined) return { ok: false, why: "The sesh's gear is on its way" };
       if (j.me.seat) return { ok: false, why: `Stand up first: the ${id === "rack" ? "rig" : "PA"} goes on the floor in front of you` };
       if (!bringKit(this.hands.reach(j), id === "rack" ? RACK_KIT : PA_KIT)) return { ok: false, why: "Your hands are full: set it down first" };
@@ -468,8 +494,12 @@ export class Lessons {
     this.seen = this.powered();
     return { ok: true };
   }
-  /** Leave the lesson: nothing is undone. */
-  leave() { this.on = null; }
+  /** Leave the lesson: nothing you built is undone. A crossover left half set goes back to its preset: the amps
+   *  didn't come to you that way. */
+  leave() {
+    if (this.on === "crossover" && !this.finished.has("crossover")) this.xo?.reset();
+    this.on = null;
+  }
 
   /** The PA boxes on now: switched on, and with mains where they take it on a cable. */
   private powered(): Set<string> { const p = this.hands.room.studio.patch; return new Set(paPlaced(p).filter((x) => isOn(p, x.id)).map((x) => x.id)); }
@@ -486,7 +516,8 @@ export class Lessons {
     if (!this.on) return null;
     this.sync();
     const r: Room = this.hands.room, held = heldId(r) ?? null, h = hand(r);
-    const look: Look = { patch: r.studio.patch, held, bounds: r.bounds ?? GEAR_ROOM, flicks: this.flicks, lead: h && "lead" in h ? h.lead : null };
+    const bands = this.xo?.bands(), xo = bands ? { bands, subAheadM: this.xo!.subAheadM() } : null;
+    const look: Look = { patch: r.studio.patch, held, bounds: r.bounds ?? GEAR_ROOM, flicks: this.flicks, lead: h && "lead" in h ? h.lead : null, xo };
     const steps = checkLesson(this.on, look);
     const next = steps.findIndex((s) => !s.done), done = next < 0;
     if (done) this.finished.add(this.on);

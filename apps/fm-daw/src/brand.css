@@ -1,0 +1,7 @@
+/* Qollab's two faces, on every page (owner's pick, 2026-11-28), shipped in public/fonts (licences in public/fonts/CREDITS.md).
+   --q-thick, Russo One: names, headings, buttons and units. --q-thin, Exo 2: small text at its regular weight, labels at
+   600, taglines and big numbers at its light and hairline weights (hairline only from 24px up).
+   Russo One has one weight; its range here stops a browser from faking a bold on top of it. Exo 2 is one variable file. */
+@font-face { font-family: "Russo One"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("/fonts/russo-one-400.woff2") format("woff2"); }
+@font-face { font-family: "Exo 2"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("/fonts/exo-2-var.woff2") format("woff2"); }
+:root { --q-thick: "Russo One", "Arial Black", sans-serif; --q-thin: "Exo 2", system-ui, sans-serif; }

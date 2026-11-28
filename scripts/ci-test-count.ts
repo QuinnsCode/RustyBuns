@@ -6,7 +6,8 @@
 // It reads bun test's closing summary (" 12 pass", " 1 fail", " 2 skip", summed if the command runs bun test more
 // than once), prints it as a `::notice title=tests::12 pass, 1 fail, 2 skip` annotation on the job's check run
 // (the office reads those back with `gh api .../check-runs/<id>/annotations`), adds a line to the job summary,
-// and exits with the command's own code.
+// and exits with the command's own code. A `bun test` that exits 0 without its closing "Ran N tests" line was cut
+// short, and fails (#5949). `bun run builder` holds its runs to the same check (`cutShort`, #6591).
 //
 // A run that outlives its budget (10 minutes unless --budget says otherwise) hung: bun's per-test timeout misses a
 // deadlock in shared setup or an event loop that never drains. Then it kills the whole process tree, names the
@@ -44,6 +45,33 @@ export function countOf(out: string): TestCount | undefined {
     seen = true;
   }
   return seen ? t : undefined;
+}
+
+/** What of a `bun test` run never reached its closing "Ran N tests across M files." line: a test, or a handler a test
+ * file's import left behind, can `process.exit(0)` mid-run, and the files after it never run (#5949). A group job
+ * (ci-group.ts) is held to one line per app. */
+export function unfinished(out: string): string[] {
+  const parts = strip(out).split(MARK);
+  const runs = parts.length > 1 ? parts.slice(1).map((p) => ({ name: p.split("\n")[0]!.trim(), text: p })) : [{ name: "bun test", text: parts[0]! }];
+  return runs.filter((r) => !/^Ran \d+ tests? across \d+ files?\./m.test(r.text)).map((r) => r.name);
+}
+
+/** Whether a command runs `bun test`, quoted words and all ("'bun' 'test'", as `builder run` sends one). */
+export const runsBunTest = (cmd: string) => /\bbun test\b/.test(cmd.replace(/["']/g, ""));
+
+/** Why a command that exited 0 is no pass: it ran `bun test` and bun never got to the end. */
+export function cutShort(cmd: string, out: string): string | undefined {
+  const cut = runsBunTest(cmd) ? unfinished(out) : [];
+  if (!cut.length) return;
+  const last = reported(out).last;
+  return `${cut.join(", ")} exited 0 without bun test's closing line, so tests never ran${last ? `. Last file started: ${last}` : ""}`;
+}
+
+/** A child's stream, written on to ours as it comes and handed to `add` as text. */
+export async function pump(from: ReadableStream<Uint8Array>, to: NodeJS.WriteStream, add: (text: string) => void) {
+  const dec = new TextDecoder();
+  const reader = from.getReader();
+  for (let r = await reader.read(); !r.done; r = await reader.read()) { add(dec.decode(r.value, { stream: true })); to.write(r.value); }
 }
 
 export const notice = (t: TestCount) => `::notice title=tests::${t.pass} pass, ${t.fail} fail, ${t.skip} skip`;
@@ -247,12 +275,8 @@ if (import.meta.main) {
   // LANE is the job's name, set by apps.yml on a split app's lanes.
   const lane = process.env.LANE ?? "";
   const unwatch = watchSiblings(lane, (sibling) => { stoppedBy = sibling; kill(); });
-  const pump = async (from: ReadableStream<Uint8Array>, to: NodeJS.WriteStream) => {
-    const dec = new TextDecoder();
-    const reader = from.getReader();
-    for (let r = await reader.read(); !r.done; r = await reader.read()) { out += dec.decode(r.value, { stream: true }); to.write(r.value); }
-  };
-  await Promise.all([pump(child.stdout, process.stdout), pump(child.stderr, process.stderr)]);
+  const add = (text: string) => { out += text; };
+  await Promise.all([pump(child.stdout, process.stdout, add), pump(child.stderr, process.stderr, add)]);
   const code = await child.exited;
   clearTimeout(budget);
   unwatch();
@@ -265,6 +289,12 @@ if (import.meta.main) {
     const f = firstFailure(out), file = f && relative(join(import.meta.dir, ".."), join(process.cwd(), f));
     if (file) { console.log(`::error file=${file},title=first failure::${file}`); say(`First failure: ${file}`); }
   }
+  // Exit 0 is only a pass when bun got to the end.
+  const cut = !code && !timedOut && !stoppedBy ? cutShort(cmd, out) : undefined;
+  if (cut) {
+    console.log(`::error title=cut short::${cut}`);
+    say(`Cut short: ${cut}`);
+  }
   const t = countOf(out);
   if (t) {
     console.log(notice(t));
@@ -275,5 +305,5 @@ if (import.meta.main) {
   for (const v of verdicts) console.log(v.line);
   const tooSlow = verdicts.filter((v) => v.fail).length;
   if (tooSlow && process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Too slow: ${tooSlow} changed test(s) over 80% of their time limit\n`);
-  process.exit(timedOut ? 124 : stoppedBy ? 1 : code || (tooSlow ? 1 : 0));
+  process.exit(timedOut ? 124 : stoppedBy ? 1 : code || (tooSlow || cut ? 1 : 0));
 }

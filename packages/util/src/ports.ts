@@ -38,6 +38,9 @@ export const PORTS = {
   eqosysPreview: 4792,
   qview3d: 5190,
   parkHideSeek: 5391,
+  // apps/fm-daw's show bridge (scripts/show-bridge.ts): the page's WebSocket, and OSC in over UDP
+  showBridge: 5392,
+  showOsc: 9000,
   // Bun servers standing in for a deploy
   geoboxq: 8787,
   geoboxqFront: 8788,

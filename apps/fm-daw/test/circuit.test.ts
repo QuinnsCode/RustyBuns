@@ -67,9 +67,9 @@ test("each orderable pedal board (circuits/q-*.tsx) plays like its voicing at th
     ["Q Squeeze", qSqueeze, { ...box("D2", "R10", ["C2", "R5", "D1", "Q1", "R6"]), moved: { U2: { ctl: "led", hi: 2e6, lo: 300 } } },
       (t: number) => opticalComp(Math.sqrt((t * 250) / 300))],
     // Turned over for its PNPs: the sim's ground is the board's 9 V, so the supply goes on V9. Its one sim knob is the
-    // room's warmth; the Fuzz rheostat is held at 0 Ω, where the board is the sim's.
+    // room's warmth; the Fuzz rheostat is held full up (0 Ω), where the board is the sim's.
     ["Q Germ", qGerm, { leaveOut: box("D1", "R11").leaveOut, supplies: { V9: 9 }, values: unloaded }, (t) => germaniumFuzz(5 + 50 * t),
-      (t) => ({ ...germaniumAt(5 + 50 * t), knobs: { RV1: 0 } })],
+      (t) => ({ ...germaniumAt(5 + 50 * t), knobs: { RV1: 1 } })],
     // 10k + a 100k pot: the sim's one Fuzz resistor, 10k + 200k by fuzz squared.
     ["Q Octave", qOctave, { ...box("D5", "R11"), linear: ["U1B"], values: unloaded }, (t) => octaveUp(Math.sqrt(t / 2))],
     // The LFO (U2C, U2D, C6, R20 to R22, RV1) and what brings it to the gates (R23, R24, RT1): the sim's "gate" Mod.
@@ -119,7 +119,10 @@ const crest = (b: Float32Array) => { let ss = 0; const from = SR / 10; for (let 
 const pedalOut = (net: Netlist, x = sine(220, 0.2, 0.6)) => runRig({ inputVolts: 0.5, links: [{ net }], power: 0, cab: null }, x).out;
 
 test("every board plays like its voicing", () => {
+  // Small enough that the fuzz isn't clipping yet, where the knob is heard most.
+  const germKnob = (t: number) => gainDb(boardToNetlist(qGerm, { leaveOut: ["J1", "J2", "J3", "J4", "LED1", "D1", "R11"], supplies: { V9: 9 }, ...germaniumAt(25), knobs: { RV1: t, RV2: 1 } }), 220, 48000, 0.001);
   for (const [what, v, lo, hi] of [
+    ["Q Germ: the Fuzz knob turned up gives more gain (dB, full over none)", germKnob(1) - germKnob(0), 5, 10],
     // x101 on a 0.3 V input would be 30 V; the diodes hold it under a volt.
     ["Q Dist: diodes to ground flatten the tops (peak, V)", peak(pedalOut(hardClip()), SR / 10), 0.3, 1],
     ["Q Drive: the mids get more gain than the lows (dB, 800 Hz over 80 Hz)", gainDb(overdrive(0.5), 800, 192000, 0.001) - gainDb(overdrive(0.5), 80, 192000, 0.001), 6, 20],

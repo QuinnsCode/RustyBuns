@@ -4,8 +4,7 @@
 // loop through that box: in Rust (src/speakers/rust.ts) when this build has the wasm, else in TypeScript. Change
 // what the walls are made of, or add braces, and both the curve and the knock (each wall rung on its own) change.
 // window.qspeakers drives it (scripts/probe.ts).
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./speakers.css";
 import * as THREE from "three";

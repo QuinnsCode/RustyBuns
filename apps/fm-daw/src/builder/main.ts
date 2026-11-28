@@ -6,8 +6,7 @@
 // parts into the board (circuit JSON and tscircuit source, ../circuit/builder.ts), plays the same riff through the
 // remake and through your board, and says whether they match. Build it draws the board from its kit's Gerbers (../kit/gerber.ts), prints the sheet, and saves the files.
 // The riff runs in a worker (worker.ts). window.qbuilder drives it (scripts/probe.ts).
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./builder.css";
 import { check, obj, or, rec, str } from "@rustybuns/util/guard";

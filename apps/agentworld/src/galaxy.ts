@@ -6,7 +6,7 @@
 //   free, kept for invites, so there are empty plots to walk past.
 // - A plot is known to the page by a public id, never by its room: a room's link is its key (it can drive the room's
 //   agent tools), so the map hands out a one-way hash of it and the server looks the room up when a page asks for a
-//   plot's picture or world.
+//   plot's picture, world or one of its models.
 // - A plot is a person's: signed in through eqosys (who.ts), `eq:<sub>`. Each person has one world, the first room
 //   they signed in from (POST /api/me/world), and claims a plot for it once that world is made (lock.ts): the AI's
 //   write loaded clean and the page saved it (POST /api/r/<room>/made). Nothing sent out names the person or the room.
@@ -23,6 +23,7 @@ import { fromPage } from "./relay.ts";
 import { Made } from "./saved.ts";
 import { SIGN_FIRST, type SignReply, Signs } from "./sign.ts";
 import { ROOM } from "./tools.ts";
+import { MODEL_NAME } from "./world.ts";
 
 // ---------- the spiral ----------
 
@@ -296,6 +297,11 @@ export class Galaxy {
     if (m && req.method === "GET") {
       const room = await this.roomOf(m[2]!);
       return room ? forward(room, `/${m[1]}`) : json({ error: "no world on that plot" }, 404);
+    }
+    const file = rest.match(/^\/file\/([a-z0-9]{1,32})\/([^/]+)$/);
+    if (file && req.method === "GET" && MODEL_NAME.test(file[2]!)) {
+      const room = await this.roomOf(file[1]!);
+      return room ? forward(room, `/files/${file[2]}`) : json({ error: "no world on that plot" }, 404);
     }
     return json({ error: `nothing at /api/galaxy${rest}: try GET /api/galaxy/plots?x=0&y=0` }, 404);
   }

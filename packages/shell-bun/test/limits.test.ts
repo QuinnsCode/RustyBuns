@@ -48,8 +48,13 @@ test("Durable Objects: a value over 2 MiB is refused and not stored", async () =
 // Worker's answer for the edge's 503.
 test("a request that grows memory past 128 MB gets the edge's 503", async () => {
   let held: Uint8Array[] = [];
-  const res = await capped({}, () => { held = Array.from({ length: 200 }, () => new Uint8Array(1 << 20).fill(1)); return new Response("ok"); });
-  expect(held.length).toBe(200);
+  // Allocate until the process really is 150 MB bigger: after the rest of the suite, new arrays can land in pages
+  // already resident (macOS), and a fixed 200 MB grew it by less than the limit.
+  const res = await capped({}, () => {
+    const from = process.memoryUsage.rss();
+    while (process.memoryUsage.rss() - from < 150 * 2 ** 20 && held.length < 2000) held.push(new Uint8Array(1 << 20).fill(1));
+    return new Response("ok");
+  });
   expect(res.status).toBe(503);
   expect(await res.text()).toContain("Error 1102: Worker exceeded resource limits (memory grew");
 });

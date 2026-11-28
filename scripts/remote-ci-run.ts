@@ -4,6 +4,7 @@
 // goes, then the slot. Loaded with a dynamic import from remote-ci.ts's `main`: build scripts import remote-ci.ts for
 // `offload` under filtered CI installs, and `effect` lives in packages/cli only.
 import { Cause, Data, Effect, Exit, Schedule, Stopped, runScoped, type Scope } from "../packages/cli/src/lifecycle.ts";
+import { cutShort } from "./ci-test-count.ts";
 import { recordVerdict, type Tier } from "./ci-tier.ts";
 import {
   claim, CUT, CUT_PCT, fallback, HEARTBEAT_MS, jobScript, LOG, LOST, NOT_RUN, outcome, plan, PUSH_MS, pushLock, q,
@@ -61,6 +62,13 @@ export const load = (b: Builder, slot: string, sha: string, cwd: string) => Effe
 // A code that means Bob, not the branch: the run is neither passed nor failed.
 const gone = (code: number) => code === LOST ? Effect.fail(new Lost({ why: "lost Bob mid-run" })) : code === CUT ? Effect.fail(new Cut()) : Effect.void;
 
+/** A suite's exit code, but 1 for a `bun test` that exited 0 before it finished (ci-test-count.ts's check, #6591). */
+const judged = (j: Job, { code, out }: { code: number; out: string }) => {
+  const cut = code ? undefined : cutShort(j.cmd, out);
+  if (cut) console.log(`[${j.label}] cut short: ${cut}`);
+  return cut ? 1 : code;
+};
+
 /** The run in a held slot: the heartbeat, the tree sent, the suites `cap` at a time. The worst code. */
 const runIn = (r: Run, slot: string, cap: number): Effect.Effect<number, Lost | Cut, Scope.Scope> => Effect.gen(function* () {
   // while this run holds the slot its lock stays fresh, so only a dead run's lock goes stale; only a lock that is
@@ -73,7 +81,7 @@ const runIn = (r: Run, slot: string, cap: number): Effect.Effect<number, Lost | 
   if (setup) return setup;
   console.log(`running ${r.jobs.map((j) => j.label).join(", ")} on ${r.host} (${slot}), ${cap} at a time`);
   const t0 = performance.now();
-  const codes = yield* Effect.forEach(r.jobs, (j) => ssh(r.b, jobScript(slot, j.dir, j.cmd), j.label).pipe(Effect.map((x) => x.code)), { concurrency: cap });
+  const codes = yield* Effect.forEach(r.jobs, (j) => ssh(r.b, jobScript(slot, j.dir, j.cmd), j.label).pipe(Effect.map((x) => judged(j, x))), { concurrency: cap });
   yield* gone(codes.includes(CUT) ? CUT : codes.includes(LOST) ? LOST : 0);
   const worst = Math.max(0, ...codes);
   console.log(`${outcome(worst)} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${r.host}`);

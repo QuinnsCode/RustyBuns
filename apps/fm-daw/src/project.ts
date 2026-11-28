@@ -1,6 +1,7 @@
 // The project document and the ops that change it. Shared by the page (local
 // state, undo), the world (persists and rebroadcasts) and the bounce. The world
 // may face the internet on the edge, so everything that arrives is sanitized.
+import { readChannels, type ChannelDsp } from "@rustybuns/gear/crossover";
 import { arr, Bad, bool, check, int, maybe, nul, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
 import { TrackAmp } from "./amp/track-amp.ts";
@@ -66,11 +67,14 @@ export interface TrackDoc {
  * desk: the players' channels and the aux 2 return on the sesh's desk (src/desk.ts); only there once one was moved.
  * studio: the jam room's studio (src/studio/rooms/), by id; the leader moves the sesh to another, and everyone walks into it. Only there once set.
  * rig: the open-air rig on the sand (@rustybuns/gear systems.ts), the leader's to change; only there once set.
+ * crossover: the room PA's amp channels as someone with the desk set them (@rustybuns/gear crossover.ts), for the boxes `rig` names (their ids joined); only there once set.
  * tops: what the rig's tops sit on (the subs, a pole over the subs, their own stands): the event's (Stage Builder, #6053), which the owner edits in the jam room's Settings; only there once set.
  * master: the room's level, dB (MASTER_MIN to 0), on top of each listener's own; set from the remote (src/remote/), only there below 0. A bounce leaves it out.
  * song: song mode (src/song.ts), the loop as a chain of patterns, bars × chain slots long; only there when on.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; tops?: Tops; built?: StudioDef; lights?: StageLights; song?: Song }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; tops?: Tops; crossover?: Amps; built?: StudioDef; lights?: StageLights; song?: Song }
+/** The PA's amp channels as set, and which boxes' they are. */
+export type Amps = { rig: string; bands: ChannelDsp[] };
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -106,6 +110,8 @@ export type Op =
   | { t: "setup"; tops: Tops }
   /** The room's light desk as it's set now (src/studio/stage-lights.ts): for whoever holds the lights grant. */
   | { t: "lights"; lights: StageLights }
+  /** The PA's amp channels (an amp's DSP moved, mix), or null to put them back to the preset. */
+  | { t: "crossover"; amps: Amps | null }
   /** Song mode: the patterns each slot plays (the first time, the loop as it is becomes pattern A), or null to leave it (the notes stay). */
   | { t: "song"; chain: number[] | null }
   | { t: "replace"; project: Project };
@@ -211,7 +217,10 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, tops: raw, built: raw, lights: raw, song: raw });
+const CHANNELS = (v: unknown): ChannelDsp[] => readChannels(v) ?? bad("amp channels");
+const AMPS = obj({ rig: str(200), bands: CHANNELS });
+const ampsOf = (v: unknown): { crossover?: Amps } => { const a = check(AMPS, v); return a ? { crossover: a } : {}; };
+const PROJECT = obj({ crossover: raw, tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, tops: raw, built: raw, lights: raw, song: raw });
 /** A studio's id, as the rooms name them. */
 const STUDIO_ID = (v: unknown) => (typeof v === "string" && /^[a-z0-9-]{1,64}$/.test(v) ? v : bad("a studio id"));
 const studioOf = (v: unknown): { studio?: string } => { const id = check(STUDIO_ID, v); return id ? { studio: id } : {}; };
@@ -228,7 +237,7 @@ export function sanitize(x: unknown): Project | null {
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
   const song = songOf(p.song, bars).song;
-  const out: Project = { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitTakes(tracks.map((v, ti) => track(v, ti, beats))), ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...builtOf(p.built), ...lightsOf(p.lights), ...songOf(p.song, bars) };
+  const out: Project = { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitTakes(tracks.map((v, ti) => track(v, ti, beats))), ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...ampsOf(p.crossover), ...builtOf(p.built), ...lightsOf(p.lights), ...songOf(p.song, bars) };
   return song ? laidOut(out, song, song) : out;
 }
 
@@ -367,6 +376,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("rig"), id: oneOf(SYSTEM_IDS) }),
   obj({ t: tag("setup"), tops: oneOf(TOPS) }),
   obj({ t: tag("lights"), lights: StageLights }),
+  obj({ t: tag("crossover"), amps: nul((v: unknown) => AMPS(v)) }),
   obj({ t: tag("song"), chain: nul(Chain) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
@@ -605,12 +615,17 @@ export function apply(p: Project, op: Op): Project {
       const was = p.lights;
       return was && was.level === op.lights.level && was.beam === op.lights.beam && was.lasers === op.lights.lasers ? p : { ...p, lights: op.lights };
     }
+    case "crossover": {
+      const { crossover: _, ...rest } = p;
+      return { ...rest, ...ampsOf(op.amps) };
+    }
     case "replace": {
       // an undo or a loaded groove keeps the room where the leader put it and its lights as the light desk has them
       const next = sanitize(op.project);
       if (!next) return p;
-      const { studio: _, rig: __, built: ___, tops: _t, lights: _l, ...rest } = next;
-      return { ...rest, ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...builtOf(p.built), ...lightsOf(p.lights) };
+      // the amps' DSP is the desk's, not the groove's: an undo leaves it too
+      const { studio: _, rig: __, built: ___, tops: _t, crossover: _x, lights: _l, ...rest } = next;
+      return { ...rest, ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...ampsOf(p.crossover), ...builtOf(p.built), ...lightsOf(p.lights) };
     }
     case "song": {
       if (!op.chain) { const { song: _, ...rest } = p; return rest; }

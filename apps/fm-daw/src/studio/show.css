@@ -1,0 +1,26 @@
+/* The show desk (show.ts): a column down the right of the room, in the jam room's colours. */
+#show-desk {
+  --ink: #ece8e1; --dim: #a3a7ad; --hot: #ff6b4a; --line: #3a3e45; --well: #24272c; --card: rgba(21, 23, 27, 0.94);
+  position: fixed; top: calc(58px + env(safe-area-inset-top, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  width: min(340px, calc(100vw - 24px)); box-sizing: border-box; overflow-y: auto; z-index: 45; padding: 14px 16px;
+  border-radius: 16px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: 14px "IBM Plex Sans", system-ui, sans-serif; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+:root[data-theme="light"] #show-desk { --ink: #17191c; --dim: #555c66; --hot: #d4432a; --line: #b9bec4; --well: #eceef0; --card: rgba(246, 247, 248, 0.96); }
+#show-desk[hidden] { display: none; }
+/* at the end of the entry panel's row: it isn't one of the ways to bring people */
+#menu #show-open { margin-left: auto; }
+#show-desk header { display: flex; align-items: center; justify-content: space-between; }
+#show-desk h2 { margin: 0; font-size: 18px; }
+#show-desk h3 { margin: 16px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+#show-desk .sd-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+#show-desk .sd-row > span { flex: 0 0 56px; }
+#show-desk input[type="range"] { flex: 1 1 120px; min-width: 0; accent-color: var(--hot); }
+#show-desk input[type="color"] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--well); }
+#show-desk input[type="text"], #show-desk input[type="password"], #show-desk select { flex: 1 1 140px; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--well); color: var(--ink); font: inherit; }
+#show-desk button { min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--well); color: var(--ink); font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+#show-desk button[aria-pressed="true"] { border-color: var(--hot); color: var(--hot); }
+#show-desk ul { list-style: none; margin: 6px 0; padding: 0; }
+#show-desk li { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; overflow-wrap: anywhere; }
+#show-desk .sd-status { color: var(--dim); min-height: 1.4em; }
+/* ?view=stream, an OBS browser source: the room and nothing over it */
+body.stream-view > :not(main), body.stream-view main > :not(canvas#stage) { display: none !important; }

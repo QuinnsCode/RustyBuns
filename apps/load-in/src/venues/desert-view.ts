@@ -12,8 +12,11 @@ import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, GEN_QUIET, tonightRig, DESERT_RIGS, type Score, type Show } from "./desert.ts";
+import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, GEN_QUIET, tonightRig, DESERT_RIGS, ampCrossover, openCrossover, resetAmpCrossover, setAmpCrossover, type Score, type Show } from "./desert.ts";
 import { SYSTEMS } from "@rustybuns/gear";
+import { rigCrossover } from "@rustybuns/gear/crossover";
+import { CROSSOVER_STEPS, LESSON_RIG } from "@rustybuns/gear/crossover-lesson";
+import { crossoverPanel } from "@rustybuns/gear/crossover-panel";
 import { playing } from "./park.ts";
 import { cellsIn, mean } from "./dive-bar.ts";
 import { comingTonight, crowdOf, letIn, move, regions } from "../crowd/crowd.ts";
@@ -164,12 +167,30 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
   const card = document.createElement("div");
   card.className = "bar-card";
   hud.appendChild(card);
+  const lines = document.createElement("div");
+  lines.className = "lines";
+  card.appendChild(lines);
+
+  // The amps' DSP (the tri-amp stack's): the response plot, the sliders and the lesson's steps. K or the card's button.
+  const xo = crossoverPanel(document.body, {
+    preset: () => rigCrossover(tonightRig()), bands: () => ampCrossover(getWorld()).bands,
+    set: (bands) => setAmpCrossover(getWorld(), bands), subAheadM: () => ampCrossover(getWorld()).subAheadM,
+    reset: () => resetAmpCrossover(getWorld()),
+  }, { steps: () => CROSSOVER_STEPS, onToggle: (open) => { if (open) document.exitPointerLock?.(); } });
+  const amps = () => { if (xo.open) return xo.toggle(false); if (openCrossover(getWorld()).ok) xo.toggle(true); };
+  if (tonightRig() === LESSON_RIG) {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "crossover"; b.textContent = "Set the amps' crossover (K)";
+    b.style.cssText = "pointer-events:auto;margin-top:6px";
+    b.addEventListener("click", amps);
+    card.appendChild(b);
+  }
 
   // The night's crowd on the dance floor: they come at show time, more of them the better the wall sounds.
   const people = crowdView(scene);
   let heard: Grid | null = null;
   let seen = "", last: Score | null = null, opened: Show | null = null, band: "high" | "low" = "high", night: { at: number; hours: number; dawn: boolean } | null = null;
-  const signature = (w: World, cs: Cables) => JSON.stringify([band, w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w),
+  const signature = (w: World, cs: Cables) => JSON.stringify([band, w.held?.key, ampCrossover(w), w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w),
     cs.runs.map((r) => [r.a, r.b, r.rope?.pts.filter((p, k) => k % 8 === 0).map((p) => [Math.round(p.x * 10), Math.round(p.z * 10)])])]);
 
   function paint(w: World, cs: Cables) {
@@ -198,6 +219,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     key(code) {
       const w = getWorld();
       if (code === "KeyG") return wrapNear(getWorld(), getCables()), view.update(), true;
+      if (code === "KeyK" && tonightRig() === LESSON_RIG) return amps(), true;
       if (code === "KeyH") return view.setHeat(!view.heatOn), true;
       if (code === "KeyB") return (band = band === "high" ? "low" : "high"), view.setHeat(true), true;
       if (code === "BracketLeft" || code === "BracketRight") return master(w, rig(w).master + (code === "BracketLeft" ? -1 : 1)), true;
@@ -213,6 +235,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
       people.moods(moods);
       people.update(w, crowd);
       if (sig !== seen) { seen = sig; paint(w, cs); }
+      xo.frame();
       const s = last!, st = desertState(w, cs), gen = st.generator, fuel = st.fuel, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
       // The night on show time: twelve hours in twelve seconds; the lasers and the wall stop when the fuel does.
       const h = night ? Math.min(night.hours, (now - night.at) / 1000) : 0, dark = !!night && !night.dawn && h >= night.hours;
@@ -225,7 +248,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
       });
       const power = !gen ? "no generator" : s.tripped ? "tripped" : `${(gen.watts / 1000).toFixed(1)} of ${(gen.limit / 1000).toFixed(1)} kW`;
       const runs = fuel ? `${fuel.litres} L, ${fuel.cans} can${fuel.cans === 1 ? "" : "s"} by it, runs to ${s.until}` : "";
-      card.innerHTML = `<b>${opened ? "Show time" : "The desert"}</b>`
+      lines.innerHTML = `<b>${opened ? "Show time" : "The desert"}</b>`
         + `<span class="${s.tripped || gen?.warn ? "warn" : ""}">Generator ${power}</span>`
         + `<span class="${fuel && !s.sunrise ? "warn" : ""}">Fuel ${runs}</span>`
         + `<span>Floor ${db(s.floor)} (target ${TARGET})</span>`
@@ -234,6 +257,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
         + (s.dusty.length ? `<span class="warn">Dust: ${s.dusty.length} joint${s.dusty.length === 1 ? "" : "s"} on the sand (lift the gear or tape them: G)</span>` : getCables().runs.some((r) => "plug" in r.a || "plug" in r.b) ? "<span>Dust: every joint is off the sand or taped</span>" : "")
         + (st.generatorDb !== null ? `<span class="${st.generatorDb > GEN_QUIET ? "warn" : ""}">Generator heard at ${st.generatorDb.toFixed(0)} dB on the floor (under ${GEN_QUIET} is out of earshot)</span>` : "")
         + (crowdOf(w) ? `<span>The floor: ${crowdOf(w)!.people} people</span>` : "")
+        + (s.crossover ? `<span class="warn">Crossover: ${s.crossover} off the sound</span>` : "")
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">${opened.sunrise ? "The sun came up on the wall" : `Silent at ${opened.until}, before sunrise`}: ${opened.score} / ${PASS}</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
           : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
@@ -256,6 +280,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
       scene.background = was.background;
       scene.fog = was.fog;
       card.remove();
+      xo.dispose();
       tex.dispose();
     },
   };

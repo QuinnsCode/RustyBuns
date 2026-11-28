@@ -8,10 +8,11 @@
 //   (GET /api/galaxy/picture/<id>); an empty plot is open land, with a sign next to you.
 // - The page saves its world to the server after each change that lands (PUT /api/r/<room>/world).
 // ProfilePage's Model says whether the galaxy is up (its button, Cmd+K and window.agentGalaxy all send the same
-// message); this layer comes up when the page shows `[data-galaxy="on"]` and goes when it doesn't.
+// message); this layer is the mount of the page's `[data-galaxy="on"]` element (ShowGalaxy), up as long as it is.
 import { check } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { Mount } from "@effect/ui";
 import { Effect, Option, Queue, Schema } from "effect";
 import { currentPage, unsavedKey, watchPage } from "./agent.ts";
 import { COMMON_CITY } from "./commonCity.ts";
@@ -137,7 +138,7 @@ export function preloadGalaxy(): Promise<Warm | null> | null {
     const page = currentPage();
     const w: Warm = {
       three, canvas, scene: three.scene3d(canvas), plot: me ? { x: me.x, y: me.y } : { x: 0, y: 0 }, me, around: around?.plots ?? null, kept,
-      early: me ? null : { page, land: idle().then(() => (page ? three.landOf(page) : null)).catch(() => null) },
+      early: me ? null : { page, land: idle().then(() => (page ? three.landOf(page, `/api/r/${home}/files/`) : null)).catch(() => null) },
     };
     warm = w;
     // The plots, yours first, one quiet moment each; the lands around you are read as they come.
@@ -179,7 +180,8 @@ function read(id: string, three: NonNullable<G["three"]>): Promise<Land | null> 
     if (!g && !warm) { asked.delete(id); return null; }
     await idle();
     const page = id === myPlot ? currentPage() : await savedWorld(id);
-    const land = page ? await three.landOf(page) : null;
+    // Your own models by your room, anyone else's by their plot's public id: never by their room.
+    const land = page ? await three.landOf(page, id === myPlot ? `/api/r/${home}/files/` : `/api/galaxy/file/${id}/`) : null;
     if (asked.get(id) === next) lands.set(id, land);
     return land;
   }).catch(() => null);
@@ -455,6 +457,10 @@ function unmount() {
   s.layer.remove();
 }
 
+/** The page's galaxy element: the layer goes up with it and comes down with its Scope, when the element goes. */
+export const ShowGalaxy = Mount.make("ShowGalaxy", { args: { room: Schema.String } }, (_host, { room }) =>
+  Effect.acquireRelease(Effect.sync(() => mount(room)), () => Effect.sync(unmount)).pipe(Effect.andThen(Effect.never)));
+
 const until = async (ok: () => boolean, ms = 10_000) => {
   for (const end = Date.now() + ms; !ok(); await new Promise((r) => setTimeout(r, 30))) if (Date.now() > end) throw new Error("the galaxy didn't come up");
 };
@@ -478,7 +484,7 @@ export function galaxyState() {
   };
 }
 
-/** Agent Galaxy's layer for this room: it follows ProfilePage's galaxy mode, keeps the room's world saved on the server,
+/** Agent Galaxy for this room: it keeps the room's world saved on the server, gets the galaxy ready ahead of a press,
  *  and puts `window.agentGalaxy` up for tests and the probe. */
 export function startGalaxy(room: string) {
   home = room;
@@ -486,9 +492,6 @@ export function startGalaxy(room: string) {
   addEventListener("pagehide", letGo);
   watchPage(() => { if (myPlot) forget(myPlot); });
   const app = document.getElementById("app") ?? document.body;
-  const follow = () => { const on = document.querySelector('[data-galaxy="on"]') !== null; if (on && !g) mount(room); else if (!on && g) unmount(); };
-  new MutationObserver(follow).observe(app, { childList: true, subtree: true });
-  follow();
   // About to press Galaxy (a pointer over it, focus on it, a finger on it): get it ready. A world already made when the
   // page opens gets it ready a moment after, when the browser is idle.
   const toward = (e: Event) => { if (e.target instanceof Element && e.target.closest("[data-galaxy-tile]")) void preloadGalaxy(); };

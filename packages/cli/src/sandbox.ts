@@ -141,15 +141,16 @@ export function seatbeltProfile(cwd: string, home = homedir()): string {
 }
 
 /** Linux (#897): bubblewrap args that leave the whole system as it is (`--dev-bind / /`, network and all)
- *  but cover each credential path that exists: a folder with an empty tmpfs, a file with /dev/null, read
- *  only. A path that isn't there is skipped, since bwrap would make the mount point on the real disk; so
+ *  but cover each credential path that exists: a folder with an empty tmpfs, a file with /dev/null, so it reads
+ *  as empty and what is written goes nowhere. That one is --dev-bind: --ro-bind mounts nodev, and then the
+ *  /dev/null can't even be opened ("Permission denied"). A path that isn't there is skipped, since bwrap would make the mount point on the real disk; so
  *  unlike Seatbelt a host can create one (a new ~/.aws) — it just can't see the keys that were already there. */
 export function bwrapArgs(cwd: string, home = homedir(), kind: (p: string) => "dir" | "file" | undefined = pathKind): string[] {
   const out = ["--dev-bind", "/", "/", "--die-with-parent"];
   for (const p of deniedPaths(cwd, home)) {
     const k = kind(p);
     if (k === "dir") out.push("--tmpfs", p);
-    else if (k === "file") out.push("--ro-bind", "/dev/null", p);
+    else if (k === "file") out.push("--dev-bind", "/dev/null", p);
   }
   return out;
 }

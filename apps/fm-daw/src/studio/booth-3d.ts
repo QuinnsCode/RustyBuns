@@ -268,12 +268,12 @@ const round4 = (n: number) => Math.round(n * 10000) / 10000;
 export function drawScreen(g: CanvasRenderingContext2D, v: DeckView | null, side: Side, _t = 0) {
   const w = g.canvas.width, h = g.canvas.height;
   g.fillStyle = INK.bg; g.fillRect(0, 0, w, h);
-  g.font = "600 22px 'Barlow Condensed', sans-serif"; g.fillStyle = INK.wave[side]; g.textBaseline = "top";
+  g.font = "600 22px 'Russo One', sans-serif"; g.fillStyle = INK.wave[side]; g.textBaseline = "top";
   g.fillText(side ? "B" : "A", 10, 8);
-  if (!v?.name) { g.fillStyle = INK.dim; g.font = "500 18px 'IBM Plex Sans', sans-serif"; g.fillText("No track: press the screen", 34, 10); return; }
-  g.fillStyle = INK.text; g.font = "500 18px 'IBM Plex Sans', sans-serif";
+  if (!v?.name) { g.fillStyle = INK.dim; g.font = "500 18px 'Exo 2', sans-serif"; g.fillText("No track: press the screen", 34, 10); return; }
+  g.fillStyle = INK.text; g.font = "500 18px 'Exo 2', sans-serif";
   g.fillText(clip(g, v.name, w - 44), 34, 10);
-  if (v.who) { g.fillStyle = INK.dim; g.font = "500 14px 'IBM Plex Sans', sans-serif"; g.fillText(v.who, 34, 32); }
+  if (v.who) { g.fillStyle = INK.dim; g.font = "500 14px 'Exo 2', sans-serif"; g.fillText(v.who, 34, 32); }
   // the waveform: the whole track, what's played greyed, the cue a yellow line, the playhead white
   const top = 56, lane = 70, mid = top + lane / 2, at = v.len ? (v.pos / v.len) * w : 0;
   for (let i = 0; i < v.wave.length; i++) {
@@ -283,10 +283,10 @@ export function drawScreen(g: CanvasRenderingContext2D, v: DeckView | null, side
   }
   if (v.len) { g.fillStyle = INK.cue; g.fillRect((v.cue / v.len) * w - 1, top, 2, lane); }
   g.fillStyle = INK.head; g.fillRect(at - 1, top - 4, 2, lane + 8);
-  g.font = "600 26px 'Barlow Condensed', sans-serif"; g.textBaseline = "alphabetic";
+  g.font = "600 26px 'Russo One', sans-serif"; g.textBaseline = "alphabetic";
   g.fillStyle = INK.text; g.fillText(v.bpm ? `${v.bpm.toFixed(1)}` : "--", 10, h - 14);
-  g.fillStyle = INK.dim; g.font = "500 13px 'IBM Plex Sans', sans-serif"; g.fillText("BPM", 10, h - 40);
-  if (v.key) { g.fillStyle = INK.cue; g.font = "600 26px 'Barlow Condensed', sans-serif"; g.fillText(v.key, 100, h - 14); g.fillStyle = INK.dim; g.font = "500 13px 'IBM Plex Sans', sans-serif"; g.fillText("KEY", 100, h - 40); }
+  g.fillStyle = INK.dim; g.font = "500 13px 'Exo 2', sans-serif"; g.fillText("BPM", 10, h - 40);
+  if (v.key) { g.fillStyle = INK.cue; g.font = "600 26px 'Russo One', sans-serif"; g.fillText(v.key, 100, h - 14); g.fillStyle = INK.dim; g.font = "500 13px 'Exo 2', sans-serif"; g.fillText("KEY", 100, h - 40); }
   g.fillStyle = v.playing ? "#3ddc84" : INK.text; g.font = "600 26px 'IBM Plex Mono', monospace"; g.textAlign = "right";
   g.fillText(`-${clock(v.len - v.pos)}`, w - 10, h - 14);
   g.textAlign = "left";

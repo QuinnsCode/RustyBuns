@@ -61,7 +61,9 @@ export async function fakeEqosys() {
 /** A page on the landing presses "Create your world" with eqosys at `eqosys`, signed in there as whoever it names,
  *  and comes back on `/r/<world>`: the room it answers. */
 export async function signIn(tab: Tab, eqosys: string): Promise<string> {
-  await tab.eval(`localStorage.setItem("agentworld.eqosys", ${JSON.stringify(eqosys)}), document.querySelector(".l-create").click()`);
+  // The page's mount is forked: window.agentGalaxy can be up before the landing is drawn.
+  await waitFor(tab, "the Create your world button", `!!document.querySelector(".l-create")`, 30_000);
+  await tab.eval(`localStorage.setItem("agentworld.eqosys",${JSON.stringify(eqosys)}), document.querySelector(".l-create").click()`);
   await waitFor(tab, "back from signing in", `location.pathname.startsWith("/r/") && !!window.agentGalaxy && !!document.querySelector(".dock")`, 30_000);
   return tab.eval<string>(`location.pathname.slice(3)`);
 }

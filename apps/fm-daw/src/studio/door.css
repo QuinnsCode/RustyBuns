@@ -6,17 +6,17 @@
 #menu { --way: calc(60px + env(safe-area-inset-top, 0px)); top: var(--way); transform: translateX(-50%); width: min(1240px, calc(100% - 64px)); max-height: calc(100% - var(--way) - 16px - env(safe-area-inset-bottom, 0px)); }
 @media (max-width: 600px) { #menu { width: calc(100% - 16px); } }
 @media (max-height: 520px) and (orientation: landscape) { #menu { --way: calc(52px + env(safe-area-inset-top, 0px)); width: calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); padding: 14px 18px; } }
-#menu h2 { margin: 18px 0 8px; font: 600 22px/1 var(--qs-head, "Barlow Condensed"), sans-serif; letter-spacing: 0.02em; }
+#menu h2 { margin: 18px 0 8px; font: 600 22px/1 var(--qs-head, var(--q-thick)), sans-serif; letter-spacing: 0.02em; }
 #menu .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 0; }
-#menu button, #menu a.ghost, #menu input, #menu select { font: 600 18px var(--qs-head, "Barlow Condensed"), sans-serif; border-radius: 10px; padding: 9px 16px; white-space: nowrap; min-height: 44px; }
+#menu button, #menu a.ghost, #menu input, #menu select { font: 600 18px var(--qs-head, var(--q-thin)), sans-serif; border-radius: 10px; padding: 9px 16px; white-space: nowrap; min-height: 44px; }
 #menu .go { background: var(--hot); color: #1d1f23; border: 0; cursor: pointer; }
 #menu .ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); cursor: pointer; text-decoration: none; margin: 0; display: inline-flex; align-items: center; }
-#menu input, #menu select { background: var(--well); color: var(--ink); border: 1px solid var(--line); font-weight: 400; font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 15px; }
+#menu input, #menu select { background: var(--well); color: var(--ink); border: 1px solid var(--line); font-weight: 400; font-family: var(--q-thin); font-size: 15px; }
 #menu input { flex: 1 1 180px; min-width: 0; }
 #menu select { flex: 0 1 auto; min-width: 0; text-overflow: ellipsis; }
 #menu .me { display: flex; gap: 14px; align-items: center; }
 #menu .me canvas { width: 72px; height: 99px; flex: none; background: var(--well); border-radius: 10px; }
-#menu .me b { font: 600 24px/1.1 var(--qs-head, "Barlow Condensed"), sans-serif; }
+#menu .me b { font: 600 24px/1.1 var(--qs-head, var(--q-thick)), sans-serif; }
 #menu .me p { margin: 2px 0 0; }
 #rooms a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; }
 #rooms a:hover { border-color: var(--hot); }
