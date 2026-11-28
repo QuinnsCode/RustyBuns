@@ -28,7 +28,7 @@ const TICKET = '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a
 
 /** The front door's three lanes, in the order it shows them. */
 export const SECTORS: readonly Sector[] = [
-  { id: "learn", word: "Learn", line: "How to set it up and how to use it, checked on the real gear as you go.", start: { say: "First lesson", href: "/studio.html", icon: PLAY }, soon: "More lessons are on the way" },
+  { id: "learn", word: "Learn", line: "How to set it up and how to use it, checked on the real gear as you go.", start: { say: "First lesson", href: "/studio.html?lesson=guitar", icon: PLAY }, soon: "More lessons are on the way" },
   // the owner's copy (#6527): Studio's line is a console prompt whose last word rolls through what you build, each word
   // opening the app that builds it; `line` is the one still sentence a screen reader gets
   { id: "studio", word: "Studio", line: "Build your set, speaker, signal, pedal, song or plugin.", rolls: [["set", "instruments"], ["speaker", "speakers"], ["signal", "planner"], ["pedal", "amps"], ["song", "daw"], ["plugin", "builder"]], start: { say: "Walk in and play", href: STUDIO_START, icon: PIANO } },

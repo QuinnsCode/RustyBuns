@@ -475,17 +475,18 @@ export class Lessons {
   private flicks: Flick[] = [];
   private seen = new Set<string>();
 
-  constructor(private hands: GearHands, private xo?: XoRoom) {}
+  /** `hands` is the jam room's GearHands, or the gear room page's own room (/studio.html, which takes only the cabling one). */
+  constructor(private hands: Pick<GearHands, "room" | "joined" | "reach">, private xo?: XoRoom) {}
 
-  /** Start a lesson (the PA one brings its kit to the floor in front of you); a lesson already on is left for it. */
-  start(id: string, j: Jam): Answer {
+  /** Start a lesson (the PA one brings its kit to the floor in front of you, so it needs `j`); a lesson already on is left for it. */
+  start(id: string, j?: Jam): Answer {
     if (!isLesson(id)) return { ok: false, why: `no lesson ${id}` };
     if (id === "crossover") {
       if (this.xo?.rig() !== LESSON_RIG) return { ok: false, why: "This one is on the tri-amp stack out of doors: in Desert Gathering, pick it in Settings, The gathering" };
       if (!this.xo.set(lessonStart())) return { ok: false, why: "Turn the speakers up first: the crossover is the amps'" };
       this.xo.setSubAhead(SUB_AHEAD_M);
     } else if (id === "pa" || id === "plugs" || id === "rack") {
-      if (!this.hands.joined) return { ok: false, why: "The sesh's gear is on its way" };
+      if (!this.hands.joined || !j) return { ok: false, why: "The sesh's gear is on its way" };
       if (j.me.seat) return { ok: false, why: `Stand up first: the ${id === "rack" ? "rig" : "PA"} goes on the floor in front of you` };
       if (!bringKit(this.hands.reach(j), id === "rack" ? RACK_KIT : PA_KIT)) return { ok: false, why: "Your hands are full: set it down first" };
     }

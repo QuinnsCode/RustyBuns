@@ -47,6 +47,9 @@ import { type Answer, EYE, bringModule, benchGear, boardFor, boardIn, bodyOf, fu
 import { GearScene } from "./gear-scene.ts";
 import { lounge } from "./lounge.ts";
 import { loadQuality } from "../studio/look.ts";
+import { Lessons, markAt, type Mark } from "../studio/lessons.ts";
+import { mountLessonCard } from "../studio/lesson-card.ts";
+import { askedFor } from "../studio/page-lesson.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls", DESK = "q-studio.desk";
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
@@ -456,6 +459,13 @@ function openSheetHere() {
 }
 function play() { phase = "play"; menu(); lock(); }
 
+// ---- the front door's "First lesson" (paths.ts, ?lesson=guitar): lesson one starts itself, its card and its marker as
+// in the jam room (../studio/lessons.ts). Only the cabling one: the others bring a kit, which is the jam room's to do.
+const lessons = new Lessons({ get room() { return room; }, joined: false, reach: () => room });
+const lessonCard = mountLessonCard($("hud"), lessons, { done: "Done. That's your first rig: keep playing it" });
+let lessonTick = 0, lessonMark: Mark | null = null;
+if (askedFor(location.search, "guitar")) { lessons.start("guitar"); lessonCard.frame(); }
+
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
@@ -486,6 +496,8 @@ function frame(now: number) {
   syncPeople(dt, now);
   const a = aimed(room);
   gear.sync(room, a);
+  if (++lessonTick % 6 === 0) { lessonCard.frame(); lessonMark = lessons.state()?.mark ?? null; }
+  gear.mark(lessonMark && markAt(room, lessonMark), now / 1000);
   const heard = listen(room.studio.patch);
   sound(heard);
   deskSound(heard);
@@ -561,6 +573,8 @@ const harness = {
   channel: (id: string, ch: Parameters<typeof withChannel>[2]) => setDesk(withChannel(shownDesk(), id, ch)),
   send: (id: string, aux: number, v: number) => setDesk(withSend(shownDesk(), id, aux, v)),
   returnFader: (aux: number, v: number) => setDesk(withReturn(shownDesk(), aux, { fader: v })),
+  /** The lesson on now (null: none), and where its marker points. */
+  lesson: () => ({ lesson: lessons.state(), marker: gear.marked }),
   /** Into the room, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
   /** Walk to (x, z); the seconds it took. The rack is the back wall (z = -3), the door end is z = 3. */
