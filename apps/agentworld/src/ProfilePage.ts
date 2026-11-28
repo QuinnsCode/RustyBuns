@@ -307,6 +307,9 @@ const STRIP: readonly (readonly [Icon, string])[] = [
   ["hourglass", "Waiting for your AI"], ["bot", "Your AI is here"], ["ask", "Asking you about your world"], ["code", "Writing the code"], ["globe", "Your world is up"],
 ];
 const stepOf = (s: Model["steps"]) => (s.up ? 4 : s.wrote ? 3 : s.asked ? 2 : s.here ? 1 : 0);
+/** The console's one thing to do now: connect your agent, then say what you want, then (your world made) the galaxy. */
+export const stageOf = (s: Model["steps"], made: boolean): "connect" | "ask" | "made" => (s.up || made ? "made" : s.here ? "ask" : "connect");
+const EXAMPLE_ASK = "make me a rainy city with neon signs and a river";
 /** What happens next, under the strip, in a few words: picking your land while the picker is up, then one per step,
  *  and the galaxy's once the world is up. */
 export const nextLine = (steps: Model["steps"], locked: string | null, choose = false): string => choose ? "Next: pick your land" : [
@@ -481,6 +484,21 @@ export const ProfilePageNoDeps = Def.make({
     const doc = worldDoc(page);
     // A signed-in person whose world is still the untouched starter: one tap says what it starts as.
     const choose = who !== null && !picked && !made && Object.keys(page.files).length === Object.keys(starter.files).length && Object.entries(starter.files).every(([path, text]) => page.files[path] === text);
+    const stage = stageOf(steps, made);
+    const copyPrompt = (quiet: boolean) => h.button.attr("type", "button").class("big", quiet && "quiet").on("click", PageMessage.ClickedCopy({ what: "prompt", text: promptText }))
+      .attr("title", "Paste it into Claude Code, Codex, opencode or T3 Code")
+      .children(icon(h, copied === "prompt" ? "check" : "copy"), copied === "prompt" ? "Copied" : "Copy prompt");
+    const chips = h.div.class("chips").attrs({ role: "group", "aria-label": "Or add it as an MCP server" }).children(
+      ...lines.map(([c, short]) => h.button.attr("type", "button").key(c.what).attrs({ "aria-label": `${copied === c.what ? "Copied" : "Copy"} the ${c.what} line`, title: c.text })
+        .on("click", PageMessage.ClickedCopy({ what: c.what, text: c.text })).children(icon(h, copied === c.what ? "check" : "plug"), short)));
+    // Only when the clipboard says no is there a line to read: the one to select by hand.
+    const byHand = failed !== undefined && h.p.class("by-hand").attr("role", "alert").children("Select and copy:", h.code(failed));
+    const askButton = (ask: string) => h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
+      .on("click", PageMessage.ClickedCopy({ what: "ask", text: ask }))
+      .children(icon(h, "chat"), h.span(h.b("Tell your agent: "), ask), icon(h, copied === "ask" ? "check" : "copy"));
+    const galaxyTile = (extra?: string) => h.button.attr("type", "button").class("tile", extra, locked ? "locked" : "next").attrs({ "data-galaxy-tile": "", "aria-label": locked ? `Agent Galaxy: ${locked}` : "Agent Galaxy", title: locked ?? "Walk the galaxy: your land next to everyone's" }).attr("aria-disabled", locked ? "true" : undefined)
+      .on("click", PageMessage.ClickedGalaxy()).children(icon(h, locked ? "lock" : "globe"), "Walk galaxy");
+    const lockView = h.p.class("lock-line").attr("data-galaxy-lock", locked ?? "").children(icon(h, "lock"), locked ?? "");
     return h.div.class("shell", full && "full").children(
       // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
       page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
@@ -511,35 +529,52 @@ export const ProfilePageNoDeps = Def.make({
               h.span.class("live", online && "on").children(!online ? "Connecting" : steps.here ? "Connected: your agent is here" : "Ready for your agent"),
               h.span.class("secret").attr("title", "Anyone with this page's link can change your world").children(icon(h, "key"), "Link is secret"),
             ),
-            h.div.class("see").children(
-              h.h3("Want to see what is possible in the world?"),
-              h.h4("Choose a level to see"),
-              h.p.class("warn").children(icon(h, "info"), "A level replaces your world. Undo brings it back until you reload."),
-              levelCards(h, on?.name),
-              on && h.button.attr("type", "button").class("say").attrs({ "aria-label": "Copy the ask", title: "Then ask your AI this" })
-                .on("click", PageMessage.ClickedCopy({ what: "ask", text: on.ask }))
-                .children(icon(h, "chat"), h.span(h.b("Now tell your agent: "), on.ask), icon(h, copied === "ask" ? "check" : "copy")),
-            ),
-            h.h3.class("or").children("Or start telling your agent what to do"),
+            // The flow first: copy, paste, watch.
             stepsView(h, copied !== null && copied !== "ask" && !copied.startsWith("failed"), steps.here, steps.up, log.find((l) => l.call > 0)),
-            h.button.attr("type", "button").class("big", (steps.here || made || choose) && "quiet").on("click", PageMessage.ClickedCopy({ what: "prompt", text: promptText }))
-              .attr("title", "Paste it into Claude Code, Codex, opencode or T3 Code")
-              .children(icon(h, copied === "prompt" ? "check" : "copy"), copied === "prompt" ? "Copied" : "Copy prompt"),
-            h.div.class("chips").attrs({ role: "group", "aria-label": "Or add it as an MCP server" }).children(
-              ...lines.map(([c, short]) => h.button.attr("type", "button").key(c.what).attrs({ "aria-label": `${copied === c.what ? "Copied" : "Copy"} the ${c.what} line`, title: c.text })
-                .on("click", PageMessage.ClickedCopy({ what: c.what, text: c.text })).children(icon(h, copied === c.what ? "check" : "plug"), short))),
-            // Only when the clipboard says no is there a line to read: the one to select by hand.
-            failed !== undefined && h.p.class("by-hand").attr("role", "alert").children("Select and copy:", h.code(failed)),
-            h.h3.class("or").children("Do something cool"),
-            h.div.class("tiles", "acts").children(
+            // Then one thing to do now, and only that (owner, 2026-11-27): connect your agent; connected, say what
+            // you want; your world made, the achievement and the galaxy we all build together.
+            stage === "connect" && h.section.class("now-card").attrs({ "data-stage": "connect", "aria-label": "Connect your agent" }).children(
+              h.h3.children(icon(h, "plug"), "Connect your agent"),
+              h.p("Copy the prompt and paste it into your agent's chat. It connects over MCP and says so."),
+              copyPrompt(choose),
+              chips,
+              byHand,
+              // What's possible, once, at the start: a yes opens the levels.
+              h.details.class("see").children(
+                h.summary.children(icon(h, "sparkles"), "Want to see what is possible first?"),
+                h.p.class("warn").children(icon(h, "info"), "A level replaces your world. Undo brings it back until you reload."),
+                levelCards(h, on?.name),
+                on && askButton(on.ask),
+              ),
+            ),
+            stage === "ask" && h.section.class("now-card", "on").attrs({ "data-stage": "ask", "aria-label": "Tell your agent what you want" }).children(
+              h.h3.children(icon(h, "check"), "Connected! Now explain what you want"),
+              h.p("Type it into your agent's chat, in your own words. Like this:"),
+              askButton(on?.ask ?? EXAMPLE_ASK),
+            ),
+            stage === "made" && h.section.class("now-card", "won").attrs({ "data-stage": "made", "aria-label": "Achievement" }).children(
+              h.p.class("badge").children(icon(h, "sparkles"), "Achievement unlocked: World builder"),
+              h.h3("Now let's build our galaxy, as a group!"),
+              h.p("Your land goes next to everyone else's. Walk over, see what they made, and keep changing yours."),
+              galaxyTile("big-tile"),
+              locked && lockView,
+            ),
+            h.h3.class("or").children("Your world"),
+            h.div.class("tiles", "acts", stage === "made" && "three").children(
               h.button.attr("type", "button").class("tile").attr("aria-label", "Undo").disabled(past.length === 0).on("click", PageMessage.ClickedUndo()).children(icon(h, "undo"), "Undo"),
               h.button.attr("type", "button").class("tile").attrs({ "aria-label": "Start over", title: "Start over" }).on("click", PageMessage.ClickedReset()).children(icon(h, "reset"), "Reset"),
               exportButton(h, gif),
-              h.button.attr("type", "button").class("tile", locked ? "locked" : "next").attrs({ "data-galaxy-tile": "", "aria-label": locked ? `Agent Galaxy: ${locked}` : "Agent Galaxy", title: locked ?? "Walk the galaxy: your land next to everyone's" }).attr("aria-disabled", locked ? "true" : undefined)
-                .on("click", PageMessage.ClickedGalaxy()).children(icon(h, locked ? "lock" : "globe"), "Walk galaxy"),
+              stage !== "made" && galaxyTile(),
             ),
-            locked && h.p.class("lock-line").attr("data-galaxy-lock", locked).children(icon(h, "lock"), locked),
+            stage !== "made" && locked && lockView,
             !gif.busy && gif.says !== "" && h.p.class("muted").attr("role", "status").children(gif.says),
+            // Connected, the prompt stays at hand, small, for a second agent or a new chat.
+            stage !== "connect" && h.details.class("again").children(
+              h.summary.children(icon(h, "plug"), "Connect another agent"),
+              copyPrompt(true),
+              chips,
+              byHand,
+            ),
           ),
         ),
       ),
