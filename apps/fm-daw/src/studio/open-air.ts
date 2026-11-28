@@ -18,7 +18,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { van } from "@rustybuns/models/van";
 import { firePit } from "@rustybuns/models/fire";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
-import { banks, type Bank, SYSTEMS, stackWidth, behindStacks, isTop, LINE_PINS, powerPlan, topsMount, gear as sheet, type StackPlace } from "@rustybuns/gear";
+import { banks, type Bank, SYSTEMS, rowsSize, rowXs, stackRows, behindStacks, isTop, LINE_PINS, powerPlan, topsMount, gear as sheet, type StackPlace } from "@rustybuns/gear";
 import { rigPlan, rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
@@ -61,18 +61,18 @@ export function ridgeAt(a: number, seed: number): number {
 }
 
 /** A dance stack (packages/models gear): a horn bin, a mid-bass horn and a mid-high horn on a sand dolly, standing at
- *  `place.at` with its front turned `place.yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets
+ *  `place.at` with its front turned `place.yaw` from +z; or `place.rows` of boxes, side by side, where it has its own. Desert Gathering's, and the pair a room with decks but no PA gets
  *  (pa-room.ts). `splay` turns the boxes above the bass (the ones that carry the mids and highs) that much further, on their
  *  own axis, as a crew fans a side's two tops out across the floor; a line array's boxes tip down by `pins` (@rustybuns/gear
  *  LINE_PINS). The tops sit where `tops` says (@rustybuns/gear topsMount, the same place the sound comes from): on the
  *  subs, on a pole out of the top sub, or on their own tripod beside the subs. */
 export function paStack(place: StackPlace, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack): THREE.Group {
-  const { at, yaw, splay = 0, pins = LINE_PINS } = place, mount = topsMount({ stack: ids }, place);
+  const { at, yaw, splay = 0, pins = LINE_PINS } = place, mount = topsMount({ stack: ids }, place), rows = stackRows({ stack: ids }, place);
   const st = new THREE.Group();
   st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
   let y = 0, lean = 0, k = 0;
   const size = new THREE.Vector3();
-  if (mount.from < ids.length && mount.base > mount.subs) {
+  if (mount.from < rows.length && mount.base > mount.subs) {
     if (mount.side) {
       // the tops' own tripod beside the subs, its pole's top under the lowest top
       const stand = gear("stand-tripod", { look, height: mount.base });
@@ -87,26 +87,31 @@ export function paStack(place: StackPlace, look: GearLook = gearLook(), ids: rea
       st.add(rod);
     }
   }
-  for (const [i, id] of ids.entries()) {
+  for (const [i, row] of rows.entries()) {
     if (i === mount.from) y = mount.base;
-    const x = i >= mount.from ? mount.side : 0;
-    const g = gear(id as GearId, { look });
-    new THREE.Box3().setFromObject(g).getSize(size);
-    if (id.startsWith("line-array")) {
-      // a ground-stacked line array: each box rests on the one below at the back, the gap opening at the front, the
-      // lowest aimed down most (at the front of the floor, on a wedge so its nose clears the sub) and the top one near level
-      const first = k === 0, aim = pins[Math.min(k++, pins.length - 1)] ?? 0, hinge = new THREE.Group();
-      if (first) y += size.z * Math.sin(aim);
-      hinge.position.set(x, y, lean - size.z / 2); hinge.rotation.x = aim;
-      g.position.z = size.z / 2;
-      hinge.add(g); st.add(hinge);
-      y += size.y * Math.cos(aim); lean += size.y * Math.sin(aim);
-      continue;
+    const id = row.box, line = id.startsWith("line-array"), aim = line ? pins[Math.min(k, pins.length - 1)] ?? 0 : 0;
+    // a ground-stacked line array: each box rests on the one below at the back, the gap opening at the front, the
+    // lowest aimed down most (at the front of the floor, on a wedge so its nose clears the sub) and the top one near level
+    const first = line && k === 0;
+    if (line) k++;
+    let size3 = size;
+    for (const dx of rowXs(row)) {
+      const x = dx + (i >= mount.from ? mount.side : 0), g = gear(id as GearId, { look });
+      size3 = new THREE.Box3().setFromObject(g).getSize(size);
+      if (line) {
+        const hinge = new THREE.Group();
+        hinge.position.set(x, y + (first ? size3.z * Math.sin(aim) : 0), lean - size3.z / 2); hinge.rotation.x = aim;
+        g.position.z = size3.z / 2;
+        hinge.add(g); st.add(hinge);
+        continue;
+      }
+      g.position.set(x, y, 0);
+      if (splay && isTop(id)) g.rotation.y = splay;
+      st.add(g);
     }
-    g.position.set(x, y, 0);
-    if (splay && isTop(id)) g.rotation.y = splay;
-    st.add(g);
-    y += size.y;
+    if (first) y += size3.z * Math.sin(aim);
+    y += size3.y * Math.cos(aim);
+    if (line) lean += size3.y * Math.sin(aim);
   }
   return st;
 }
@@ -510,7 +515,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
     const fx = Math.sin(stacks[0]!.yaw), fz = Math.cos(stacks[0]!.yaw), rx = Math.cos(stacks[0]!.yaw), rz = -Math.sin(stacks[0]!.yaw);
     const mx = stacks.reduce((t, st) => t + st.at[0], 0) / stacks.length, mz = stacks.reduce((t, st) => t + st.at[1], 0) / stacks.length;
     const back = (d: number, side = 0) => behindStacks(stacks, d, side);
-    const span = Math.max(...stacks.map((st) => (st.at[0] - mx) * rx + (st.at[1] - mz) * rz)) + stackWidth(roomRig(def)) / 2;
+    const span = Math.max(...stacks.map((st) => (st.at[0] - mx) * rx + (st.at[1] - mz) * rz + rowsSize(stackRows(roomRig(def), st)).w / 2));
     const rackAt = back(1.7, -0.6), distroAt = back(1.7, 0.9);
     // the amp racks side by side
     for (let i = 0; i < racks; i++) {
