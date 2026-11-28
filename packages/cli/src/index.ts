@@ -71,6 +71,7 @@ import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine, stateHoldsAdopted } from "./isolation.ts";
 import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unexportedClasses, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, spawnScopedTee, step } from "./lifecycle.ts";
+import { noPlanNote } from "./no-plan.ts";
 import { formatPlanSummary, readPlanRows } from "./plan-summary.ts";
 import { isProtected } from "./protect.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
@@ -1048,6 +1049,9 @@ const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>)
  * the lock, in that order (lifecycle.ts).
  */
 const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(function* () {
+  // A plan with nothing to plan is not an error (no-plan.ts). deploy and destroy still stop: they were asked to act.
+  const nothing = sub === "plan" ? noPlanNote(process.cwd()) : null;
+  if (nothing) return void console.log(nothing);
   const stage = alchemyStage(rawArgs);
   const iso = isolationFlags(rawArgs);
   freshRun = false;
