@@ -295,7 +295,7 @@ No person gets an `agent-` handle (signup, alias login or grant): those are the 
 **On your phone**, the desktop pairs instead of signing in.
 It listens on 127.0.0.1, and every request needs its per-launch token, so a tunnel alone lets nobody in.
 Signed in on the desktop, the 📱 button in the header shows the `tailscale serve` line for this launch's port and makes a pairing link for the address you give (`https://<mac>.<tailnet>.ts.net`): a one-time code from `POST /__rb/pair` that works for five minutes and trades for the token cookie, as the desktop's own launch does.
-The drawer draws the link as a QR code too (src/qr.ts, nothing fetched), so the phone can just scan it.
+The drawer draws the link as a QR code too (`@rustybuns/util/qr`, nothing fetched), so the phone can just scan it.
 Or `bun run phone` (in apps/codesplitter) does it all from a terminal: it finds the running desktop's port and launch token in `~/.codesplitters/desktop.json`, runs `tailscale serve` (`--off` stops it; `--cloudflare --public` or `--cloudflare --tunnel <name> --hostname <host>` use Cloudflare Tunnel instead), mints the code and prints the link with its QR code.
 Through the tunnel the browser's Origin is `https://` while the desktop sees `http://`, which the app's same-site checks accept for the same host.
 The phone then gets everything the desktop does, Agent button included.

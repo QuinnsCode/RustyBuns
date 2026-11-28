@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { serve } from "@rustybuns/shell-bun";
 import { desktop, pairCode, pairLink, plan, quickTunnelUrl, tailnetHost } from "../scripts/phone.ts";
-import { qr, qrSvg, qrText } from "../src/qr.ts";
+import { qr, qrSvg, qrText } from "@rustybuns/util/qr";
 
 const shells: { stop(): Promise<void> }[] = [];
 afterAll(async () => { for (const s of shells) await s.stop(); });

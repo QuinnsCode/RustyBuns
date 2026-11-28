@@ -2,6 +2,8 @@ import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
 import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, SpacesPage, tabOf } from "./app/pages.tsx";
+import { DoorPage, EventPage } from "./app/events.tsx";
+import { doorView, eventView } from "./event-pages.ts";
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
@@ -138,6 +140,18 @@ const app = defineApp([
       const me = await meOf(request, conf), q = new URL(request.url).searchParams;
       if (!me) return see("/login?e=in");
       return <DeletePage me={me} app={q.get("app") ?? undefined} error={q.get("e") ?? undefined} step={q.get("step") ?? undefined} />;
+    }),
+    // An event's public page and door (event-pages.ts): the page reads signed out. Seeing it signed in ends the way back to it.
+    route("/e/:id", async ({ request, params, response }) => {
+      const v = await eventView(request, e(request), params.id);
+      if (!v) { response.status = 404; return <ErrorPage status={404} />; }
+      if (v.me) response.headers.append("set-cookie", "eqosys.event=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
+      return <EventPage v={v} />;
+    }),
+    route("/e/:id/door", async ({ request, params, response }) => {
+      const v = await doorView(request, e(request), params.id);
+      if (!v) { response.status = 404; return <ErrorPage status={404} />; }
+      return <DoorPage v={v} />;
     }),
     route("/privacy", () => <Privacy />),
     route("/deleted", ({ request }) => <Deleted app={new URL(request.url).searchParams.get("app") ?? undefined} />),

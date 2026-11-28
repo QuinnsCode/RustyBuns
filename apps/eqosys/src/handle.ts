@@ -9,6 +9,7 @@
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
 import { GENRES, HOME, ourApp, playOf, returnTo, studioGame, type Genre, type QApp } from "./apps.ts";
 import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
+import { eventBack, eventPaths } from "./event-pages.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, hubInvited, hubRedeem, linkOf, type Who } from "./qollab/hub.ts";
@@ -137,7 +138,7 @@ export const atHome = (me: Me): Who => ({ id: me.id, name: me.name, app: HOME })
 /** Signed in: on to the app with a fresh code, or home when nobody asked. A studio's game still in the making sends only its studio on. */
 async function onward(req: Request, conf: Env, userId: string, ask: Ask | null, from?: Response, home = "/") {
   const out = await (async () => {
-    if (!ask) { await link(conf, userId, null, regionAt(req)); return see(home, from); }
+    if (!ask) { await link(conf, userId, null, regionAt(req)); return see(eventBack(req) ?? home, from); }
     if (!(await mayUse(conf, ask.app, userId))) return see("/?e=making", from);
     const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.back, ask.nonce), link(conf, userId, ask.app, regionAt(req))]);
     const to = new URL(ask.back);
@@ -161,6 +162,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   // Qollab's paths go to its own Worker (apps/qollab) when it is bound, else run here: same paths, same answers.
   const q = conf.QOLLAB && isQollab(pathname) ? await conf.QOLLAB.fetch(req) : await qollab(req, conf);
   if (q) return q;
+  // An event's calendar file, guest list and forms (event-pages.ts); its two pages are rendered by worker.tsx.
+  const ev = await eventPaths(req, conf);
+  if (ev) return ev;
 
   if (pathname === "/api/exchange") {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: await cors(req, conf) });
@@ -293,6 +297,10 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   }
   // Home with a friend link waiting (just signed in, or just made the account): the Friends tab shows who it is from.
   if (pathname === "/" && req.method === "GET" && !new URL(req.url).searchParams.has("tab") && cookieOf(req, ADD_COOKIE)) return see("/?tab=friends");
+
+  // Home with an event waiting (back from "Continue with…"): on to its page.
+  const waiting = pathname === "/" && req.method === "GET" && !new URL(req.url).searchParams.has("tab") ? eventBack(req) : null;
+  if (waiting && await meOf(req, conf)) return see(waiting);
 
   // An app asking for someone already signed in here who uses it (or just picked it with "Continue with…"): straight back
   // with a code, no page. Anyone else falls through to the sign-in page.

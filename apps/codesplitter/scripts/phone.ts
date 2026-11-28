@@ -14,7 +14,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { qrText } from "../src/qr.ts";
+import { qrText } from "@rustybuns/util/qr";
 import { obj, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { help } from "../../../scripts/help.ts";
