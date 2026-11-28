@@ -8,11 +8,16 @@ import { EditFile, FILE_MAX, FILES_MAX, Path, Reset, SetBackdrop, WORLD_MAX, Wri
 import { LIBRARY_HOSTS } from "./world.ts";
 
 export const Undo = Schema.TaggedStruct("Undo", {});
-/** What a call asks the page for: an action on the page, or undo (which needs the page's history). */
-export const Request = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset, Undo]);
+/** A few words on what the agent is doing, for the page to show: no file changes, nothing to undo. */
+export const Status = Schema.TaggedStruct("Status", { text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)) });
+/** What a call asks the page for: an action on the page, undo (which needs the page's history), or a status line. */
+export const Request = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset, Undo, Status]);
 export type Request = typeof Request.Type;
 
-type Tagged = typeof WriteFile | typeof EditFile | typeof SetBackdrop | typeof Reset | typeof Undo;
+type Tagged = typeof WriteFile | typeof EditFile | typeof SetBackdrop | typeof Reset | typeof Undo | typeof Status;
+
+/** What the agent does before a new world, told in the tools, the pasted prompt and the MCP instructions alike. */
+export const ASK = "New world? Ask in chat first: the ground, what's on it, the weather; page_status as you ask.";
 export interface Tool { name: string; title: string; description: string; schema: Tagged; hints?: Hints }
 
 /** How a world is made, told once with the write tool: what the frame opens, how files load, what it may reach. */
@@ -21,6 +26,7 @@ const HOW = [
   `Libraries: pinned versions from ${LIBRARY_HOSTS.map((h) => h.slice("https://".length)).join(", ")}.`,
   "A module may import \"@world/kit\" (three.js; plot SIZE square around 0, x east, z south): world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass}), sky(day|night|dusk), weather(rain|snow|fog), water({y,x,z,width,depth}), trees|cactus|rocks(n,{area}), lamp({x,y,z,color}), building({x,z,w,d,h,color,roof:peak|flat}), box({x,z,w,h,d,color}); voxels(layers,palette,{x,z,size}) and sprite(rows,palette,{x,z,size}) draw text rows, a letter a cube or pixel ([rows,rows] animates); streets() gives 4 blocks {x,z,w,d}; path([[x,z]...]), sign(text,{x,z}), creature({sprite|voxels,palette,area,flee,follow}), near(x,z,r,onEnter,onLeave), block(x,z,w,d), onPlayer(cb), every(f), heightAt(x,z), THREE.",
   "Sealed: no fetch, sockets, storage or forms; draw images and sounds in code or data: URLs.",
+  ASK,
   `Limits: ${FILE_MAX / 1000}k characters a file, ${WORLD_MAX / 1000}k and ${FILES_MAX} files a world.`,
 ].join(" ");
 
@@ -29,7 +35,8 @@ export const TOOLS: readonly Tool[] = [
   { name: "page_edit_file", title: "Edit a file", schema: EditFile, description: "Replace the one exact match of `find` in a file with `replace`." },
   { name: "page_set_backdrop", title: "Set the backdrop", schema: SetBackdrop, description: "Show a codeSplitter handle's profile page behind the world, where the world is clear. \"\" removes it." },
   { name: "page_undo", title: "Undo", schema: Undo, description: "Take back the last change." },
-  { name: "page_reset", title: "Start over", schema: Reset, description: "Back to the starter city (undoable).", hints: { destructiveHint: true } },
+  { name: "page_reset", title: "Start over", schema: Reset, description: "Back to the starter desert (undoable).", hints: { destructiveHint: true } },
+  { name: "page_status", title: "Say what you're doing", schema: Status, description: "Tell the person what you're doing." },
 ];
 
 export const READ = {
