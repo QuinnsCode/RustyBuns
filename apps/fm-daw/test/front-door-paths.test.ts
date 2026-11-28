@@ -4,7 +4,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
-import { DEMOS, DOOR, LESSONS, PATHS, SECTORS, type PathId } from "../src/paths.ts";
+import { DEMOS, DOOR, FLOWS, LESSONS, PATHS, SECTORS, pathOf, type PathId } from "../src/paths.ts";
 
 // the gear room and the jam room are 3D scenes, drawn in software on CI's runners
 setDefaultTimeout(300_000); // walks each of nine cards in headless Chrome
@@ -72,6 +72,8 @@ test.skipIf(!hasChrome)("someone new: the demo picker offers four apps, an agent
     const { starts } = await tab.eval<{ starts: { lane: string; href: string; shown: boolean }[] }>("qdoor.starts()");
     // Learn's card lists every lesson as a link that starts it (a phone's card has room for the first four; the shelf below has all)
     expect((await tab.eval<{ lessons: { id: string; href: string; shown: boolean }[] }>("qdoor.starts()")).lessons).toEqual(LESSONS.map((l, i) => ({ id: l.id, href: l.href, shown: i < 4 })));
+    // the foot of the door draws each flow, every step a link to its tool
+    expect((await tab.eval<{ flows: { id: string; steps: string[] }[] }>("qdoor.starts()")).flows).toEqual(FLOWS.map((f) => ({ id: f.id, steps: f.steps.map((s) => s.href ?? pathOf(s.path).href) })));
     // Learn's and Event's cards say more is coming, on a line that is no link
     expect(await tab.eval<unknown>("qdoor.starts().soon")).toEqual([{ lane: "learn", say: "… soon", links: 0 }, { lane: "event", say: "… soon", links: 0 }]);
     expect(starts).toEqual(SECTORS.map((s) => expect.objectContaining({ lane: s.id, href: s.start.href, shown: true })));

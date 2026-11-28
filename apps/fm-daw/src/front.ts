@@ -14,7 +14,7 @@ import { mountShelf, type ShelfItem } from "./front-shelf.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "./account.ts";
 import { SKIN } from "./guest-list.ts";
-import { CHAIN, DEMOS, ICON, iconSvg, LESSON_GROUPS, LESSONS, PATHS, pathOf, PITCHES, SECTORS, type PathId, type Sector, type SectorId } from "./paths.ts";
+import { DEMOS, FLOWS, ICON, iconSvg, LESSON_GROUPS, LESSONS, PATHS, pathOf, SECTORS, type PathId, type Sector, type SectorId } from "./paths.ts";
 import { joinTarget } from "./join.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -184,17 +184,25 @@ showAir(false);
 const asked = location.hash.slice(1);
 if (isSector(asked)) go(asked, true);
 read();
-// the foot of the door, in pictures: the chain from a pedal to the show, what is live under each lane, and who it's for.
-// The sentences each had are the hover tips now.
-const chain = document.getElementById("chain")!;
-CHAIN.forEach((c, i) => {
-  const p = pathOf(c.path), li = document.createElement("li");
-  li.style.setProperty("--tone", TONES[p.sector]);
-  li.innerHTML = `<a href="${p.href}" data-step="${i + 1}"><span class="node">${iconSvg(p.icon, 30)}</span><b></b></a>`;
-  li.querySelector("b")!.textContent = c.step;
-  li.querySelector("a")!.title = c.does;
-  chain.append(li);
-});
+// the foot of the door, in pictures: the whole walk from nothing to the show, a row for each kind of person, every step
+// a link that opens its tool; then what is live under each lane. The sentence a step had is its hover tip.
+const flows = document.getElementById("flows")!;
+for (const f of FLOWS) {
+  const row = document.createElement("div"), who = document.createElement("span"), steps = document.createElement("ol");
+  row.className = "flow"; row.dataset.flow = f.id; row.style.setProperty("--tone", TONES[pathOf(f.icon).sector]);
+  who.className = "who"; who.innerHTML = `<span class="node">${iconSvg(pathOf(f.icon).icon, 24)}</span><b></b>`;
+  who.querySelector("b")!.textContent = f.who;
+  steps.className = "steps";
+  f.steps.forEach((s, i) => {
+    const p = pathOf(s.path), li = document.createElement("li");
+    li.style.setProperty("--tone", TONES[p.sector]);
+    li.innerHTML = `<a href="${s.href ?? p.href}" data-step="${i + 1}"><span class="node">${iconSvg(p.icon, 26)}</span><b></b></a>`;
+    li.querySelector("b")!.textContent = s.say;
+    li.querySelector("a")!.title = s.does;
+    steps.append(li);
+  });
+  row.append(who, steps); flows.append(row);
+}
 const live = document.getElementById("live")!;
 for (const s of SECTORS) {
   const col = document.createElement("li"), word = document.createElement("b"), row = document.createElement("div");
@@ -207,15 +215,6 @@ for (const s of SECTORS) {
   }
   if (s.soon) { const more = document.createElement("span"); more.className = "more"; more.textContent = "… soon"; more.title = s.soon; row.append(more); }
   col.append(word, row); live.append(col);
-}
-const pitches = document.getElementById("pitches")!;
-for (const w of PITCHES) {
-  const p = pathOf(w.path), a = document.createElement("a");
-  a.href = p.href; a.title = w.line; a.style.setProperty("--tone", TONES[p.sector]);
-  a.innerHTML = `<span class="node">${iconSvg(p.icon, 30)}</span><b></b><span class="tags"></span>`;
-  a.querySelector("b")!.textContent = w.who;
-  for (const t of w.tags) { const tag = document.createElement("i"); tag.textContent = t; a.querySelector(".tags")!.append(tag); }
-  pitches.append(a);
 }
 
 // sign in with eqosys, top right on the field and at the end of the tabs: the jam room's own client (studio/page.ts), so
@@ -264,6 +263,7 @@ const offers = () => ({
     apps: appsOf(s.id).map((p) => ({ id: p.id, name: p.name, does: p.does, href: p.href, needsSignIn: p.signIn })),
   })),
   demos: DEMOS.map((d) => ({ id: d.id, say: d.say, href: pathOf(d.path).href })),
+  flows: FLOWS.map((f) => ({ id: f.id, who: f.who, steps: f.steps.map((s) => ({ say: s.say, does: s.does, href: s.href ?? pathOf(s.path).href })) })),
   lessons: LESSONS.map((l) => ({ id: `lesson-${l.id}`, name: l.name, does: l.does, href: l.href, needsSignIn: l.signIn })),
 });
 const Pick = obj({ id: str(40) });
@@ -277,7 +277,7 @@ const openById = (args: unknown) => {
   return { ok: true, href };
 };
 addCommands([
-  { name: "qdoor_offers", title: "What can I do here?", group: "Qollab Studio", description: "The front door in words: the three lanes (Learn, Studio, Event), each lane's way in for someone new, its apps (what each does, its address, whether it asks for a sign-in), the one-click demos and Learn's lessons. Read this first, match it to what the person wants, then call qdoor_open.", annotations: { readOnlyHint: true }, execute: offers },
+  { name: "qdoor_offers", title: "What can I do here?", group: "Qollab Studio", description: "The front door in words: the three lanes (Learn, Studio, Event), each lane's way in for someone new, its apps (what each does, its address, whether it asks for a sign-in), the one-click demos, Learn's lessons, and the flows (the walk from nothing to the show for a DJ, a musician, a crew, a class), each step with its address. Read this first, match it to what the person wants, then call qdoor_open.", annotations: { readOnlyHint: true }, execute: offers },
   { name: "qdoor_open", title: "Open…", group: "Qollab Studio", ask: "learn, studio, event, an app, a demo or a lesson", description: "Go to a lane's way in (learn, studio, event), an app (planner, daw, instruments, amps, builder, speakers, playground) a demo (beat, mix, amp, stage) or a lesson (lesson-guitar, lesson-beat, ...) by its id from qdoor_offers. Studio's way in is a room of your own, sat at the keys.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, execute: openById },
   { name: "qdoor_demo", title: "Not sure? Try a demo", group: "Qollab Studio", description: "Opens the demo picker a person sees: four things that make a sound in one click.", agent: false, execute: () => demo.showModal() },
   { name: "qdoor_join", title: "Join with a code or link", group: "Start", ask: "the code or link you were sent", description: "Join an event or a room as a guest: `entry` is the link you were sent (a room's or a listen page's) or the room's code (words joined by dashes). Goes there, or says why it can't.", inputSchema: { type: "object", properties: { entry: { type: "string" } }, required: ["entry"] }, execute: (args: unknown) => { const e = check(Entry, args); if (!e) { askToJoin(); return { ok: false, why: "Give an entry: the code or the link." }; } return joinWith(e.entry); } },
@@ -318,6 +318,7 @@ const harness = {
   starts: () => ({
     starts: [...document.querySelectorAll<HTMLAnchorElement>(".lane a[data-start]")].map((a) => ({ lane: a.dataset.start, say: a.textContent, href: a.getAttribute("href"), shown: a.checkVisibility({ visibilityProperty: true }) })),
     soon: [...document.querySelectorAll<HTMLElement>(".lane .soon")].map((li) => ({ lane: li.closest<HTMLElement>("[data-lane]")?.dataset.lane, say: li.textContent, links: li.querySelectorAll("a").length })),
+    flows: [...document.querySelectorAll<HTMLElement>(".flow")].map((f) => ({ id: f.dataset.flow, steps: [...f.querySelectorAll<HTMLAnchorElement>(".steps a")].map((a) => a.getAttribute("href")) })),
     lessons: [...document.querySelectorAll<HTMLAnchorElement>(".lane a[data-lesson]")].map((a) => ({ id: a.dataset.lesson, href: a.getAttribute("href"), shown: a.checkVisibility({ visibilityProperty: true }) })),
     demo: { open: demo.open, picks: [...demo.querySelectorAll<HTMLAnchorElement>("a[data-demo]")].map((a) => ({ id: a.dataset.demo, say: a.textContent, href: a.getAttribute("href") })) },
   }),
