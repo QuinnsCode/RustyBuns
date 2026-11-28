@@ -65,3 +65,38 @@ test("a world written with @world/kit runs in the sealed frame with no errors an
   await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agent_page: true, player: { x: 0.75, z: 0.5 } }, "*")`);
   expect(await heard("visitor")).toEqual(["error: drew", `error: visitor [{"x":0.75,"z":0.5},[50,0]]`]);
 });
+
+test("a world built from the kit's building blocks runs with no errors, walls off its buildings, and reacts to a visitor", async () => {
+  // Every block once, placed by the plot's size, as an AI would write a small inventive world.
+  const text = `import { SIZE, world, ground, sky, building, voxels, sprite, creature, sign, streets, path, box, block, near, every } from "@world/kit";
+world();
+sky("night");
+ground();
+const blocks = streets();
+building({ x: SIZE / 4, z: -SIZE / 4, w: 12, d: 10, h: 14, color: "#123456" });
+building({ x: blocks[0].x, z: blocks[0].z, roof: "flat" });
+voxels([["sss", "s.s", "sss"], ["p.p", "...", "p.p"], ["rrr", "rrr", "rrr"]], { s: "#9a958c", p: "#6b4426", r: "#8c3b2e" }, { x: -SIZE / 4, z: SIZE / 4, size: 1.5 });
+box({ x: -SIZE * 0.3, z: -SIZE * 0.3, color: "#abcdef" });
+block(SIZE * 0.3, SIZE * 0.3, 6, 6);
+path([[-SIZE * 0.4, SIZE * 0.3], [-SIZE * 0.1, SIZE * 0.3], [-SIZE * 0.1, SIZE * 0.1]]);
+sprite([[".r.", "rrr", "r.r"], ["r.r", "rrr", ".r."]], { r: "#ff3d8b" }, { x: 5, z: 12 });
+creature({ sprite: ["g.g", "ggg"], palette: { g: "#9a97a5" }, flee: 10 });
+creature({ voxels: [["bb", "bb"], ["hh", ".."]], palette: { b: "#a8743f", h: "#b9824a" }, follow: 20 });
+sign("Hello, neighbour!\\nCome in", { x: -8, z: 8 });
+near(0, 0, SIZE * 0.06, () => console.error("walked up"), () => console.error("walked off"));
+let n = 0;
+every(() => { if (++n === 5) console.error("blocks drew"); });
+`;
+  await tab.eval(`(window.__solid = null, addEventListener("message", (e) => { if (e.data?.kind === "solid") window.__solid = e.data.grid; }), true)`);
+  expect(await call("page_write_file", { path: "world.js", text })).toMatchObject({ ok: true });
+  expect(await heard("blocks drew")).toEqual(["error: blocks drew"]);
+  // Where nobody can stand, 32 by 32 across the plot: the building and the box are walls, the street is not.
+  const grid = await tab.eval<string | null>("window.__solid");
+  expect(grid).toMatch(/^[01]{1024}$/);
+  const at = (x: number, z: number) => grid![Math.floor(z * 32) * 32 + Math.floor(x * 32)];
+  expect([at(0.75, 0.25), at(0.2, 0.2), at(0.8, 0.8), at(0.5, 0.7)]).toEqual(["1", "1", "1", "0"]);
+  await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agent_page: true, player: { x: 0.5, z: 0.52 } }, "*")`);
+  expect(await heard("walked up")).toEqual(["error: blocks drew", "error: walked up"]);
+  await tab.eval(`document.querySelector("iframe.world").contentWindow.postMessage({ agent_page: true, player: null }, "*")`);
+  expect(await heard("walked off")).toEqual(["error: blocks drew", "error: walked up", "error: walked off"]);
+});

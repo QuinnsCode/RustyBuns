@@ -24,7 +24,7 @@ export interface Tool { name: string; title: string; description: string; schema
 const HOW = [
   "The frame opens index.html, which loads your other files by <script src> and <link rel=stylesheet>; modules import each other as \"./name.js\".",
   `Libraries: pinned versions from ${LIBRARY_HOSTS.map((h) => h.slice("https://".length)).join(", ")}.`,
-  "A module may import \"@world/kit\" (three.js ready-made, plot 200x200 around 0; kit worlds stand in 3D among neighbours): world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass,color}), sky(day|night|dusk), weather(rain|snow|fog|clear), water({y,x,z,width,depth}), trees(n), cactus(n), rocks(n), lights(), lamp({x,y,z,color}), onPlayer(cb), every(f), heightAt(x,z), THREE.",
+  "A module may import \"@world/kit\" (three.js; plot 200x200 around 0, x east, z south; kit worlds stand in 3D among neighbours): world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass}), sky(day|night|dusk), weather(rain|snow|fog), water({y,x,z,width,depth}), trees|cactus|rocks(n,{area}), lamp({x,y,z,color}), building({x,z,w,d,h,color,roof:peak|flat}), box({x,z,w,h,d,color}); voxels(layers,palette,{x,z,size}) and sprite(rows,palette,{x,z,size}) draw text rows, a letter a cube or pixel ([rows,rows] animates); streets() gives 4 blocks {x,z,w,d}; path([[x,z]...]), sign(text,{x,z}), creature({sprite|voxels,palette,area,flee,follow}), near(x,z,r,onEnter,onLeave), block(x,z,w,d), onPlayer(cb), every(f), heightAt(x,z), THREE.",
   "Sealed: no fetch, sockets, storage or forms; draw images and sounds in code or data: URLs.",
   ASK,
   `Limits: ${FILE_MAX / 1000}k characters a file, ${WORLD_MAX / 1000}k and ${FILES_MAX} files a world.`,

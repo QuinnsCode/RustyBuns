@@ -14,7 +14,7 @@ test("the build-me-a-world session stays within its token budget", async () => {
   const run = await session(app.rpc, SESSION);
   // A refused call would make a cheap session that built nothing.
   expect(run.calls.filter((c) => c.refused)).toEqual([]);
-  expect(app.page().files["world.js"]).toBe(WORLD.replace("orbit: 0.05 })", "orbit: 0.05, distance: 170 })"));
+  expect(app.page().files["world.js"]).toBe(WORLD.replace(`sky("night")`, `sky("dusk")`));
   const c = cost(run);
   console.log(`session: ${c.total} tokens (budget ${budget}); tool list and instructions ${c.list}\n${c.calls.map((x) => `  ${x.name.padEnd(16)} ${x.args} sent, ${x.reply} back`).join("\n")}`);
   expect(c.total).toBeLessThanOrEqual(budget);
