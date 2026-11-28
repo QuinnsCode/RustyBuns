@@ -12,7 +12,7 @@
 // Needs ANTHROPIC_API_KEY (codeSplitter's .env.schema, through varlock); without it, it prints byte sizes and a rough
 // local estimate (four characters a token).
 import Anthropic from "@anthropic-ai/sdk";
-import { asTools, cost as estimated, session } from "../../../scripts/mcp-session.ts";
+import { asTools, session, split } from "../../../scripts/mcp-session.ts";
 import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
@@ -43,7 +43,8 @@ const bytes = (s: string) => new TextEncoder().encode(s).length;
 const listBytes = bytes(JSON.stringify(tools)) + bytes(instructions);
 
 if (!process.env.ANTHROPIC_API_KEY) {
-  console.log(`no ANTHROPIC_API_KEY: byte sizes only (run it through varlock for tokens); the session is about ${estimated(run).total} tokens`);
+  const { read, write, total, trips } = split(run);
+  console.log(`no ANTHROPIC_API_KEY: byte sizes only (run it through varlock for tokens); the session is about ${total} tokens (${read} read, ${write} written, ${trips} calls)`);
   console.log(`  tool list + instructions  ${listBytes} bytes, ${tools.length} tools`);
   for (const r of replies) console.log(`  ${r.label.padEnd(24)} ${bytes(r.text)} bytes`);
   process.exit(0);

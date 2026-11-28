@@ -439,7 +439,7 @@ export const ProfilePageNoDeps = Def.make({
     const landing = model.landing && !((call > 0 || r._tag === "Load") && error === null);
     // An agent's call says it is here; its page_status that it is asking; its first write that lands that it is writing.
     const s = model.steps;
-    const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || ((r._tag === "WriteFile" || r._tag === "EditFile") && error === null) } : s;
+    const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || (["WriteFile", "EditFile", "Build", "EditWorld"].includes(r._tag) && error === null) } : s;
     return $.set({ ...model, landing, steps, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
       .run(ReportPage.make({ call, error, page: model.page }));
   },

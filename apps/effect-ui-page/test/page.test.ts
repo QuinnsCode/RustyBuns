@@ -5,7 +5,7 @@ import { Effect } from "effect";
 import { decode, inputSchema, type Request, TOOLS } from "../src/tools.ts";
 import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
 import { worldDoc, WORLD_CSP } from "../src/world.ts";
-import { connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { step, connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 import { READY } from "../src/worlds.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
@@ -83,6 +83,14 @@ describe("the sealed frame's document", () => {
   test("says what to do when there is no index.html", () => {
     expect(world({ "world.js": "" })).toContain("No index.html yet");
   });
+});
+
+test("world_build on a ready-made world gives it an index.html that runs a module, and one undo takes both back", () => {
+  const page = { files: READY[0]!.files };
+  const built = step({ page, past: [] }, { _tag: "Build", code: "// mine" });
+  expect(built.model.page.files["world.js"]).toBe("// mine");
+  expect(built.model.page.files["index.html"]).toBe(starter.files["index.html"]!);
+  expect(step(built.model, { _tag: "Undo" }).model.page).toEqual(page);
 });
 
 test("a person's Start over shows in the agent's log", () =>
