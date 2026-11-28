@@ -1607,9 +1607,9 @@ const ring8 = (x: number, y: number, z: number, ma: number, mc: number, ca = ma,
  * front, floor and centre line: 522 wide, 920 tall, 445 deep, its sides closing 28 degrees to a 300 back.
  * - cabinet: 18 mm ply, the trapezoid shell, a hand slot in the top, one in each side, the jack plate on the back
  * - panel: the pale moulded face, full width at the top, its sides down to 313 mm, chamfered in to a 179 flat at 459
- * - mid horn: its 422 x 274 mouth centred 175 down, flat facets creased from the mouth's corners and mid points back to
- *   the plug's tips and the round driver behind it
- * - plug: the axe head, a horizontal blade 308 tip to tip and 64 tall, a ridge along its front, lying across the throat
+ * - mid horn: its 422 x 274 mouth centred 175 down, each side wall folding to a point at the
+ *   plug's tip, the black octagon round the driver behind it
+ * - plug: the axe head, a horizontal blade 336 tip to tip and 96 tall, a ridge along its front, lying across the throat
  * - driver: the 8" cone's black surround and dark cone, r 77, behind the plug
  * - hf horn: the 165 x 98 mouth from 331 to 430 down, straight walls to the compression driver's round throat
  * - band: the violet front between the panel and the bass mouth (the maker's name embossed there on the real box)
@@ -1663,23 +1663,31 @@ function res2Pieces(): Record<string, Build> {
     [-pw + 0.012, top(300)], [pw - 0.012, top(300)], [-0.16, top(390)], [0.16, top(390)], [-0.075, top(447)], [0.075, top(447)]])
     panel.pieces.push(...screw([x!, y!, f - 0.001], "z", 0.0035, "metal", 6));
 
-  // ---- mid horn: a rolled lip at the mouth, then the facets back to the throat round the plug
-  const zt = f - 0.24, tipA = mm(154), drR = mm(77);
+  // ---- mid horn: a rolled lip at the mouth, then the walls back to the throat round the plug
+  const zt = f - 0.24, tipA = mm(168), tz = 0.085, drR = mm(77);
   // the bezel: the panel's moulding rolls in 45 degrees round the mouth before the horn's own walls start
   const lip = ring8(0, mcy, f - 0.002, mA, mC), mouth = ring8(0, mcy, f - 0.02, mA - 0.016, mC - 0.016);
-  // three bands of facets, as the photo's walls fold: the corners pulled in faster than the mids, so each wall breaks
-  // into long triangles at the mouth and diamonds halfway in
-  const bands = [ring8(0, mcy, f - 0.07, mm(186), mm(114), mm(166), mm(110)), ring8(0, mcy, f - 0.14, mm(172), mm(96), mm(108), mm(94))];
-  const throat = ring8(0, mcy, zt, tipA, drR, mm(54), drR);
+  // the walls fold once: the throat's side points stand forward and out at the plug's tips, so each side wall is one big
+  // triangle from the mouth's edge to that point, with a diamond fold above and below it back to the round driver
+  const throat = ring8(0, mcy, zt, tipA, mm(98), mm(84), mm(70));
+  for (const i of [0, 4]) throat[i]!.z = zt + tz;
   // the walls in the glossier `facet` lining, each face a step lighter or darker, so the folds read as the photo's do
   const key = new THREE.Vector3(-0.5, -0.2, 0.85), lit = (q: Piece) => facets(q, key, f - 0.02, zt);
-  mid.pieces.push(ringWalls("horn", [lip, mouth]), lit(ringWalls("horn", [mouth, ...bands, throat])));
-  // the throat's back, round the driver: a flat dark face closing the hexagon the walls end on
-  mid.pieces.push(frontPlate("cavity", throat.map((v) => [v.x, v.y]), [Array.from({ length: 20 }, (_, i) => [Math.cos((i / 20) * Math.PI * 2) * drR, mcy + Math.sin((i / 20) * Math.PI * 2) * drR])], zt + 0.004, 0.006));
+  mid.pieces.push(ringWalls("horn", [lip, mouth]), lit(ringWalls("horn", [mouth, throat])));
+  // behind each side point, the wall running back from it to the driver (the corners above and below it)
+  const inner = new THREE.BufferGeometry().setFromPoints([0, 1, 7, 4, 5, 3].map((i) => throat[i]!));
+  inner.computeVertexNormals();
+  mid.pieces.push(lit({ geo: inner, slot: "horn" }));
+  // the black octagon round the driver, flat top and sides, closing the throat
+  const oct = (r: number) => Array.from({ length: 8 }, (_, i) => { const q = ((i + 0.5) / 8) * Math.PI * 2, k = r / Math.cos(Math.PI / 8); return [Math.cos(q) * k, mcy + Math.sin(q) * k]; });
+  mid.pieces.push(frontPlate("knob", oct(mm(92)), [oct(mm(66))], zt + 0.012, 0.012, 0.003), frontPlate("cavity", oct(mm(94)), [], zt - 0.002, 0.006));
 
   // ---- the plug: the axe head across the throat, blunt back on the driver, a ridge forward, pointed at both tips
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, mcy + y, zt + z), pt: THREE.Vector3[] = [];
-  for (const s of [-1, 1]) pt.push(V(s * 0.09, 0.032, 0.01), V(s * 0.09, -0.032, 0.01), V(s * 0.09, 0.03, 0.07), V(s * 0.09, -0.03, 0.07), V(s * 0.08, 0, 0.125), V(s * tipA, 0, 0.045), V(s * 0.13, 0.012, 0.03), V(s * 0.13, -0.012, 0.03));
+  for (const s of [-1, 1]) {
+    for (const y of [-1, 1]) pt.push(V(s * 0.08, y * 0.03, 0.01), V(s * 0.082, y * 0.048, 0.035), V(s * 0.07, y * 0.044, 0.075));
+    pt.push(V(s * 0.072, 0, 0.125), V(s * tipA, 0, tz));
+  }
   plugB.pieces.push(facets({ geo: toCreasedNormals(new ConvexGeometry(pt), 0.2), slot: "horn" }, key, zt + 0.125, zt, 0.75, 0.9));
 
   // ---- driver: the 8" cone behind the plug, its black roll surround and dark paper cone
