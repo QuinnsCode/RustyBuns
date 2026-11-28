@@ -6,7 +6,7 @@
 // draws its dens with.
 import { NIGHT, TIER_LEVEL, tierOf } from "../tiers.ts";
 import { DEN, DEN_SALT, hash, LIFT_MAX, nightLevel, sectionPick, wildLevel } from "../world/seed.ts";
-import { huntNear, type Delta } from "./party.ts";
+import { huntNear, wildNear, WILD_M, type Delta, type Seen } from "./party.ts";
 import table from "./dens.json";
 
 /** A creature at a level; a pool told as runs, `id[i]` `k[i]` times over; a trail section's wild ones (`w`) and keeper. */
@@ -68,6 +68,17 @@ export function denNear(den: string, p: Delta): boolean {
   const at = T.places[den] ?? [], r = NEAR_M[den.split(":")[0]!] ?? 0;
   for (let i = 0; i < at.length; i += 2) if (Math.hypot(at[i]! - x, at[i + 1]! - z) < r) return true;
   return false;
+}
+
+/** The part of a page's catch-up (`seen`) the room believes from a player at pose `p`: what they could be standing by, as
+ *  for a `life` or a `den` told as it happens. A flock landed somewhere new needs that spot in a flush's reach too. */
+export function seenNear(s: Seen, p: Delta): Seen {
+  return {
+    picks: s.picks.filter((x) => wildNear("pick", x.id, p)),
+    flown: s.flown.filter((x) => wildNear("flush", x.id, p)),
+    roost: s.roost.filter((x) => wildNear("flush", x.id, p) && Math.hypot(x.x - p.x! / 10, x.z - p.z! / 10) < WILD_M.flush), // x, z in metres
+    busy: s.busy.filter((den) => denNear(den, p)),
+  };
 }
 
 /** How far off the way from a sign to the next (the last sign's, to the lair) a player who read it may stand: a sign is

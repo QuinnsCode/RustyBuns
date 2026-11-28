@@ -127,7 +127,8 @@ export const SIGNS = 3;
  *   den is busy for everyone (a lair stays open, so friends can join the hunt); `ago` > 0 (at most AGO_MS) is the same
  *   den told again after a reconnect, quietly, for the fight report;
  * - `seen`: the patches picked and flocks flushed lately, with their world-clock times, at once, for a friend who just
- *   arrived, so their bushes regrow and their birds land on the same tick as yours;
+ *   arrived, so their bushes regrow and their birds land on the same tick as yours.
+ *   The room passes on only what is near the one telling it (dens.ts `seenNear`);
  * - `time`: what is the world clock now? (the room answers with `time`, a sample for the page to keep the best of);
  * - `hunt`: took a contract (`s` 0) or read its `s`-th sign, so the party can follow it to the lair;
  * - `fought`: a fight it started at a den ended (`s` seconds of it), for the room to check and tell the party;
@@ -244,7 +245,7 @@ export function huntNear(h: string, p: Delta): boolean {
 const WILD_GRID = { pick: 70, flush: 110 };
 /** How far from its cell's middle a player can be to pick it (inside its cell, plus a pose up to a send behind), or to
  *  flush a flock (a flushed flock lands up to a flight off, 110 m, and can be flushed again from there, so a few flights' worth). */
-const WILD_M = { pick: 120, flush: 1000 };
+export const WILD_M = { pick: 120, flush: 1000 };
 
 /** Could a player at pose `p` have picked the patch or flushed the flock in grid cell `cell` (`gx,gz`)? */
 export function wildNear(k: "pick" | "flush", cell: string, p: Delta): boolean {
