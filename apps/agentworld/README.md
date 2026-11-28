@@ -321,5 +321,24 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
   GIF. `test/tokens.test.ts`: what each door costs, and the budget. `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in
   the frame and a kit world running there.
 
+## How it uses Effect UI
+
+[Effect UI](https://ui.effect.website/) is the Elm Architecture on Effect: a component has a Model, messages, a pure
+`update` and a view, and its side effects are values the runtime runs.
+
+| Concept | Here |
+| --- | --- |
+| Component | One, `ProfilePage`, with the view split into `Def.fragment` helpers. No child components. |
+| Messages and `update` | `PageMessage`. Agent calls and clicks go through the same `step`. |
+| Commands | `ReportPage` (a `Command.Service`, `mode: "queue"`), `CreateWorld`, `MarkMade`, `ExportGif`, `CopyText`. The last four use the default mode, `concurrent`. |
+| Subscriptions | The agent's calls, the relay's state, what the frame said, GIF progress, galaxy asks. |
+| Services and Layers | `Agent` (`src/agent.ts`), given at mount; `ReportPage.layer` through `Component.provide`. |
+| Tests | `Story` and `HtmlScene` in `test/page.test.ts`, on `ProfilePageNoDeps`. |
+| Not used | Queries, shared state (`shares` / `reads`), routing, SSR, Effect UI Kit, DevTools, Play tests, `Story.check` / `explore`. |
+
+Outside the component, and so outside its Model and tests: Agent Galaxy (`src/galaxyView.ts` draws its own DOM and
+finds out it is on with a `MutationObserver`), the focus moves after sign-in (`src/main.ts`, three more observers) and
+`galaxyLock` (`src/lock.ts`, a mutable global beside the Model's `made`).
+
 Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit
 (`@effect/ui@a0d7578`). To move it on: `bun add https://pkg.pr.new/Effect-TS/ui/@effect/ui@<commit>` in this folder.
