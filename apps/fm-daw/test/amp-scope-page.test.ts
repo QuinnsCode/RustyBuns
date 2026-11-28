@@ -1,11 +1,12 @@
-// Q Amp in headless Chrome on /amp.html (#6168): the riff through Q Fuzz, the Scope screen put on the net its diodes to
-// ground clip (D3 · D4). The audio thread sends that net's volts back with its meters, and over a whole pass of the riff
+// Q Amp in headless Chrome on /amp.html (#6168, #6225): the riff through Q Fuzz, its board view open, and a click on the
+// trace its diodes to ground clip (D3 · D4) puts the Scope screen on that net. The audio thread sends that net's volts back with its meters, and over a whole pass of the riff
 // they swing as far as the fuzz's board alone does when the riff is played through it the way Q Builder's bench plays it.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab } from "../../../scripts/chrome.ts";
 import { Circuit } from "@rustybuns/gear/circuit";
 import { PEDALS } from "../src/circuit/amps.ts";
 import { riff } from "../src/circuit/riff.ts";
+import { scopeNets } from "../src/circuit/builder.ts";
 import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 
 setDefaultTimeout(120_000); // vite serves the page cold, then a whole pass of the riff (about 5 s) plays in real time
@@ -31,7 +32,7 @@ function benchSwing(node: string, drive: number): { hi: number; lo: number } {
   return { hi, lo };
 }
 
-test.skipIf(!hasChrome)("scope the fuzz's clipper net while the riff plays: its swing comes back from the audio thread", async () => {
+test.skipIf(!hasChrome)("click the fuzz's diode trace while the riff plays: its net's swing comes back from the audio thread", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 860 });
   try {
     await load(chrome.cdp, tab, `${vite.url}/amp.html`, 0);
@@ -46,7 +47,28 @@ test.skipIf(!hasChrome)("scope the fuzz's clipper net while the riff plays: its 
     const net = PEDALS.find((p) => p.id === "fuzz")?.net(5, {}).parts.find((p) => p.kind === "D" && p.k === "gnd");
     if (!net || net.kind !== "D") throw new Error("no diode to ground on Q Fuzz");
     expect(await page<boolean>("qamp.scope('fuzz', 'no such net')")).toBe(false);
-    expect(await page<boolean>(`qamp.scope('fuzz', ${JSON.stringify(net.a)})`)).toBe(true);
+
+    const key = scopeNets("fuzz").find((n) => n.node === net.a)?.key ?? "";
+    const trace = `.board-art .sch-trace[data-subcircuit-connectivity-map-key=${JSON.stringify(key)}]`;
+    await page("qamp.board(true)");
+    await waitFor(tab, "the fuzz's schematic", `!!document.querySelector(${JSON.stringify(trace)})`, 30_000);
+    // A click where the wire is drawn, on whatever is on top there.
+    const click = () => page<boolean>(`(() => {
+      for (const p of document.querySelectorAll(${JSON.stringify(`${trace} path`)})) {
+        p.scrollIntoView({ block: "center" });
+        const at = p.getPointAtLength(p.getTotalLength() / 2).matrixTransform(p.getScreenCTM());
+        const on = document.elementFromPoint(at.x, at.y);
+        if (!on?.closest(${JSON.stringify(trace)})) continue;
+        on.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: at.x, clientY: at.y }));
+        return true;
+      }
+      return false;
+    })()`);
+    const lit = () => page<boolean>(`!!document.querySelector(${JSON.stringify(`${trace}.probed`)})`);
+    expect(await click()).toBe(true);
+    expect(await page<Scope>("qamp.state().scope")).toMatchObject({ pedal: "fuzz", net: net.a });
+    expect(await lit()).toBe(true);
+    expect(await page<string>("qamp.state().modes[0]")).toBe("scope"); // no screen showed the wave, so one does now
 
     await waitFor(tab, "a whole pass of the riff on the scope", `(qamp.state().scope?.samples ?? 0) > ${riff(SR).length + SR}`, 60_000);
     const got = await page<Scope>("qamp.state().scope");
@@ -56,8 +78,22 @@ test.skipIf(!hasChrome)("scope the fuzz's clipper net while the riff plays: its 
     expect(Math.abs((got?.hi ?? 0) - want.hi)).toBeLessThan(0.04 * want.hi);
     expect(Math.abs((got?.lo ?? 0) - want.lo)).toBeLessThan(0.04 * -want.lo);
 
-    // Off again: the screen goes back to the output, and the audio thread stops sending.
-    expect(await page<boolean>("qamp.scope(null)")).toBe(true);
+    // A second click, or the pedal's footswitch off: the screen goes back to the output.
+    expect(await click()).toBe(true);
     expect(await page<Scope>("qamp.state().scope")).toBeNull();
+    expect(await lit()).toBe(false);
+    expect(await click()).toBe(true);
+    await page("qamp.footswitch('fuzz', false)");
+    expect(await page<Scope>("qamp.state().scope")).toBeNull();
+
+    // A pedal on one side of an A/B split is playing too: the scope finds it there.
+    await page(`(() => {
+      for (const c of qamp.state().patch.cables) if (c.kind !== "speaker") qamp.unplug(c.from[0], c.from[1]);
+      for (const [a, b] of [["guitar.out", "split.in"], ["split.a", "fuzz.in"], ["split.b", "drive.in"], ["fuzz.out", "blend.a"], ["drive.out", "blend.b"], ["blend.out", "head.in"]]) qamp.plug(a.split("."), b.split("."), "instrument");
+      qamp.footswitch("fuzz", true);
+      qamp.footswitch("drive", true);
+    })()`);
+    expect(await page<boolean>("qamp.scope('drive', 'IN')")).toBe(true);
+    await waitFor(tab, "Q Drive's input on the scope, from side B", "(qamp.state().scope?.hi ?? 0) > 0.05", 30_000);
   } finally { await tab.close(); }
 });

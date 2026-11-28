@@ -18,6 +18,7 @@ import { cabledChain, cabledOrder, relay } from "./cabled.ts";
 import { patchView } from "./patch-view.ts";
 import { riff } from "../circuit/riff.ts";
 import { BoardView } from "./board.ts";
+import { scopeNets } from "../circuit/builder.ts";
 import { BuildSheet } from "../kit/sheet.ts";
 import { icon } from "./icons.ts";
 import { h, iconButton } from "./dom.ts";
@@ -166,6 +167,9 @@ function linksAt(id: string): number | null {
   for (const [i, c] of chainIds.entries()) {
     if (c === id) return n;
     const slot = chainSlots[i];
+    // A pedal on one side of an A/B split: the split's links are its sides' pedals in turn.
+    const side = slot && "split" in slot ? slot.split.flat().findIndex((p) => p.pedal === id) : -1;
+    if (side >= 0) return n + side;
     n += c === AMP_SLOT ? ampOf(S.amp).stages.length + 1 : !slot || "machine" in slot ? 0 : "split" in slot ? slot.split.flat().length : 1;
   }
   return null;
@@ -195,12 +199,16 @@ function send() {
   save();
   ({ ids: chainIds, chain: chainSlots } = board());
   threads?.send(patched(settings()));
-  sendScope();
+  // The probed pedal switched off or cabled out (or its net rewired away): the screen goes back to the output.
+  if (probe && !hasNet(probe.pedal, probe.net)) setScope(null);
+  else sendScope();
 }
 
 // ---- the scope on a pedal's net: its volts back from the audio thread, the way it sends meters ----
 /** Where the scope sits (a pedal tile and a net on its board, or a control its LFO or envelope moves), or nowhere. */
 let probe: { pedal: string; net: string } | null = null;
+/** What the scope screen calls that net: the parts on it, where its node's name says nothing. */
+let probeLabel = "";
 /** The newest of its volts, newest last, and how far they swung since it was put there. */
 const probed = new Float32Array(SCOPE_SAMPLES);
 let probeSwing = { hi: 0, lo: 0, samples: 0 };
@@ -211,9 +219,35 @@ function sendScope() {
 }
 /** Whether pedal `id` playing now has `net` on its board, or a control by that name. */
 function hasNet(id: string, net: string): boolean {
-  const slot = board().chain[chainIds.indexOf(id)];
+  const slot = linksAt(id) === null ? null : slotOf(id);
   const link = slot && "pedal" in slot ? boardLinks([slot]).links[0] : undefined;
   return !!link && (nodeNumbers(link.net).has(net) || !!link.mods?.some((m) => m.ctl.toUpperCase() === net.toUpperCase()));
+}
+/** The nets on pedal `id`'s board that a trace in the board view can put the scope on (none without a board). */
+function netsOf(id: string | null) {
+  const board = PEDALS.find((p) => p.id === id)?.board;
+  return board && id ? scopeNets(board, edits[id]) : [];
+}
+/** The net the scope is on, when it is on pedal `id`'s board (a control no trace carries is on none of them). */
+const probedNet = (id: string | null) => (probe && probe.pedal === id ? netsOf(id).find((n) => n.node.toUpperCase() === probe?.net.toUpperCase()) : undefined);
+/** Puts the scope on a net of a playing pedal, or back on the output (null). False when that pedal has no such net. */
+function setScope(pedal: string | null, net = ""): boolean {
+  if (pedal !== null && !hasNet(pedal, net)) return false;
+  probe = pedal === null ? null : { pedal, net };
+  probeLabel = probedNet(pedal)?.label ?? net;
+  probeSwing = { hi: 0, lo: 0, samples: 0 };
+  probed.fill(0);
+  sendScope();
+  showBoard();
+  return true;
+}
+/** A click on a trace in the board view: the scope goes on its net, and off again on a second click. */
+function clickTrace(key: string) {
+  const id = S.pedal, n = netsOf(id).find((x) => x.key === key);
+  if (!id || !n) return; // ground and the supply rails have nothing to watch
+  if (probedNet(id)?.key === key) setScope(null);
+  // No screen showing the wave: the first one turns into the scope, so the click is seen.
+  else if (setScope(id, n.node) && !S.modes.slice(0, S.layout === "wide" ? 1 : 2).includes("scope")) ui.screensEl.querySelector<HTMLButtonElement>('[aria-label="Scope"]')?.click();
 }
 function takeScope(v: readonly number[] | undefined) {
   if (!v?.length || !probe) return;
@@ -379,7 +413,7 @@ function build() {
   const hop = h("span", "chip hop", icon("split", 14), h("span", "", ""));
   hop.hidden = true;
   const stageBtn = iconButton("box", "Stage: the amp in 3D, the screens as LED walls behind it, or the flat page", () => { S.stage = S.stage ? 0 : 1; void showStage(); save(); });
-  const boardBtn = iconButton("circuit-board", "Board view: the circuit you're playing. Click a diode or capacitor to swap it", () => { S.board = S.board ? 0 : 1; showBoard(); save(); });
+  const boardBtn = iconButton("circuit-board", "Board view: the circuit you're playing. Click a diode or capacitor to swap it, a trace to scope it", () => { S.board = S.board ? 0 : 1; showBoard(); save(); });
   const layout = iconButton(S.layout === "split" ? "columns-2" : "rectangle-horizontal", "Screens: one wide or two half", () => {
     S.layout = S.layout === "split" ? "wide" : "split";
     layout.replaceChildren(icon(S.layout === "split" ? "columns-2" : "rectangle-horizontal"));
@@ -481,7 +515,7 @@ function build() {
   ampTile.title = "The amp: pedals in front of it go into its input; whatever sits after it runs in its effects loop, at line level, before the power tubes";
   slot(AMP_SLOT, "the amp", ampTile);
 
-  const board = new BoardView((socket, choice) => swapPart(socket, choice));
+  const board = new BoardView((socket, choice) => swapPart(socket, choice), (key) => clickTrace(key));
   // The pedal's build sheet: its parts with your swaps, the board files, and the kit as a zip (../kit/sheet.ts).
   const sheet = new BuildSheet(() => {});
   const sheetBtn = iconButton("download", "Build sheet: the parts with your swaps, the board files, and the kit to download", () => void openSheet());
@@ -606,12 +640,14 @@ function showBoard() {
   const why = refused;
   refused = ""; // said once, on the change it turned away
   const rewired = def && edits[def.id]?.length ? "rewired in Q Builder" : "";
-  const hint = why ? `won't play, kept your last parts: ${why}` : rewired;
+  const scoped = probedNet(S.pedal);
+  const hint = why ? `won't play, kept your last parts: ${why}` : scoped ? `scope on ${scoped.label} · click it again for the output` : rewired;
   if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {}, { hint, edits: edits[def.id] });
   else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
   else if (l.spring.on) ui.board.show("spring", "Q Spring · the driver and recovery tubes around the tank", null);
   else if (l.tape.on) ui.board.show("tape", "Q Tape · the record amp", null);
   else ui.board.show("triode", `${ampOf(S.amp).name} · V1, the first tube stage`, null);
+  ui.board.probe(scoped?.key ?? null);
 }
 
 /** The playing pedal's build sheet, with your swaps on it. */
@@ -686,7 +722,7 @@ function frame() {
     analyser.getFloatFrequencyData(db);
     analyser.getFloatTimeDomainData(wave);
   }
-  const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000, net: probe && probeSwing.samples ? { volts: probed, label: `${probe.pedal} · ${probe.net}` } : undefined };
+  const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000, net: probe && probeSwing.samples ? { volts: probed, label: `${probe.pedal} · ${probeLabel}` } : undefined };
   for (const s of ui.screens) s.draw(fr);
   // A tube glows with its stage's swing (log scale, 150 V is full); power tubes with the output.
   const offset = linksAt(AMP_SLOT) ?? 0, tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
@@ -769,14 +805,7 @@ Object.assign(window, {
      * The Scope screen on a net of a playing pedal's board (`"fuzz", "D3"`'s node name) or a control its LFO or
      * envelope moves (`"GATE"`), as you play; null for the output again. False when that pedal isn't playing or has no such net.
      */
-    scope: (pedal: string | null, net = "") => {
-      if (pedal !== null && !hasNet(pedal, net)) return false;
-      probe = pedal === null ? null : { pedal, net };
-      probeSwing = { hi: 0, lo: 0, samples: 0 };
-      probed.fill(0);
-      sendScope();
-      return true;
-    },
+    scope: setScope,
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
     bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
     start,
