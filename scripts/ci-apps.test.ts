@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { APPS, appsFor, docRead, dropSample, laneCommands, sharedCode, slowRun, sparseDirs } from "./ci-apps.ts";
+import { APPS, appsFor, docRead, dropSample, laneCommands, packageUsers, sharedCode, slowRun, sparseDirs } from "./ci-apps.ts";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -45,6 +45,40 @@ test("a package's package.json runs playground's tests besides its own folder's"
     ["package.json", []],
   ];
   for (const [file, apps] of cases) expect([file, appsFor(file)]).toEqual([file, apps]);
+});
+
+// #6419: a change to packages/models/src/human.ts broke Park Hide & Seek's triangle cap, and only the hourly run saw it.
+test("a packages/ change runs the apps whose imports reach the changed file, however far", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-users-"));
+  const put = (f: string, s: string) => { mkdirSync(dirname(join(root, f)), { recursive: true }); writeFileSync(join(root, f), s); };
+  put("packages/models/package.json", JSON.stringify({ exports: { ".": "./src/index.ts", "./human": "./src/human.ts", "./lab/*": "./src/lab/*.ts" } }));
+  put("packages/models/src/index.ts", "export * from \"./flora.ts\";\n");
+  for (const f of ["flora", "human", "lab/wild"]) put(`packages/models/src/${f}.ts`, "export const a = 1;\n");
+  const apps = {
+    hunt: "import { a } from \"@rustybuns/models/human\";",      // the module itself
+    garden: "import { a } from \"@rustybuns/models\";",         // through the barrel
+    mirror: "import \"../../hunt/src/a.ts\";",                  // through another app's code
+    wild: "await import(\"@rustybuns/models/lab/wild\");",
+    bypath: "import { a } from \"../../../packages/models/src/flora\";",
+    alone: "export const a = 1;",
+  };
+  for (const [app, code] of Object.entries(apps)) {
+    put(`apps/${app}/package.json`, "{}");
+    put(`apps/${app}/src/a.ts`, code);
+  }
+  const cases: [string, string[]][] = [
+    ["packages/models/src/human.ts", ["hunt", "mirror"]],
+    ["packages/models/src/flora.ts", ["bypath", "garden"]],
+    ["packages/models/src/lab/wild.ts", ["wild"]],
+    ["packages/models/README.md", []],
+    ["apps/hunt/src/a.ts", []], // an app's own change is appsFor's
+  ];
+  for (const [file, users] of cases) expect([file, packageUsers([file], root).sort()]).toEqual([file, users]);
+});
+
+// The issue's own check, on this repo.
+test("a change to the shared human model runs Park Hide & Seek", () => {
+  expect(packageUsers(["packages/models/src/human.ts"])).toContain("park-hide-seek");
 });
 
 // #5229: every app's tests in up to three lanes by time, the heavy files apart, and never an empty job.

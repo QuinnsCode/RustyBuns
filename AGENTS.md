@@ -26,8 +26,8 @@ The rule for any repo, and how to copy it: [notes/COW_WORKTREES.md](notes/COW_WO
 
 ## Tests: CI runs the suite
 
-CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each app a PR touched (`apps.yml`;
-`bun test packages` when `packages/` or the lockfile moved; every app's suite runs hourly on `main`, `desktop-hourly.yml`). Commands: `scripts/ci-apps.ts`.
+CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each app a PR touched or whose imports reach
+`packages/` code it changed (`apps.yml`; `bun test packages` when `packages/` or the lockfile moved; every app's suite runs hourly on `main`, `desktop-hourly.yml`). Commands: `scripts/ci-apps.ts`.
 
 - Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
 - The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
