@@ -3,7 +3,7 @@
 // Butterworth, 12 to 48 dB/oct), gain, delay and polarity, as an amp's DSP has them (the PLD4.5's: crossover 20 Hz to
 // 20 kHz, 6 to 48 dB/oct, delay 0 to 50 ms). The math is the filters' complex response, so the sum of the bands at a
 // frequency carries their phase: a sub out of polarity or late against the tops leaves a hole at the split, as it
-// does in the field. Plain TS, no audio: the page plays it through Web Audio's own filters (apps/fm-daw).
+// does in the field. Plain TS, no audio: a page plays it through Web Audio's own filters (crossover-audio.ts).
 
 export const SLOPES = [12, 24, 48] as const;
 export type Slope = (typeof SLOPES)[number];
@@ -12,6 +12,27 @@ export type FilterType = "lr" | "bw";
 export type Edge = { hz: number; slope: Slope; type: FilterType };
 /** One amp channel's DSP. */
 export type ChannelDsp = { hp?: Edge; lp?: Edge; gainDb: number; delayMs: number; polarity: 1 | -1; /** dBFS the limiter holds the channel under */ limitDb?: number };
+/** The most amp channels a crossover here has. */
+export const MAX_CHANNELS = 8;
+const within = (v: unknown, lo: number, hi: number): v is number => typeof v === "number" && v >= lo && v <= hi;
+function readEdge(v: unknown): Edge | null {
+  if (typeof v !== "object" || !v || !("hz" in v && "slope" in v && "type" in v)) return null;
+  const slope = SLOPES.find((s) => s === v.slope);
+  return within(v.hz, 20, 20000) && slope && (v.type === "lr" || v.type === "bw") ? { hz: v.hz, slope, type: v.type } : null;
+}
+function readChannel(v: unknown): ChannelDsp | null {
+  if (typeof v !== "object" || !v || !("gainDb" in v && "delayMs" in v && "polarity" in v)) return null;
+  const { gainDb, delayMs, polarity } = v;
+  if (!within(gainDb, -24, 24) || !within(delayMs, 0, 50) || (polarity !== 1 && polarity !== -1)) return null;
+  const hp = "hp" in v ? readEdge(v.hp) : undefined, lp = "lp" in v ? readEdge(v.lp) : undefined;
+  return hp === null || lp === null ? null : { gainDb, delayMs, polarity, ...(hp ? { hp } : {}), ...(lp ? { lp } : {}) };
+}
+/** Amp channels that came over the wire or out of a save: each one's DSP, or null if any of it isn't one. */
+export function readChannels(v: unknown): ChannelDsp[] | null {
+  if (!Array.isArray(v) || !v.length || v.length > MAX_CHANNELS) return null;
+  const out = v.map(readChannel);
+  return out.every((c): c is ChannelDsp => c !== null) ? out : null;
+}
 /** The DSP limits of the amp it runs in. */
 export const PLD_DSP = { minHz: 20, maxHz: 20000, maxDelayMs: 50 } as const;
 
@@ -235,3 +256,35 @@ export const BOX_CROSSOVERS: Readonly<Record<string, BoxCrossover>> = {
   "tri-amp-top": { drive: "passive", says: 'tri-amped: three amp channels (12", 6.5", 1"), no network inside; split at 1.3 and 8 kHz in the drive rack', ref: "Turbosound Flashlight manual, issue 1.4" },
   "tri-amp-bass": oneWay("Turbosound Flashlight manual: up to 150 Hz"),
 };
+
+// ---- boxes on their own: the amp channel each one takes outside a rig (a bar pair, a pair of tops, a wedge) ------
+
+/** A box's channel on its own: alone it plays its whole band; over or under another, the split QSC's menus give. */
+type Own = { way: string; role: "sub" | "top"; lowHz: number; highHz: number; ref: string; guess?: string };
+const own = (way: string, lowHz: number, ref: string, guess?: string): Own => ({ way, role: "top", lowHz, highHz: 20000, ref, ...(guess ? { guess } : {}) });
+const OWN: Readonly<Record<string, Own>> = {
+  "sub-18": { way: '18" sub', role: "sub", lowHz: 0, highHz: 98, ref: "KS118 manual: LP 80 Hz (default for K.2/CP tops)", guess: "slope not given: LR24" },
+  "top-12-powered": own('12" powered top', 55, "QSC KS Series crossover settings: the K.2's high-pass 80, 100 or 125 Hz"),
+  "fill-8-powered": own('8" powered fill', 70, "QSC KS Series crossover settings: the K.2's high-pass 80, 100 or 125 Hz"),
+  "wedge-12": own('12" powered wedge', 65, "QSC CP12 presets (Default Ext Sub): high-pass 80 Hz"),
+  "top-15-passive": own('15" two-way', 45, "JBL JRX215: passive, split inside at 2.2 kHz", "no maker's high-pass: ours is the sub's split, or the sheet's low limit alone"),
+  "wedge-12-passive": own('12" passive wedge', 65, "JBL PRX412M: passive, split inside at 2.0 kHz", "no maker's high-pass: ours is the sub's split, or the sheet's low limit alone"),
+};
+const SUB_SPLIT_HZ = 80;
+
+/**
+ * The crossover of boxes standing on their own (catalog ids; a dolly is no speaker): a channel for the sub and one for
+ * the top, split at 80 Hz, or the one channel of whichever is there alone. None when a box among them has no channel
+ * of its own here (a rig's box: `rigCrossover`) or there are two kinds of top.
+ */
+export function boxCrossover(ids: readonly string[]): readonly Band[] {
+  const kinds = [...new Set(ids.filter((id) => id !== "sand-dolly"))];
+  const boxes = kinds.flatMap((id) => (OWN[id] ? [{ id, o: OWN[id] }] : []));
+  const subs = boxes.filter((b) => b.o.role === "sub"), tops = boxes.filter((b) => b.o.role === "top");
+  if (boxes.length !== kinds.length || subs.length > 1 || tops.length > 1) return [];
+  return [...subs, ...tops].map(({ id, o }) => ({
+    box: id, way: o.way, ref: o.ref, ...(o.guess ? { guess: o.guess } : {}),
+    dsp: ch(o.role === "sub" ? { lp: lr24(SUB_SPLIT_HZ) } : { hp: lr24(subs.length ? SUB_SPLIT_HZ : o.lowHz) }),
+    range: { name: o.way, lowHz: o.lowHz, highHz: o.highHz },
+  }));
+}

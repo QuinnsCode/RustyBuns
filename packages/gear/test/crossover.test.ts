@@ -1,6 +1,6 @@
 // Crossovers (#6473): each rig's preset as its makers' sheets give it, and a split set wrong, heard as a hole, fixed.
 import { expect, test } from "bun:test";
-import { alignMs, BOX_CROSSOVERS, crossoverCheck, flatness, response, RIG_CROSSOVERS, rigCrossover, type Band } from "../src/crossover.ts";
+import { alignMs, BOX_CROSSOVERS, boxCrossover, readChannels, crossoverCheck, flatness, response, RIG_CROSSOVERS, rigCrossover, type Band } from "../src/crossover.ts";
 import { CROSSOVER_STEPS, lessonStart, SUB_AHEAD_M } from "../src/crossover-lesson.ts";
 import { gear, GEAR_IDS } from "../src/catalog.ts";
 import { checkSteps } from "../src/steps.ts";
@@ -103,4 +103,21 @@ test("the crossover lesson: each split found wrong is named, and the sub's delay
   bands[0] = { ...bands[0]!, delayMs: alignMs(SUB_AHEAD_M) };
   expect(now().every((s) => s.done)).toBe(true);
   expect(hole()).toBeGreaterThan(-0.5);
+});
+
+test("boxes on their own: a sub and a top split at 80 Hz and sum flat; a rig's box has no channel of its own here", () => {
+  for (const top of ["top-12-powered", "fill-8-powered", "wedge-12", "top-15-passive", "wedge-12-passive"]) {
+    const bands = boxCrossover(["sub-18", top]);
+    expect(bands.map((b) => b.box), top).toEqual(["sub-18", top]);
+    expect(crossoverCheck(bands).warnings, top).toEqual([]);
+    expect(Math.abs(flatness(bands.map((b) => b.dsp), 50, 200).dipDb), top).toBeLessThan(0.2);
+    expect(boxCrossover([top])[0]!.dsp.hp!.hz, top).toBe(gear(top).speaker!.lowCut);
+  }
+  expect(boxCrossover(["sub-18", "line-array-10"])).toEqual([]);
+});
+
+test("amp channels off the wire: a preset reads back as it was; a slope or delay no amp has is refused", () => {
+  const dsp = rigCrossover("tri-amp").map((b) => b.dsp);
+  expect(readChannels(JSON.parse(JSON.stringify(dsp)))).toEqual(dsp);
+  for (const bad of [{ ...dsp[0]!, delayMs: 900 }, { ...dsp[0]!, lp: { hz: 100, slope: 18, type: "lr" } }, { gainDb: 0 }]) expect(readChannels([bad])).toBeNull();
 });

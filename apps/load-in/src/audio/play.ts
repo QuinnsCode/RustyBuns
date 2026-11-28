@@ -4,6 +4,8 @@
 // The speakers start down behind a card: a click (or M) brings them up, and a limiter holds the mix at -1 dBFS.
 // `feed` swaps the house loop for another source (the DJ booth's decks, audio/decks.ts) on the same speaker path.
 // `room` sends the mix to a convolver that rings for the room's reverb time (audio/reverb.ts), rebuilt as the crowd comes in.
+import { crossover, type Crossover } from "@rustybuns/gear/crossover-audio";
+import type { ChannelDsp } from "@rustybuns/gear/crossover";
 import { gainOf, type Hearing } from "./hear.ts";
 import { DRY, impulse, wetOf } from "./reverb.ts";
 
@@ -63,6 +65,7 @@ export function soundSystem(card: HTMLElement) {
   let house: GainNode | null = null, program: GainNode | null = null;
   let make: ((c: AudioContext) => AudioNode) | null = null, fed: AudioNode | null = null;
   const voices = new Map<string, Voice>();
+  let xo: Crossover | null = null, dsp: readonly ChannelDsp[] = [];
   let up = false;
   let verb: ConvolverNode | null = null, wet: GainNode | null = null, rang = { rt60: 0, rt60Low: 0 };
   let ring: { rt60: number; rt60Low: number } | null = null;
@@ -102,11 +105,14 @@ export function soundSystem(card: HTMLElement) {
     house = c.createGain();
     program = c.createGain();
     loop.connect(house).connect(program);
-    program.connect(lp).connect(lowGain).connect(master);
+    // the amps' crossover, between the source and the speakers: straight through until the amps are set
+    xo = crossover(c, dsp);
+    program.connect(xo.input);
+    xo.output.connect(lp).connect(lowGain).connect(master);
     const hp = c.createBiquadFilter();
     hp.type = "highpass";
     hp.frequency.value = SPLIT_HZ;
-    program.connect(hp);
+    xo.output.connect(hp);
     highs = hp;
     loop.start();
     ctx = c;
@@ -177,6 +183,16 @@ export function soundSystem(card: HTMLElement) {
       plugIn();
     },
     setUp,
+    /** The amps' crossover bands to play through (desert.ts `playedBands`; none: straight through). */
+    amps(bands: readonly ChannelDsp[]) {
+      if (bands === dsp) return;
+      dsp = bands;
+      xo?.set(dsp);
+    },
+    /** The channels the sound goes through now (0: straight through). */
+    get channels() {
+      return dsp.length;
+    },
     /** The room you stand in: its reverb time, mids and bass, s (`ringing` in crowd/crowd.ts); null for no room (out of doors). */
     room(r: { rt60: number | null; rt60Low: number | null } | null) {
       ring = r && r.rt60 !== null && r.rt60Low !== null ? { rt60: r.rt60, rt60Low: r.rt60Low } : null;
