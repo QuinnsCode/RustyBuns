@@ -2677,7 +2677,8 @@ function incubusPieces(): Record<string, Build> {
  * - grille: one perforated sheet over the whole front, 17 in from each edge, bowed 12.8 out at the middle, a bar
  *   between the driver's part (459 wide) and the port's (143, on the right)
  * - driver: the 18", centred in its part of the front
- * - port: the flared slot behind the grille's right part
+ * - port: the flared slot behind the grille's right part, 320 mm deep. That depth is the owner's call (#6162), not a
+ *   measurement: Void's user guide, spec sheet and line drawing don't show it, and its 3D DWG is the outside shell only
  * - handles: two recessed in each side and two in the top, 110 square; the M20 top-hat socket in the top
  * - fittings: the rigging fittings standing 7.5 mm out of each side at its corners
  * - jacks: the rear plate of 4-pin sockets, low and left of centre seen from behind
