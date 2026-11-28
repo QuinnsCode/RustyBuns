@@ -11,7 +11,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./builder.css";
 import { check, obj, or, rec, str } from "@rustybuns/util/guard";
-import { BoardView, fit, svgOf } from "../amp/board.ts";
+import { BoardView, fit, schematicOf, svgOf } from "../amp/board.ts";
 import { mockup, type BoardSide, type Mockup } from "../kit/gerber.ts";
 import { gerbers, kitId, kitZip, sheetOf, type KitFiles } from "../kit/kit.ts";
 import { kitFiles } from "../kit/sheet.ts";
@@ -111,7 +111,7 @@ const undoAll = h("button", "qb-btn", icon("rotate-ccw", 16), "Stock circuit");
 undoAll.type = "button";
 undoAll.addEventListener("click", () => showEditWhy(setEdits([])));
 const circuit = h("section", "qb-card", h("div", "qb-card-top", icon("split", 16), h("span", "qb-card-title", "Change the circuit")),
-  h("p", "qb-hint", "Add a part between two nets (From starts on the scope's net: click a trace), take one off, or move an end. The schematic stays the stock drawing; your changes are listed here."),
+  h("p", "qb-hint", "Add a part between two nets (From starts on the scope's net: click a trace), take one off, or move an end. The schematic is redrawn with your changes, which are also listed here."),
   h("div", "qb-add", addKind, addValue, addFrom, h("span", "qb-dim", "to"), addTo, addBtn), editWhy, editList, undoAll,
   h("details", "qb-wiring", h("summary", "", "Parts and wiring"), partList));
 
@@ -235,7 +235,7 @@ async function saveKit(): Promise<void> {
 async function printSheet(): Promise<string[]> {
   const d = def(), s = sheetOf(d, kit, swaps()), what = changes(d.board, swaps(), edits()), changed = edits().length > 0;
   const sch = h("div", "qp-art qp-sch");
-  sch.innerHTML = await svgOf(d.board, "schematic");
+  sch.innerHTML = await schematicOf(d.board, edits());
   const sides = (["top", "bottom"] as const).map((x) => {
     const m = mockup(kit, x), f = h("figure", "qp-side");
     if (!m) return null;
@@ -253,7 +253,7 @@ async function printSheet(): Promise<string[]> {
   sheetEl.replaceChildren(
     h("header", "qp-head", h("h1", "", d.name), h("p", "", what ? `Your version: ${what}.` : "Stock parts."), h("p", "qp-dim", d.blurb)),
     h("section", "", h("h2", "", "Schematic"), sch),
-    ...(changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", "Your circuit has new parts or wiring: the stock board doesn't fit it. Route a new layout in tscircuit before ordering. The schematic above is the stock drawing."))] : []),
+    ...(changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", "Your circuit has new parts or wiring: the stock board doesn't fit it. Route a new layout in tscircuit before ordering."))] : []),
     ...(sides.length && !changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", `${m?.size.join(" × ")} mm, drawn from the files a board house takes: ${gerbers(kit).join(", ")}.`), h("div", "qp-sides", ...sides))] : []),
     ...(s.lines.length && !changed ? [h("section", "", h("h2", "", "Parts"), table)] : []),
     h("p", "qp-dim", `Q Builder · ${new Date().toLocaleDateString("en-CA")}`),
@@ -369,7 +369,7 @@ function paintCircuit(): void {
 }
 
 function showBoard(wont = ""): void {
-  board.show(def().board, `${def().name} · your board`, swaps(), wont ? { hint: `won't play, kept your last parts: ${wont}` } : {});
+  board.show(def().board, `${def().name} · your board`, swaps(), { edits: edits(), ...(wont ? { hint: `won't play, kept your last parts: ${wont}` } : {}) });
   board.probe(probe?.key ?? null);
   paint();
 }

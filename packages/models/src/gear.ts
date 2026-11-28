@@ -2539,15 +2539,16 @@ function hornShell(rim: number, lip: number, rt: number, len: number, k: number,
  * frame, each driver in a round can behind its horn, gloss teal (a custom colour; Void's own are red, black and white).
  * Seen from the front, right-handed: the 12" LF horn on the left, the 8" MF on the right, the 1.5" HF above, between
  * them. `hand` -1 is the left-handed one (Air-Motion-Line-Drawing-LH), the same box mirrored left to right with the
- * same connector plate. Measured off the front and side views (about 10 mm):
+ * same connector plate. Measured off the front and side views (about 10 mm), the frame off all six views:
  * - lf horn: rim 537 across, lip 485, throat 220, centre 268 from the left and 269 up; it runs back to its can, 380
  *   across and 246 deep, whose back is the box's back
  * - mf horn: rim 299, lip 257, throat 134, centre 703 from the left and 269 up, 229 long; can 282 across, 190 deep
  * - hf horn: rim 262, a bell to a 38 mm throat, centre 583 from the left and 541 up, 109 long; can 181 across, 120 deep
  * - plug: the cone in the MF horn's throat
- * - frame: the powder-coated steel post between the cans, an arm to each can, a foot plate under it (the stand fixing)
- * - jacks: the two NL4s; the real box has them under the HF can, where no plug reaches from outside the box, so the
- *   model has them under the frame's foot
+ * - frame: powder-coated 40 mm square tube at the LF and MF centres' height: a spine front to back, an arm to a lug
+ *   on each of those horns, a riser from the spine's front up and forward to the HF horn, and a clamp block with the
+ *   fixing hole. Nothing reaches the floor: the box stands on its horns' rims
+ * - jacks: the two NL4s under the MF can (the real ones sit round toward the LF side of it; these are dead under it)
  * - cables: the armoured hoses from the HF unit to the LF and MF cans
  * - badge: the plain oval on the HF horn, where the real one carries the maker's name
  */
@@ -2571,16 +2572,24 @@ function airMotionPieces(hand: 1 | -1): Record<string, Build> {
   // the MF horn's phase plug, a cone standing out of its throat
   const [, mx, my, , , , mlen] = H[1];
   plug.pieces.push(loft("shell", [R(0, 0.05), R(0.04, 0.032), R(0.09, 0)], { seg: 16, smooth: true, m: along("z", [mx, my, plane - mlen]) }));
-  // the frame: a post between the cans, arms to each, the foot plate the stand fixes to
-  const px = X(510), pz = -0.1, foot = 0.0125;
-  frame.pieces.push(box("knob", [0.04, 0.5 - foot, 0.04], [px, (0.5 + foot) / 2, pz], { bevel: 0.003 }));
-  frame.pieces.push(box("knob", [0.16, 0.008, 0.16], [px, foot + 0.004, pz], { bevel: 0.002 }));
-  const arms: [THREE.Vector3Tuple, THREE.Vector3Tuple][] = [[[px, 0.3, pz], [hand * 0.03, 0.3, -0.14]], [[px, 0.27, pz], [hand * 0.165, 0.27, -0.02]], [[px, 0.49, pz], [X(583), 0.465, 0.15]]];
-  for (const [a, b] of arms)
-    frame.pieces.push(rod("knob", a, b, 0.012));
-  mark(frame, "grab", [px, 0.51, pz]);
-  mark(frame, "pole-cup", [px, foot, pz], [0, -1, 0]);
-  socketPanel(jack, "sculpted-3way", "bottom", [px, foot, pz], [0.12, 0.08]);
+  // the frame, in mm as the drawing has it: `l` and `r` from the left, `y0` and `y1` up, `a` and `b` behind the front
+  const Z = (behind: number) => f - mm(behind);
+  const bar = (to: Build, slot: "knob" | "shell", [l, r]: [number, number], [y0, y1]: [number, number], [a, b]: [number, number]) =>
+    to.pieces.push(box(slot, [mm(r - l), mm(y1 - y0), mm(b - a)], [X((l + r) / 2), mm((y0 + y1) / 2), Z((a + b) / 2)], { bevel: 0.003 }));
+  bar(frame, "knob", [482, 522], [249, 289], [155, 388]); // the spine, front to back
+  bar(frame, "knob", [427, 522], [249, 289], [348, 388]); // the arm to the LF horn
+  bar(frame, "knob", [482, 597], [249, 289], [155, 196]); // the arm to the MF horn
+  bar(frame, "knob", [482, 522], [249, 467], [155, 196]); // the riser
+  bar(frame, "knob", [482, 522], [427, 467], [123, 196]); // forward to the HF horn
+  bar(frame, "knob", [480, 606], [427, 455], [111, 123]); // the HF horn's plate
+  bar(frame, "knob", [421, 427], [226, 312], [325, 411]); // the LF and MF arms' bolt plates
+  bar(frame, "knob", [597, 603], [226, 312], [133, 218]);
+  bar(frame, "knob", [477, 530], [249, 334], [277, 318]); // the clamp block round the spine, the fixing hole in it
+  bar(lf, "shell", [376, 421], [224, 314], [325, 412]); // the lugs moulded on the two horns, where the plates bolt
+  bar(mf, "shell", [603, 640], [224, 314], [130, 220]);
+  mark(frame, "grab", [X(502), mm(467), Z(175)]);
+  mark(frame, "pole-cup", [X(503), mm(249), Z(297)], [0, -1, 0]);
+  socketPanel(jack, "sculpted-3way", "bottom", [X(703), mm(149), Z(327)], [0.12, 0.08]);
   // the hoses from the HF unit to the two cans, each in two runs
   const hoses: THREE.Vector3Tuple[][] = [[[X(583), 0.465, 0.13], [hand * 0.06, 0.45, -0.02], [hand * -0.08, 0.44, -0.16]], [[X(583) + hand * 0.02, 0.465, 0.12], [hand * 0.22, 0.43, 0.06], [hand * 0.24, 0.4, 0.03]]];
   for (const run of hoses)

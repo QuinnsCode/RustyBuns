@@ -7,7 +7,9 @@
 //                                      any other, so the log keeps what it replaced and "hour" again goes further back.
 //
 //   PUT /api/me/page/assets/:name       one binary file of the page (image, audio, model, font; up to 5 MB) into R2, served
-//                                      at /api/users/:name/page/assets/:file under the same sandbox (needs LEVEL_CHUNKS)
+//                                      at /api/users/:name/page/assets/:file under the same sandbox (needs LEVEL_CHUNKS).
+//                                      R2 keeps each upload under its content hash, and assets.txt in the page repo says
+//                                      which hash a name is, so the repo's history and revert cover these files too
 //
 // The page is the owner's own code, so it runs, but only in a box with nothing in it:
 //   sandbox      the response's CSP carries `sandbox allow-scripts`, so it runs with an opaque origin even
@@ -21,10 +23,11 @@
 // claims and its conflict handling are the page's too, and an agent edits it with the tools it has already.
 
 import { esc } from "./util.ts";
-import { fail, json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env, type R2Like } from "./env.ts";
 import { docIn, toFile } from "./archive.ts";
 import { FileDoc, FileReply, LogReply } from "./file-do.ts";
 import { readJson } from "@rustybuns/util/http";
+import { hex } from "@rustybuns/util/bytes";
 import type { Op } from "./lines.ts";
 import { repoRow, live } from "./repos.ts";
 /** The public repo whose files are the page. */
@@ -71,8 +74,10 @@ const ASSET_TYPES: Record<string, string> = {
   glb: "model/gltf-binary", woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf",
 };
 export const ASSET_MAX = 5_000_000;
-/** Files of assets one account keeps, and the text of one page file. */
-export const ASSET_FILES = 50, TEXT_MAX = 1_000_000;
+/** Asset names a page has at once, uploads R2 keeps per account (old versions too: at most 1 GB), and the text of one page file. */
+export const ASSET_FILES = 50, ASSET_KEPT = 200, TEXT_MAX = 1_000_000;
+/** The page repo's file that says which upload each asset name is: a line of "name sha256" each. */
+export const ASSET_LIST = "assets.txt";
 const assetKey = (owner: string, file: string) => `page/${owner}/${file}`;
 const assetName = (file: string | undefined) => (file && /^[\w][\w.-]{0,79}$/.test(file) && ASSET_TYPES[file.split(".").pop()!.toLowerCase()] ? file : null);
 
@@ -172,18 +177,21 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
     if (!file) return fail("BadInput", `name: letters, digits, . _ -, ending in ${Object.keys(ASSET_TYPES).join(", ")}`);
     if (!env.LEVEL_CHUNKS) return fail("NoAssetStore", "binary files need R2, which this server has not got");
     if (!(await hasPage(env, user))) return fail("NoPageRepo", "no page repo yet: make a public repo named page");
-    // Turn a big body away before reading it, then count what the account already keeps (a rewrite of a file it has is free).
+    // Turn a big body away before reading it.
     if (Number(req.headers.get("content-length")) > ASSET_MAX) return fail("TooBig", `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB`);
-    const held = (await env.LEVEL_CHUNKS.list({ prefix: assetKey(user, ""), limit: ASSET_FILES + 1 })).objects;
-    if (held.length >= ASSET_FILES && !held.some((o) => o.key === assetKey(user, file))) return fail("AssetsFull", `an account keeps up to ${ASSET_FILES} asset files: replace one or delete another`);
     const bytes = new Uint8Array(await req.arrayBuffer());
     if (!bytes.length) return fail("BadInput", `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB`);
     if (bytes.length > ASSET_MAX) return fail("TooBig", `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB`);
-    await env.LEVEL_CHUNKS.put(assetKey(user, file), bytes);
-    return json({ path: `assets/${file}`, bytes: bytes.length });
+    return putAsset(env, env.LEVEL_CHUNKS, user, file, bytes);
   }
   if (p[1] === "users" && p[2] && p[3] === "page" && p[4] === "assets" && p[5] && !p[6] && (req.method === "GET" || req.method === "HEAD")) {
-    const file = assetName(p[5]), obj = file && env.LEVEL_CHUNKS && (await hasPage(env, p[2])) ? await env.LEVEL_CHUNKS.get(assetKey(p[2], file)) : null;
+    const file = assetName(p[5]);
+    let obj = null;
+    if (file && env.LEVEL_CHUNKS && (await hasPage(env, p[2]))) {
+      // A name the list doesn't have may be an upload from before there was a list, kept under the name itself.
+      const kept = assetList(((await repoFile(env, p[2], ASSET_LIST)) ?? "").split("\n")).get(file);
+      obj = await env.LEVEL_CHUNKS.get(assetKey(p[2], kept ?? file));
+    }
     if (!file || !obj) return fail("NoSuchFile", "no such file");
     return new Response(req.method === "HEAD" ? null : await obj.arrayBuffer(), { headers: {
       "content-type": ASSET_TYPES[file.split(".").pop()!.toLowerCase()], "content-security-policy": PAGE_CSP, "x-frame-options": "SAMEORIGIN",
@@ -213,6 +221,49 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
       "access-control-allow-origin": "*",
     },
   });
+}
+
+/** Name to hash, from the lines of the asset list. A name on two lines is the first: uploads go in at the top. */
+function assetList(lines: string[]) {
+  const list = new Map<string, string>();
+  for (const line of lines) {
+    const [, name, hash] = /^(\S+) ([0-9a-f]{64})$/.exec(line.trim()) ?? [];
+    if (name && hash && !list.has(name)) list.set(name, hash);
+  }
+  return list;
+}
+
+/** Keep the bytes under their hash, then point `file` at them in the asset list. Only that name's line changes, so uploads of other names don't collide. */
+async function putAsset(env: Env, bucket: R2Like, owner: string, file: string, bytes: Uint8Array<ArrayBuffer>) {
+  const doc = await docIn(await toFile(env, owner, PAGE_REPO, ASSET_LIST, owner, "file"));
+  if (!doc) throw new Error(`${ASSET_LIST}: the page repo's copy isn't a lines doc`);
+  const list = assetList(doc.lines.map((l) => l.text));
+  if (!list.has(file) && list.size >= ASSET_FILES) return fail("AssetsFull", `a page has up to ${ASSET_FILES} asset files: upload over one, or take its line out of ${ASSET_LIST}`);
+  const hash = hex(await crypto.subtle.digest("SHA-256", bytes));
+  await bucket.put(assetKey(owner, hash), bytes); // first, so the list never names bytes that aren't there
+  if (list.get(file) !== hash) {
+    const ops: Op[] = doc.lines.filter((l) => l.text.split(" ")[0] === file).map((l) => ({ kind: "delete", line: l.id, base: l.rev }));
+    ops.push({ kind: "insert", after: null, text: `${file} ${hash}` });
+    await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, PAGE_REPO, ASSET_LIST).run();
+    const res = await toFile(env, owner, PAGE_REPO, ASSET_LIST, owner, "ops", { method: "POST", body: JSON.stringify({ ops }) });
+    if (!res.ok) return fail("LinesChanged", `${ASSET_LIST} changed or is held, so ${file} was not updated: try again`);
+    list.set(file, hash);
+  }
+  await dropOldUploads(bucket, owner, list);
+  return json({ path: `assets/${file}`, bytes: bytes.length, sha256: hash });
+}
+
+/** Over ASSET_KEPT, the oldest uploads the page doesn't use now go, and revert can no longer bring those back. */
+async function dropOldUploads(bucket: R2Like, owner: string, list: Map<string, string>) {
+  const prefix = assetKey(owner, ""), { objects } = await bucket.list({ prefix, limit: 1000 });
+  if (objects.length <= ASSET_KEPT) return;
+  const used = new Set(list.values());
+  const old = objects.filter((o) => {
+    const id = o.key.slice(prefix.length);
+    // A file from before the list (kept under its name) is in use while the list has no line for that name.
+    return !used.has(id) && (!assetName(id) || list.has(id));
+  }).sort((a, b) => (a.uploaded?.getTime() ?? 0) - (b.uploaded?.getTime() ?? 0));
+  await bucket.delete(old.slice(0, objects.length - ASSET_KEPT).map((o) => o.key));
 }
 
 /** What a page looks like before anyone has touched it: a tower per public repo. */

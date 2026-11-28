@@ -185,7 +185,7 @@ export class BuildSheet {
     if (noBoard) return;
     const pcb = this.edits.length ? undefined : this.kit["pcb.svg"];
     this.board.show(def.board, def.name, this.swaps, {
-      readOnly: true, hint: pcb ? "the fab board" : "the circuit as played",
+      readOnly: true, hint: pcb ? "the fab board" : "the circuit as played", edits: this.edits,
       pcb: pcb ? () => Promise.resolve(pcb) : undefined,
     });
     this.board.view(tab === "pcb" ? "pcb" : "schematic");
