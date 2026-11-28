@@ -253,8 +253,16 @@ curl -O <origin>/api/r/<room>/files/hero.glb
 curl -X DELETE <origin>/api/r/<room>/files/hero.glb
 ```
 
-The room's link is the key, as for the tools. The world's own code can't load these files yet: its frame has no
-network. `bun run dev` keeps the same repos in a temp folder (it needs `git`) until it stops.
+The room's link is the key, as for the tools. A world shows one with the kit:
+
+```js
+import { model } from "@world/kit";
+model("hero.glb", { x: 0, z: 20, h: 12 });   // h: how tall it stands; also y and turn
+```
+
+The world's frame still has no network: it asks the page by name, and the page fetches the file and hands it only the
+bytes, never the room's link. A model's first animation plays; Draco and meshopt compressed files don't load. After
+replacing a file, reload the page. Agent Galaxy doesn't show models yet. `bun run dev` keeps the same repos in a temp folder (it needs `git`) until it stops.
 
 **About** (`/about`, `about.html`) says it for a person: what the page is, what it keeps, and what a world costs an AI,
 with the before and after. Its numbers are written in by hand with their date. The landing and About end in the same

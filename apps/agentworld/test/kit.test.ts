@@ -121,6 +121,37 @@ test("each door builds the village in the frame with no errors, and a mistake co
   expect((await fetch(`${origin}/api/r/NOPE/build`, { method: "POST", body: VILLAGE })).status).toBe(404);
 });
 
+/** The smallest .glb that shows something: one triangle, 2 wide and 4 tall. */
+function triangle(): Uint8Array<ArrayBuffer> {
+  const points = new Float32Array([-1, 0, 0, 1, 0, 0, 0, 4, 0]);
+  const json = JSON.stringify({ asset: { version: "2.0" }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }], meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: "VEC3", min: [-1, 0, 0], max: [1, 4, 0] }], bufferViews: [{ buffer: 0, byteLength: 36 }], buffers: [{ byteLength: 36 }] });
+  const text = new TextEncoder().encode(json.padEnd(Math.ceil(json.length / 4) * 4));
+  const out = new Uint8Array(12 + 8 + text.length + 8 + 36), view = new DataView(out.buffer);
+  [0x46546c67, 2, out.length, text.length, 0x4e4f534a].forEach((n, i) => view.setUint32(i * 4, n, true));
+  out.set(text, 20);
+  [36, 0x004e4942].forEach((n, i) => view.setUint32(20 + text.length + i * 4, n, true));
+  out.set(new Uint8Array(points.buffer), 28 + text.length);
+  return out;
+}
+
+test("a world shows a .glb the room keeps, h units tall, and says so when the room keeps no such file", async () => {
+  expect((await fetch(`${origin}/api/r/${ROOM}/files/hero.glb`, { method: "PUT", body: triangle() })).ok).toBe(true);
+  const text = `import { model, every, THREE } from "@world/kit";
+const hero = model("hero.glb", { x: 10, z: 20, h: 12 });
+model("nobody.glb");
+let told = false;
+every(() => {
+  if (told || !hero.children.length) return;
+  told = true;
+  const box = new THREE.Box3().setFromObject(hero);
+  console.error("stands " + JSON.stringify([box.min.toArray(), box.max.toArray()].map((v) => v.map(Math.round))));
+});`;
+  expect(await call("page_write_file", { path: "world.js", text })).toMatchObject({ ok: true });
+  await heard("stands");
+  expect((await heard("nobody")).sort()).toEqual(["error: model nobody.glb: the room keeps no nobody.glb", "error: stands [[7,0,20],[13,12,20]]"]);
+});
+
 test("the About page ends in the shared links, this year's © and the way back to QNTBR", async () => {
   await load(chrome.cdp, tab, `${origin}/about`, 500);
   expect(await tab.eval<string>(`document.querySelector(".site-foot").innerText`)).toContain(`© ${new Date().getFullYear()}`);

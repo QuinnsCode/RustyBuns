@@ -7,6 +7,9 @@ import { camera } from "./camera.ts";
 import { KIT } from "./kit.ts";
 import type { Page } from "./page.ts";
 
+/** A model's name among the files beside a world (files.ts): all a world may name when it asks the page for one. */
+export const MODEL_NAME = /^[a-z0-9][a-z0-9_-]{0,40}\.glb$/;
+
 /** Where a world may load libraries from, pinned versions being the author's job (as codeSplitter's LIBRARY_HOSTS). */
 export const LIBRARY_HOSTS = ["https://esm.sh", "https://cdn.jsdelivr.net", "https://unpkg.com", "https://cdnjs.cloudflare.com"];
 

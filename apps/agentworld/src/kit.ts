@@ -283,6 +283,50 @@ export function onPlayer(cb) {
   });
 }
 
+// ---------- models the room keeps ----------
+
+// A sealed frame can't fetch, so the page is asked for a model by name and posts its bytes back (world-frame.ts).
+const asked = new Map();
+addEventListener("message", (e) => {
+  if (e.source !== parent || e.data?.agentworld !== true || !asked.has(e.data.file)) return;
+  const want = asked.get(e.data.file);
+  if (e.data.bytes) want.got(e.data.bytes);
+  else want.not(new Error(e.data.error));
+});
+function bytesOf(name) {
+  if (!asked.has(name)) {
+    const want = {};
+    want.bytes = new Promise((got, not) => Object.assign(want, { got, not }));
+    asked.set(name, want);
+    parent.postMessage({ agentworld_world: true, kind: "file", name }, "*");
+  }
+  return asked.get(name).bytes;
+}
+
+/** A .glb the room keeps (PUT <room>/files/hero.glb), standing at x, z (on the ground unless y is given), h units tall.
+ *  A group at once, empty until the model arrives; its first animation plays. Neighbours don't see it in the galaxy. */
+export function model(name, { x = 0, y, z = 0, h = 10, turn = 0 } = {}) {
+  const g = add(new THREE.Group());
+  g.position.set(x, onGround(x, z, y), z);
+  g.rotation.y = turn;
+  Promise.all([bytesOf(name), import("https://esm.sh/three@0.170.0/examples/jsm/loaders/GLTFLoader.js")])
+    .then(([bytes, { GLTFLoader }]) => new GLTFLoader().parseAsync(bytes, ""))
+    .then(({ scene, animations }) => {
+      // Whatever size and origin it was made with: h tall, its middle over the spot and its lowest point on it.
+      const box = new THREE.Box3().setFromObject(scene), mid = box.getCenter(new THREE.Vector3()), fit = new THREE.Group();
+      scene.position.sub(new THREE.Vector3(mid.x, box.min.y, mid.z));
+      fit.scale.setScalar(h / (box.max.y - box.min.y || 1));
+      fit.add(scene);
+      g.add(fit);
+      if (!animations.length) return;
+      const mixer = new THREE.AnimationMixer(scene);
+      mixer.clipAction(animations[0]).play();
+      every((t, dt) => mixer.update(dt));
+    })
+    .catch((e) => console.error("model " + name + ": " + (e?.message || e)));
+  return g;
+}
+
 // ---------- building blocks: each one call, ordinary meshes in the kit's scene ----------
 
 const BOX = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);

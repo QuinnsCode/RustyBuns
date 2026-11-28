@@ -4,9 +4,9 @@
 import { json } from "@rustybuns/util/http";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { keepFile, keptFile, keptFiles, type Repos } from "./keep.ts";
+import { MODEL_NAME } from "./world.ts";
 
 export const FILE_BYTES = 4 * 1024 * 1024, ROOM_FILES = 8;
-const NAME = /^[a-z0-9][a-z0-9_-]{0,40}\.glb$/;
 
 /** A room's uploads: a few in a row, then one every half minute. */
 export const fileBucket = () => new TokenBucket(1 / 30, 5, Date.now());
@@ -19,7 +19,7 @@ export async function filesHttp(req: Request, repos: Repos | null, bucket: Token
     if (req.method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET" } });
     return json({ files: await keptFiles(repos, room) });
   }
-  if (!NAME.test(name)) return json({ error: "a file is a .glb model with a plain lowercase name, like hero.glb" }, 400);
+  if (!MODEL_NAME.test(name)) return json({ error: "a file is a .glb model with a plain lowercase name, like hero.glb" }, 400);
   if (req.method === "GET") {
     const file = await keptFile(repos, room, name);
     return file
