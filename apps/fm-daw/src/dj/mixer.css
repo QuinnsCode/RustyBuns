@@ -16,14 +16,14 @@
 .mx-strip { display: flex; flex-direction: column; gap: 4px; align-items: center; padding: 0 2px; min-width: 0; }
 .mx-strip + .mx-strip { border-left: 1px solid var(--line); }
 .mx-strip.far { opacity: 0.35; pointer-events: none; }
-.mx-num { font: italic 600 18px/1 "Barlow Condensed", sans-serif; color: var(--print); white-space: nowrap; }
+.mx-num { font: italic 600 18px/1 var(--q-thin); color: var(--print); white-space: nowrap; }
 .mx-num small { margin-left: 2px; font-size: 11px; font-style: normal; color: var(--dim); }
-.mx-brand { font: italic 700 22px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.04em; color: var(--print); white-space: nowrap; }
-.mx-silk { display: inline-flex; align-items: center; gap: 3px; font: 600 12px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: var(--print); white-space: nowrap; }
+.mx-brand { font: italic 700 22px/1 var(--q-thick); letter-spacing: 0.04em; color: var(--print); white-space: nowrap; }
+.mx-silk { display: inline-flex; align-items: center; gap: 3px; font: 600 12px/1 var(--q-thin); letter-spacing: 0.06em; color: var(--print); white-space: nowrap; }
 /* a knob: black and knurled, a white line on its cap; hovered, it glows and its value floats over its label in a
    see-through panel, out of the flow, so no knob, strip or column moves */
 .mx-knob { position: relative; display: grid; justify-items: center; gap: 2px; }
-.mx-knob span { font: 600 10px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.08em; color: var(--dim); white-space: nowrap; display: inline-flex; align-items: center; gap: 1px; }
+.mx-knob span { font: 600 10px/1 var(--q-thin); letter-spacing: 0.08em; color: var(--dim); white-space: nowrap; display: inline-flex; align-items: center; gap: 1px; }
 .mx-knob span:empty { display: none; }
 .mx-read { position: absolute; left: 50%; bottom: -3px; z-index: 3; transform: translateX(-50%); padding: 2px 5px; border-radius: 4px; background: rgba(8, 9, 10, 0.55); border: 1px solid rgba(238, 240, 242, 0.16); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); font: 500 10px/1 "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--acc); text-shadow: 0 0 5px var(--acc-glow); white-space: nowrap; pointer-events: none; visibility: hidden; }
 .mx-knob.read .mx-read { visibility: visible; }
@@ -68,7 +68,7 @@
 .mx-meter::before { opacity: 0.22; }
 .mx-meter i { clip-path: inset(100% 0 0 0); filter: drop-shadow(0 0 3px rgba(120, 200, 255, 0.5)); }
 .mx-lr { display: flex; gap: 6px; height: 120px; flex: none; }
-.mx-lrtag { display: flex; gap: 8px; font: 600 10px/1 "Barlow Condensed", sans-serif; color: var(--dim); margin-top: -2px; }
+.mx-lrtag { display: flex; gap: 8px; font: 600 10px/1 var(--q-thin); color: var(--dim); margin-top: -2px; }
 /* the twin filter columns, framed in print like the hardware's: the LFO on top, the filter under it */
 .mx-filter { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .mx-fpart { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 8px; }
@@ -91,7 +91,7 @@
 .mx-jack svg { position: absolute; }
 .mx-opts { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; margin-top: auto; }
 /* the crossfader, in its sunken bed under the channels */
-.mx-xbed { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 6px 8px; margin-top: auto; background: linear-gradient(#3c4046, #464a51); border-radius: 6px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.15); font: italic 700 16px "Barlow Condensed", sans-serif; color: var(--print); }
+.mx-xbed { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 6px 8px; margin-top: auto; background: linear-gradient(#3c4046, #464a51); border-radius: 6px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.15); font: italic 700 16px var(--q-thin); color: var(--print); }
 .mx-xfade { width: 100%; height: 24px; background: linear-gradient(#050506, #050506) center / calc(100% - 12px) 4px no-repeat !important; }
 .mx-xfade::-webkit-slider-runnable-track { background: transparent; }
 .mx-xfade::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 24px; border-radius: 2px; background: linear-gradient(to right, #2b2d31 0 42%, #f4f5f6 42% 58%, #121315 58%); box-shadow: 0 2px 3px rgba(0, 0, 0, 0.7); }

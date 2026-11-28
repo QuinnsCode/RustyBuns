@@ -6,8 +6,8 @@
 // comes onto the screen, the lane you are reading lit on the field behind. The night's air hides behind one small
 // button in the corner. After the shelves, the pedal-to-show chain, what works today, and a word for crews and for
 // classes. `qdoor` is the harness for probes and the journey tests (test/front-door.test.ts).
+import "./brand.css";
 import "./studio/fonts.css";
-import "./door-fonts.css";
 import { clamp } from "@rustybuns/util";
 import { mountHero } from "./front-hero.ts";
 import { mountShelf, type ShelfItem } from "./front-shelf.ts";
@@ -22,8 +22,8 @@ import { followTheme } from "./ui/theme.ts";
 import { loadFont, wearFont } from "./studio/font-pick.ts";
 
 const TONES: Record<SectorId, string> = { learn: "#2dd4bf", studio: "#fb923c", event: "#818cf8" };
-/** Each lane's thematic face (door-fonts.css), as the field paints its word on the grass. */
-const FACES: Record<SectorId, string> = { learn: '400 100px "Caveat Brush", cursive', studio: '800 100px "Doto", monospace', event: '400 100px "Special Elite", monospace' };
+/** The face the field paints each lane's word in on the grass: Qollab's thick one (brand.css). */
+const FACE = '400 100px "Russo One", sans-serif';
 /** The thing each path stands as on its lane's shelf. */
 const ITEMS: Record<PathId, ShelfItem> = { learn: "guitar", planner: "stack", daw: "screen", instruments: "turntable", amps: "amp", builder: "board", speakers: "stack", playground: "mic", event: "wedge" };
 const isSector = (v: string): v is SectorId => SECTORS.some((s) => s.id === v);
@@ -124,7 +124,7 @@ for (const s of SECTORS) {
   b.addEventListener("click", () => go(s.id));
   tabs.querySelector(".tablist")!.append(b); tabFor.set(s.id, b);
 }
-const hero = mountHero(document.getElementById("hero")!, SECTORS.map((s) => ({ id: s.id, word: s.word, tone: TONES[s.id], face: FACES[s.id], list: appList(s.id) })), go);
+const hero = mountHero(document.getElementById("hero")!, SECTORS.map((s) => ({ id: s.id, word: s.word, tone: TONES[s.id], face: FACE, list: appList(s.id) })), go);
 document.getElementById("field-back")!.addEventListener("click", () => go(null));
 
 let reading: SectorId | null = null, frame = 0;

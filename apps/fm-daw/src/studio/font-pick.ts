@@ -1,8 +1,8 @@
 // This viewer's pick of font for headings and buttons (Settings > You, #6420), kept in this browser: the jam room's
 // settings and the front door (#6527) both wear it. The faces are fonts.css.
 
-/** The 20 fonts on the owner's font board, Saira Condensed (the default) first. Small text stays Inter whichever is picked. */
-export const FONTS = ["Saira Condensed", "Barlow Condensed", "Inter", "Space Grotesk", "Oswald", "Bebas Neue", "Anton", "Teko", "Rajdhani",
+/** Qollab's own thick face (brand.css, the default) first, then the 20 on the owner's font board. Small text stays Exo 2 whichever is picked. */
+export const FONTS = ["Russo One", "Saira Condensed","Barlow Condensed", "Inter", "Space Grotesk", "Oswald", "Bebas Neue", "Anton", "Teko", "Rajdhani",
   "Archivo Narrow", "Chakra Petch", "Orbitron", "Righteous", "Bungee", "Press Start 2P", "Space Mono", "DM Sans", "Outfit", "Fraunces", "Permanent Marker"] as const;
 export const DEFAULT_FONT = FONTS[0];
 const FONT_KEY = "qollab-studio:font";

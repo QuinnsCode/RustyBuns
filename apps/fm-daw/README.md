@@ -8,6 +8,12 @@
 
 **New here:** each lane's card on the front door opens with one filled button: **First lesson** (Learn), **Walk in and play** (Studio: a room of your own with no form to fill, and Enter sits you at the keys with the drums, the bass, the vocal booth, the desk and the decks around you) and **Host or join** (Event). **Not sure? Try a demo** under the title offers four that make a sound in one click, signed out: make a beat, mix two tracks, play an amp, plan a stage. Cmd+K on the door lists the same starts, and an agent reads the door in words with `qdoor_offers` and goes with `qdoor_open` (`src/front.ts`). A link of your own can do what the Studio button does: `/jam.html?start=keys` makes the room, and `&sit=<spot>` on any room's link sits whoever opens it there (`keys`, `drums`, `bass`, `booth`, `desk`).
 
+**Type:** every page is set in two faces, from `src/brand.css` (the owner's pick, 2026-11-28). Russo One, the thick one
+(`--q-thick`), is for names, headings and buttons. Exo 2, the thin one (`--q-thin`), is for everything else: small text at its
+regular weight, labels at 600, hairline only from 24px up. Readouts keep the mono face. A new page imports `brand.css` and
+names no other font; `test/brand-fonts.test.ts` opens each page and checks. Your own heading font in Settings > You still wins
+in the studio room.
+
 What each lane is for (owner, 2026-11-28), and where new work goes:
 - **Studio** (most of the work): the studio view you make music in, with the CAD (speakers, stages, event layouts) and the DJ decks. It's your own place to deck out, private or open.
 - **Event**: the social side. Worlds come together in one 3D place with picture and sound: hosts, performers and guests together. Getting in is #6533, the shared place is #6535.

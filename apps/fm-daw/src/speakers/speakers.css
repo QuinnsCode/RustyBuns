@@ -1,8 +1,8 @@
 :root {
   --ink: #eceef1; --dim: #9aa1ab; --hot: #ff6b4a; --warn: #ffb000;
   --edge: rgba(255, 255, 255, 0.16); --glass: rgba(255, 255, 255, 0.05);
-  --silk: "Barlow Condensed", "Arial Narrow", sans-serif;
-  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --silk: var(--q-thin);
+  --body: var(--q-thin);
   --mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 * { box-sizing: border-box; }
@@ -27,7 +27,7 @@ button, select, input { font: inherit; color: inherit; }
 .icon-btn:hover { border-color: var(--hot); }
 
 .sp-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.sp-title { margin: 0; font: 700 28px/1.05 var(--silk); letter-spacing: 0.02em; }
+.sp-title { margin: 0; font: 700 28px/1.05 var(--q-thick); letter-spacing: 0.02em; }
 .sp-what, .sp-from { margin: 0; color: var(--dim); }
 .sp-from { font-size: 12px; }
 .sp-sound { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

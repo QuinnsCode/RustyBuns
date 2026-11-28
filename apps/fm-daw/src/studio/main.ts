@@ -5,7 +5,7 @@
 // room (?studio=yours is the one you built in /rooms.html).
 // With no room it's the front door (door.ts): sign in with eqosys, your character, Make a room, your rooms. An invite link
 // takes a friend through the same sign-in and back into the room, wearing the character kept on their eqosys account.
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "./fonts.css";
 import "../room/studio.css";
 import "./door.css";

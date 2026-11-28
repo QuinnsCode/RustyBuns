@@ -1,7 +1,6 @@
 // The remote's page (/remote.html?room=<sesh>): the model is remote.ts; this draws it and sends what you touch.
 // It makes no sound: it is a hand on the room's desk, so the jam room and the desk play what it sets.
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "./remote.css";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";

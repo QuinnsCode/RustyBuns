@@ -12,8 +12,7 @@
 // it is the same pedal for everyone. Right of the rack stands the sound wall (../wall/, WALL.md): its modules in the
 // case run on an audio thread of their own (wall-worklet.ts), heard from its Q Out; N brings another module.
 // `window.qstudio` is the harness (scripts/probe.ts HANDLES).
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "./studio.css";
 import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";

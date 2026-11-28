@@ -192,7 +192,7 @@ export class Screen {
       g.lineTo(pw, ph); g.closePath();
       g.fillStyle = b.color + "55"; g.fill();
       g.strokeStyle = b.color; g.lineWidth = 1.4; g.stroke();
-      g.fillStyle = b.color; g.font = "600 12px 'Barlow Condensed', 'Arial Narrow', sans-serif";
+      g.fillStyle = b.color; g.font = "600 12px 'Exo 2', sans-serif";
       g.fillText(`${b.name.toUpperCase()}  ${hzLabel(b.lo)}–${hzLabel(hi)}`, 6, 15);
       g.font = "10px 'IBM Plex Mono', ui-monospace, monospace";
       if (best > DB_LO) g.fillText(`peak ${hzLabel(bestHz)} Hz ${Math.round(best)} dB`, 6, 29);
