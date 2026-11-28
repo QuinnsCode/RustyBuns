@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp } from "@rustybuns/util";
+import "./menu.ts";
 import { gear } from "@rustybuns/gear";
 import { gear as model, gearLook } from "@rustybuns/models/gear";
 import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, partner, pickUp, push, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";

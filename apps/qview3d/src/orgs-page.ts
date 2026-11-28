@@ -8,6 +8,7 @@ import { getJson } from "@rustybuns/util/http";
 import { APP, Delivery, EQOSYS, HookReply, Hooks, KeyReply, Mine, SandboxReply, ShopifyState, slug, type HookRequest, type SandboxRequest, type ShopStart, type ShopifyLink, type ShopifyPicks, type Sites } from "./api.ts";
 import { act as acting, copyBox as copying, el, embedTag, field, productForm as editor } from "./shop-ui.ts";
 import { problem } from "./widget/upload.ts";
+import "./menu.ts";
 
 /** Where eqosys sends people back: this page on the live Worker (eqosys APPS `returns`). */
 const SITE = "https://qview3d.notryanquinn.workers.dev";

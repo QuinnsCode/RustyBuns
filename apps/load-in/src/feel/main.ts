@@ -15,6 +15,7 @@ import { CABLE, ROLL_R, bowl, leftM, newRoll, rollKg, stepRoll, throwSpeed, type
 import type { Solid, Vec } from "../cables/rope.ts";
 import { connectorName, endWhy, familyEnd } from "../cables/ends.ts";
 import { aimEnd, connectorMesh } from "../cables/ends-view.ts";
+import "../menu.ts";
 
 const DT = 1 / 60, EYE = 1.65, REACH = 1.5, WALK = 3.2;
 const $ = (id: string) => document.getElementById(id)!;

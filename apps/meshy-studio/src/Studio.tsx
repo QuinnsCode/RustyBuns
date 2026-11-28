@@ -122,19 +122,19 @@ export function Studio({ status, onLeave, onStatus }: { status: Status; onLeave:
     <div className="studio" onDragOver={(e) => { e.preventDefault(); setDropping(true); }} onDragLeave={(e) => { if (e.currentTarget === e.target) setDropping(false); }} onDrop={(e) => onDrop(e)}>
       <header className="topbar">
         <div className="brand"><span className="mark" aria-hidden>◆</span> MESHY <span className="slash">//</span> BATCH STUDIO</div>
-        <div className="ws" title={sum.dir}>{sum.name} <button className="ghost small" onClick={onLeave}>Switch</button></div>
+        <div className="ws" title={sum.dir}>{sum.name} <button className="ghost small" data-cmd="switch" onClick={onLeave}>Switch</button></div>
         <div className="seg" role="tablist" aria-label="View">
-          <button role="tab" aria-selected={view === "folders"} className={view === "folders" ? "on" : ""} onClick={() => setView("folders")}>Folders</button>
-          <button role="tab" aria-selected={view === "pipeline"} className={view === "pipeline" ? "on" : ""} onClick={() => setView("pipeline")}>Pipeline</button>
+          <button role="tab" data-cmd="folders" aria-selected={view === "folders"} className={view === "folders" ? "on" : ""} onClick={() => setView("folders")}>Folders</button>
+          <button role="tab" data-cmd="pipeline" aria-selected={view === "pipeline"} className={view === "pipeline" ? "on" : ""} onClick={() => setView("pipeline")}>Pipeline</button>
         </div>
         <div className={`gauge ${low ? "low" : ""}`} title="Meshy credits on the account">
           <span className="label">Credits</span>
           <strong className="credits">{balance === null ? "—" : balance.toLocaleString()}</strong>
           <span className="label">spent here {sum.spent.toLocaleString()}</span>
         </div>
-        <button className="ghost" onClick={() => setCreate({ refs: [] })}>Create</button>
-        <button className="ghost" onClick={() => setPanel("presets")}>Presets</button>
-        <button className="ghost" onClick={() => setPanel("settings")}>⚙ Settings</button>
+        <button className="ghost" data-cmd="create" onClick={() => setCreate({ refs: [] })}>Create</button>
+        <button className="ghost" data-cmd="presets" onClick={() => setPanel("presets")}>Presets</button>
+        <button className="ghost" data-cmd="settings" onClick={() => setPanel("settings")}>⚙ Settings</button>
       </header>
 
       <aside className="side">
@@ -190,8 +190,8 @@ export function Studio({ status, onLeave, onStatus }: { status: Status; onLeave:
             Add files…
             <input type="file" accept=".png,.jpg,.jpeg,.txt" multiple hidden onChange={(e) => e.target.files && upload(e.target.files)} />
           </label>
-          {drafts.length > 0 && <button className="ghost" onClick={() => texture(drafts)}>Texture {drafts.length} draft{drafts.length === 1 ? "" : "s"} · ~{drafts.reduce((n, c) => n + c.textureEstimate, 0)}</button>}
-          <button className="primary" disabled={!fresh.length} onClick={() => requestSend(fresh)}>
+          {drafts.length > 0 && <button className="ghost" data-cmd="texture" onClick={() => texture(drafts)}>Texture {drafts.length} draft{drafts.length === 1 ? "" : "s"} · ~{drafts.reduce((n, c) => n + c.textureEstimate, 0)}</button>}
+          <button className="primary" data-cmd="send" disabled={!fresh.length} onClick={() => requestSend(fresh)}>
             {fresh.length ? `Send ${fresh.length} · ~${cost} credits` : "Nothing new to send"}
           </button>
         </header>

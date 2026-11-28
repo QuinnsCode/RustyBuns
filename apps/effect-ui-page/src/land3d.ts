@@ -1,9 +1,13 @@
 // Agent Galaxy's one 3D scene: every plot's land butted straight against the next, with no streets or fences, people as
-// simple shapes, and a cloud over everything but your own land that lifts as you arrive. A plot shows its land as shapes
+// robots (robot.ts), and a cloud over everything but your own land that lifts as you arrive. A plot shows its land as shapes
 // (land.ts), else its picture laid on the ground, else bare grass. Loaded only when the galaxy is opened (three.js).
 import { field } from "@rustybuns/util/guard";
 import * as THREE from "three";
+import type { Look } from "./galaxy.ts";
 import { isGround, type Land, landFrom, PLOT } from "./land.ts";
+import { robot } from "./robot.ts";
+import type { Point } from "./sign.ts";
+import { signBoard } from "./signBoard.ts";
 import type { Page } from "./page.ts";
 import { SAID_KEY, worldDoc } from "./world.ts";
 
@@ -47,7 +51,7 @@ export type Content =
   | { kind: "town" }
   | { kind: "open"; sign: boolean };
 
-export interface Person { id: string; color: string; x: number; z: number; me: boolean }
+export interface Person { id: string; look: Look; x: number; z: number; me: boolean }
 
 const SKY = "#a9d4f5", GRASS = "#7fae62";
 const mat = (color: string, opacity = 1) => new THREE.MeshStandardMaterial({ color, flatShading: true, side: THREE.DoubleSide, transparent: opacity < 1, opacity });
@@ -137,7 +141,14 @@ export function scene3d(canvas: HTMLCanvasElement) {
   scene.add(new THREE.HemisphereLight("#eef4ff", "#5a5030", 1.5), sun);
 
   const plots = new Map<string, { at: THREE.Group; shows: string; grounds: THREE.Mesh[] }>();
-  const people = new Map<string, THREE.Group>();
+  // Each player's robot, the look it was built from, and where it last stood (it faces the way it walks).
+  const people = new Map<string, { g: THREE.Group; as: string; x: number; z: number }>();
+  // Your robot is also drawn on this layer, alone and over everything, while you build it.
+  const SELF = 1;
+  for (const light of [sun, ...scene.children.filter((c) => c instanceof THREE.HemisphereLight)]) light.layers.enable(SELF);
+  const still = matchMedia("(prefers-reduced-motion: reduce)");
+  /** The signs standing on plots, apart from the plots' own content, which comes and goes. `on` is the content a sign's height was read from. */
+  const signs = new Map<string, { at: THREE.Group; on: THREE.Group | undefined }>();
 
   // The cloud: soft puffs laid around your own land.
   const cloud = new THREE.SpriteMaterial({ transparent: true, depthWrite: false, fog: false, map: painted(128, 128, (c) => {
@@ -165,20 +176,43 @@ export function scene3d(canvas: HTMLCanvasElement) {
     return ray.intersectObjects(plot.grounds, false)[0]?.point.y ?? 0;
   };
 
-  function person(p: Person) {
-    const g = new THREE.Group();
-    g.add(mesh(new THREE.CylinderGeometry(1.1, 1.3, 3.2, 12), p.color, 0, 1.6, 0), mesh(new THREE.SphereGeometry(1.1, 14, 10), p.color, 0, 4.1, 0));
+  function person(p: Person, as: string) {
+    const g = robot(p.look);
     if (p.me) {
-      const arrow = mesh(new THREE.ConeGeometry(0.8, 1.4, 4), "#ffffff", 0, 7, 0);
+      const arrow = mesh(new THREE.ConeGeometry(0.8, 1.4, 4), "#ffffff", 0, 8.4, 0);
       arrow.rotation.x = Math.PI;
+      arrow.name = "marker";
       g.add(arrow);
+      g.traverse((c) => c.layers.enable(SELF));
     }
+    // Facing south, toward the camera, until it walks.
+    g.rotation.y = Math.PI;
     scene.add(g);
-    return g;
+    return { g, as, x: p.x, z: p.z };
   }
+  const gone = (id: string) => { const had = people.get(id)!; scene.remove(had.g); dispose(had.g); people.delete(id); };
 
   let size = "";
   return {
+    /** Stand this signature on the plot at (x, y), a little north-west of its middle; null takes the sign away. */
+    setSign(x: number, y: number, strokes: readonly Point[][] | null) {
+      const k = `${x},${y}`, had = signs.get(k);
+      if (had) { scene.remove(had.at); dispose(had.at); signs.delete(k); }
+      if (!strokes) return;
+      const at = signBoard(strokes);
+      at.position.set((x + 0.5) * PLOT - 11, 0, (y + 0.5) * PLOT - 26);
+      at.visible = false;
+      scene.add(at);
+      signs.set(k, { at, on: undefined });
+    },
+    /** Where the foot of that plot's sign is on screen, in CSS pixels; null when it isn't in view. */
+    signSpot(x: number, y: number): { x: number; y: number } | null {
+      const s = signs.get(`${x},${y}`);
+      if (!s?.at.visible) return null;
+      const p = s.at.position.clone().add(new THREE.Vector3(0, 3.5, 0)).project(camera);
+      if (p.z > 1 || Math.abs(p.x) > 0.95 || Math.abs(p.y) > 0.9) return null;
+      return { x: ((p.x + 1) / 2) * canvas.clientWidth, y: ((1 - p.y) / 2) * canvas.clientHeight };
+    },
     /** What the plot at (x, y) shows. `shows` names it, so the same thing isn't built twice. */
     setPlot(x: number, y: number, shows: string, content: Content) {
       const k = `${x},${y}`, had = plots.get(k);
@@ -200,8 +234,10 @@ export function scene3d(canvas: HTMLCanvasElement) {
       plots.set(k, { at, shows, grounds });
     },
     shows: () => Object.fromEntries([...plots].map(([k, v]) => [k, v.shows.split(":")[0]!])),
-    /** Draw: everyone where they are (in plots), under the cloud over `home` at lift 0, behind you at lift 1. */
-    draw(w: number, h: number, folk: readonly Person[], cam: { x: number; z: number }, home: { x: number; y: number }, lift: number) {
+    /** Draw: everyone where they are (in plots), under the cloud over `home` at lift 0, behind you at lift 1.
+     *  `building` is the height of the robot builder over the bottom of the screen: your robot turns to face you in the
+     *  space above it. */
+    draw(w: number, h: number, folk: readonly Person[], cam: { x: number; z: number }, home: { x: number; y: number }, lift: number, building: number | null = null) {
       if (size !== `${w}x${h}`) { size = `${w}x${h}`; renderer.setSize(w, h, false); camera.aspect = w / h || 1; camera.updateProjectionMatrix(); }
       const e = lift * lift * (3 - 2 * lift), mix = (a: number, b: number) => a + (b - a) * e;
       const hx = (home.x + 0.5) * PLOT, hz = (home.y + 0.5) * PLOT;
@@ -209,20 +245,64 @@ export function scene3d(canvas: HTMLCanvasElement) {
       clouds.visible = e < 1;
       cloud.opacity = 1 - e;
       for (const [k, plot] of plots) plot.at.visible = e > 0.02 || k === `${home.x},${home.y}`;
-      for (const [id, g] of people) if (!folk.some((p) => p.id === id)) { scene.remove(g); dispose(g); people.delete(id); }
+      for (const id of people.keys()) if (!folk.some((p) => p.id === id)) gone(id);
+      const t = still.matches ? 0 : performance.now() / 1000;
+      let me: THREE.Group | null = null;
       for (const p of folk) {
-        const g = people.get(p.id) ?? person(p);
-        people.set(p.id, g);
+        const as = Object.values(p.look).join();
+        let had = people.get(p.id);
+        if (had && had.as !== as) {
+          const heading = had.g.rotation.y;
+          gone(p.id);
+          had = person(p, as);
+          had.g.rotation.y = heading;
+        }
+        had ??= person(p, as);
+        people.set(p.id, had);
+        if (Math.hypot(p.x - had.x, p.z - had.z) > 1e-4) had.g.rotation.y = Math.atan2(had.x - p.x, had.z - p.z);
+        had.x = p.x; had.z = p.z;
         const x = p.x * PLOT, z = p.z * PLOT;
-        g.position.set(x, heightAt(x, z), z);
-        g.visible = p.me || e > 0.5;
+        had.g.position.set(x, heightAt(x, z), z);
+        had.g.visible = p.me || e > 0.5;
+        const spins = had.g.getObjectByName("spins");
+        if (spins) spins.rotation.y = t * 14;
+        if (p.me) {
+          me = had.g;
+          if (building !== null) had.g.rotation.y = Math.PI + Math.sin(t * 0.8) * 0.35;
+          had.g.getObjectByName("marker")!.visible = building === null;
+        }
+      }
+      for (const [k, s] of signs) {
+        const on = plots.get(k)?.at;
+        if (on && on !== s.on) { on.updateMatrixWorld(true); s.at.position.y = heightAt(s.at.position.x, s.at.position.z); s.on = on; }
+        s.at.visible = e > 0.5;
       }
       const x = cam.x * PLOT, z = cam.z * PLOT, y = heightAt(x, z);
       // A tall screen stands further back, so as much land is across it.
       const back = 1 / Math.min(1, Math.max(0.6, camera.aspect));
       camera.position.set(mix(hx, x), mix(215 * back, y + 24 * back), mix(hz + 215 * back, z + 42 * back));
       camera.lookAt(mix(hx, x), mix(0, y + 4), mix(hz + 8, z - 12));
+      if (building === null || !me) {
+        camera.clearViewOffset();
+        renderer.render(scene, camera);
+        return;
+      }
+      // Close in front of your robot, the picture slid up so it stands in the middle of what the builder leaves free.
+      const room = Math.max(120, h - building), far = Math.max(13, (10 * h) / (room * 1.04));
+      camera.position.set(me.position.x, me.position.y + 3.6 + far * 0.22, me.position.z + far);
+      camera.lookAt(me.position.x, me.position.y + 3.6, me.position.z);
+      camera.setViewOffset(w, h, 0, building / 2, w, h);
       renderer.render(scene, camera);
+      // Again over the top, so nothing a world built can stand in front of it.
+      const sky = scene.background;
+      scene.background = null;
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      camera.layers.set(SELF);
+      renderer.render(scene, camera);
+      camera.layers.set(0);
+      renderer.autoClear = true;
+      scene.background = sky;
     },
     dispose() {
       dispose(scene);
