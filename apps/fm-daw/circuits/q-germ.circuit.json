@@ -572,7 +572,7 @@
   ],
   "source_component_id": "source_component_13",
   "subcircuit_id": "subcircuit_source_group_0",
-  "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net7"
+  "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net8"
  },
  {
   "type": "source_port",
@@ -585,7 +585,7 @@
   ],
   "source_component_id": "source_component_13",
   "subcircuit_id": "subcircuit_source_group_0",
-  "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net8"
+  "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net7"
  },
  {
   "type": "source_port",
@@ -1523,12 +1523,12 @@
   "source_trace_id": "source_trace_14",
   "connected_source_port_ids": [
    "source_port_28",
-   "source_port_8"
+   "source_port_18"
   ],
   "connected_source_net_ids": [],
   "subcircuit_id": "subcircuit_source_group_0",
-  "display_name": ".RV1 > .pin1 to .Q2 > .emitter",
-  "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net7"
+  "display_name": ".RV1 > .pin1 to .C2 > .pin2",
+  "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net8"
  },
  {
   "type": "source_trace",
@@ -1547,12 +1547,12 @@
   "source_trace_id": "source_trace_16",
   "connected_source_port_ids": [
    "source_port_29",
-   "source_port_18"
+   "source_port_8"
   ],
   "connected_source_net_ids": [],
   "subcircuit_id": "subcircuit_source_group_0",
-  "display_name": ".RV1 > .pin3 to .C2 > .pin2",
-  "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net8"
+  "display_name": ".RV1 > .pin3 to .Q2 > .emitter",
+  "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net7"
  },
  {
   "type": "source_trace",
