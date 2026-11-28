@@ -138,7 +138,7 @@ export function preloadGalaxy(): Promise<Warm | null> | null {
     const page = currentPage();
     const w: Warm = {
       three, canvas, scene: three.scene3d(canvas), plot: me ? { x: me.x, y: me.y } : { x: 0, y: 0 }, me, around: around?.plots ?? null, kept,
-      early: me ? null : { page, land: idle().then(() => (page ? three.landOf(page) : null)).catch(() => null) },
+      early: me ? null : { page, land: idle().then(() => (page ? three.landOf(page, `/api/r/${home}/files/`) : null)).catch(() => null) },
     };
     warm = w;
     // The plots, yours first, one quiet moment each; the lands around you are read as they come.
@@ -180,7 +180,8 @@ function read(id: string, three: NonNullable<G["three"]>): Promise<Land | null> 
     if (!g && !warm) { asked.delete(id); return null; }
     await idle();
     const page = id === myPlot ? currentPage() : await savedWorld(id);
-    const land = page ? await three.landOf(page) : null;
+    // Your own models by your room, anyone else's by their plot's public id: never by their room.
+    const land = page ? await three.landOf(page, id === myPlot ? `/api/r/${home}/files/` : `/api/galaxy/file/${id}/`) : null;
     if (asked.get(id) === next) lands.set(id, land);
     return land;
   }).catch(() => null);

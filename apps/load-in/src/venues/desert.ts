@@ -10,7 +10,7 @@
 // the same one Qollab Studio teaches), and one left wrong costs sound. Plain data, no DOM; the page (desert-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
 import { type Area, type CrowdField, type Grid, type System, type SystemId, SYSTEM_IDS, SYSTEMS, coverage, passive, coverageThrough, gear as catalog, runHours, stackWidth, system } from "@rustybuns/gear";
-import { crossoverCheck, rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
+import { crossoverCheck, heardBands, placed, rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
 import { LESSON_RIG, SUB_AHEAD_M, lessonStart } from "@rustybuns/gear/crossover-lesson";
 import { type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
@@ -111,6 +111,28 @@ export function setAmpCrossover(w: World, bands: readonly ChannelDsp[]) {
 export function resetAmpCrossover(w: World) {
   if (amps.has(w)) amps.set(w, { bands: presetOf(), subAheadM: 0 });
 }
+/** The amps as they're set, for the crew's room to hear (null until someone opens them). */
+export function ampsAt(w: World): { rig: string; bands: readonly ChannelDsp[]; subAheadM: number } | null {
+  const a = amps.get(w);
+  return a ? { rig: tonight, bands: a.bands, subAheadM: a.subAheadM } : null;
+}
+/** The amps as a friend set them. False for another rig's (their page brought a different one). */
+export function hearAmps(w: World, a: { rig: string; bands: readonly ChannelDsp[]; subAheadM: number }): boolean {
+  if (a.rig !== tonight || a.bands.length !== presetOf().length) return false;
+  amps.set(w, { bands: a.bands, subAheadM: a.subAheadM });
+  return true;
+}
+/** The bands the speakers play (gear's `heardBands`; none until the amps are opened: the sound goes straight through).
+ *  The same array until the amps are set again, so the page's sound rebuilds only then. */
+export function playedBands(w: World): readonly ChannelDsp[] {
+  const a = amps.get(w);
+  if (!a) return NONE;
+  let out = played.get(a);
+  if (!out) played.set(a, (out = heardBands(placed(a.bands, a.subAheadM), presetOf())));
+  return out;
+}
+const NONE: readonly ChannelDsp[] = [];
+const played = new WeakMap<object, readonly ChannelDsp[]>();
 /** What a crossover left wrong takes off the sound: its worst hole or bump past 1 dB, and 5 for each driver in danger. */
 const CROSSOVER_MOST = 30;
 export function crossoverCost(w: World): number {

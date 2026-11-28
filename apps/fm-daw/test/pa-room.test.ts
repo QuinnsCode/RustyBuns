@@ -1,3 +1,8 @@
+import { ROOMS } from "../src/studio/rooms/index.ts";
+import { roomCrossover } from "../src/studio/pa-room.ts";
+import { apply, decodeOp, sanitize } from "../src/project.ts";
+import { demoProject } from "../src/presets.ts";
+import { opNeeds } from "../src/grants.ts";
 // The PA heard from the floor (src/studio/pa-room.ts): level by the inverse square law, the speed of sound's delay,
 // the air's highs, and a speaker behind you quieter; and Desert Gathering's stacks as the speakers it plays from: one mono point source.
 import { expect, test } from "bun:test";
@@ -87,4 +92,25 @@ test("the builder's coverage map is what the jam room's PA plays: between two pl
   const [a, b] = [at(0, 2.5 * REF_M), at(1, 2 * REF_M)];
   expect(heard(a) - heard(b)).toBeCloseTo(mapAt(map, a.x, a.z) - mapAt(map, b.x, b.z), 0);
   expect(mapAt(map, a.x, a.z) - mapAt(map, b.x, b.z)).toBeGreaterThan(3);
+});
+
+test("the PA's amp channels: boxes on their own get the menu split, a rig its preset, and a set crossover is the sesh's", () => {
+  const room = ROOMS["live-room"]!;
+  const placed = (...boxes: string[]) => ({ ...room, pa: { stacks: [{ at: [0, 0] as [number, number], yaw: 0, rows: boxes.map((box) => ({ box, across: 1 })) }] } });
+  const dsp = (...boxes: string[]) => roomCrossover(placed(...boxes)).map((b) => [b.box, b.dsp.hp?.hz, b.dsp.lp?.hz]);
+  expect(roomCrossover(room)).toEqual([]);
+  expect(dsp("top-12-powered")).toEqual([["top-12-powered", 55, undefined]]);
+  expect(dsp("sub-18", "top-15-passive")).toEqual([["sub-18", undefined, 80], ["top-15-passive", 80, undefined]]);
+  expect(roomCrossover(DESERT_GATHERING).map((b) => b.box)).toEqual(["horn-sub-21", "stack-mid-bass", "stack-mid-high", "stack-mid-high"]);
+  const pair = placed("sub-18", "top-15-passive");
+  expect(roomCrossover(pair).map((b) => [b.box, b.dsp.lp?.hz ?? b.dsp.hp?.hz])).toEqual([["sub-18", 80], ["top-15-passive", 80]]);
+
+  const amps = { rig: "sub-18+top-15-passive", bands: roomCrossover(pair).map((b) => ({ ...b.dsp, gainDb: -3 })) };
+  const op = decodeOp({ t: "crossover", amps })!;
+  expect(opNeeds(op)).toBe("mix");
+  const set = apply(demoProject(), op);
+  expect(sanitize(JSON.parse(JSON.stringify(set)))!.crossover).toEqual(amps);
+  expect(apply(set, { t: "replace", project: demoProject() }).crossover).toEqual(amps); // an undo leaves the amps
+  expect(apply(set, { t: "crossover", amps: null }).crossover).toBeUndefined();
+  expect(decodeOp({ t: "crossover", amps: { rig: "x", bands: [{ gainDb: 0, delayMs: 900, polarity: 1 }] } })).toBeNull();
 });

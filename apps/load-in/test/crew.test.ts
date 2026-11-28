@@ -1,3 +1,5 @@
+import { DESERT, bringRig, crossoverCost, openCrossover, playedBands, setAmpCrossover } from "../src/venues/desert.ts";
+import { rigCrossover } from "@rustybuns/gear/crossover";
 // A crew of two in the bigger bar, through the room's own Durable Object (edge/world.ts) on stand-in sockets: the 70 kg
 // cooler is too heavy for one, so Ada takes an end and waits, Bea takes the other, they can only walk it the same way,
 // and when Bea sets it down it lands in both their worlds. A wedge one of them has is the other's only to watch. In the
@@ -313,4 +315,28 @@ test("a crew member making up cables and switches can't push the room's view pas
   expect(readServer(JSON.parse(JSON.stringify(crew.view("ada"))))?.t).toBe("view");
   // what is already there still moves
   expect(crew.end("ada", { t: "end", key: "cable-0", end: "b", to: { at: "hand" } })).toEqual({ ok: true });
+});
+
+test("one crew, one rack: the amps a friend opens and sets are set on your page too, and your speakers play them", async () => {
+  bringRig("tri-amp");
+  try {
+    const { join, pump } = crewRoom(DESERT);
+    const ada = await join("Ada", "guest-ada-0001"), bea = await join("Bea", "guest-bea-0001");
+    pump(ada, bea);
+    expect(playedBands(bea.w)).toEqual([]); // unopened: straight through
+    openCrossover(ada.w);
+    pump(ada, bea);
+    expect(crossoverCost(bea.w)).toBe(crossoverCost(ada.w));
+    expect(crossoverCost(bea.w)).toBeGreaterThan(15);
+    // Bea puts it right and lines the sub up; Ada's page follows
+    await Bun.sleep(120);
+    setAmpCrossover(bea.w, rigCrossover("tri-amp").map((b, i) => (i ? b.dsp : { ...b.dsp, delayMs: 4.37 })));
+    pump(bea, ada);
+    expect(crossoverCost(ada.w)).toBe(0);
+    expect(playedBands(ada.w)).toHaveLength(4);
+    // someone who joins late gets it too, and doesn't write over it
+    const cy = await join("Cy", "guest-cyd-0001");
+    pump(cy); pump(cy, ada);
+    expect([crossoverCost(cy.w), crossoverCost(ada.w)]).toEqual([0, 0]);
+  } finally { bringRig("dance-stack"); }
 });

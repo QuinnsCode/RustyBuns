@@ -44,6 +44,7 @@ import { basename, dirname, relative, resolve } from "node:path";
 import { arr, check, num, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { appDir, upFrom } from "./app-dirs.ts";
 import { Matrix, report } from "./builder-nightly.ts";
+import { cutShort, pump, runsBunTest } from "./ci-test-count.ts";
 import { classify, dial, readVerdicts, tierLine, type Tier } from "./ci-tier.ts";
 
 /** A row of ci-apps' matrix: one without an app, test and prep isn't a job. A group row ("borg+qcrm") runs from `dir`, the root. */
@@ -371,12 +372,26 @@ async function passed(cwd: string): Promise<number> {
   return 0;
 }
 
+// A `run` here is held to the same end as one on the builder: its output passes through and is read (#6591).
+async function runHere(cmd: string[], cwd: string): Promise<number> {
+  const line = cmd.join(" ");
+  if (!runsBunTest(line)) return Bun.spawn(cmd, { cwd, stdio: ["inherit", "inherit", "inherit"] }).exited;
+  const child = Bun.spawn(cmd, { cwd, stdin: "inherit", stdout: "pipe", stderr: "pipe" });
+  let out = "";
+  const add = (text: string) => { out += text; };
+  await Promise.all([pump(child.stdout, process.stdout, add), pump(child.stderr, process.stderr, add)]);
+  const code = await child.exited;
+  const cut = code ? undefined : cutShort(line, out);
+  if (cut) console.error(`cut short: ${cut}`);
+  return cut ? 1 : code;
+}
+
 // No builder: one command runs here; every touched suite is GitHub CI's job, so say which and move on. With a swarm, a
 // pushed HEAD is queued there as well, so whichever answers first (GitHub or one of our Macs) posts the checks.
 export async function fallback(argv: string[], cwd: string, why: string): Promise<number> {
   if (argv[0] === "run") {
     console.log(`${why}: running here`);
-    return Bun.spawn(argv.slice(2), { cwd: resolve(cwd, argv[1]!), stdio: ["inherit", "inherit", "inherit"] }).exited;
+    return runHere(argv.slice(2), resolve(cwd, argv[1]!));
   }
   const jobs = await touched(argv[0]!, cwd);
   console.log(`${why}: GitHub CI runs ${jobs.length ? jobs.map((j) => j.label).join(", ") : "no app suites"} for this branch`);

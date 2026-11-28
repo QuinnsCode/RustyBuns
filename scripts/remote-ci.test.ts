@@ -121,6 +121,15 @@ test("a run waits until Bob serves, takes back a dead run's slot and ends what i
     expect(menu(after, Date.now()).split("\n")[0]).toBe("Bob: idle");
     expect(await Bun.file(`${root}/up`).exists()).toBe(true);
     expect((await Bun.$`git status --porcelain`.cwd(work).text()).trim()).toBe("?? new.txt");
+
+    // A suite that exits 0 before bun's closing line is a failure, on Bob and on his menu (#6591)
+    await Bun.write(`${work}/a.test.ts`, 'import { test } from "bun:test";\ntest("leaves early", () => process.exit(0));\n');
+    expect(await main(["run", ".", "bun", "test", "./a.test.ts"], work)).toBe(1);
+    expect(readRuns(builder).done[0]!.code).toBe(1);
+    // ... and so is one run here, with no builder and the valve open
+    await Bun.write(`${root}/rb/valve`, "on\n");
+    delete process.env.BUILDER_HOST;
+    expect(await main(["run", ".", "bun", "test", "./a.test.ts"], work)).toBe(1);
   } finally {
     process.env = saved;
   }
