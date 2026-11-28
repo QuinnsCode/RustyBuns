@@ -158,7 +158,7 @@ person's (`eq:<sub>`, the token's checked against eqosys's keys, `src/who.ts`), 
 
 Everyone's land in one 3D space, like rural neighbours: plots touch edge to edge with no streets or fences. **Agent
 Galaxy** (the Galaxy tile in the console, or Cmd+K) shows your own land under cloud, then the cloud lifts and you are a
-simple shape on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
+robot on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
 neighbour's. **Back to my world** brings the console back.
 
 - A world built with `@world/kit` stands there in 3D: its ground, water, trees, rocks and its own meshes. Each world
@@ -169,10 +169,15 @@ neighbour's. **Back to my world** brings the console back.
   here". Every third cell of the spiral stays free for invites (the invite link and sign-in come next).
 - Your page saves your world to the server a second after each change that lands (`PUT /api/r/<room>/world`, checked
   with the same Schema and limits as a write), so your neighbours see what you built.
-- You see the other people on your plot and the ones touching it. They have a colour and no name.
+- You see the other people on your plot and the ones touching it. They are robots with no names.
+- **Your robot** is your body there, with no skin and no human shape: 8 paints; a box, dome or screen head; two eyes, a
+  visor or one big eye; an antenna, propeller or ears; wheels, legs or hover. The builder is picture buttons, opens the
+  first time you walk in, and comes back from the robot button or Cmd+K ("My robot"). It is kept for your account
+  (`GET`/`PUT /api/galaxy/robot`) and only ever a pick from those lists (`src/galaxy.ts`'s `Look`). The galaxy's own
+  scene draws it; a world is never told what anyone looks like.
 - The map never sends a room's link: a plot is known by a one-way hash of it, since the link is the room's key.
 
-From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()` and `walk(dx, dz)`:
+From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()`, `robot()` and `walk(dx, dz)`:
 
 ```
 bun run probe effect-ui-page --url http://127.0.0.1:4799/r/<room> --js 'await agentGalaxy.enter()' --shot galaxy.png

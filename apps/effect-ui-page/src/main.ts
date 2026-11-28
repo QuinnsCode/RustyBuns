@@ -62,8 +62,11 @@ addCommands([
     description: "Records three seconds of the world and downloads an animated GIF.", execute: () => exportGif(room) },
   // The dock's Agent Galaxy button and window.agentGalaxy.enter() send the same message.
   { name: "page_galaxy", title: "Agent Galaxy", group: "Galaxy", agent: false,
-    description: "Zoom out to the map of everyone's worlds and walk it as a small character, once your world is made.", answers: true,
+    description: "Zoom out to the map of everyone's worlds and walk it as your robot, once your world is made.", answers: true,
     execute: () => galaxyLock.why ?? void galaxy.enter() },
+  { name: "page_robot", title: "My robot", group: "Galaxy", agent: false, answers: false,
+    description: "Build your robot, the body you walk the galaxy in: its paint, head, eyes, top and feet.",
+    execute: () => galaxyLock.why ?? void galaxy.robot() },
   { name: "page_galaxy_back", title: "Back to my world", group: "Galaxy", agent: false,
     description: "Leave the galaxy map and go back to your own world and the dock.", execute: () => { void galaxy.leave(); } },
 ]);
