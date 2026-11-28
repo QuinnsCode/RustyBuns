@@ -29,7 +29,7 @@ const TICKET = '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a
 
 /** The front door's three lanes, in the order it shows them. */
 export const SECTORS: readonly Sector[] = [
-  { id: "learn", word: "Learn", line: "How to set it up and how to use it, checked on the real gear as you go.", start: { say: "First lesson", href: "/jam.html?lesson=guitar", icon: PLAY }, soon: "More lessons are on the way" },
+  { id: "learn", word: "Learn", line: "How to set it up and how to use it, checked on the real gear as you go.", start: { say: "First lesson", href: "/studio.html?lesson=guitar", icon: PLAY }, soon: "More lessons are on the way" },
   // the owner's copy (#6527): Studio's line is a console prompt whose last word rolls through what you build, each word
   // opening the app that builds it; `line` is the one still sentence a screen reader gets
   { id: "studio", word: "Studio", line: "Build your set, speaker, signal, pedal, song or plugin.", rolls: [["set", "instruments"], ["speaker", "speakers"], ["signal", "planner"], ["pedal", "amps"], ["song", "daw"], ["plugin", "builder"]], start: { say: "Walk in and play", href: STUDIO_START, icon: PIANO } },
@@ -38,11 +38,11 @@ export const SECTORS: readonly Sector[] = [
 
 /** One of Learn's lessons as its card lists it: a link that starts it. `on` is the app whose page it runs on (its icon). */
 export interface Lesson { id: string; name: string; does: string; href: string; on: PathId; signIn: boolean }
-/** Learn's lessons, under where each is done. The five at the gear wall are the studio room's (src/studio/lessons.ts,
- *  `/jam.html?lesson=`, a room you sign in for); the five on the tools each run on that tool's own page, signed out. */
+/** Learn's lessons, under where each is done. The five at the gear wall are src/studio/lessons.ts's: lesson one runs in the gear room
+ *  (`/studio.html?lesson=guitar`, signed out), the four that bring a kit in the studio room (`/jam.html?lesson=`, a room you sign in for); the five on the tools each run on that tool's own page, signed out. */
 export const LESSON_GROUPS: readonly { say: string; lessons: readonly Lesson[] }[] = [
   { say: "At the gear wall", lessons: [
-    { id: "guitar", name: "Guitar to amp", does: "Guitar, through a pedal, into an amp and its cab, with the gain set so it doesn't fizz.", href: "/jam.html?lesson=guitar", on: "learn", signIn: true },
+    { id: "guitar", name: "Guitar to amp", does: "Guitar, through a pedal, into an amp and its cab, with the gain set so it doesn't fizz.", href: "/studio.html?lesson=guitar", on: "learn", signIn: false },
     { id: "voice", name: "Patch a synth", does: "On the sound wall: an oscillator through a filter and a level into Q Out.", href: "/jam.html?lesson=voice", on: "learn", signIn: true },
     { id: "pa", name: "Set up a PA", does: "Place two speakers, aim them, cable a mic through a mixer, and power on in order.", href: "/jam.html?lesson=pa", on: "learn", signIn: true },
     { id: "plugs", name: "XLR plugs", does: "What an XLR carries and its pins: a mic into the mixer, a speaker's combo input, its thru on to the next box.", href: "/jam.html?lesson=plugs", on: "learn", signIn: true },
