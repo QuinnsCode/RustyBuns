@@ -62,6 +62,48 @@
   /* a phone held upright: the cards one under the other, at the foot of the screen */
   @media (max-width: 599px) { .lanes { grid-template-columns: minmax(0, 360px); justify-content: center; align-content: end; row-gap: 8px; padding: 0 12px calc(max(12px, env(safe-area-inset-bottom)) + 40px); } .lane button { padding: 6px 12px; } .lane .apps { padding-block: 6px; } }
   @media (max-height: 640px) { #hero .lede { display: none; } .lanes { padding-top: 84px; } .lane button { padding-block: 4px; } }
+  /* a lane's list: its way in first (one filled button), then each app behind its icon with its features under it in
+     Russo One (#6532). The cards run to the foot of the screen, and a lane's rows share that height out */
+  .apps { list-style: none; padding-left: 16px; }
+  .apps li { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 10px; align-items: center; align-content: center; }
+  .apps li > svg { color: var(--tone); }
+  .apps .feat { grid-column: 2; }
+  @media (min-width: 600px) and (min-height: 641px) {
+    .lanes { grid-template-rows: minmax(0, 1fr); padding-bottom: 24px; }
+    .lane .apps { grid-auto-rows: minmax(min-content, 1fr); align-content: stretch; gap: 0 24px; padding-block: 14px; font-size: clamp(16px, min(2.1vh, 1.5vw), 23px); }
+    .lane .feat { font-size: clamp(12.5px, min(1.55vh, 1.1vw), 17px); line-height: 1.3; }
+    .lane .apps .start { align-content: start; }
+    .lane .apps li:not(.start) { grid-template-columns: 1.1em minmax(0, 1fr); }
+    .lane .apps li > svg { width: 1.1em; height: 1.1em; }
+    /* a lane with one app has the room: its name and each feature line larger */
+    .lane .apps:not(:has(li:nth-child(3))) { grid-template-rows: auto minmax(0, 1fr); font-size: clamp(20px, min(3vh, 2.2vw), 32px); }
+    .lane .apps:not(:has(li:nth-child(3))) li:not(.start) { align-content: start; padding-top: 18px; row-gap: 10px; }
+    .lane .apps:not(:has(li:nth-child(3))) .feat { font-size: clamp(15px, min(2.3vh, 1.7vw), 25px); line-height: clamp(32px, 7.5vh, 84px); }
+    .lane .apps .start a { padding-block: clamp(9px, 1.6vh, 16px); font-size: clamp(17px, 2.2vh, 21px); }
+  }
+  .apps .start { grid-template-columns: minmax(0, 1fr); grid-column: 1 / -1; margin-bottom: 4px; }
+  .apps .start a { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border-radius: 12px; background: var(--tone); color: #101216; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .apps .start a:hover, .apps .start a:focus-visible { color: #101216; filter: brightness(1.12); outline: 2px solid #f4f1ea; outline-offset: 2px; }
+  @media (max-width: 899px) { .apps { padding-left: 10px; } .apps li { column-gap: 6px; } }
+  @media (max-width: 599px), (max-height: 640px) { .apps .start a { padding: 6px 12px; } .apps .start { margin-bottom: 2px; } }
+  /* "Not sure? Try a demo": a pill under the title, and its picker */
+  #demo-ask { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; border: 1px solid #f4f1ea55; background: #101216d9; color: #f4f1ea; font: 600 15px/1 var(--qs-body), system-ui, sans-serif; cursor: pointer; backdrop-filter: blur(4px); }
+  #demo-ask:hover, #demo-ask:focus-visible { border-color: #fb923c; color: #fb923c; outline: none; }
+  @media (max-height: 640px) { #demo-ask { position: absolute; top: 30px; left: 330px; } }
+  /* three columns under 760px across are too narrow for the feature lines: the names alone, as on a phone */
+  @media (max-width: 759px) { .lane .feat { display: none; } }
+  /* room beside the lede: the pill sits on its line, and on a short screen the cards start right under it */
+  @media (min-width: 900px) and (min-height: 641px) { #hero .lede { display: inline-block; margin: 0 14px 0 0; vertical-align: middle; } #demo-ask { vertical-align: middle; } }
+  @media (min-width: 900px) and (min-height: 641px) and (max-height: 820px) { .lanes { padding-top: 136px; } }
+  #demo { box-sizing: border-box; width: min(560px, calc(100vw - 32px)); padding: 22px; border: 1px solid #f4f1ea33; border-radius: 20px; background: #101216; color: #f4f1ea; }
+  #demo::backdrop { background: #000a; backdrop-filter: blur(3px); }
+  #demo h2 { margin: 0 0 14px; font: 600 24px/1.1 var(--qs-head), sans-serif; text-align: center; }
+  #demo .picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  #demo .picks a { display: grid; justify-items: center; gap: 10px; padding: 20px 10px; border: 1px solid #fb923c88; border-radius: 16px; background: #17191f; color: #f4f1ea; font: 600 17px/1.2 var(--qs-body), system-ui, sans-serif; text-align: center; text-decoration: none; }
+  #demo .picks a svg { color: #fb923c; }
+  #demo .picks a:hover, #demo .picks a:focus-visible { background: color-mix(in srgb, #fb923c 22%, #101216); box-shadow: 0 0 0 2px #fb923c; outline: none; }
+  #demo form { margin: 14px 0 0; text-align: center; }
+  #demo .no { padding: 8px 12px; border: 0; background: none; color: #b9b4aa; font: inherit; text-decoration: underline; cursor: pointer; }
   /* the tabs: the bar fades in as you scroll, and its tabs show once the lane buttons have slid into them */
   #tabs { position: fixed; z-index: 5; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; box-sizing: border-box; padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); background: rgb(15 16 19 / calc(var(--p, 0) * .8)); border-bottom: 1px solid rgb(255 255 255 / calc(var(--p, 0) * .07)); backdrop-filter: blur(calc(var(--p, 0) * 10px)); pointer-events: none; }
   body.scrolled #tabs { pointer-events: auto; }
@@ -206,6 +248,7 @@
   <div class="words">
     <h1>Qollab <span>Studio</span></h1>
     <p class="lede">Learn it, build it in the studio, hear it at the event.</p>
+    <button id="demo-ask" type="button" aria-haspopup="dialog"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>Not sure? Try a demo</button>
   </div>
   <div class="account" data-at="field"></div>
   <button id="air-egg" type="button" aria-expanded="false" aria-controls="air" title="The night's air"></button>
@@ -244,5 +287,10 @@
   </section>
   <p class="foot">Only Playground and The Event ask you to sign in: they are rooms you share. Everything else works signed out, and the Paths button on every page brings you back here.</p>
 </main>
+<dialog id="demo" aria-labelledby="demo-h">
+  <h2 id="demo-h">Try one</h2>
+  <div class="picks"></div>
+  <form method="dialog"><button class="no">Just looking</button></form>
+</dialog>
 <script type="module" src="/src/front.ts"></script>
 </body></html>

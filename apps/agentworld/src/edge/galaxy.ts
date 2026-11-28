@@ -2,9 +2,11 @@
 // storage and the players' sockets (hibernating, each player's spot on its socket's attachment); the logic is
 // ../galaxy.ts, which the dev server runs in memory too. A plot's picture and saved world are the plot's own Room's
 // (GET /api/r/<room>/picture, /world, /made): the Galaxy looks the room up and asks it. Who a request is from is
-// ../who.ts, against EQOSYS_URL's keys.
+// ../who.ts, against EQOSYS_URL's keys. It also keeps the app's one count of what has gone into Artifacts (../budget.ts),
+// asked by Rooms at /spend: the Worker sends only /api paths here from outside.
 import { Seats } from "@rustybuns/util/seats";
 import type { RoomCtx, RoomSocket } from "@rustybuns/util/room";
+import { Budget } from "../budget.ts";
 import { Galaxy as Plots, type FromGalaxy, type Hub, joined, type Kv, left, walked, type Walker } from "../galaxy.ts";
 import { EQOSYS, whoSent } from "../who.ts";
 
@@ -18,9 +20,11 @@ export class Galaxy {
   private plots: Plots;
   private sockets: Seats<Walker, FromGalaxy>;
   private hub: Hub<RoomSocket>;
+  private budget: Budget;
   constructor(ctx: RoomCtx & { storage: Kv }, private env: Env) {
     this.plots = new Plots(ctx.storage, (req) => whoSent(req, env.EQOSYS_URL || EQOSYS));
     this.sockets = new Seats(ctx, LIMITS);
+    this.budget = new Budget(ctx.storage);
     this.hub = {
       list: () => this.sockets.open().flatMap((s) => { const p = this.sockets.who(s); return p ? [{ s, p }] : []; }),
       save: (s, p) => this.sockets.attach(s, p),
@@ -30,6 +34,7 @@ export class Galaxy {
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/spend") return this.budget.http(req);
     const rest = url.pathname === "/api/me/world" ? "/me/world" : url.pathname.replace(/^\/api\/galaxy/, "");
     if (rest === "/socket") {
       const p = await this.plots.seat(req);

@@ -39,7 +39,7 @@ import { drawDesk } from "./desk.ts";
 import type { AmpSettings, FromAmp } from "../amp/messages.ts";
 import { AmpThreads } from "../amp/threads.ts";
 import { DEFAULT_ROOM, PEDALS, type PedalDef } from "../circuit/amps.ts";
-import { BuildSheet, savedDrive, savedSwaps } from "../kit/sheet.ts";
+import { BuildSheet, savedDrive, savedEdits, savedSwaps } from "../kit/sheet.ts";
 import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { applyStudio, patchOps, sanitizePatch, type Board, type Patch, type StudioServer } from "../studio.ts";
@@ -445,7 +445,7 @@ const sheet = new BuildSheet(() => { if (phase === "sheet") play(); });
 $("stage").after(sheet.el);
 function openSheet(p: PedalDef) {
   phase = "sheet"; menu(); document.exitPointerLock?.();
-  return sheet.open(p, savedSwaps(p.id), savedDrive(p.id));
+  return sheet.open(p, savedSwaps(p.id), savedDrive(p.id), savedEdits(p.id));
 }
 function openModuleSheet(m: Panel) {
   phase = "sheet"; menu(); document.exitPointerLock?.();

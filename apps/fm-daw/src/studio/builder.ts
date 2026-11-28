@@ -8,11 +8,8 @@ import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { GENERATOR_IDS, GROUNDS, MAX_PIN, PREMADES, SYSTEM_IDS, type GeneratorId, type Ground, type Premade, type SystemId } from "@rustybuns/gear";
+import { GENERATOR_IDS, GROUNDS, MAX_PIN, PREMADES, SYSTEM_IDS, SYSTEMS, type GeneratorId, type Ground, type SystemId } from "@rustybuns/gear";
 
-/** The premade stacks this builder can drop in (gear's PREMADES with an open-air rig). A stack here is its rig's own
- *  column of boxes, so a pick sets the rig; boxes side by side and the bar pair (no rig) don't carry over. */
-export const STUDIO_PREMADES = PREMADES.filter((p): p is Premade & { rig: SystemId } => p.rig !== null);
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
@@ -32,8 +29,11 @@ const XZ = (v: unknown): [number, number] => { const [x, z] = arr(num(-25, 25), 
 const COLOR = str(9, { re: /^#[0-9a-f]{6}$/i });
 /** A line array's pins, bottom box up: radians down from level. */
 const PINS = arr(num(0, MAX_PIN), 3, { min: 1 });
+/** The boxes a stack's own rows can be made of: the premades' and the rigs' (each has a model to draw). */
+const BOXES = [...new Set([...PREMADES.flatMap((p) => p.rows.map((r) => r.box)), ...Object.values(SYSTEMS).flatMap((s) => s.stack)])];
+const ROWS = arr(obj({ box: oneOf(BOXES), across: int(1, 4) }), 8, { min: 1 });
 /** A rig's stacks, indoors or out (room.ts Outdoor stacks). */
-const STACKS = arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)), pins: opt(PINS) }), MAX_STACKS);
+const STACKS = arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)), pins: opt(PINS), rows: opt(ROWS) }), MAX_STACKS);
 /** The air a field's panel takes: -10 to 40 C, 10 to 100 % (ISO 9613-1 holds well across it). */
 const TEMP_C = num(-10, 40), HUMIDITY = num(10, 100);
 /** A bank: up to 40 m long, 0.3 to 6 m high. */
@@ -234,7 +234,7 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("moveDoor"), at: XZ }),
   obj({ t: tag("instruments"), keys: opt(oneOf(POLY_KINDS)), bass: opt(oneOf(["mono", "box"] as const)), rig: opt(oneOf(SYSTEM_IDS)) }),
   obj({ t: tag("stack"), at: XZ, yaw: opt(num(-7, 7)) }),
-  obj({ t: tag("premade"), id: oneOf(STUDIO_PREMADES.map((p) => p.id)) }),
+  obj({ t: tag("premade"), id: oneOf(PREMADES.map((p) => p.id)) }),
   obj({ t: tag("moveStack"), index: int(0, MAX_STACKS - 1), at: XZ }),
   obj({ t: tag("aimStack"), index: int(0, MAX_STACKS - 1), yaw: opt(num(-7, 7)), splay: opt(num(-1, 1)), pins: opt(PINS) }),
   obj({ t: tag("unstack"), index: int(0, MAX_STACKS - 1) }),
@@ -468,19 +468,26 @@ export function edit(def: StudioDef, e: Edit): Built {
     case "instruments": {
       if (e.keys) next.keys = e.keys;
       if (e.bass) next.bass = e.bass;
-      if (e.rig) (next.outdoor ?? (next.pa ??= { stacks: [] })).rig = e.rig;
+      if (e.rig) {
+        const out = next.outdoor ?? (next.pa ??= { stacks: [] });
+        out.rig = e.rig;
+        // a rig picked by name stands as its own column
+        for (const st of out.stacks) delete st.rows;
+      }
       break;
     }
-    // a premade dropped in whole: its rig, and with no stacks yet a pair at the front corners of the floor, toed in
+    // a premade dropped in whole: every stack gets its boxes (and its rig, the bar pair having none), and with no stacks
+    // yet a pair stands at the front corners of the floor, toed in
     case "premade": {
-      const p = STUDIO_PREMADES.find((x) => x.id === e.id);
+      const p = PREMADES.find((x) => x.id === e.id);
       if (!p) return no("there is no such premade stack");
       const out = next.outdoor ?? (next.pa ??= { stacks: [] });
-      out.rig = p.rig;
+      if (p.rig) out.rig = p.rig;
       if (!out.stacks.length) {
         const x = Math.min(6, next.size.w / 4), z = -Math.min(6, next.size.d / 4);
         for (const at of [[-x, z], [x, z]] as [number, number][]) out.stacks.push({ at, yaw: Math.atan2(-at[0], -at[1]) });
       }
+      for (const st of out.stacks) st.rows = p.rows.map((r) => ({ ...r }));
       break;
     }
     case "stack": case "moveStack": case "aimStack": case "unstack": {
@@ -488,8 +495,9 @@ export function edit(def: StudioDef, e: Edit): Built {
       const out = next.outdoor ?? (next.pa ??= { stacks: [] });
       if (e.t === "stack") {
         if (out.stacks.length >= MAX_STACKS) return no(`a rig is at most ${MAX_STACKS} stacks`);
-        // facing the floor's middle unless told
-        out.stacks.push({ at: e.at, yaw: e.yaw ?? Math.atan2(-e.at[0], -e.at[1]) });
+        // facing the floor's middle unless told, and the same boxes as the stack before it
+        const rows = out.stacks[out.stacks.length - 1]?.rows;
+        out.stacks.push({ at: e.at, yaw: e.yaw ?? Math.atan2(-e.at[0], -e.at[1]), ...(rows ? { rows: rows.map((r) => ({ ...r })) } : {}) });
         break;
       }
       const st = out.stacks[e.index];
