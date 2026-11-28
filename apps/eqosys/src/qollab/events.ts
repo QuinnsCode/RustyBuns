@@ -3,7 +3,7 @@
 // one, and GET, PUT and DELETE /q/events/<id> read, change and delete it. Its owner and its crew (roles on its guest list with
 // `edit`) change it; only the owner deletes it. The public page, RSVPs, tickets and the door are on the same row
 // (rsvp.ts, ../event-pages.ts).
-import { draftOf, EVENT_ROLES, EventDoor, EventDraft, EventEdit, EventList, EventMade, EVENTS_OWNED, NewEvent, type Event } from "@rustybuns/util/events";
+import { draftOf, EVENT_ROLES, EventDoor, EventDraft, EventList, EventMade, EVENTS_OWNED, EventEdit, NewEvent, type Event } from "@rustybuns/util/events";
 import { check } from "@rustybuns/util/guard";
 import { can, guestList, GuestList, isIn } from "@rustybuns/util/guests";
 import { bearerOf, cors, tokenOf } from "../door.ts";
@@ -21,6 +21,46 @@ export async function eventRow(conf: Env, id: string): Promise<{ row: Row; event
   const row = await conf.DB.prepare(`${SELECT} WHERE id = ?`).bind(id).first<Row>();
   const event = row && toEvent(row);
   return row && event ? { row, event } : null;
+}
+
+/** The list with `userId`'s own line on it. A plain guest's RSVP is their place at an event (the JSON list keeps the crew,
+ *  and holds 500), so theirs is read from the RSVP row, as a guest's line. Every "are they on this event" asks this. */
+export async function listWith(conf: Env, e: Event, userId: string): Promise<GuestList> {
+  const l = e.guests;
+  if (isIn(l, userId) || l.blocked[userId]) return l;
+  const r = await conf.DB.prepare("SELECT name, at FROM event_rsvps WHERE event_id = ? AND user_id = ?").bind(e.id, userId).first<{ name: string; at: number }>();
+  return r ? { ...l, guests: { ...l.guests, [userId]: { name: r.name || "Someone", role: "guest", by: l.owner, at: r.at } } } : l;
+}
+
+/** The events `me` owns, soonest first (those with no date yet last). */
+export async function eventsOf(conf: Env, me: string): Promise<Event[]> {
+  const { results } = await conf.DB.prepare(`${SELECT} WHERE owner_id = ? ORDER BY start IS NULL, start, at`).bind(me).all<Row>();
+  return results.map(toEvent).filter((e) => e !== null);
+}
+
+/** Make an event for `who` from what they sent: the API's POST and the host's form are both this. */
+export async function makeEvent(conf: Env, who: { id: string; name: string }, sent: unknown, now = Date.now()): Promise<Event | { status: 400 | 409; error: string }> {
+  const asked = check(NewEvent, sent);
+  const draft = asked && check(EventDraft, draftOf(asked));
+  if (!draft) return { status: 400, error: "send { kind, name } and any of line, when, where, who, there" };
+  const owned = await conf.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE owner_id = ?").bind(who.id).first<number>("n");
+  if ((owned ?? 0) >= EVENTS_OWNED) return { status: 409, error: `that's ${EVENTS_OWNED} events on your account; delete an old one first` };
+  const id = crypto.randomUUID().replaceAll("-", "").slice(0, 16), guests = guestList(who.id, who.name.slice(0, 60) || "Someone", EVENT_ROLES);
+  await conf.DB.prepare("INSERT INTO events (id, owner_id, start, body, guests, at, edited) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, who.id, draft.when.start ?? null, JSON.stringify(draft), JSON.stringify(guests), now, now).run();
+  return { id, ...draft, guests, at: now, edited: now };
+}
+
+/** Change an event's parts (each sent replaces that part whole), or null if they don't read. The caller checked who may. */
+export async function editEvent(conf: Env, e: Event, sent: unknown, now = Date.now()): Promise<Event | null> {
+  const asked = check(EventEdit, sent);
+  const { id, guests, at, edited: was, ...before } = e;
+  const draft = asked && check(EventDraft, { ...before, ...asked, ...(asked.name ? { name: asked.name.trim() } : {}), ...(asked.line !== undefined ? { line: asked.line.trim() } : {}) });
+  if (!draft) return null;
+  // A second later than before at least: the calendar file's SEQUENCE is `edited` in whole seconds.
+  const edited = Math.max(now, was + 1000);
+  await conf.DB.prepare("UPDATE events SET start = ?, body = ?, edited = ? WHERE id = ?").bind(draft.when.start ?? null, JSON.stringify(draft), edited, id).run();
+  return { id, ...draft, guests, at, edited };
 }
 
 /** The list as `me` may read it. Anyone may RSVP their way onto it, so a plain guest sees only their own line: never the
@@ -46,13 +86,13 @@ async function eventDoor(req: Request, conf: Env, id: string, head: Record<strin
   if (!e) return json({ error: "there's no event with that id" }, 404, head);
   const bearer = bearerOf(req), t = bearer ? await tokenOf(req, conf, bearer, { home: true }) : null;
   const me = t?.who.id;
-  const ok = e.who.access === "anyone" ? !(me && e.guests.blocked[me]) : !!me && isIn(e.guests, me);
+  const ok = e.who.access === "anyone" ? !(me && e.guests.blocked[me]) : !!me && isIn(await listWith(conf, e, me), me);
   const role = !ok || !me ? undefined : e.guests.owner === me ? "owner" : e.guests.guests[me]?.role;
   return json({ access: e.who.access, in: ok, ...(role ? { role } : {}) } satisfies EventDoor, 200, { ...head, "cache-control": "private, no-store" });
 }
 
 export async function events(req: Request, conf: Env): Promise<Response> {
-  const { pathname } = new URL(req.url), now = Date.now();
+  const { pathname } = new URL(req.url);
   const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST, PUT, DELETE" };
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
   const door = DOOR.exec(pathname)?.[1];
@@ -63,42 +103,26 @@ export async function events(req: Request, conf: Env): Promise<Response> {
   const made = (e: Event) => json({ event: e } satisfies EventMade, 200, { ...head, "cache-control": "private, no-store" });
 
   if (pathname === "/q/events") {
-    if (req.method === "GET") {
-      const { results } = await conf.DB.prepare(`${SELECT} WHERE owner_id = ? ORDER BY start IS NULL, start, at`).bind(me).all<Row>();
-      const events = results.map(toEvent).filter((e) => e !== null);
-      return json({ events } satisfies EventList, 200, { ...head, "cache-control": "private, no-store" });
-    }
+    if (req.method === "GET") return json({ events: await eventsOf(conf, me) } satisfies EventList, 200, { ...head, "cache-control": "private, no-store" });
     if (req.method !== "POST") return json({ error: "GET your events or POST one" }, 405, head);
-    const asked = check(NewEvent, await req.json().catch(() => null));
-    const draft = asked && check(EventDraft, draftOf(asked));
-    if (!draft) return json({ error: "send { kind, name } and any of line, when, where, who, there" }, 400, head);
-    const owned = await conf.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE owner_id = ?").bind(me).first<number>("n");
-    if ((owned ?? 0) >= EVENTS_OWNED) return json({ error: `that's ${EVENTS_OWNED} events on your account; delete an old one first` }, 409, head);
-    const id = crypto.randomUUID().replaceAll("-", "").slice(0, 16), guests = guestList(me, t.who.name, EVENT_ROLES);
-    await conf.DB.prepare("INSERT INTO events (id, owner_id, start, body, guests, at, edited) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(id, me, draft.when.start ?? null, JSON.stringify(draft), JSON.stringify(guests), now, now).run();
-    return made({ id, ...draft, guests, at: now, edited: now });
+    const e = await makeEvent(conf, t.who, await req.json().catch(() => null));
+    return "error" in e ? json({ error: e.error }, e.status, head) : made(e);
   }
 
   const id = pathname.slice("/q/events/".length);
   const e = (await eventRow(conf, id))?.event;
-  // Someone not on its list hears the same as for an event that isn't there.
-  if (!e || !isIn(e.guests, me)) return json({ error: "no event of yours has that id" }, 404, head);
-  if (req.method === "GET") return made({ ...e, guests: seenBy(e.guests, me) });
+  // Someone not on it hears the same as for an event that isn't there.
+  const mine = e && await listWith(conf, e, me);
+  if (!e || !mine || !isIn(mine, me)) return json({ error: "no event of yours has that id" }, 404, head);
+  if (req.method === "GET") return made({ ...e, guests: seenBy(mine, me) });
   if (req.method === "PUT") {
     if (!can(e.guests, me, "edit")) return json({ error: "your role on this event can't change it" }, 403, head);
-    const asked = check(EventEdit, await req.json().catch(() => null));
-    const { id: _id, guests, at, edited: was, ...before } = e;
-    const draft = asked && check(EventDraft, { ...before, ...asked, ...(asked.name ? { name: asked.name.trim() } : {}), ...(asked.line !== undefined ? { line: asked.line.trim() } : {}) });
-    if (!draft) return json({ error: "send any of kind, name, line, when, where, who, there" }, 400, head);
-    // A second later than before at least: the calendar file's SEQUENCE is `edited` in whole seconds.
-    const edited = Math.max(now, was + 1000);
-    await conf.DB.prepare("UPDATE events SET start = ?, body = ?, edited = ? WHERE id = ?").bind(draft.when.start ?? null, JSON.stringify(draft), edited, id).run();
-    return made({ id, ...draft, guests: seenBy(guests, me), at, edited });
+    const next = await editEvent(conf, e, await req.json().catch(() => null));
+    return next ? made({ ...next, guests: seenBy(next.guests, me) }) : json({ error: "send any of kind, name, line, when, where, who, there" }, 400, head);
   }
   if (req.method === "DELETE") {
     if (e.guests.owner !== me) return json({ error: "only its owner deletes an event" }, 403, head);
-    await conf.DB.batch(["event_rsvps WHERE event_id", "event_scans WHERE event_id", "events WHERE id"].map((t) => conf.DB.prepare(`DELETE FROM ${t} = ?`).bind(id)));
+    await conf.DB.batch(["event_rsvps WHERE event_id", "event_scans WHERE event_id", "event_pictures WHERE event_id", "events WHERE id"].map((t) => conf.DB.prepare(`DELETE FROM ${t} = ?`).bind(id)));
     return json({ ok: true }, 200, head);
   }
   return json({ error: "GET, PUT or DELETE an event" }, 405, head);

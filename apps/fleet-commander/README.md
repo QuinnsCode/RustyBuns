@@ -32,7 +32,7 @@ pincer on it, **Shift+G** to send your interdictor to the lane, **B** to broadsi
 bastion falls, **V** rakes the base. Or draw a play: right-drag a route from your wings round to a ship, and Shift+right-drag a
 second arm; the arms wait for each other and strike together. Orders to wings take 2 s on the radio (Command Voice, **N**,
 makes them instant), and there is no pause. *Campaign* is a sector of worlds to take turn by turn; *Armada* puts you on a
-dreadnought whose three destroyers run their own wings. New to it? *Levels* is eight short battles, easiest first, each
+dreadnought whose three destroyers run their own wings. New to it? *Levels* is nine short battles, easiest first, each
 teaching one idea (a torpedo run, the role triangle, split shields, an escort, the fog, the lane, the rake, a last stand);
 the list says what each one teaches before you start it.
 
