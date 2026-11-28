@@ -246,6 +246,8 @@ export function remotePlayer(o: {
     if (c) { if (c.t === "chat") rights.me = c.you; return; }
     const ck = decodeClockServer(v);
     if (ck) { lead(); const r = band.onClock(ck); if (r) o.send(r); return; }
+    const gl = decodeGuestServer(v);
+    if (gl) { if (gl.t === "guests") rights.guests = gl.list; return; }
     const g = decodeGrantServer(v);
     if (g) { rights.grants = g.grants; rights.asked = (rights.me && g.asks[rights.me]) || null; return; }
     const m = decodeServer(v);
