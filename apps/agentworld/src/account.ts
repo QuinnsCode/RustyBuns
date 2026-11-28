@@ -10,7 +10,7 @@ import { APP, EQOSYS } from "./who.ts";
 /** The site eqosys sends people back to. */
 export const SIGN_IN_FROM = ["https://agentworld.notryanquinn.workers.dev"];
 
-export const { signIn, finishSignIn, login, fresh, ready, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "agentworld" });
+export const { signIn, finishSignIn, login, fresh, ready, canSignIn, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "agentworld" });
 
 /** The room this browser keeps as the person's own world. */
 const MINE = "agentworld:mine";
@@ -32,6 +32,14 @@ export async function myWorld(room: string): Promise<string | null> {
   const got = await getJson("/api/me/world", MyWorld, { method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ room }) });
   if (got) keepMine(got.room);
   return got?.room ?? null;
+}
+
+/** Your world is made: keep that on your eqosys account (`agentworld` in eqosys's achievements.ts). Signed out, it is
+ *  held for your next sign-in. Nothing waits on this: the galaxy opens whether or not eqosys answers. */
+export async function worldBuilder(): Promise<void> {
+  await ready;
+  await achieve("played");
+  await achieve("world-builder");
 }
 
 /** What the "Create your world" card did: opened the world here, went off to eqosys or to your world, or found no sign-in. */
