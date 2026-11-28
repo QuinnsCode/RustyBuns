@@ -236,7 +236,7 @@ export function mountStage(deps: StageDeps) {
     endTest();
     if (!on) {
       deps.opening();
-      home = { parent: deps.canvas.parentNode!, after: deps.canvas.nextSibling, hidden: deps.canvas.hidden };
+      home = { parent: deps.canvas.parentNode!, after: deps.canvas.nextSibling, hidden: deps.canvas.hidden !== false };
       host.prepend(deps.canvas); deps.canvas.hidden = false;
       root.hidden = false; on = true;
       document.body.classList.add("sb-open");
