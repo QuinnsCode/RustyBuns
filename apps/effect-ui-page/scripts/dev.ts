@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitHttp, LocalArtifacts } from "../../../packages/shell-bun/src/bindings/artifacts.ts";
+import about from "../about.html";
 import index from "../index.html";
 import { Galaxy, type FromGalaxy, type Hub, joined, left, memoryKv, walked, type Walker } from "../src/galaxy.ts";
 import { fromPage, linksFor, Relay } from "../src/relay.ts";
@@ -72,7 +73,7 @@ const { server, moved } = onPortOrFree(port, (p) => Bun.serve<Tag>({
   port: p,
   // This Mac only: the room link is the key, so other machines on the same Wi-Fi shouldn't get a door at all.
   hostname: "127.0.0.1",
-  routes: { "/__page": index, "/": card, "/r/:room": card, "/og.jpg": () => new Response(Bun.file(new URL("../public/og.jpg", import.meta.url))) },
+  routes: { "/about": about, "/__page": index, "/": card, "/r/:room": card, "/og.jpg": () => new Response(Bun.file(new URL("../public/og.jpg", import.meta.url))) },
   async fetch(req, srv) {
     const url = new URL(req.url);
     if (url.pathname.startsWith("/.well-known/")) return json({ error: "no sign-in: the room's link is its key" }, 404);

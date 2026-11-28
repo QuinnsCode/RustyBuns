@@ -12,6 +12,7 @@ import { Agent, Call, type Request, Seen } from "./agent.ts";
 import { apply, backdropUrl, Page, starter } from "./page.ts";
 import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
+import { copyright, FOOT_LINKS, MAKER, TAGLINE } from "./foot.ts";
 import { listTools } from "./tools.ts";
 import { worldDoc } from "./world.ts";
 import { LANDS } from "./lands.ts";
@@ -270,6 +271,12 @@ const deepView = Def.fragment((h) => h.section.class("l-deep").attrs({ id: "how"
     showView(h, p.show),
   )),
 ));
+/** The links at the very bottom, under How it's built. */
+const footView = Def.fragment((h) => h.footer.class("site-foot").children(
+  h.p(TAGLINE),
+  h.nav.children(...FOOT_LINKS.map(([text, href]) => h.a.key(href).attr("href", href).children(text))),
+  h.span.children("created by ", h.a.attr("href", MAKER.href).children(MAKER.name), ` · ${copyright()}`),
+));
 const STEPS: readonly (readonly [Icon, string, string, string, string])[] = [
   ["chat", "amber", "1. You ask", "\"make me a rainy city\"", ""],
   ["bot", "violet", "2. Your AI thinks", "Claude, Codex, any AI", ""],
@@ -387,7 +394,7 @@ const landingView = Def.fragment((h, room: string, origin: string, online: boole
       h.p.class("l-say").children("Your AI's code runs ", h.em("sealed"), ": no network, no cookies, nothing else on your computer. ",
         h.a.class("l-more").attr("href", "#how").children("How does that work?")),
     ),
-  ), deepView(h));
+  ), deepView(h), footView(h));
 });
 
 export const ProfilePageNoDeps = Def.make({

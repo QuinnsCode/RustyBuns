@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>About Agent Page</title>
+  <meta name="description" content="You connect your AI. It writes your world while you watch.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Audiowide&family=Martian+Mono:wght@200;400;600&display=swap">
+  <link rel="stylesheet" href="./src/about.css">
+  <link rel="stylesheet" href="./src/foot.css">
+</head>
+<body class="about">
+<main>
+  <section>
+    <h1>You connect. Your AI is the artist.</h1>
+    <p>Agent Page is a canvas. You bring your own AI (Claude, Codex, opencode or another agent), ask for a world in your
+      own words, and watch it write the code. The page has no AI of its own: the art is your agent's, and it runs on your
+      account or plan.</p>
+    <p><a href="/">Make your world</a></p>
+  </section>
+
+  <section>
+    <h2>How it goes</h2>
+    <ol>
+      <li>See how it works: try a ready-made world, no AI needed.</li>
+      <li>Make an account with eqosys: your world follows you to any browser.</li>
+      <li>Connect your AI. It asks you three things: the ground, what is on it, the weather. Then it writes the code.</li>
+      <li>The galaxy opens: your world joins one big map you can walk.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>How it is built</h2>
+    <ul>
+      <li><b>The tools.</b> Your AI is given a few tools (MCP, or WebMCP in the browser) and uses them for you.</li>
+      <li><b>The sealed frame.</b> Its code runs in a locked box with no network, no cookies and no reach into your computer.</li>
+      <li><b>The bouncer.</b> Every file is checked before it lands. If one is wrong, your AI is told why.</li>
+      <li><b>Your room.</b> Your AI reaches your tab through a secret link. Anyone with it can change your world.</li>
+    </ul>
+    <p class="dim">Made with Effect, Effect UI, WebMCP, Cloudflare Workers and Cloudflare Artifacts.</p>
+  </section>
+
+  <section>
+    <h2>What it costs your AI</h2>
+    <p>AI is paid for in tokens, roughly pieces of words. We measured one job, "make a night village with a pond, then
+      make the houses taller", and cut what the page makes an AI read and write.</p>
+
+    <h3>Before: 8 calls, about 1,521 tokens</h3>
+    <pre>say what it's doing
+look at the world
+read index.html
+read world.js
+write world.js
+look for errors
+change the height
+look for errors</pre>
+    <h3>Now: 3 calls, about 638 tokens</h3>
+    <pre>say what it's doing
+build the world    (errors come back in the same reply)
+change the height  (same)</pre>
+
+    <h3>A house, by hand in three.js</h3>
+    <pre>const walls = new THREE.Mesh(new THREE.BoxGeometry(16, 10, 12),
+  new THREE.MeshStandardMaterial({ color: "#b5523b" }));
+walls.position.set(x, 5, z);
+const roof = new THREE.Mesh(new THREE.ConeGeometry(11, 6, 4),
+  new THREE.MeshStandardMaterial({ color: "#5a2a22" }));
+roof.position.set(x, 13, z);
+roof.rotation.y = Math.PI / 4;
+scene.add(walls, roof);</pre>
+    <h3>The same house with the page's kit</h3>
+    <pre>building({ x, z, w: 16, d: 12, h: 10, color: "#b5523b", roof: "peak" });</pre>
+
+    <h3>Four ways in, measured</h3>
+    <div class="scroll"><table>
+      <tr><th>Way in</th><th>Read</th><th>Written</th><th>Total</th><th>Calls</th></tr>
+      <tr><td>The full tool list (before)</td><td>1,325</td><td>196</td><td>1,521</td><td>8</td></tr>
+      <tr class="win"><td>Two build tools (now)</td><td>465</td><td>173</td><td>638</td><td>3</td></tr>
+      <tr><td>A skill file and curl</td><td>370</td><td>248</td><td>618</td><td>3</td></tr>
+      <tr><td>A command line</td><td>463</td><td>269</td><td>732</td><td>6</td></tr>
+    </table></div>
+    <p class="dim">Estimates at four characters a token, 2026-11-27, counting only what the page adds. The skill file is
+      a little smaller on paper; the build tools did better in a real run.</p>
+
+    <h3>With a real AI</h3>
+    <div class="scroll"><table>
+      <tr><th>Claude Code</th><th>Sonnet 5.5</th><th>Opus 5.5</th></tr>
+      <tr><td>Time</td><td>13 s</td><td>23 s</td></tr>
+      <tr><td>Calls</td><td>3</td><td>5 (2 status updates)</td></tr>
+      <tr><td>Tokens the AI wrote</td><td>about 1,300</td><td>about 1,300</td></tr>
+      <tr><td>Cost at API list price</td><td>about $0.09</td><td>about $0.19</td></tr>
+    </table></div>
+    <p class="dim">One run each of a small world, 2026-11-27. Most of the cost is Claude Code's own setup, not the page.
+      Bigger worlds and more back and forth cost more. On a subscription it comes out of your plan's usage.</p>
+  </section>
+
+  <section id="kept">
+    <h2>What we keep</h2>
+    <ul>
+      <li>Your browser keeps your room's world for your next visit.</li>
+      <li>The server keeps your room's world, its history, one picture of it, and any 3D model your AI uploads to it.</li>
+      <li>If you sign in with eqosys, your account is tied to one world, and to your plot in the galaxy.</li>
+      <li>Neighbours in the galaxy see your world's shapes and colours, or its picture. They never get your room's link, and a shared link shows the picture.</li>
+    </ul>
+  </section>
+</main>
+<footer class="site-foot"></footer>
+<script type="module" src="./src/about.ts"></script>
+</body>
+</html>

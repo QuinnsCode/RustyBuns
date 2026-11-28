@@ -150,10 +150,10 @@ prompt once and every reply; written is every call's arguments, the world's code
 
 | Door | Read | Written | Total | Round trips |
 |---|---|---|---|---|
-| A: the full MCP tool list (how it was) | 1,296 | 196 | 1,492 | 8 |
-| **B: code mode, `world_build` and `world_edit` (the default)** | 436 | 173 | **609** | **3** |
-| C: the skill and `curl` | 341 | 248 | 589 | 3 |
-| D: write the file, `curl` it to `/build` | 433 | 269 | 702 | 6 |
+| A: the full MCP tool list (how it was) | 1,325 | 196 | 1,521 | 8 |
+| **B: code mode, `world_build` and `world_edit` (the default)** | 465 | 173 | **638** | **3** |
+| C: the skill and `curl` | 370 | 248 | 618 | 3 |
+| D: write the file, `curl` it to `/build` | 463 | 269 | 732 | 6 |
 
 C's estimate is 20 tokens (3%) under B's, a tie within 5 percent with the same calls on paper. Real Claude Code runs
 (Sonnet, one run each, 2026-11-27) broke it: B took 3 calls (loading the tools, build, edit), 13 s and 1,307 output
@@ -237,6 +237,10 @@ curl -X DELETE <origin>/api/r/<room>/files/hero.glb
 
 The room's link is the key, as for the tools. The world's own code can't load these files yet: its frame has no
 network. `bun run dev` keeps the same repos in a temp folder (it needs `git`) until it stops.
+
+**About** (`/about`, `about.html`) says it for a person: what the page is, what it keeps, and what a world costs an AI,
+with the before and after. Its numbers are written in by hand with their date. The landing and About end in the same
+links (`src/foot.ts`).
 
 ## Deploy it
 
