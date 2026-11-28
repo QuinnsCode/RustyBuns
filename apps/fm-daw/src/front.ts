@@ -74,6 +74,8 @@ const appList = (id: SectorId) => {
     feat.textContent = appsOf(id).length === 1 ? p.features.replaceAll(" · ", "\n") : p.features;
     li.append(a, feat); ul.append(li);
   }
+  const soon = SECTORS.find((s) => s.id === id)!.soon;
+  if (soon) { const li = document.createElement("li"), say = document.createElement("span"); li.className = "soon"; say.textContent = "… soon"; say.title = soon; li.append(say); ul.append(li); }
   return ul;
 };
 const shelf = mountShelf();
@@ -265,6 +267,7 @@ const harness = {
   /** Each lane's way in on its field card, and the demo picker: open or not, and its picks. */
   starts: () => ({
     starts: [...document.querySelectorAll<HTMLAnchorElement>(".lane a[data-start]")].map((a) => ({ lane: a.dataset.start, say: a.textContent, href: a.getAttribute("href"), shown: a.checkVisibility({ visibilityProperty: true }) })),
+    soon: [...document.querySelectorAll<HTMLElement>(".lane .soon")].map((li) => ({ lane: li.closest<HTMLElement>("[data-lane]")?.dataset.lane, say: li.textContent, links: li.querySelectorAll("a").length })),
     demo: { open: demo.open, picks: [...demo.querySelectorAll<HTMLAnchorElement>("a[data-demo]")].map((a) => ({ id: a.dataset.demo, say: a.textContent, href: a.getAttribute("href") })) },
   }),
   /** Opens the demo picker, as its button under the title does. */

@@ -68,6 +68,9 @@
   .apps li { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 10px; align-items: center; align-content: center; }
   .apps li > svg { color: var(--tone); }
   .apps .feat { grid-column: 2; }
+  /* more of this lane is coming: a greyed line, not a link */
+  .apps .soon > span { grid-column: 2; color: #f4f1ea59; font-family: var(--q-thick); font-weight: 400; letter-spacing: .04em; cursor: default; }
+  .sector > .apps .soon { display: none; }
   @media (min-width: 600px) and (min-height: 641px) {
     .lanes { grid-template-rows: minmax(0, 1fr); padding-bottom: 24px; }
     .lane .apps { grid-auto-rows: minmax(min-content, 1fr); align-content: stretch; gap: 0 24px; padding-block: 14px; font-size: clamp(16px, min(2.1vh, 1.5vw), 23px); }
@@ -76,9 +79,10 @@
     .lane .apps li:not(.start) { grid-template-columns: 1.1em minmax(0, 1fr); }
     .lane .apps li > svg { width: 1.1em; height: 1.1em; }
     /* a lane with one app has the room: its name and each feature line larger */
-    .lane .apps:not(:has(li:nth-child(3))) { grid-template-rows: auto minmax(0, 1fr); }
-    .lane .apps:not(:has(li:nth-child(3))) li:not(.start) { align-content: start; padding-top: clamp(16px, 2.9vh, 30px); }
-    .lane .apps:not(:has(li:nth-child(3))) .feat { line-height: 2.1; }
+    .lane .apps:not(:has(li:nth-child(4))) { grid-template-rows: auto auto minmax(0, 1fr); }
+    .lane .apps:not(:has(li:nth-child(4))) li:not(.start) { align-content: start; padding-top: clamp(16px, 2.9vh, 30px); }
+    .lane .apps:not(:has(li:nth-child(4))) .feat { line-height: 2.1; }
+    .lane .apps .soon { padding-top: clamp(10px, 2vh, 22px) !important; }
     .lane .apps .start a { padding-block: clamp(9px, 1.6vh, 16px); font-size: clamp(17px, 2.2vh, 21px); }
   }
   .apps .start { grid-template-columns: minmax(0, 1fr); grid-column: 1 / -1; margin-bottom: 4px; }
