@@ -167,7 +167,8 @@ export function monosynth(seed: number, { fit = Infinity }: { fit?: number } = {
 
   // ---- the X stand: two crossed legs each side, a foot along the floor under each ----
   for (const s of [-1, 1]) {
-    const sx = s * (w / 2 - 0.1), len = Math.hypot(base, d * 0.85), lean = Math.atan2(d * 0.85, base);
+    // the legs are cut short by what their tilted ends would otherwise poke through the floor
+    const sx = s * (w / 2 - 0.1), lean = Math.atan2(d * 0.85, base), len = Math.hypot(base, d * 0.85) - 0.028 * Math.tan(lean);
     for (const k of [-1, 1]) pieces.push(box("stand", [0.028, len, 0.028], [sx, base / 2, 0], { rot: [k * lean, 0, 0] }));
     pieces.push(box("stand", [0.04, 0.02, d * 0.85 + 0.06], [sx, 0.01, 0]));
     pieces.push(box("rubber", [0.05, 0.012, 0.03], [sx, base - 0.006, 0]));

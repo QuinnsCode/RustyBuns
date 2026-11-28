@@ -5,7 +5,7 @@
 import { gear } from "./catalog.ts";
 import { circuitLoad, generatorLoad, type Circuit, type Feed } from "./power.ts";
 import { source, type Grid, type Source } from "./sound.ts";
-import { boxChannels, stackWidth, type System } from "./systems.ts";
+import { boxChannels, rowsSize, rowXs, stackRows, type Row, type System } from "./systems.ts";
 
 /** What a stack's tops sit on: the subs (one column), a pole out of the top sub, or their own stand beside the subs. */
 export const TOPS_ON = ["subs", "pole", "stands"] as const;
@@ -14,7 +14,7 @@ export type TopsOn = (typeof TOPS_ON)[number];
 /** One stack on the ground: where it stands (x, z), its front turned `yaw` from +z, its tops `splay` further, a
  *  ground-stacked line array's pins (radians down from level, bottom box up), what its tops sit on (the subs when left
  *  out) and, on stands, which side of the subs the stand goes (`out`: 1 to the stack's own +x, -1 the other way). */
-export type StackPlace = { at: readonly [number, number]; yaw: number; splay?: number; pins?: readonly number[]; tops?: TopsOn; out?: -1 | 1 };
+export type StackPlace = { at: readonly [number, number]; yaw: number; splay?: number; pins?: readonly number[]; tops?: TopsOn; out?: -1 | 1; rows?: readonly Row[] };
 
 /** How much pole shows between the top sub and the tops' bottom, metres. */
 export const POLE_M = 0.6;
@@ -24,17 +24,16 @@ export const STAND_M = 1.4;
 export const STAND_GAP = 0.25;
 
 /**
- * Where a stack's tops stand against its subs: `from`, the first box that is a top (the boxes from there up are the
+ * Where a stack's tops stand against its subs: `from`, the first row (stackRows) that is a top (the rows from there up are the
  * tops); `base`, the height the lowest top's bottom sits at; `side`, how far the tops stand along the stack's own x
  * from its middle (0 over the subs); `subs`, the height of the boxes under the tops (where a pole comes out).
  */
-export function topsMount(sys: Pick<System, "stack">, st: Pick<StackPlace, "tops" | "out">): { from: number; base: number; side: number; subs: number } {
-  const ids = sys.stack, at = ids.findIndex((id) => isLine(id) || (!!gear(id).speaker && isTop(id))), from = at < 0 ? ids.length : at;
-  const subs = ids.slice(0, from).reduce((t, id) => t + gear(id).size.h, 0);
-  if (st.tops === "pole" && from < ids.length) return { from, base: subs + POLE_M, side: 0, subs };
-  if (st.tops === "stands" && from > 0 && from < ids.length) {
-    const w = (part: readonly string[]) => stackWidth({ stack: part });
-    return { from, base: STAND_M, side: (st.out ?? 1) * (w(ids.slice(0, from)) / 2 + w(ids.slice(from)) / 2 + STAND_GAP), subs };
+export function topsMount(sys: Pick<System, "stack">, st: Pick<StackPlace, "tops" | "out" | "rows">): { from: number; base: number; side: number; subs: number } {
+  const rows = stackRows(sys, st), at = rows.findIndex(({ box }) => isLine(box) || (!!gear(box).speaker && isTop(box))), from = at < 0 ? rows.length : at;
+  const subs = rows.slice(0, from).reduce((t, r) => t + gear(r.box).size.h, 0);
+  if (st.tops === "pole" && from < rows.length) return { from, base: subs + POLE_M, side: 0, subs };
+  if (st.tops === "stands" && from > 0 && from < rows.length) {
+    return { from, base: STAND_M, side: (st.out ?? 1) * (rowsSize(rows.slice(0, from)).w / 2 + rowsSize(rows.slice(from)).w / 2 + STAND_GAP), subs };
   }
   return { from, base: subs, side: 0, subs };
 }
@@ -49,25 +48,25 @@ export const isTop = (id: string): boolean => (gear(id).speaker?.highCut ?? 0) >
 const isLine = (id: string) => id.startsWith("line-array");
 
 /**
- * The stack's boxes that play over the floor, each a source where it stands in the column (its middle's height from
- * the boxes under it) and aimed as the stack is: its yaw, the tops' splay, a line array box tipped down by its pin.
+ * The stack's boxes that play over the floor, each a source where it stands (its row's middle height from the rows
+ * under it, its place across the row) and aimed as the stack is: its yaw, the tops' splay, a line array box tipped down
+ * by its pin. A rig's column leaves its bass bins to the sub block; a stack with its own `rows` plays its bins too.
  */
 export function stackSources(sys: Pick<System, "stack">, st: StackPlace): Source[] {
   const out: Source[] = [], m = topsMount(sys, st);
   let y = 0, k = 0;
-  for (const [i, id] of sys.stack.entries()) {
-    const h = gear(id).size.h;
+  for (const [i, row] of stackRows(sys, st).entries()) {
+    const id = row.box, h = gear(id).size.h, line = isLine(id);
     if (i === m.from) y = m.base;
-    // a top on a stand stands `side` along the stack's own x, which faces `yaw` (three.js turns +x to (cos, -sin))
-    const x = st.at[0] + (i >= m.from ? m.side * Math.cos(st.yaw) : 0), z = st.at[1] - (i >= m.from ? m.side * Math.sin(st.yaw) : 0);
-    if (isLine(id)) {
-      const pins = st.pins ?? LINE_PINS, aim = pins[Math.min(k++, pins.length - 1)] ?? 0;
-      out.push(source(id, { x, y: y + (h / 2) * Math.cos(aim), z }, { yaw: st.yaw, pitch: -aim }));
-      y += h * Math.cos(aim);
-      continue;
+    const aim = line ? (st.pins ?? LINE_PINS)[Math.min(k++, (st.pins ?? LINE_PINS).length - 1)] ?? 0 : 0;
+    const mid = y + (h / 2) * Math.cos(aim), top = line || isTop(id);
+    y += h * Math.cos(aim);
+    if (!gear(id).speaker || !(top || st.rows)) continue;
+    // along the stack's own x, which faces `yaw` (three.js turns +x to (cos, -sin)); a top on a stand stands `side` out
+    for (const dx of rowXs(row)) {
+      const x = dx + (i >= m.from ? m.side : 0);
+      out.push(source(id, { x: st.at[0] + x * Math.cos(st.yaw), y: mid, z: st.at[1] - x * Math.sin(st.yaw) }, line ? { yaw: st.yaw, pitch: -aim } : { yaw: st.yaw + (top ? st.splay ?? 0 : 0) }));
     }
-    if (gear(id).speaker && isTop(id)) out.push(source(id, { x, y: y + h / 2, z }, { yaw: st.yaw + (st.splay ?? 0) }));
-    y += h;
   }
   return out;
 }
@@ -121,10 +120,13 @@ export type PowerCircuit = { name: string; items: string[]; feed: Feed };
  *  `why` it fails (empty when it holds) and `warn` where a feed runs past 80%. */
 export type PowerPlan = { channels: number; racks: number; generator: GeneratorId; auto: boolean; feed: Feed; circuits: PowerCircuit[]; ok: boolean; why: string[]; warn: string[] };
 
+/** The boxes of one of the rig's stacks, bottom to top, one entry each. */
+const stackBoxes = (sys: Pick<System, "stack">, st: StackPlace): string[] => stackRows(sys, st).flatMap((r) => Array<string>(r.across).fill(r.box));
+
 /** Every box in the rig, one entry each: the stacks bottom to top, the sub block, the monitors on their stands. */
 export function rigBoxes(rig: RigPlan): string[] {
   const out: string[] = [];
-  for (let i = 0; i < rig.stacks.length; i++) out.push(...rig.system.stack);
+  for (const st of rig.stacks) out.push(...stackBoxes(rig.system, st));
   if (rig.subs) for (let i = 0; i < rig.subs.wide * rig.subs.high; i++) out.push(rig.system.sub);
   for (let i = 0; i < (rig.monitors?.length ?? 0); i++) out.push(MONITOR, STAND);
   return out;
@@ -140,7 +142,7 @@ export function powerPlan(rig: RigPlan): PowerPlan {
   const powered = (ids: readonly string[]) => ids.filter((b) => gear(b).draw && !(gear(b).jacks["speaker-in"] ?? 0));
   const loads: { name: string; items: string[] }[] = [];
   for (let i = 0; i < racks; i++) loads.push({ name: `amp rack ${i + 1}`, items: [RACK] });
-  rig.stacks.forEach((_, i) => { const p = powered(rig.system.stack); if (p.length) loads.push({ name: `stack ${i + 1}`, items: p }); });
+  rig.stacks.forEach((st, i) => { const p = powered(stackBoxes(rig.system, st)); if (p.length) loads.push({ name: `stack ${i + 1}`, items: p }); });
   if (rig.subs) { const p = powered(Array.from({ length: rig.subs.wide * rig.subs.high }, () => rig.system.sub)); if (p.length) loads.push({ name: "sub block", items: p }); }
   const all = loads.flatMap((l) => l.items);
   const fits = (g: GeneratorId) => !generatorLoad(g, all).trips && loads.every((l) => !circuitLoad(l.items, OUTLETS[g]).trips);
@@ -179,10 +181,10 @@ export function gearList(rig: RigPlan): GearList {
   add(power.generator); add("distro-box");
   const boxes = [...counts].map(([id, n]) => ({ id, what: gear(id).what, n }));
   const cables: CableRow[] = [], rack = behindStacks(rig.stacks, 1.7, -0.6), distro = behindStacks(rig.stacks, 1.7, 0.9);
-  const passive = rig.system.stack.some((b) => boxChannels(b) > 0), poweredStack = rig.system.stack.some((b) => gear(b).draw && !(gear(b).jacks["speaker-in"] ?? 0));
   if (rig.generator?.at) cables.push({ kind: "power", from: genName(power.generator), to: "distro", m: reelFor(dist(rig.generator.at, distro)) });
   for (let i = 0; i < power.racks; i++) cables.push({ kind: "power", from: "distro", to: `amp rack ${i + 1}`, m: reelFor(dist(distro, rack) + i * 0.66) });
   rig.stacks.forEach((st, i) => {
+    const boxes = stackBoxes(rig.system, st), passive = boxes.some((b) => boxChannels(b) > 0), poweredStack = boxes.some((b) => gear(b).draw && !(gear(b).jacks["speaker-in"] ?? 0));
     if (passive) cables.push({ kind: "speaker", from: "amp racks", to: `stack ${i + 1}`, m: reelFor(dist(rack, st.at)) });
     if (poweredStack) {
       cables.push({ kind: "power", from: "distro", to: `stack ${i + 1}`, m: reelFor(dist(distro, st.at)) });

@@ -170,6 +170,20 @@ what power, before the truck is loaded.
 - `window.qrooms`: `pa()` (with `field`: the air, ground, speed of sound and banks), `level(x, z)`, `delay(x, z)`, `pickStack(i)`, `showMap()`, `showDelay()`, `view()`, `download("list" | "plan")`; the journey is
   `test/pa-builder.test.ts`.
 
+### The Stage Builder
+
+The Event Planner's quick build (#6053): **Stage Builder** on `/rooms.html`. **+** offers New (arena 10 × 8 to 200 × 150 m,
+a one-piece stage 4 × 3 to 24 × 16 m, one stack of 1 to 3 boxes) or Old (locked-in orders: the whole build, or just its
+stage or stack). Things are placed on an isometric view of the builder's own 3D: set pieces solid, the one in hand a
+green outline snapping to 0.5 m and 15°. The crowd zone says its area and cap (2 a square metre). Test it is the
+coverage map and `walk-set.ts` through `PaRoom` from a tapped spot. Each change is a save (60 kept per build, 8 builds,
+24 orders, in this browser), so Undo and History work between visits. Lock in freezes an order; The Event makes it a
+live party. A stage is `StudioDef.stage`, set by the builder's `stage` edit, so the jam room draws what was placed.
+Code: `stage-build.ts` (model and storage), `stage-page.ts` (the screen), `stage-model.ts`; `window.qstage`; the journey
+is `test/stage-page.test.ts`. Not yet: stage parts, several stages and flown arrays.
+Signed in, builds and orders follow the account (#6583): `GET`/`PUT /stage-builds` (`src/stage-store.ts`) and
+`src/studio/stage-account.ts`. Last save wins, except that work the account never got is added to it, not replaced.
+
 ### Out of doors: the air, the ground and the land
 
 Out of doors the sound crosses a field (`@rustybuns/gear` `field.ts`, #6018), and `coverage`, `levelAt` and `splAt` take
@@ -212,8 +226,8 @@ Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/Qui
    `/builder.html`, **Change the circuit** goes past values ([#6423](https://github.com/QuinnsCode/RustyBuns/issues/6423)):
    add a resistor, capacitor or diode between two nets (From starts on the scope's net), take a part off, or move one
    of its ends to another net. The same bench check runs first; the scope, Play and the remake follow. A 100nF from
-   the fuzz's clipping diodes to ground takes that net's top end from about 50 to 16. These changes are Q Builder's
-   own (not on Q Amp's pedal yet), and the schematic stays the stock drawing, with the changes listed beside it.
+   the fuzz's clipping diodes to ground takes that net's top end from about 50 to 16. Q Amp's pedal and its build
+   sheet take these changes too (#6446), and the schematic stays the stock drawing, with the changes listed beside it.
 3. Bring your own board: drop a tscircuit board's circuit JSON on Q Amp's floor; the bench checks it solves, then it is the fourth pedal.
 4. Scope it (`/builder.html`): click a trace on the schematic, or a net in the list, and the scope shows the volts there while
    the riff plays through the circuit (and at its loudest note when nothing plays), with how far it swings and how

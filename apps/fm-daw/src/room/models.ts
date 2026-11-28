@@ -105,9 +105,9 @@ function panelFace(g: GearDef): THREE.Texture {
     grad.addColorStop(0, "#c9ccd1"); grad.addColorStop(0.5, "#e4e6e9"); grad.addColorStop(1, "#c3c6cb");
     x.fillStyle = grad; x.fillRect(0, 0, c.width, c.height);
     x.fillStyle = "#1d1f23"; x.textAlign = "center";
-    x.font = `600 ${Math.round(px * 0.0045)}px "Barlow Condensed", sans-serif`;
+    x.font = `600 ${Math.round(px * 0.0045)}px "Exo 2", sans-serif`;
     x.fillText(g.name.toUpperCase(), c.width / 2, px * 0.012);
-    x.font = `500 ${Math.round(px * 0.0026)}px "Barlow Condensed", sans-serif`;
+    x.font = `500 ${Math.round(px * 0.0026)}px "Exo 2", sans-serif`;
     const at = (p: Vec3, up: number) => [(p[0] + w / 2) * px, (h - p[1] - up) * px] as const;
     for (const k of g.knobs) { const [cx, cy] = at(k.at, 0.0085); x.fillText(k.label.toUpperCase(), cx, cy); }
     for (const j of g.jacks) {

@@ -9,10 +9,12 @@ import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../ge
 
 // The sound and power math's catalog (lane B). It imports nothing, so the models package can read it without a
 // dependency on it; this pins the join: the same ids, sizes and jack names on both sides.
+// The band night's mics, stage box, fan and backline are in the catalog only: Load In draws them itself (`hasModel`).
+const UNMODELLED = ["mic-dynamic", "mic-kick", "stage-box-12", "snake-fan-12", "drum-kit", "bass-amp", "guitar-combo"];
 const book = new Map(catalogIds.map((id) => [id, catalogGear(id)]));
 
 test("the models and the catalog list the same gear at the same sizes", () => {
-  expect<string[]>([...GEAR_IDS].sort()).toEqual([...catalogIds].sort());
+  expect<string[]>([...GEAR_IDS, ...UNMODELLED].sort()).toEqual([...catalogIds].sort());
   for (const id of GEAR_IDS) { const { w, h, d } = book.get(id)!.size; expect<number[]>([...GEAR_SIZES[id]]).toEqual([w, h, d]); }
 });
 
@@ -23,7 +25,8 @@ test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing 
   size.forEach((s, i) => expect(Math.abs(s - GEAR_SIZES[id][i]) / GEAR_SIZES[id][i]).toBeLessThan(0.1));
   expect(Math.abs(box.min.y)).toBeLessThan(0.005);
   // the DJ table's mixer is seen from 40 cm under the DJ's hands, every control of the decks page's Qone face on it
-  expect(triangles(g)).toBeLessThan(id === "mixer-club-4" ? 6500 : 5000);
+  // and the touring rack carries its amps' real fronts
+  expect(triangles(g)).toBeLessThan(id === "mixer-club-4" || id === "amp-rack-12u" ? 7000 : 5000);
 
   const jacks = gearJacks(g);
   expect([...jacks.keys()].sort()).toEqual(jackNames(book.get(id)!).sort());
@@ -152,7 +155,8 @@ test("a stompbox builds at the size asked, its jacks out of each end and its foo
     const g = stompbox(size);
     g.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(g), got = box.getSize(new THREE.Vector3()).toArray();
-    got.forEach((s, i) => expect(Math.abs(s - size[i])).toBeLessThan(0.004));
+    // each end's jack stands 8.5 mm proud of the box, so it is that much wider
+    got.forEach((s, i) => expect(Math.abs(s - size[i] - (i === 0 ? 0.017 : 0))).toBeLessThan(0.004));
     expect(Math.abs(box.min.y)).toBeLessThan(0.001);
     const jacks = gearJacks(g);
     expect(jacks.get("in")!.position.x).toBeGreaterThan(size[0] / 2);
@@ -195,10 +199,28 @@ test("the left-handed Air Motion is the right-handed one mirrored: its LF horn o
   expect(lfAt("sculpted-3way-lh")).toBeCloseTo(-lfAt("sculpted-3way"), 6);
 });
 
+// #6160: the Air Motion's frame is square tube behind the horns, with no post or foot plate down to the floor.
+test.each(["sculpted-3way", "sculpted-3way-lh"] as const)("%s's frame is up at the horns' centres, and its sockets are under the MF horn's side", (id) => {
+  const box = (name: string) => new THREE.Box3().setFromObject(gearPieces(id)!.find((p) => p.name === name)!.group);
+  expect(box("frame").min.y).toBeGreaterThan(0.2);
+  const side = (name: string) => Math.sign(box(name).getCenter(new THREE.Vector3()).x);
+  expect(side("jacks")).toBe(side("mf-horn"));
+});
+
 test.each([["triple-21-sub", 0.0075], ["arc-sub-18", 0.015]] as const)("%s stands on %f m skids inside its published height", (id, skid) => {
   const box = (name: string) => new THREE.Box3().setFromObject(gearPieces(id)!.find((p) => p.name === name)!.group);
   expect(box("skids").min.y).toBeCloseTo(0, 6);
   expect(box("skids").max.y).toBeCloseTo(skid, 6);
   expect(box("cabinet").min.y).toBeCloseTo(skid, 3);
   expect(new THREE.Box3().setFromObject(gear(id)).max.y).toBeCloseTo(GEAR_SIZES[id][1], 2);
+});
+
+test("the Incubus Sub's horn walls slant back at about 45 degrees to its grille, the braces in front of it", () => {
+  const box = (name: string) => new THREE.Box3().setFromObject(gearPieces("triple-21-sub")!.find((p) => p.name === name)!.group);
+  const walls = box("horn-walls"), grille = box("grille"), front = GEAR_SIZES["triple-21-sub"][2] / 2;
+  // from a divider in to the grille's edge is as far across as it is back
+  const across = walls.max.x - grille.max.x, back = front - grille.max.z;
+  expect(back / across).toBeGreaterThan(0.9);
+  expect(back / across).toBeLessThan(1.15);
+  expect(box("braces").min.z).toBeGreaterThan(grille.max.z);
 });

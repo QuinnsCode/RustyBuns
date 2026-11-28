@@ -2,8 +2,8 @@
 :root {
   --ink: #eceef1; --dim: #9aa1ab; --hot: #ff4d3d; --warn: #ffb000; --ok: #4fd18b;
   --edge: rgba(255, 255, 255, 0.22); --glass: rgba(255, 255, 255, 0.06);
-  --silk: "Barlow Condensed", "Arial Narrow", sans-serif;
-  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --silk: var(--q-thin);
+  --body: var(--q-thin);
   --mono: "IBM Plex Mono", ui-monospace, monospace;
   color-scheme: dark;
 }
@@ -97,7 +97,7 @@ button { cursor: pointer; }
 .panel { display: grid; gap: 14px; padding: 14px 16px 16px; border-radius: 12px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.1); }
 .badge { display: flex; align-items: center; gap: 10px; }
 .badge .q { color: var(--ink); font-size: 1.2rem; }
-.model-name { font: 700 1.5rem/1 var(--silk); letter-spacing: 0.06em; text-transform: uppercase; }
+.model-name { font: 700 1.5rem/1 var(--q-thick); letter-spacing: 0.06em; text-transform: uppercase; }
 .jewel { margin-left: auto; width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff9a8f, #6b0d06 70%); }
 .stage.on .jewel { background: radial-gradient(circle at 35% 30%, #fff, #ff3b2b 45%, #a30f05 80%); box-shadow: 0 0 14px #ff3b2b; }
 .models { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -231,7 +231,7 @@ button { cursor: pointer; }
   position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; padding: 16px; text-align: center;
   background: rgba(4, 5, 7, 0.72); backdrop-filter: blur(6px); z-index: 10;
 }
-.start-card h1 { margin: 0; font: 700 3rem/1 var(--silk); letter-spacing: 0.06em; }
+.start-card h1 { margin: 0; font: 700 3rem/1 var(--q-thick); letter-spacing: 0.06em; }
 .start-card p { margin: 0; max-width: 42ch; color: var(--dim); }
 .start { display: inline-flex; align-items: center; gap: 10px; padding: 12px 26px; border-radius: 999px; border: 0; background: var(--warn); color: #1a1205; font: 700 1.15rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; }
 

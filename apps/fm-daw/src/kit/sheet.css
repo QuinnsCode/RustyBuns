@@ -5,11 +5,11 @@
   position: fixed; z-index: 20; left: 50%; top: 68px; transform: translateX(-50%);
   width: min(980px, calc(100% - 32px)); max-height: calc(100% - 84px); display: flex; flex-direction: column;
   background: #0b0e11; color: var(--ink); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); font: 14px/1.45 "IBM Plex Sans", system-ui, sans-serif; outline: none;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); font: 14px/1.45 var(--q-thin); outline: none;
 }
 .build-sheet[hidden], .build-sheet .icon-btn[hidden] { display: none; }
 .sheet-top { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; color: var(--dim); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
-.sheet-title { font: 600 1rem/1 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+.sheet-title { font: 600 1rem/1 var(--q-thin); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
 .sheet-note { flex: 1; min-width: 0; font: 500 11px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-tabs { display: flex; gap: 4px; }
 .build-sheet .icon-btn {

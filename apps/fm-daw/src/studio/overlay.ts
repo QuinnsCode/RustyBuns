@@ -70,7 +70,7 @@ export class Wheels {
 export const bendEvent = (track: number, semis: number, stamp: { b?: number } = {}): Live => ({ t: "bend", track, semis, ...stamp });
 
 const CSS = `
-.qo{position:fixed;inset:auto 0 86px 0;display:flex;justify-content:center;align-items:flex-end;gap:18px;pointer-events:none;z-index:5;font:600 13px 'Barlow Condensed',sans-serif;color:#f4f1ea}
+.qo{position:fixed;inset:auto 0 86px 0;display:flex;justify-content:center;align-items:flex-end;gap:18px;pointer-events:none;z-index:5;font:600 13px var(--q-thin);color:#f4f1ea}
 .qo[hidden]{display:none}
 .qo-keys{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:12px;background:rgba(21,23,27,.34);backdrop-filter:blur(2px)}
 .qo-row{display:flex;gap:4px;justify-content:center}

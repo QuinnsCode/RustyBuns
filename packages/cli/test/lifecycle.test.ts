@@ -9,16 +9,26 @@ import { lockState, noteChild } from "../src/state.ts";
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const waitFor = async (f: () => boolean, ms = 5000) => { const end = Date.now() + ms; while (!f() && Date.now() < end) await Bun.sleep(20); return f(); };
 
+/** Runs `start` (a runScoped call), and gives back a way to send it `name`: only the handlers it added are
+ * called. `process.emit` would call every handler in this `bun test` process, and one an earlier file's import left
+ * behind (shell-bun's launcher) exits 0 there, ending the whole run as a pass (#5949). */
+function signalled<A>(name: "SIGTERM" | "SIGHUP", start: () => Promise<A>) {
+  const before = new Set(process.listeners(name));
+  const run = start();
+  const added = process.listeners(name).filter((l) => !before.has(l));
+  return { run, send: () => { for (const l of added) l(name); } };
+}
+
 test("a signal interrupts the command: children stop first, then the lock goes, then Stopped", async () => {
   const order: string[] = [];
   let held = false;
-  const run = runScoped(Effect.gen(function* () {
+  const { run, send } = signalled("SIGTERM", () => runScoped(Effect.gen(function* () {
     yield* Effect.acquireRelease(Effect.void, () => Effect.sync(() => order.push("lock released")));
     yield* Effect.acquireRelease(Effect.sync(() => { held = true; }), () => Effect.sync(() => order.push("child stopped")));
     yield* Effect.never;
-  }));
+  })));
   expect(await waitFor(() => held)).toBe(true);
-  process.emit("SIGTERM" as never);
+  send();
   const e = await run.catch((x) => x);
   expect(e).toBeInstanceOf(Stopped);
   expect((e as Stopped).exitCode).toBe(143);
@@ -41,9 +51,9 @@ test("spawnScoped: an interrupted child gets SIGINT and is waited for", async ()
   // "ready" once the SIGINT handler is on: a SIGINT before that kills it without the clean write (#1160).
   writeFileSync(script, `process.on("SIGINT", () => setTimeout(() => { require("fs").writeFileSync("${dir}/clean", "1"); process.exit(130); }, 100)); setInterval(() => {}, 1000); require("fs").writeFileSync("${dir}/ready", "1");`);
   let pid = 0;
-  const run = runScoped(spawnScoped([process.execPath, script], { stdio: ["inherit", "inherit", "inherit"] }, (p) => { pid = p; }));
+  const { run, send } = signalled("SIGHUP", () => runScoped(spawnScoped([process.execPath, script], { stdio: ["inherit", "inherit", "inherit"] }, (p) => { pid = p; })));
   expect(await waitFor(() => pid > 0 && existsSync(join(dir, "ready")), 20_000)).toBe(true);
-  process.emit("SIGHUP" as never);
+  send();
   expect(await run.catch((x) => x)).toBeInstanceOf(Stopped);
   expect(alive(pid)).toBe(false);
   expect(existsSync(join(dir, "clean"))).toBe(true);

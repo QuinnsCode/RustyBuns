@@ -194,7 +194,7 @@ export const ERRORS = {
   NothingToPick: [409, "the commit's changes are here already, or gone: nothing to do"],
   DigestRunning: [409, "a digest is already being written"],
   TooBig: [413, "the file is too big or too long"],
-  AssetsFull: [413, "an account keeps so many asset files: replace one or delete another"],
+  AssetsFull: [413, "a page has so many asset files: upload over one, or take one out of assets.txt"],
   CommitTooBig: [413, "the commit changes too many files to pick or revert here"],
   BinaryFile: [415, "a binary file: it has no lines to read or edit"],
   NotPageText: [415, "a page is text files only: binary files go in assets/"],

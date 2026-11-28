@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { officeReload } from "../live/reload.ts";
@@ -36,6 +36,14 @@ test("a new page script moves page; a changed server bundle makes it stale; the 
   expect(r.state().page).not.toBe(skinned);
   writeFileSync(path.join(srv, "rb-triage.js"), "server two");
   expect(r.state()).toMatchObject({ stale: true, boot: before.boot });
+});
+
+test("a module that is listed but has no source to read, as in an --aot binary, doesn't stop the office", () => {
+  const { pub, srv, bin } = office();
+  // a link to a folder: it stats fine, and reading it throws
+  mkdirSync(path.join(srv, "compiled"));
+  symlinkSync(path.join(srv, "compiled"), path.join(srv, "rb-askfirst.js"));
+  expect(officeReload(pub, srv, bin, true, () => {}, 0).state().stale).toBe(false);
 });
 
 test("a changed workers' MCP bundle sets workers, not stale", () => {

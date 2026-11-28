@@ -260,7 +260,7 @@ function stringLights(g: THREE.Group, lights: THREE.Light[]) {
 function sign(g: THREE.Group, lights: THREE.Light[]) {
   const t = canvas(1024, 256, (c) => {
     c.clearRect(0, 0, 1024, 256);
-    c.font = "600 150px 'Barlow Condensed', 'Arial Narrow', sans-serif";
+    c.font = "600 150px 'Russo One', sans-serif";
     c.textAlign = "center"; c.textBaseline = "middle";
     c.shadowColor = "#ff8a3d"; c.shadowBlur = 30; c.strokeStyle = "#ffd2a0"; c.lineWidth = 9;
     c.strokeText("QOLLAB", 512, 128);
@@ -283,9 +283,9 @@ function posters(g: THREE.Group, rnd: () => number) {
     c.fillStyle = ink;
     for (let k = 0; k < 5; k++) { c.globalAlpha = 0.25 + rnd() * 0.4; c.beginPath(); c.arc(40 + rnd() * 180, 60 + rnd() * 160, 20 + rnd() * 50, 0, Math.PI * 2); c.fill(); }
     c.globalAlpha = 1;
-    c.font = "700 34px 'Barlow Condensed', 'Arial Narrow', sans-serif"; c.textAlign = "center";
-    c.fillText(name, 128, 270);
-    c.font = "500 16px 'IBM Plex Sans', sans-serif"; c.fillText("LIVE · FRI 9PM · DOORS 8", 128, 300);
+    c.font = "700 34px 'Russo One', sans-serif"; c.textAlign = "center";
+    c.fillText(name, 128, 270, 236);
+    c.font = "500 16px 'Exo 2', sans-serif"; c.fillText("LIVE · FRI 9PM · DOORS 8", 128, 300);
     c.fillText("BAY 4 · NO COVER", 128, 322);
   });
   const paste = (i: number, x: number, y: number, z: number, yaw: number, framed: boolean) => {

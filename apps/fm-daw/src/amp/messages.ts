@@ -1,10 +1,11 @@
 // What the amp page and its audio thread say to each other.
 import type { Knobs } from "../circuit/amps.ts";
 import type { Swaps } from "../circuit/circuits.ts";
+import type { Edit } from "../circuit/edits.ts";
 import type { LoopSpec, Mic, Netlist, ScopeAt } from "@rustybuns/gear/circuit";
 
-/** A pedal on a board: which (a PEDALS id, or "bench" with its netlist), its one knob, 0 to 10, and the player's part swaps. */
-export interface BoardPedal { pedal: string; drive: number; bench?: Netlist; swaps?: Swaps }
+/** A pedal on a board: which (a PEDALS id, or "bench" with its netlist), its one knob, 0 to 10, and the player's part swaps and circuit edits. */
+export interface BoardPedal { pedal: string; drive: number; bench?: Netlist; swaps?: Swaps; edits?: Edit[] }
 /** Pedals one after another, or a split: its sides side by side (an empty side is dry), blended back by `mix`. */
 export type BoardStep = BoardPedal | { split: BoardPedal[][]; mix: number[] };
 /**
@@ -24,6 +25,8 @@ export interface AmpSettings {
   drive: number;
   /** The player's parts on that pedal's board (circuits.ts `Swaps`). */
   swaps: Swaps;
+  /** Parts added, removed and rewired on that board (edits.ts); none is the stock circuit. */
+  edits?: Edit[];
   knobs: Knobs;
   /** Where the mic sits on the cab. */
   mic: Mic;

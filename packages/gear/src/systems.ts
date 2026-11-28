@@ -75,11 +75,28 @@ export const SYSTEMS: Record<SystemId, System> = {
 
 /** A ready-made stack to drop in whole (the stack builder's and Qollab Studio's first pick): its boxes bottom to top,
  *  a row at a time, `across` of them side by side. `rig` is the open-air rig it is one stack of, where there is one
- *  (Qollab Studio stands that rig's own column; the bar pair has none there). Names say what it is, never a maker's. */
+ *  (the bar pair is none). Names say what it is, never a maker's. */
 export type Premade = {
   id: string; name: string; about: string; rig: SystemId | null;
-  rows: readonly { box: string; across: number }[];
+  rows: readonly Row[];
 };
+/** One row of a stack: `across` of the same box side by side. */
+export type Row = { box: string; across: number };
+/** The air between two boxes side by side in a row, metres. */
+export const ROW_GAP = 0.01;
+/** A stack's rows bottom to top: its own where it carries them, else the rig's single column. */
+export function stackRows(s: Pick<System, "stack">, own?: { rows?: readonly Row[] }): readonly Row[] {
+  return own?.rows ?? s.stack.map((box) => ({ box, across: 1 }));
+}
+/** Where each box of a row stands along the stack's own x, metres from its middle. */
+export function rowXs({ box, across }: Row): number[] {
+  const w = gear(box).size.w + ROW_GAP;
+  return Array.from({ length: across }, (_, i) => (i - (across - 1) / 2) * w);
+}
+/** A stack's footprint, metres: its widest row across, its deepest box front to back. */
+export function rowsSize(rows: readonly Row[]): { w: number; d: number } {
+  return { w: Math.max(...rows.map((r) => r.across * (gear(r.box).size.w + ROW_GAP) - ROW_GAP)), d: Math.max(...rows.map((r) => gear(r.box).size.d)) };
+}
 const rows = (...r: [string, number][]) => r.map(([box, across]) => ({ box, across }));
 export const PREMADES: readonly Premade[] = [
   { id: "horn-side", name: "Purple horn stack, a side", rig: "dance-stack",
@@ -133,7 +150,7 @@ export function systemSound(s: System): { coverage: SpeakerSpec["coverage"]; low
   return { coverage: top.coverage, lowCut: Math.min(top.lowCut, sub.lowCut), highCut: top.highCut, maxSpl: top.maxSpl, voicing: s.voicing };
 }
 
-/** One stack's footprint, metres across: its widest box. */
+/** A rig's own column's footprint, metres across: its widest box. */
 export function stackWidth(s: Pick<System, "stack">): number {
   return Math.max(...s.stack.map((id) => gear(id).size.w));
 }

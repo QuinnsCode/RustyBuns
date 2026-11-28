@@ -51,6 +51,7 @@ test("landing to world to galaxy: one bright next step on each screen, and the g
   await pointAt(tab);
   await Bun.sleep(1500);
   expect(await galaxyFetches(tab)).toEqual([]);
+  expect([...eqosys.unlocked]).toEqual([]);
 
   // The AI: looks, says what it's doing, then changes the starter with one edit (no whole-file write).
   await waitFor(tab, "the relay", `!!document.querySelector(".live.on")`, 20_000);
@@ -66,7 +67,12 @@ test("landing to world to galaxy: one bright next step on each screen, and the g
 
   // The world is up: the Galaxy tile unlocks and is the one bright control; the strip says what's next.
   await waitFor(tab, "the galaxy unlocked", `!!document.querySelector("[data-galaxy-tile].next")`, 45_000);
+  // The focus goes on from Copy to the Galaxy tile, the next step.
+  await waitFor(tab, "the Galaxy tile focused", `document.activeElement?.matches("[data-galaxy-tile].next")`);
   expect(await tab.eval<string>(`document.querySelector(".strip .next").textContent`)).toBe("Next: open the galaxy");
+  // Made, it is kept on the eqosys account, and eqosys's toast says so.
+  await waitFor(tab, "the achievement toast", `document.querySelector(".eq-toasts")?.textContent.includes("world-builder")`);
+  expect([...eqosys.unlocked]).toEqual(["played", "world-builder"]);
   expect(await tab.eval<boolean>(`document.querySelector(".dock button.big").classList.contains("quiet")`)).toBe(true);
 
   // Pointing at it gets the galaxy ready. Not signed for your land yet, so no plot is claimed, but three.js, the scene
@@ -101,6 +107,14 @@ test("landing to world to galaxy: one bright next step on each screen, and the g
   expect(await tab.eval<string[]>(`agentGalaxy.state().preload.lands`)).toContain(s.me.id);
   await tab.eval(`document.querySelector("[data-galaxy-tile]").click()`);
   await waitFor(tab, "your land at once", yours, 2_000, "agentGalaxy.state()");
+  // Back to your world and in again, twice: the layer goes with the galaxy's element and comes back, one at a time.
+  for (const n of [1, 2]) {
+    await tab.eval(`document.querySelector(".galaxy-back").click()`);
+    await waitFor(tab, `the layer gone (${n})`, `!document.querySelector(".galaxy-layer") && !!document.querySelector(".dock")`);
+    await tab.eval(`document.querySelector("[data-galaxy-tile]").click()`);
+    await waitFor(tab, `your land again (${n})`, yours, 15_000, "agentGalaxy.state()");
+    expect(await tab.eval<number>(`document.querySelectorAll(".galaxy-layer").length`)).toBe(1);
+  }
 
   // Back at the root another day, signed in: straight to your world, no landing.
   await load(chrome.cdp, tab, base, 0);

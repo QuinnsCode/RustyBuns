@@ -31,9 +31,23 @@ Scripts run, in a box with nothing in it:
 - **No origin.** The response is sandboxed (`Content-Security-Policy: sandbox allow-scripts`), so it has no cookies, no storage and no reach into the app or the API as anyone, even when opened on its own.
 - **Its own host (optional).** Set `PAGES_ORIGIN` (say `https://pages.example.com`, routed to the same Worker, and set at build time too so the app's `frame-src` allows it) and the app redirects page reads there. That host answers only `GET /api/users/:name/page/...`, with no sign-in, so a page script can never reach the app's cookies or API. Unset, pages stay on the app's origin behind the sandbox.
 - **No network.** `connect-src 'self'`: it can fetch its own files, nothing else. Forms go nowhere.
-- **Libraries** load from `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `unpkg.com` or `esm.sh`; pin a version. Images, fonts and media may come from any `https:` host.
+- **Libraries** load from `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `unpkg.com` or `esm.sh`; pin a version. Fonts may come from Google Fonts. Images and media from other hosts load only if `index.html` has `<meta name="codesplitter-outside-media" content="allow">`, and visitors are told.
 - **Public data only.** The page can read `JSON.parse(document.getElementById("profile").textContent)`: `{name, bio, repos}`, as a signed-out visitor sees it.
-- **Text files only** (html, js, css, json, svg, txt, glsl). A model or texture goes in as a `data:` URI or an `https:` image.
+- **The repo is text** (html, js, css, json, svg, txt, glsl). Binary files go in as assets, below.
+
+## Models, images, sound and fonts
+
+Send the file's raw bytes to `PUT /api/me/page/assets/<name>`, signed in or with a token, and load it from your page as `assets/<name>`:
+
+```sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @robot.glb https://<your codeSplitter>/api/me/page/assets/robot.glb
+```
+
+- **Kinds:** png, jpg, jpeg, gif, webp, ico, mp3, ogg, wav, mp4, webm, glb, woff2, woff, ttf. A name is letters, digits, `.`, `_` and `-`, up to 80 characters.
+- **Size:** up to 5 MB each, and 50 names on a page at once.
+- **Needs** a public `page` repo and a server with R2.
+- **History:** each upload is kept under its SHA-256, and `assets.txt` in your `page` repo says which one each name is (a line of `name hash`). So the repo's history covers these files: upload over a model, revert, and the old one is back. Taking a line out of `assets.txt` takes the file off the page. "Default" empties the list along with your other files, and "an hour ago" brings it back.
+- **How far back:** an account keeps its newest 200 uploads, plus any the page is using. Older ones are deleted, and a revert can't bring those back.
 
 ## A three.js world
 

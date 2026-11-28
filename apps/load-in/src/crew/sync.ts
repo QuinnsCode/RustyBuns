@@ -4,6 +4,7 @@ import { crewLoad, heldItem, holdPose, seeCrew, type World } from "../sim.ts";
 import { endAt, rollWire, setEnd, setRoll, type Cables, type EndAt, type Run } from "../cables/cables.ts";
 import { whole, type Sent, type ServerMsg, type Wire, type WireEnd } from "./room.ts";
 import { tickDecks, type Decks } from "../audio/decks.ts";
+import { ampsAt, hearAmps } from "../venues/desert.ts";
 
 /**
  * The decks on this page, as the crew room sees them (venues/dj-booth-view.ts owns one): its deck state, whether you
@@ -31,8 +32,12 @@ export interface Synced {
   djWant: boolean; sentDecks: string; spun: number;
   /** The cables whose coil you bowled and haven't yet told the room it stopped: only the bowler says where it lies. */
   bowls: Set<string>;
+  /** The amps' DSP as the room last had it from or for this page (""), the newest count taken, and when you last sent it. */
+  amps: string; dialled: number; ampsSent: number;
 }
-export const synced = (): Synced => ({ held: null, seen: new Map(), you: "", ends: new Map(), pending: new Map(), wires: new Map(), on: new Map(), thrown: new Map(), djWant: false, sentDecks: "", spun: 0, bowls: new Set() });
+export const synced = (): Synced => ({ held: null, seen: new Map(), you: "", ends: new Map(), pending: new Map(), wires: new Map(), on: new Map(), thrown: new Map(), djWant: false, sentDecks: "", spun: 0, bowls: new Set(), amps: "", dialled: 0, ampsSent: -Infinity });
+/** A slider moves many times a second, and the room takes so many messages: the amps go this often at most, ms. */
+const AMPS_MS = 100;
 
 const ENDS = ["a", "b"] as const;
 /** One end as a short word to compare: yours is "hand:", a friend's "hand:<their id>". */
@@ -84,8 +89,14 @@ function hearWire(w: World, c: Cables, s: Synced, wire: Omit<Wire, "n">, force: 
 }
 
 /** What changed in your hands since last time, as messages: the cable ends you moved, a drop where the piece landed, then a grab. */
-export function outbox(w: World, s: Synced, c?: Cables, on?: ReadonlySet<string>, booth?: Booth | null): Sent[] {
+export function outbox(w: World, s: Synced, c?: Cables, on?: ReadonlySet<string>, booth?: Booth | null, at = performance.now()): Sent[] {
   const now = w.held?.key ?? null, out: Sent[] = c ? cableOutbox(w, c, s) : [];
+  // The amps you opened or moved, once the room has said what it has (so joining doesn't write over the crew's).
+  const amps = s.you ? ampsAt(w) : null, dialled = amps ? JSON.stringify(amps) : "";
+  if (amps && dialled !== s.amps && at - s.ampsSent >= AMPS_MS) {
+    s.amps = dialled; s.ampsSent = at;
+    out.push({ t: "amps", ...amps, bands: [...amps.bands] });
+  }
   if (booth) {
     if (booth.want !== s.djWant) { s.djWant = booth.want; out.push({ t: "dj", take: booth.want }); }
     // On the decks, every move of your hands goes to the room with where each track is right now.
@@ -156,6 +167,11 @@ export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables, on?: Set<str
     }
     // Off the decks, the next time you take them your first move is told whole.
     if (!mine) s.sentDecks = "";
+  }
+  // The amps a friend set are set on your page too (your own word coming back is old news by then).
+  if (m.amps && m.amps.n > s.dialled) {
+    s.dialled = m.amps.n;
+    if (m.amps.by !== m.you && hearAmps(w, m.amps)) s.amps = JSON.stringify(ampsAt(w));
   }
   if (c) for (const wire of m.cables) {
     if (wire.n <= (s.wires.get(wire.key)?.n ?? 0) || !whole(wire.a) || !whole(wire.b)) continue;

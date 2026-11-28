@@ -2,16 +2,15 @@
 // effects: click a diode, capacitor or resistor to swap it (the board view, ../amp/board.ts), click a trace to put the
 // scope on its net, and Play runs the riff through the circuit with the scope following along. An effect's LFO or
 // envelope moves its parts as on Q Amp, and its control net (GATE, LED, FOOT) scopes the control itself.
-// The knobs and swaps are Q Amp's (../amp/parts-store.ts): a part swapped here is on Q Amp's pedal too, and back. Remake writes your
+// The knobs, swaps and circuit edits are shared with Q Amp (../amp/parts-store.ts): what you change here is on Q Amp's pedal too. Remake writes your
 // parts into the board (circuit JSON and tscircuit source, ../circuit/builder.ts), plays the same riff through the
 // remake and through your board, and says whether they match. Build it draws the board from its kit's Gerbers (../kit/gerber.ts), prints the sheet, and saves the files.
 // The riff runs in a worker (worker.ts). window.qbuilder drives it (scripts/probe.ts).
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./builder.css";
-import { arr, check, obj, or, rec, str } from "@rustybuns/util/guard";
-import { BoardView, fit, svgOf } from "../amp/board.ts";
+import { check, obj, or, rec, str } from "@rustybuns/util/guard";
+import { BoardView, fit, schematicOf, svgOf } from "../amp/board.ts";
 import { mockup, type BoardSide, type Mockup } from "../kit/gerber.ts";
 import { gerbers, kitId, kitZip, sheetOf, type KitFiles } from "../kit/kit.ts";
 import { kitFiles } from "../kit/sheet.ts";
@@ -19,24 +18,21 @@ import { zip } from "../kit/zip.ts";
 import { h, iconButton } from "../amp/dom.ts";
 import { icon } from "../amp/icons.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
-import { BUILDER_PEDALS, Edit, INPUT_VOLTS, SR, WINDOW, builderPedal, changes, editLine, editNets, editParts, editedJson, isBuilderPedal, nextName, parseValue, remakeJson, remakeTsx, restAt, scopeNets, swing, theRiff, type AddKind, type BuilderPedal, type Retest, type ScopeNet } from "../circuit/builder.ts";
+import { BUILDER_PEDALS, INPUT_VOLTS, SR, WINDOW, builderPedal, changes, editLine, editNets, editParts, isBuilderPedal, nextName, parseValue, remakeJson, remakeTsx, restAt, scopeNets, swing, theRiff, type BuilderPedal, type Retest, type ScopeNet } from "../circuit/builder.ts";
 import type { Swaps } from "../circuit/circuits.ts";
-import { onParts, readParts, writeParts } from "../amp/parts-store.ts";
+import { changedJson, type AddKind, type Edit } from "../circuit/edits.ts";
+import { onParts, readParts, writeEdits, writeParts } from "../amp/parts-store.ts";
 import type { BenchReply, Unsent } from "./messages.ts";
 
-/**
- * The page's own: the pedal open, the net the scope sits on, and the changes to each pedal's circuit (parts added,
- * removed, ends moved: `Edit`). The knobs and swaps are Q Amp's.
- */
+/** The page's own: the pedal open and the net the scope sits on. The knobs, swaps and edits are parts-store's. */
 const KEY = "qbuilder:v1";
 const Saved = obj({
   pedal: or(str(12), "fuzz"),
   probe: or(rec(str(400), 16), {}),
-  edits: or(rec(arr(Edit, 64, { drop: true }), 16), {}),
 });
 const S = (() => {
   try { return check(Saved, JSON.parse(localStorage.getItem(KEY) ?? "{}")) ?? check(Saved, {}); } catch { return check(Saved, {}); }
-})() ?? { pedal: "fuzz", probe: {}, edits: {} };
+})() ?? { pedal: "fuzz", probe: {} };
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } };
 
 const TSX = import.meta.glob<string>("../../circuits/*.tsx", { query: "?raw", import: "default" });
@@ -52,9 +48,9 @@ let parts = readParts();
 const def = () => builderPedal(pedal);
 const drive = () => parts.drive[pedal] ?? 5;
 const swaps = (): Swaps => parts.swaps[pedal] ?? {};
-const edits = (): Edit[] => S.edits[pedal] ?? [];
+const edits = (): Edit[] => parts.edits[pedal] ?? [];
 /** The open board as changed, for the bench; undefined while it is the stock circuit. */
-const json = (e = edits()) => (e.length ? editedJson(def().board, e) : undefined);
+const json = (e = edits()) => changedJson(def().board, e);
 
 // ---- the page ----
 const app = h("main", "qb");
@@ -114,7 +110,7 @@ const undoAll = h("button", "qb-btn", icon("rotate-ccw", 16), "Stock circuit");
 undoAll.type = "button";
 undoAll.addEventListener("click", () => showEditWhy(setEdits([])));
 const circuit = h("section", "qb-card", h("div", "qb-card-top", icon("split", 16), h("span", "qb-card-title", "Change the circuit")),
-  h("p", "qb-hint", "Add a part between two nets (From starts on the scope's net: click a trace), take one off, or move an end. The schematic stays the stock drawing; your changes are listed here."),
+  h("p", "qb-hint", "Add a part between two nets (From starts on the scope's net: click a trace), take one off, or move an end. The schematic is redrawn with your changes, which are also listed here."),
   h("div", "qb-add", addKind, addValue, addFrom, h("span", "qb-dim", "to"), addTo, addBtn), editWhy, editList, undoAll,
   h("details", "qb-wiring", h("summary", "", "Parts and wiring"), partList));
 
@@ -238,7 +234,7 @@ async function saveKit(): Promise<void> {
 async function printSheet(): Promise<string[]> {
   const d = def(), s = sheetOf(d, kit, swaps()), what = changes(d.board, swaps(), edits()), changed = edits().length > 0;
   const sch = h("div", "qp-art qp-sch");
-  sch.innerHTML = await svgOf(d.board, "schematic");
+  sch.innerHTML = await schematicOf(d.board, edits());
   const sides = (["top", "bottom"] as const).map((x) => {
     const m = mockup(kit, x), f = h("figure", "qp-side");
     if (!m) return null;
@@ -256,7 +252,7 @@ async function printSheet(): Promise<string[]> {
   sheetEl.replaceChildren(
     h("header", "qp-head", h("h1", "", d.name), h("p", "", what ? `Your version: ${what}.` : "Stock parts."), h("p", "qp-dim", d.blurb)),
     h("section", "", h("h2", "", "Schematic"), sch),
-    ...(changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", "Your circuit has new parts or wiring: the stock board doesn't fit it. Route a new layout in tscircuit before ordering. The schematic above is the stock drawing."))] : []),
+    ...(changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", "Your circuit has new parts or wiring: the stock board doesn't fit it. Route a new layout in tscircuit before ordering."))] : []),
     ...(sides.length && !changed ? [h("section", "", h("h2", "", "Circuit board"), h("p", "qp-dim", `${m?.size.join(" × ")} mm, drawn from the files a board house takes: ${gerbers(kit).join(", ")}.`), h("div", "qp-sides", ...sides))] : []),
     ...(s.lines.length && !changed ? [h("section", "", h("h2", "", "Parts"), table)] : []),
     h("p", "qp-dim", `Q Builder · ${new Date().toLocaleDateString("en-CA")}`),
@@ -304,15 +300,21 @@ function setEdits(next: Edit[]): string {
   let no: string[];
   try { no = swapWontPlay(def(), swaps(), json(next)); } catch (err) { no = [err instanceof Error ? err.message : String(err)]; }
   if (no.length) return `won't play, kept your last circuit: ${no.join("; ")}`;
-  S.edits[pedal] = next; save();
-  nets = scopeNets(def().board, next);
+  writeEdits(pedal, next);
+  parts = readParts();
+  showCircuit();
+  return "";
+}
+
+/** The open pedal's circuit has changed: its nets, the scope, the board, the lists and Build it again. */
+function showCircuit(): void {
+  nets = scopeNets(def().board, edits());
   probe = nets.find((n) => n.key === probe?.key) ?? nets.at(-1) ?? null;
   wave = null; result = null; files.replaceChildren();
   showBoard();
   paintCircuit();
   drawMock();
   void run();
-  return "";
 }
 function showEditWhy(why: string): void { editWhy.textContent = why; editWhy.classList.toggle("warn", !!why); }
 
@@ -366,7 +368,7 @@ function paintCircuit(): void {
 }
 
 function showBoard(wont = ""): void {
-  board.show(def().board, `${def().name} · your board`, swaps(), wont ? { hint: `won't play, kept your last parts: ${wont}` } : {});
+  board.show(def().board, `${def().name} · your board`, swaps(), { edits: edits(), ...(wont ? { hint: `won't play, kept your last parts: ${wont}` } : {}) });
   board.probe(probe?.key ?? null);
   paint();
 }
@@ -480,11 +482,12 @@ function paint(): void {
 addEventListener("resize", () => draw());
 pick(pedal);
 
-// A part swapped or a knob turned on Q Amp (another tab): this pedal's board and scope follow. Q Amp saves its whole
+// A part swapped or a knob turned on Q Amp, or the circuit changed on another Q Builder: this pedal's board and scope follow. Q Amp saves its whole
 // store often (every amp knob), so only a change to this pedal's own knob or parts reruns the riff.
 onParts((p) => {
-  const was = JSON.stringify([drive(), swaps()]);
+  const was = JSON.stringify([drive(), swaps()]), wired = JSON.stringify(edits());
   parts = p;
+  if (JSON.stringify(edits()) !== wired) { showCircuit(); return; }
   if (JSON.stringify([drive(), swaps()]) === was) return;
   result = null; files.replaceChildren();
   showBoard();

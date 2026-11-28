@@ -4,14 +4,27 @@
 // out of polarity reads as the hole you hear at the split.
 import type { Command } from "@rustybuns/util/commands";
 import { check, int, num, obj, oneOf, opt } from "@rustybuns/util/guard";
-import { crossoverCheck, type Band, type ChannelDsp } from "@rustybuns/gear/crossover";
+import { BOX_CROSSOVERS, crossoverCheck, type Band, type ChannelDsp } from "@rustybuns/gear/crossover";
 
 export interface CrossoverDeps {
-  /** The rig's preset bands (what each feeds, its sheet), or none indoors. */
+  /** The PA's preset bands (what each feeds, its sheet), or none. */
   preset(): readonly Band[];
   /** The bands as set now, or null with no rig. */
   bands(): readonly ChannelDsp[] | null;
+  /** False when it isn't yours to move (the desk is the leader's to grant) or there's no crossover. */
   set(bands: readonly ChannelDsp[]): boolean;
+  /** How far the sub stands in front of the tops, metres (the crossover lesson's; 0 otherwise). */
+  subAheadM(): number;
+  setSubAhead(metres: number): void;
+  /** Open or close the response plot (left out: the other way). */
+  panel(open?: boolean): void;
+}
+
+/** Every band back to the rig's preset, the sub back in line. False with no rig. */
+export function resetCrossover(d: CrossoverDeps): boolean {
+  const p = d.preset();
+  d.setSubAhead(0);
+  return !!p.length && d.set(p.map((b) => b.dsp));
 }
 
 const SetArgs = obj({
@@ -25,14 +38,15 @@ export function crossoverState(d: CrossoverDeps) {
   const preset = d.preset(), now = d.bands();
   if (!now || !preset.length) return null;
   const bands = preset.map((b, i) => ({ ...b, dsp: now[i] ?? b.dsp }));
-  return { bands: bands.map((b, i) => ({ band: i, box: b.box, way: b.way, ...b.dsp, ref: b.ref, ...(b.guess ? { guess: b.guess } : {}) })), ...crossoverCheck(bands, preset.map((b) => b.dsp)) };
+  const ahead = d.subAheadM();
+  return { bands: bands.map((b, i) => ({ band: i, box: b.box, way: b.way, ...b.dsp, ref: b.ref, ...(b.guess ? { guess: b.guess } : {}) })), ...crossoverCheck(bands, preset.map((b) => b.dsp), ahead), ...(ahead ? { subAheadM: ahead } : {}) };
 }
 
 /** Move one band; the answer is the crossover after it. */
 export function setCrossover(d: CrossoverDeps, args: unknown) {
   const a = check(SetArgs, args), now = d.bands();
   if (!a) return { ok: false, error: "band 0-7 with any of hp, lp (Hz, 20 to 20000), gainDb, delayMs (0 to 50), polarity (1 or -1)" };
-  if (!now?.[a.band]) return { ok: false, error: now ? `this rig has bands 0 to ${now.length - 1}` : "no rig here: the crossover is an open-air rig's" };
+  if (!now?.[a.band]) return { ok: false, error: now ? `this rig has bands 0 to ${now.length - 1}` : "no crossover here: no PA with amp channels, or the speakers are down" };
   const b = now[a.band]!;
   const next: ChannelDsp = {
     ...b,
@@ -42,24 +56,30 @@ export function setCrossover(d: CrossoverDeps, args: unknown) {
     ...(a.delayMs !== undefined ? { delayMs: a.delayMs } : {}),
     ...(a.polarity !== undefined ? { polarity: a.polarity } : {}),
   };
-  d.set(now.map((x, i) => (i === a.band ? next : x)));
+  if (!d.set(now.map((x, i) => (i === a.band ? next : x)))) return { ok: false, error: "the desk isn't yours: the leader grants it" };
   return { ok: true, ...crossoverState(d) };
 }
 
 export function crossoverCommands(d: CrossoverDeps): Command[] {
   return [
     { name: "studio_crossover", title: "Crossover", group: "Sound", icon: "audio-lines", annotations: { readOnlyHint: true },
-      description: "The open-air rig's crossover as its amps' DSP has it: each band's box, high-pass and low-pass (Hz, slope, Linkwitz-Riley or Butterworth), gain, delay, polarity and the maker's sheet it came from; the sum's deepest hole (dipDb at dipHz) and any driver warnings.",
-      execute: () => crossoverState(d) ?? { ok: false, error: "no rig here: the crossover is an open-air rig's" } },
+      description: "The room PA's crossover as its amps' DSP has it (the sesh's: everyone hears it): each band's box, high-pass and low-pass (Hz, slope, Linkwitz-Riley or Butterworth), gain, delay, polarity and the maker's sheet it came from; the sum's deepest hole (dipDb at dipHz) and any driver warnings.",
+      execute: () => crossoverState(d) ?? { ok: false, error: "no crossover here: no PA with amp channels, or the speakers are down" } },
     { name: "studio_crossover_set", title: "Set the crossover", group: "Sound", icon: "sliders-horizontal", palette: false,
-      description: "Move one band of the rig's crossover: band (studio_crossover's index), and any of hp, lp (Hz), gainDb, delayMs (0 to 50), polarity (1 or -1). Heard at once; answers with the crossover after the move.",
+      description: "Move one band of the PA's crossover for everyone in the sesh (needs mix): band (studio_crossover's index), and any of hp, lp (Hz), gainDb, delayMs (0 to 50), polarity (1 or -1). Heard at once; answers with the crossover after the move.",
       inputSchema: { type: "object", properties: { band: { type: "integer" }, hp: { type: "number" }, lp: { type: "number" }, gainDb: { type: "number" }, delayMs: { type: "number" }, polarity: { type: "integer", enum: [1, -1] } }, required: ["band"] },
       execute: (a) => setCrossover(d, a) },
     { name: "studio_crossover_flip_sub", title: "Flip the sub's polarity", group: "Sound", icon: "flip-vertical",
       description: "Flip the lowest band's polarity: out of polarity, the sub cancels the tops at the split and leaves a hole there. Answers with the crossover after it.",
       execute: () => { const b = d.bands()?.[0]; return b ? setCrossover(d, { band: 0, polarity: -b.polarity }) : { ok: false, error: "no rig here" }; } },
     { name: "studio_crossover_reset", title: "Crossover back to its preset", group: "Sound", icon: "rotate-ccw",
-      description: "Every band back to the rig's preset from the makers' sheets.",
-      execute: () => { const p = d.preset(); return p.length && d.set(p.map((b) => b.dsp)) ? { ok: true, ...crossoverState(d) } : { ok: false, error: "no rig here" }; } },
+      description: "Every band back to the PA's preset from the makers' sheets.",
+      execute: () => (resetCrossover(d) ? { ok: true, ...crossoverState(d) } : { ok: false, error: "no crossover here, or the desk isn't yours" }) },
+    { name: "studio_crossover_plot", title: "Crossover plot", group: "Sound", icon: "chart-spline",
+      description: "Open or close the response plot: each band's curve and their sum, with sliders for the splits, delays and polarity.",
+      execute: () => { d.panel(); return { ok: true }; } },
+    { name: "studio_box_crossovers", title: "Each speaker's crossover", group: "Sound", icon: "speaker", palette: false, annotations: { readOnlyHint: true },
+      description: "Every speaker on its own: powered or passive, the split inside it where the maker's sheet gives one, its menu's settings against a sub or a top, and the sheet read.",
+      execute: () => BOX_CROSSOVERS },
   ];
 }

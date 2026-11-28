@@ -2,7 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
-import { banks, heightMap, highest, type Bank, type GeneratorId, type Ground, type HeightMap, type SystemId, type Terrain, type TopsOn } from "@rustybuns/gear";
+import { banks, heightMap, highest, type Bank, type GeneratorId, type Ground, type HeightMap, type Row, type SystemId, type Terrain, type TopsOn } from "@rustybuns/gear";
 import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
@@ -75,6 +75,26 @@ export interface StudioDef {
   /** A real venue as the room (#5933): a ShareSplat capture of the place, drawn round the seats (venue-splat.ts). Indoors
    *  its floor, ceiling and outside walls stand in for the drawn ones; the room's size still bounds where you walk. */
   venue?: Venue;
+  /** A ready-made stage, one piece (the Stage Builder, #6053): its middle, the way its front faces (as a stack's), and
+   *  its width and depth. Deck, roof, lights and booth are drawn by stage-model.ts; floorAt lifts you onto its deck. */
+  stage?: StagePiece;
+}
+
+export interface StagePiece { at: [number, number]; yaw: number; w: number; d: number }
+/** The sizes a stage comes in, metres: a pub corner to an arena's. */
+export const STAGE_SIZE = { w: [4, 24], d: [3, 16] } as const;
+/** How high a stage's deck stands: 0.4 m in a pub corner, 1.8 m in an arena. */
+export const deckHeight = (st: Pick<StagePiece, "w">) => Math.round((0.4 + 1.4 * Math.max(0, Math.min(1, (st.w - 4) / 20))) * 10) / 10;
+/** A point in the stage's own frame (x across, z toward its front) on the floor. */
+export function onStage(st: StagePiece, x: number, z: number): [number, number] {
+  const c = Math.cos(st.yaw), s = Math.sin(st.yaw);
+  return [st.at[0] + x * c + z * s, st.at[1] - x * s + z * c];
+}
+export const stageCorners = (st: StagePiece): [number, number][] => ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([kx, kz]) => onStage(st, kx * st.w / 2, kz * st.d / 2));
+/** Whether (x, z) is on the stage's footprint, or within `pad` metres of it. */
+export function inStage(st: StagePiece, x: number, z: number, pad = 0): boolean {
+  const dx = x - st.at[0], dz = z - st.at[1], c = Math.cos(st.yaw), s = Math.sin(st.yaw);
+  return Math.abs(dx * c - dz * s) <= st.w / 2 + pad && Math.abs(dx * s + dz * c) <= st.d / 2 + pad;
 }
 
 /** A captured venue: the hosted splat, how big it is drawn (1 = as captured), where its middle sits and its turn, and
@@ -91,10 +111,10 @@ export type { SystemId };
 /** The PA part of a rig, indoors or out: its stacks, which rig they are, and whether they play mono. */
 export type RoomPa = Pick<Outdoor, "stacks" | "rig" | "mono" | "tops">;
 export interface Outdoor {
-  /** Each stack is one column of the rig's boxes. Columns closer than STACK_CLUSTER_M stand as one block (a side of the
+  /** Each stack is one column of the rig's boxes, or its own `rows` of them (a premade's). Columns closer than STACK_CLUSTER_M stand as one block (a side of the
    *  floor); `splay` turns that column's top boxes a little off its yaw, so a side's two tops fan out across the floor; `pins`
    *  are a line array's pins, bottom box up (radians down from level, @rustybuns/gear LINE_PINS when left out). */
-  stacks: { at: [number, number]; yaw: number; splay?: number; pins?: number[] }[];
+  stacks: { at: [number, number]; yaw: number; splay?: number; pins?: number[]; rows?: Row[] }[];
   /** The sub block in the middle, between the sides: the rig's sub box `wide` across and `high` up, its front facing yaw's way. */
   subs?: { at: [number, number]; yaw: number; wide: number; high: number };
   /** The DJ's booth monitors: a mid-high horn on a tripod stand at each end of the decks, aimed at the DJ. */
@@ -246,6 +266,7 @@ function bankLand(list: readonly Bank[] | undefined): Terrain | undefined {
  *  sits on it, and what they play. */
 export function floorAt(def: StudioDef, x: number, z: number): number {
   let y = roomLand(def)?.(x, z) ?? 0;
+  if (def.stage && inStage(def.stage, x, z)) y = Math.max(y, deckHeight(def.stage));
   for (const p of def.props ?? []) {
     if (p.kind !== "riser") continue;
     const dx = x - p.at[0], dz = z - p.at[1], c = Math.cos(p.yaw), s = Math.sin(p.yaw);

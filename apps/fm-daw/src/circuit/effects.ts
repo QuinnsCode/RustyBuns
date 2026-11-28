@@ -61,6 +61,13 @@ export const opticalComp = (sustain = 0.5, swaps?: Swaps, json?: unknown): Netli
  */
 export const octaveUp = (fuzz = 0.6, swaps?: Swaps, json?: unknown): Netlist => effect("octave", swaps, json, { linear: ["U2"], values: { RV1: 10e3 + fuzz ** 2 * 200e3 } });
 
+/** Q Germ's transistors at `celsius`: germanium's saturation and leakage both double every 10 °C. */
+export function germaniumAt(celsius: number): Pick<BoardOptions, "germanium" | "bjt"> {
+  const warm = 2 ** ((celsius - 25) / 10);
+  const ge = { is: 2e-6 * warm, bf: 90, br: 4, leak: 5e-6 * warm };
+  return { germanium: ["Q1", "Q2"], bjt: { Q1: ge, Q2: ge } };
+}
+
 /**
  * Two-transistor germanium fuzz: PNP on a negative supply, the second stage's
  * emitter feeding the first one's base for bias. Germanium leaks, and the leak
@@ -68,8 +75,5 @@ export const octaveUp = (fuzz = 0.6, swaps?: Swaps, json?: unknown): Netlist => 
  * gated and spitty (cold) to smooth and then mushy (hot).
  */
 export function germaniumFuzz(celsius = 25, swaps?: Swaps, json?: unknown): Netlist {
-  // Germanium's saturation and leakage both double every 10 °C.
-  const warm = 2 ** ((celsius - 25) / 10);
-  const ge = { is: 2e-6 * warm, bf: 90, br: 4, leak: 5e-6 * warm };
-  return effect("germ", swaps, json, { supplies: { V_NEG: -9 }, germanium: ["Q1", "Q2"], bjt: { Q1: ge, Q2: ge } });
+  return effect("germ", swaps, json, { supplies: { V_NEG: -9 }, ...germaniumAt(celsius) });
 }

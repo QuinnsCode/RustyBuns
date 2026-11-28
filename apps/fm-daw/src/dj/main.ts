@@ -1,7 +1,6 @@
 // The decks on their own page (/decks.html): practise a mix before the party. The audio starts on the first press (a
 // browser wants a gesture), then the decks open with the demo tracks on them. `qdecks` is the harness for probes.
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import { mountDecks, type DecksPanel } from "./panel.ts";
 import type { Side } from "./engine.ts";
 import type { Ch, ChannelKnob, Curve, FilterState, XAssign } from "./mixer.ts";

@@ -4,6 +4,8 @@
 // The diode pairs and capacitors are sockets, the way kit builders socket parts
 // to try them, and each fixed resistor takes another value: click one, pick another
 // part, and hear it while you play (once the bench has found it still plays).
+import type { Edit } from "../circuit/edits.ts";
+import { redraw } from "../circuit/redraw.ts";
 import { BOARDS, STEPS, CLIPPERS, stepValue, farads, ohms, sockets, type BoardId, type Socket, type Swaps } from "../circuit/circuits.ts";
 import "./board.css";
 import { h } from "./dom.ts";
@@ -13,6 +15,10 @@ import { icon } from "./icons.ts";
 const SVGS = import.meta.glob<string>("../../circuits/*.svg", { query: "?raw", import: "default" });
 /** A board's schematic or PCB drawing as SVG text, loaded when first asked for ("" if it has none). */
 export const svgOf = (board: string, side: Side): Promise<string> => SVGS[`../../circuits/${board}.${side}.svg`]?.() ?? Promise.resolve("");
+
+/** A board's schematic with the circuit `edits` drawn into it (#6445): the stock drawing while there are none. */
+export const schematicOf = (board: string, edits: readonly Edit[] = []): Promise<string> =>
+  svgOf(board, "schematic").then((svg) => (isBoard(board) ? redraw(svg, board, edits) : svg));
 
 export type Side = "schematic" | "pcb";
 const SIDES: { id: Side; label: string; icon: string }[] = [
@@ -66,6 +72,8 @@ export class BoardView {
   private pcb: (() => Promise<string>) | null = null;
   private schematic: (() => Promise<string>) | null = null;
   private probed: string | null = null;
+  /** The last changed circuit drawn, so it is worked out once however often the board is shown. */
+  private changed: { of: string; load: () => Promise<string> } | null = null;
 
   /**
    * `onSwap(socket, choice)`: a choice of null puts the stock part back; socket null resets the whole board. With `onNet`,
@@ -93,12 +101,14 @@ export class BoardView {
   /**
    * Show `board`. With `swaps`, its sockets take clicks; null shows it read-only. `o.readOnly` shows the swaps
    * without taking clicks, `o.pcb` and `o.schematic` draw another PCB or schematic (a kit's own) in place of the board's.
+   * `o.edits` are changes to the circuit: the schematic is redrawn with them.
    */
-  show(board: string, title: string, swaps: Swaps | null, o: { readOnly?: boolean; hint?: string; pcb?: () => Promise<string>; schematic?: () => Promise<string> } = {}): void {
+  show(board: string, title: string, swaps: Swaps | null, o: { readOnly?: boolean; hint?: string; pcb?: () => Promise<string>; schematic?: () => Promise<string>; edits?: readonly Edit[] } = {}): void {
     this.title.textContent = title;
     this.swaps = swaps;
     this.readOnly = !!o.readOnly;
-    if (o.pcb !== this.pcb || o.schematic !== this.schematic || board !== this.board) { this.pcb = o.pcb ?? null; this.schematic = o.schematic ?? null; this.drawn = ""; }
+    const pcb = o.pcb ?? null, schematic = o.schematic ?? (o.edits?.length ? this.edited(board, o.edits) : null);
+    if (pcb !== this.pcb || schematic !== this.schematic || board !== this.board) { this.pcb = pcb; this.schematic = schematic; this.drawn = ""; }
     this.sockets = swaps && isBoard(board) ? sockets(board) : [];
     const changed = swaps ? this.sockets.filter((s) => swaps[s.id] !== undefined).length : 0;
     this.hint.textContent = swaps ? (changed ? `your version · ${changed} part${changed > 1 ? "s" : ""} changed` : "click a diode, capacitor or resistor to change it") : "set by the amp · switch a pedal on to swap parts";
@@ -107,6 +117,15 @@ export class BoardView {
     this.reset.disabled = !changed;
     if (board !== this.board) { this.board = board; this.menu.hidden = true; }
     void this.draw();
+  }
+
+  private edited(board: string, edits: readonly Edit[]): () => Promise<string> {
+    const of = `${board} ${JSON.stringify(edits)}`;
+    if (this.changed?.of !== of) {
+      let svg: Promise<string> | null = null;
+      this.changed = { of, load: () => (svg ??= schematicOf(board, edits)) };
+    }
+    return this.changed.load;
   }
 
   /** No drawing to show: just a title and why. */
@@ -149,7 +168,7 @@ export class BoardView {
     if (key !== this.drawn) {
       const own = this.side === "pcb" ? this.pcb : this.schematic;
       const svg = await (own ? own() : svgOf(board, this.side));
-      if (board !== this.board || `${board}.${this.side}` !== key) return; // moved on while it loaded
+      if (board !== this.board || `${board}.${this.side}` !== key || own !== (this.side === "pcb" ? this.pcb : this.schematic)) return; // moved on while it loaded
       this.art.innerHTML = svg; // our own file, from circuits/
       this.art.dataset.side = this.side;
       this.drawn = key;

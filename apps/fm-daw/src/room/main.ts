@@ -12,8 +12,7 @@
 // it is the same pedal for everyone. Right of the rack stands the sound wall (../wall/, WALL.md): its modules in the
 // case run on an audio thread of their own (wall-worklet.ts), heard from its Q Out; N brings another module.
 // `window.qstudio` is the harness (scripts/probe.ts HANDLES).
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/ibm-plex-sans/400.css";
+import "../brand.css";
 import "./studio.css";
 import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
@@ -39,7 +38,7 @@ import { drawDesk } from "./desk.ts";
 import type { AmpSettings, FromAmp } from "../amp/messages.ts";
 import { AmpThreads } from "../amp/threads.ts";
 import { DEFAULT_ROOM, PEDALS, type PedalDef } from "../circuit/amps.ts";
-import { BuildSheet, savedDrive, savedSwaps } from "../kit/sheet.ts";
+import { BuildSheet, savedDrive, savedEdits, savedSwaps } from "../kit/sheet.ts";
 import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { applyStudio, patchOps, sanitizePatch, type Board, type Patch, type StudioServer } from "../studio.ts";
@@ -445,7 +444,7 @@ const sheet = new BuildSheet(() => { if (phase === "sheet") play(); });
 $("stage").after(sheet.el);
 function openSheet(p: PedalDef) {
   phase = "sheet"; menu(); document.exitPointerLock?.();
-  return sheet.open(p, savedSwaps(p.id), savedDrive(p.id));
+  return sheet.open(p, savedSwaps(p.id), savedDrive(p.id), savedEdits(p.id));
 }
 function openModuleSheet(m: Panel) {
   phase = "sheet"; menu(); document.exitPointerLock?.();

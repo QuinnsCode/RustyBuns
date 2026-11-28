@@ -766,7 +766,7 @@ function distro(): Build {
   const [w, h, d] = GEAR_SIZES["distro-box"], b: Build = { pieces: [], marks: [] }, body = h - 0.04;
   b.pieces.push(box("rubber", [w, body, d], [0, body / 2, 0], { bevel: 0.025 }));
   b.pieces.push(...handle("rubber", [0, body, 0], "y", 0.18, 0.035));
-  for (const sx of [-1, 1]) b.pieces.push(box("metal", [0.03, 0.12, 0.012], [sx * w * 0.3, body * 0.72, -d / 2 - 0.006])); // hanging brackets
+  for (const sx of [-1, 1]) b.pieces.push(box("metal", [0.03, 0.12, 0.006], [sx * w * 0.3, body * 0.72, -d / 2 - 0.003])); // hanging brackets
   b.pieces.push(box("panel", [w - 0.05, body * 0.7, 0.008], [0, body * 0.47, d / 2]));
   b.pieces.push(box("mesh", [w * 0.6, 0.04, 0.004], [0, body * 0.84, d / 2 + 0.004])); // the breakers' window
   const rows = [body * 0.62, body * 0.42], cols = [-w * 0.3, 0, w * 0.3];
@@ -782,8 +782,8 @@ function distro(): Build {
   jacks(b, outs.slice(3), "front", [cols[0]! - 0.008, rows[1]!, d / 2 + 0.012], [w * 0.3, 0, 0], 0.012);
   b.pieces.push(disc("knob", 0.03, 0.012, "z", [0, body * 0.2, d / 2 + 0.006], 16)); // the L6-30's collar
   jacks(b, ["power-out-7"], "front", [0, body * 0.2, d / 2 + 0.013], [0, 0, 0], 0.02);
-  b.pieces.push(disc("knob", 0.04, 0.03, "x", [-w / 2 - 0.012, body * 0.5, 0], 16)); // the 50 A inlet's housing
-  jacks(b, ["power-in"], "left", [-w / 2 - 0.028, body * 0.5, 0], [0, 0, 0], 0.024);
+  b.pieces.push(disc("knob", 0.04, 0.03, "x", [-w / 2 - 0.006, body * 0.5, 0], 16)); // the 50 A inlet's housing
+  jacks(b, ["power-in"], "left", [-w / 2 - 0.022, body * 0.5, 0], [0, 0, 0], 0.024);
   mark(b, "grab", [0, h, 0]);
   return b;
 }
@@ -1575,24 +1575,29 @@ function slab(slot: GearSlot, pts: number[][], y0: number, y1: number): Piece {
   return { geo: toCreasedNormals(geo, 0.3), slot };
 }
 
+/** Flat triangles, each turned to look forward (+z), or back with `facing` -1, creased where they meet at an angle. */
+function faces(slot: GearSlot, tris: THREE.Vector3[][], facing: 1 | -1 = 1): Piece {
+  const pos = tris.flatMap(([a, b, c]) => {
+    const n = b!.clone().sub(a!).cross(c!.clone().sub(a!));
+    return (n.z * facing >= 0 ? [a!, b!, c!] : [a!, c!, b!]).flatMap((v) => v.toArray());
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  return { geo: toCreasedNormals(geo, 0.2), slot };
+}
+
 /** Flat triangles between rings of points (each ring the same length, closed), each face turned to look forward (+z):
  * a horn's walls, creased where the rings' points are, as a moulded horn's facets are. `facing` -1 turns them to look
  * back instead: the outside of a horn with no cabinet round it. */
 function ringWalls(slot: GearSlot, rings: THREE.Vector3[][], facing: 1 | -1 = 1): Piece {
-  const pos: number[] = [];
-  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
-    const n = b.clone().sub(a).cross(c.clone().sub(a));
-    pos.push(...(n.z * facing >= 0 ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
-  };
+  const tris: THREE.Vector3[][] = [];
   for (let i = 0; i + 1 < rings.length; i++) for (let j = 0; j < rings[i]!.length; j++) {
     const k = (j + 1) % rings[i]!.length, a = rings[i]!, b = rings[i + 1]!;
     // each quad split on the diagonal the real horn creases on, mirrored left to right: on the right half from the
     // mouth's corner to the throat's tip and from the mouth's top to the throat's corner, the left half the mirror
-    if (j % 4 < 2) { tri(a[j]!, a[k]!, b[j]!); tri(a[k]!, b[k]!, b[j]!); } else { tri(a[j]!, a[k]!, b[k]!); tri(a[j]!, b[k]!, b[j]!); }
+    if (j % 4 < 2) tris.push([a[j]!, a[k]!, b[j]!], [a[k]!, b[k]!, b[j]!]); else tris.push([a[j]!, a[k]!, b[k]!], [a[j]!, b[k]!, b[j]!]);
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  return { geo: toCreasedNormals(geo, 0.2), slot };
+  return faces(slot, tris, facing);
 }
 
 /** A ring of eight points round (x, y) at depth z, counter-clockwise from the right: the side mids at `ma` out, the
@@ -1607,9 +1612,9 @@ const ring8 = (x: number, y: number, z: number, ma: number, mc: number, ca = ma,
  * front, floor and centre line: 522 wide, 920 tall, 445 deep, its sides closing 28 degrees to a 300 back.
  * - cabinet: 18 mm ply, the trapezoid shell, a hand slot in the top, one in each side, the jack plate on the back
  * - panel: the pale moulded face, full width at the top, its sides down to 313 mm, chamfered in to a 179 flat at 459
- * - mid horn: its 422 x 274 mouth centred 175 down, each side wall folding to a point at the
- *   plug's tip, the black octagon round the driver behind it
- * - plug: the axe head, a horizontal blade 336 tip to tip and 96 tall, a ridge along its front, lying across the throat
+ * - mid horn: its 422 x 274 mouth centred 175 down, a flat side wall each end and folded walls above and below,
+ *   back to an octagon opening about 150 deep, black behind it to the driver
+ * - plug: the arrowhead, 248 end to end and 110 tall, a ridge along its front, lying across the throat
  * - driver: the 8" cone's black surround and dark cone, r 77, behind the plug
  * - hf horn: the 165 x 98 mouth from 331 to 430 down, straight walls to the compression driver's round throat
  * - band: the violet front between the panel and the bass mouth (the maker's name embossed there on the real box)
@@ -1663,39 +1668,50 @@ function res2Pieces(): Record<string, Build> {
     [-pw + 0.012, top(300)], [pw - 0.012, top(300)], [-0.16, top(390)], [0.16, top(390)], [-0.075, top(447)], [0.075, top(447)]])
     panel.pieces.push(...screw([x!, y!, f - 0.001], "z", 0.0035, "metal", 6));
 
-  // ---- mid horn: a rolled lip at the mouth, then the walls back to the throat round the plug
-  const zt = f - 0.24, tipA = mm(168), tz = 0.085, drR = mm(77);
-  // the bezel: the panel's moulding rolls in 45 degrees round the mouth before the horn's own walls start
-  const lip = ring8(0, mcy, f - 0.002, mA, mC), mouth = ring8(0, mcy, f - 0.02, mA - 0.016, mC - 0.016);
-  // the walls fold once: the throat's side points stand forward and out at the plug's tips, so each side wall is one big
-  // triangle from the mouth's edge to that point, with a diamond fold above and below it back to the round driver
-  const throat = ring8(0, mcy, zt, tipA, mm(98), mm(84), mm(70));
-  for (const i of [0, 4]) throat[i]!.z = zt + tz;
+  // ---- mid horn: a rolled lip at the mouth, then the folded walls back to the octagon opening. Each point's [u, v]
+  // (across and up from the mouth's centre) is off the sheet's front view, and its depth behind the front off a camera
+  // fitted to the maker's three-quarter photo (the four inner fold points all solve to 145 to 149 mm)
+  const zt = f - 0.235, drR = mm(77), M = (u: number, v: number, depth: number) => new THREE.Vector3(mm(u), mcy + mm(v), f - mm(depth));
+  // the bezel: the panel's moulding rolls in round the mouth before the horn's own walls start
+  mid.pieces.push(ringWalls("horn", [ring8(0, mcy, f - 0.002, mA, mC), ring8(0, mcy, f - 0.014, mm(202), mm(124))]));
+  const walls: THREE.Vector3[][] = [];
+  for (const x of [-1, 1]) {
+    // the side: one flat face from the mouth's whole edge back to the opening
+    const side = (y: number) => [M(x * 202, y * 124, 14), M(x * 111, y * 37.5, 150)] as const;
+    const [c0, p0] = side(-1), [c1, p1] = side(1);
+    walls.push([c0, c1, p1], [c0, p1, p0]);
+    for (const y of [-1, 1]) {
+      const V = (u: number, v: number, depth: number) => M(x * u, y * v, depth);
+      // the mouth's corner and top middle, the shallow fold, the opening's corners, and the fold back to the driver
+      const C = V(202, 124, 14), Mt = V(0, 124, 14), Q = V(113.5, 107, 91), R = V(69, 82, 147), S = V(0, 82, 147), P = V(111, 37.5, 150), T = V(55, 55, 205);
+      walls.push([Mt, C, Q], [Mt, Q, S], [Q, R, S], [C, P, Q], [Q, P, R], [R, P, T]);
+    }
+  }
   // the walls in the glossier `facet` lining, each face a step lighter or darker, so the folds read as the photo's do
-  const key = new THREE.Vector3(-0.5, -0.2, 0.85), lit = (q: Piece) => facets(q, key, f - 0.02, zt);
-  mid.pieces.push(ringWalls("horn", [lip, mouth]), lit(ringWalls("horn", [mouth, throat])));
-  // behind each side point, the wall running back from it to the driver (the corners above and below it)
-  const inner = new THREE.BufferGeometry().setFromPoints([0, 1, 7, 4, 5, 3].map((i) => throat[i]!));
-  inner.computeVertexNormals();
-  mid.pieces.push(lit({ geo: inner, slot: "horn" }));
-  // the black octagon round the driver, flat top and sides, closing the throat
+  const key = new THREE.Vector3(-0.5, -0.2, 0.85);
+  mid.pieces.push(facets(faces("horn", walls), key, f - 0.02, zt));
+  // behind the opening it is black back to the driver: the octagon round the cone, flat top and sides
   const oct = (r: number) => Array.from({ length: 8 }, (_, i) => { const q = ((i + 0.5) / 8) * Math.PI * 2, k = r / Math.cos(Math.PI / 8); return [Math.cos(q) * k, mcy + Math.sin(q) * k]; });
+  const opening = [[111, 37.5], [69, 82], [-69, 82], [-111, 37.5], [-111, -37.5], [-69, -82], [69, -82], [111, -37.5]].map(([u, v]) => M(u!, v!, v === 82 || v === -82 ? 147 : 150));
+  mid.pieces.push(ringWalls("cavity", [opening, oct(mm(92)).map(([x, y]) => new THREE.Vector3(x!, y!, zt))]));
   mid.pieces.push(frontPlate("knob", oct(mm(92)), [oct(mm(66))], zt + 0.012, 0.012, 0.003), frontPlate("cavity", oct(mm(94)), [], zt - 0.002, 0.006));
 
-  // ---- the plug: the axe head across the throat, blunt back on the driver, a ridge forward, pointed at both tips
-  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, mcy + y, zt + z), pt: THREE.Vector3[] = [];
-  for (const s of [-1, 1]) {
-    for (const y of [-1, 1]) pt.push(V(s * 0.08, y * 0.03, 0.01), V(s * 0.082, y * 0.048, 0.035), V(s * 0.07, y * 0.044, 0.075));
-    pt.push(V(s * 0.072, 0, 0.125), V(s * tipA, 0, tz));
-  }
-  plugB.pieces.push(facets({ geo: toCreasedNormals(new ConvexGeometry(pt), 0.2), slot: "horn" }, key, zt + 0.125, zt, 0.75, 0.9));
+  // ---- the plug: the arrowhead across the throat, as the same photo solves it: a blunt cap on the left, a flat ridge,
+  // and a long point on the right reaching forward to the side wall
+  const TL = M(-62, 55, 134), TR = M(62, 55, 134), BR = M(62, -55, 134), BL = M(-62, -55, 134);
+  const A = M(-76, 0, 118), B = M(74, 0, 118), tip = M(148, 0, 74), L1 = M(-100, 25, 138), L2 = M(-100, -25, 138);
+  const front = [TL, TR, tip, BR, BL, L2, L1];
+  const back = [[-50, 44], [50, 44], [96, 0], [50, -44], [-50, -44], [-82, -20], [-82, 20]].map(([u, v]) => M(u!, v!, 215));
+  const skin = [[TL, TR, B], [TL, B, A], [A, B, BR], [A, BR, BL], [TR, tip, B], [B, tip, BR], [TL, A, L1], [L1, A, L2], [L2, A, BL]];
+  front.forEach((a, i) => { const j = (i + 1) % front.length; skin.push([a, front[j]!, back[i]!], [front[j]!, back[j]!, back[i]!]); });
+  plugB.pieces.push(facets(faces("horn", skin), key, f - 0.118, zt, 0.75, 0.9));
 
   // ---- driver: the 8" cone behind the plug, its black roll surround and dark paper cone
   drv.pieces.push(lathe("knob", [[0, drR, drR], [0.006, drR * 0.9, drR * 0.9], [0.003, drR * 0.8, drR * 0.8]], { seg: 24, m: new THREE.Matrix4().makeTranslation(0, mcy, zt) }));
   drv.pieces.push(...cone(drR * 0.8, 0.04, new THREE.Matrix4().makeTranslation(0, mcy, zt), 20));
 
   // ---- hf horn: straight walls from its mouth to the compression driver's round throat
-  const hz = f - 0.016, hd = 0.13;
+  const hz = f - 0.016, hd = 0.19;
   hf.pieces.push(ringWalls("horn", [ring8(0, hcy, f - 0.002, hA + 0.008, hC + 0.008), ring8(0, hcy, hz, hA, hC), ring8(0, hcy, hz - hd, 0.016, 0.012)]));
   hf.pieces.push(disc("grime", 0.013, 0.004, "z", [0, hcy, hz - hd + 0.002], 14), disc("horn", 0.008, 0.012, "z", [0, hcy, hz - hd + 0.006], 12));
 
@@ -1708,9 +1724,9 @@ function res2Pieces(): Record<string, Build> {
   const mouthB = [-pw, pw, by0, by1], throatB = [-tA, tA, ty0, ty1], k = 0.12, part = mouthB.map((v, i) => v + (throatB[i]! - v) * k);
   bass.pieces.push(frustum("satin", mouthB, part, f - 0.004, bdeep * k), frustum("cavity", part, throatB, f - 0.004 - bdeep * k, bdeep * (1 - k)));
   bass.pieces.push(box("knob", [tA * 2, ty1 - ty0, 0.006], [0, (ty0 + ty1) / 2, f - 0.004 - bdeep - 0.003]));
-  bass.pieces.push(rod("satin", [0, by0, f - 0.04], [0, ty1, f - 0.004 - bdeep + 0.02], 0.012, 6));
-  bass.pieces.push(box("metal", [0.028, 0.05, 0.006], [0.02, (ty0 + by0) / 2 + 0.03, f - 0.2], { bevel: 0.002 }));
-  for (const s of [-1, 1]) bass.pieces.push(prism("satin", [[f - 0.004, by0], [f - 0.004, by0 + 0.05], [f - 0.06, by0]], 0.05, s * (pw - 0.025)));
+  bass.pieces.push(rod("violet", [0, by0, f - 0.04], [0, ty1, f - 0.004 - bdeep + 0.02], 0.012, 6));
+  bass.pieces.push(box("knob", [0.028, 0.05, 0.006], [0.02, (ty0 + by0) / 2 + 0.03, f - 0.2], { bevel: 0.002 }));
+  for (const s of [-1, 1]) bass.pieces.push(prism("satin", [[f - 0.004, by0], [f - 0.004, by0 + 0.034], [f - 0.045, by0]], 0.034, s * (pw - 0.017)));
 
   return { cabinet: cab, band, "bass-horn": bass, panel, "hf-horn": hf, driver: drv, "mid-horn": mid, plug: plugB };
 }
@@ -2539,15 +2555,16 @@ function hornShell(rim: number, lip: number, rt: number, len: number, k: number,
  * frame, each driver in a round can behind its horn, gloss teal (a custom colour; Void's own are red, black and white).
  * Seen from the front, right-handed: the 12" LF horn on the left, the 8" MF on the right, the 1.5" HF above, between
  * them. `hand` -1 is the left-handed one (Air-Motion-Line-Drawing-LH), the same box mirrored left to right with the
- * same connector plate. Measured off the front and side views (about 10 mm):
+ * same connector plate. Measured off the front and side views (about 10 mm), the frame off all six views:
  * - lf horn: rim 537 across, lip 485, throat 220, centre 268 from the left and 269 up; it runs back to its can, 380
  *   across and 246 deep, whose back is the box's back
  * - mf horn: rim 299, lip 257, throat 134, centre 703 from the left and 269 up, 229 long; can 282 across, 190 deep
  * - hf horn: rim 262, a bell to a 38 mm throat, centre 583 from the left and 541 up, 109 long; can 181 across, 120 deep
  * - plug: the cone in the MF horn's throat
- * - frame: the powder-coated steel post between the cans, an arm to each can, a foot plate under it (the stand fixing)
- * - jacks: the two NL4s; the real box has them under the HF can, where no plug reaches from outside the box, so the
- *   model has them under the frame's foot
+ * - frame: powder-coated 40 mm square tube at the LF and MF centres' height: a spine front to back, an arm to a lug
+ *   on each of those horns, a riser from the spine's front up and forward to the HF horn, and a clamp block with the
+ *   fixing hole. Nothing reaches the floor: the box stands on its horns' rims
+ * - jacks: the two NL4s under the MF can (the real ones sit round toward the LF side of it; these are dead under it)
  * - cables: the armoured hoses from the HF unit to the LF and MF cans
  * - badge: the plain oval on the HF horn, where the real one carries the maker's name
  */
@@ -2571,16 +2588,24 @@ function airMotionPieces(hand: 1 | -1): Record<string, Build> {
   // the MF horn's phase plug, a cone standing out of its throat
   const [, mx, my, , , , mlen] = H[1];
   plug.pieces.push(loft("shell", [R(0, 0.05), R(0.04, 0.032), R(0.09, 0)], { seg: 16, smooth: true, m: along("z", [mx, my, plane - mlen]) }));
-  // the frame: a post between the cans, arms to each, the foot plate the stand fixes to
-  const px = X(510), pz = -0.1, foot = 0.0125;
-  frame.pieces.push(box("knob", [0.04, 0.5 - foot, 0.04], [px, (0.5 + foot) / 2, pz], { bevel: 0.003 }));
-  frame.pieces.push(box("knob", [0.16, 0.008, 0.16], [px, foot + 0.004, pz], { bevel: 0.002 }));
-  const arms: [THREE.Vector3Tuple, THREE.Vector3Tuple][] = [[[px, 0.3, pz], [hand * 0.03, 0.3, -0.14]], [[px, 0.27, pz], [hand * 0.165, 0.27, -0.02]], [[px, 0.49, pz], [X(583), 0.465, 0.15]]];
-  for (const [a, b] of arms)
-    frame.pieces.push(rod("knob", a, b, 0.012));
-  mark(frame, "grab", [px, 0.51, pz]);
-  mark(frame, "pole-cup", [px, foot, pz], [0, -1, 0]);
-  socketPanel(jack, "sculpted-3way", "bottom", [px, foot, pz], [0.12, 0.08]);
+  // the frame, in mm as the drawing has it: `l` and `r` from the left, `y0` and `y1` up, `a` and `b` behind the front
+  const Z = (behind: number) => f - mm(behind);
+  const bar = (to: Build, slot: "knob" | "shell", [l, r]: [number, number], [y0, y1]: [number, number], [a, b]: [number, number]) =>
+    to.pieces.push(box(slot, [mm(r - l), mm(y1 - y0), mm(b - a)], [X((l + r) / 2), mm((y0 + y1) / 2), Z((a + b) / 2)], { bevel: 0.003 }));
+  bar(frame, "knob", [482, 522], [249, 289], [155, 388]); // the spine, front to back
+  bar(frame, "knob", [427, 522], [249, 289], [348, 388]); // the arm to the LF horn
+  bar(frame, "knob", [482, 597], [249, 289], [155, 196]); // the arm to the MF horn
+  bar(frame, "knob", [482, 522], [249, 467], [155, 196]); // the riser
+  bar(frame, "knob", [482, 522], [427, 467], [123, 196]); // forward to the HF horn
+  bar(frame, "knob", [480, 606], [427, 455], [111, 123]); // the HF horn's plate
+  bar(frame, "knob", [421, 427], [226, 312], [325, 411]); // the LF and MF arms' bolt plates
+  bar(frame, "knob", [597, 603], [226, 312], [133, 218]);
+  bar(frame, "knob", [477, 530], [249, 334], [277, 318]); // the clamp block round the spine, the fixing hole in it
+  bar(lf, "shell", [376, 421], [224, 314], [325, 412]); // the lugs moulded on the two horns, where the plates bolt
+  bar(mf, "shell", [603, 640], [224, 314], [130, 220]);
+  mark(frame, "grab", [X(502), mm(467), Z(175)]);
+  mark(frame, "pole-cup", [X(503), mm(249), Z(297)], [0, -1, 0]);
+  socketPanel(jack, "sculpted-3way", "bottom", [X(703), mm(149), Z(327)], [0.12, 0.08]);
   // the hoses from the HF unit to the two cans, each in two runs
   const hoses: THREE.Vector3Tuple[][] = [[[X(583), 0.465, 0.13], [hand * 0.06, 0.45, -0.02], [hand * -0.08, 0.44, -0.16]], [[X(583) + hand * 0.02, 0.465, 0.12], [hand * 0.22, 0.43, 0.06], [hand * 0.24, 0.4, 0.03]]];
   for (const run of hoses)
@@ -2609,10 +2634,12 @@ function onSkids(pieces: Record<string, Build>, skid: number, w: number, d: numb
  * its 7.5 mm skids, which the model keeps inside the 696, so a box stacks on it there): three 21" in a hybrid horn bandpass, 18 mm birch
  * in a black textured coat, red aluminium braces. Measured off the front, side, rear and plan views (about 10 mm):
  * - cabinet: the shell open at the front, and the two dividers 168 in from each end
- * - horn walls: the main mouth, 1107 between the dividers, its two walls running back from the dividers to the grille
- *   (the fold behind them is not drawn, so it is not built)
- * - grille: 443 wide, centred, 550 back, the chamber dark behind it
- * - braces: two uprights with stepped edges at the grille's edges, a cross bar 748 long at half height between the walls
+ * - horn walls: the main mouth, 1107 between the dividers, its two walls slanting back at about 45 degrees from the
+ *   dividers to the grille, not flat panels facing front (#6161): in the drawing's isometric view the wall meets the
+ *   floor along a level line, where a flat panel's edge would drop at 30 degrees (the fold behind is not drawn or built)
+ * - grille: 443 wide, centred, 345 back, the chamber dark behind it
+ * - braces: two uprights with stepped edges and a window above and below, 25 to 285 back, at the grille's edges; a
+ *   cross bar at half height, 200 back, from wall to wall, its flanges lying along the walls
  * - slots: the two end slots, 150 wide, full height and depth, with two red brackets each, 234 and 456 down
  * - handles: two recessed in each side (582 and 1081 back from the front), two in the back (302 either side of centre)
  * - jacks: the two 8-pin sockets on a plate between the back handles
@@ -2626,7 +2653,7 @@ function incubusPieces(): Record<string, Build> {
   const xd = w / 2 - mm(177); // the dividers' middles
   for (const s of [-1, 1]) cab.pieces.push(box("coat", [t, ih, d - t], [s * xd, cy, t / 2]));
   // the horn walls: from each divider at the front back to the grille's edge
-  const zg = f - mm(550), xg = mm(221.5);
+  const zg = f - mm(345), xg = mm(221.5);
   for (const s of [-1, 1]) {
     const a = [s * (xd - t / 2), f - 0.004], b = [s * xg, zg], dx = b[0]! - a[0]!, dz = b[1]! - a[1]!, l = Math.hypot(dx, dz);
     const n = [(s * -dz * t) / l, (s * dx * t) / l]; // the wall's thickness, away from the mouth
@@ -2634,17 +2661,20 @@ function incubusPieces(): Record<string, Build> {
   }
   grille.pieces.push(...grilleSlab(2 * xg, ih - 0.004, 0.012, cy, zg - 0.012, 0.004));
   grille.pieces.push(box("cavity", [2 * xg, ih, 0.004], [0, cy, zg - 0.2]));
-  // the braces: the cross bar at half height where it meets the walls, flanged to them; the stepped uprights
-  const zb = f - mm(298), xb = mm(374), ang = Math.atan2(xd - t / 2 - xg, mm(546));
+  // the braces: the cross bar at half height, its flanges flat on the walls; the stepped uprights, short of the grille
+  const wallZ = (x: number) => f - 0.004 - ((xd - t / 2 - x) / (xd - t / 2 - xg)) * (f - 0.004 - zg); // a wall's depth at |x|
+  const zb = f - mm(200), xb = xg + ((zb - zg) / (f - 0.004 - zg)) * (xd - t / 2 - xg);
   braces.pieces.push(box("body", [2 * xb, 0.03, 0.012], [0, cy, zb], { bevel: 0.002 }));
-  for (const s of [-1, 1]) braces.pieces.push(box("body", [0.01, 0.09, 0.07], [s * xb, cy, zb], { bevel: 0.002, rot: [0, s * ang, 0] }));
   for (const s of [-1, 1]) {
+    const on = [mm(382), mm(235)].map((x) => [s * x, wallZ(x)]); // the flange's ends on the wall, then 6 proud of it
+    braces.pieces.push(slab("body", [...on, ...[...on].reverse().map(([x, z]) => [x! - s * 0.006, z! + 0.006])], cy - 0.021, cy + 0.021));
     const steps = 8, edge = Array.from({ length: steps + 1 }, (_, k) => [mm(30) * (k % 2), t + (ih * k) / steps]);
-    const outline = [...edge, ...[...edge].reverse().map(([u, y]) => [u! + mm(60), y!])];
-    const up = frontPlate("body", outline, [], 0.004, 0.008);
-    up.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(s * mm(144), 0, zb - mm(45)).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)));
+    const outline = [...edge, ...[...edge].reverse().map(([u, y]) => [u! + mm(230), y!])];
+    const windows = [-1, 1].map((k) => rect(mm(130), cy + k * ih * 0.24, mm(140), ih * 0.3));
+    const up = frontPlate("body", outline, windows, 0.004, 0.008);
+    up.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(s * mm(144), 0, f - mm(285)).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)));
     braces.pieces.push(up);
-    for (const y of [t + 0.003, h - t - 0.003]) braces.pieces.push(box("body", [0.05, 0.006, 0.1], [s * mm(144), y, zb], { bevel: 0.001 }));
+    for (const y of [t + 0.003, h - t - 0.003]) braces.pieces.push(box("body", [0.05, 0.006, mm(260)], [s * mm(144), y, f - mm(155)], { bevel: 0.001 }));
   }
   // the end slots: dark at the back, two red brackets across each
   for (const s of [-1, 1]) {
@@ -2677,7 +2707,8 @@ function incubusPieces(): Record<string, Build> {
  * - grille: one perforated sheet over the whole front, 17 in from each edge, bowed 12.8 out at the middle, a bar
  *   between the driver's part (459 wide) and the port's (143, on the right)
  * - driver: the 18", centred in its part of the front
- * - port: the flared slot behind the grille's right part
+ * - port: the flared slot behind the grille's right part, 320 mm deep. That depth is the owner's call (#6162), not a
+ *   measurement: Void's user guide, spec sheet and line drawing don't show it, and its 3D DWG is the outside shell only
  * - handles: two recessed in each side and two in the top, 110 square; the M20 top-hat socket in the top
  * - fittings: the rigging fittings standing 7.5 mm out of each side at its corners
  * - jacks: the rear plate of 4-pin sockets, low and left of centre seen from behind

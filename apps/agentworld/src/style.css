@@ -100,6 +100,26 @@ button:disabled { opacity: .5; cursor: default; }
 .dock .level[aria-pressed="true"] { border-color: var(--t-call); color: var(--t-call); }
 .dock .say span { text-align: left; }
 .see { display: grid; gap: 6px; }
+/* The one thing to do now: a card under the flow, cyan while connecting, green once connected, amber when won. */
+.now-card { display: grid; gap: 10px; padding: 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--t-call) 55%, transparent); background: color-mix(in srgb, var(--t-call) 7%, transparent); }
+.now-card.on { border-color: color-mix(in srgb, var(--t-ok) 55%, transparent); background: color-mix(in srgb, var(--t-ok) 7%, transparent); }
+.now-card.won { border-color: color-mix(in srgb, var(--t-cmd) 60%, transparent); background: color-mix(in srgb, var(--t-cmd) 8%, transparent); }
+.now-card h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; font-weight: 600; color: #fff; }
+.now-card h3 .l-i { width: 20px; height: 20px; color: var(--t-call); }
+.now-card.on h3 .l-i { color: var(--t-ok); }
+.now-card p { margin: 0; }
+.now-card .badge { display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--t-bg); background: var(--t-cmd); }
+.now-card .badge .l-i { width: 14px; height: 14px; }
+.dock .tile.big-tile { flex-direction: row; padding: 14px; font-size: 16px; font-weight: 600; }
+.dock .tile.big-tile .l-i { width: 22px; height: 22px; }
+.dock .tiles.three { grid-template-columns: repeat(3, 1fr); }
+.dock details > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-size: 13px; color: var(--t-ink); }
+.dock details > summary::-webkit-details-marker { display: none; }
+.dock details > summary .l-i { width: 16px; height: 16px; color: var(--t-cmd); }
+.dock details[open] > summary { margin-bottom: 4px; }
+.dock details.again { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--t-line); }
+.dock details.again > summary { color: var(--t-dim); font-size: 12px; }
+.dock details.again > summary .l-i { color: var(--t-dim); }
 .see .warn { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 12px; color: var(--t-cmd); }
 .see .warn .l-i { width: 14px; height: 14px; flex: none; margin-top: 1px; }
 .step.now { color: var(--t-ink); }

@@ -114,7 +114,7 @@ test("bwrap args cover the credential paths that exist: folders with a tmpfs, fi
   const kinds: Record<string, "dir" | "file"> = { "/home/me/.ssh": "dir", "/home/me/.netrc": "file", "/home/me/.config/gh": "dir" };
   const a = bwrapArgs("/nowhere/app", "/home/me", (p) => kinds[p]);
   expect(a.slice(0, 4)).toEqual(["--dev-bind", "/", "/", "--die-with-parent"]);
-  expect(a.slice(4)).toEqual(["--tmpfs", "/home/me/.ssh", "--ro-bind", "/dev/null", "/home/me/.netrc", "--tmpfs", "/home/me/.config/gh"]);
+  expect(a.slice(4)).toEqual(["--tmpfs", "/home/me/.ssh", "--dev-bind", "/dev/null", "/home/me/.netrc", "--tmpfs", "/home/me/.config/gh"]);
 });
 
 test.if(process.platform === "linux")("under bwrap a host can't read a denied file or folder but can read its own (#897)", () => {

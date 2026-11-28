@@ -53,7 +53,7 @@ Photos stay in the page; only a model you put online is uploaded.
 
 ## Next
 
-1. **Train.** Send the photos (or a video) to a splat trainer and bring back the `.spz`: Brush on the [builder Mac](../../MAC_SETUP.md) to start, a hosted GPU later. Six-sides goes to an image-to-3D API instead. Pricing to settle before it goes hosted: GPU minutes per capture.
+1. **Train.** [VENUE_PHOTOS.md](VENUE_PHOTOS.md) has a first trainer (`trainer/venue.ts`: COLMAP then Brush, run by hand) and which photos may be used. Still to do: send the page's photos to it and bring back the `.spz`, or a hosted GPU later. Six-sides goes to an image-to-3D API instead. Pricing to settle before it goes hosted: GPU minutes per capture.
 2. **GLB fallback.** A mesh beside the splat for Shopify's native 3D and AR (splat-to-mesh, or the image-to-3D mesh from Six sides).
 
 ## Names

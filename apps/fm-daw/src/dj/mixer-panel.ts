@@ -275,7 +275,7 @@ function drawCurve(c: HTMLCanvasElement, on: boolean, types: readonly FilterType
   g.clearRect(0, 0, w, h);
   g.strokeStyle = "#2a2d33"; g.lineWidth = 1;
   g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
-  g.fillStyle = on ? ACCENT : "#7c7f86"; g.font = '600 24px "Barlow Condensed", sans-serif'; g.textBaseline = "top"; g.fillText(name, 6, 3);
+  g.fillStyle = on ? ACCENT : "#7c7f86"; g.font = '600 24px "Russo One", sans-serif'; g.textBaseline = "top"; g.fillText(name, 6, 3);
   g.strokeStyle = on ? ACCENT : "#5b5f68"; g.lineWidth = 2;
   g.shadowColor = on ? ACCENT : "transparent"; g.shadowBlur = on ? 6 : 0;
   g.beginPath();

@@ -370,7 +370,7 @@ export function playerFace(h: PlayerHost) {
     g.beginPath(); g.moveTo(c + Math.cos(spin) * R * 0.42, c + Math.sin(spin) * R * 0.42); g.lineTo(c + Math.cos(spin) * R * (PLATTER_R - 0.04), c + Math.sin(spin) * R * (PLATTER_R - 0.04)); g.stroke();
     // the screen in the middle: how far in (the arc), the cue, and the position marker
     const sr = R * 0.36;
-    g.font = `600 ${Math.round(S * 0.06)}px "Barlow Condensed", sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = `600 ${Math.round(S * 0.06)}px "Exo 2", sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
     g.beginPath(); g.arc(c, c, sr, 0, Math.PI * 2); g.fillStyle = "#08090b"; g.fill();
     if (len > 0) {
       g.beginPath(); g.arc(c, c, sr - 5, -Math.PI / 2, -Math.PI / 2 + (pos / len) * Math.PI * 2);

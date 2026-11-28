@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
 import { pagePath, withData } from "../src/page.ts";
 import worker from "../src/worker.ts";
@@ -145,14 +145,44 @@ describe("page tools", () => {
   });
 });
 
+/** R2 in memory; `uploaded` counts puts, so the oldest is the lowest. */
+function bucket() {
+  const store = new Map<string, { bytes: Uint8Array; uploaded: Date }>();
+  let puts = 0;
+  return {
+    store,
+    put: async (k: string, bytes: Uint8Array) => void store.set(k, { bytes, uploaded: new Date(++puts) }),
+    get: async (k: string) => (store.has(k) ? { arrayBuffer: async () => store.get(k)!.bytes.buffer } : null),
+    list: async ({ prefix }: { prefix: string }) => ({ objects: [...store].filter(([k]) => k.startsWith(prefix)).map(([key, v]) => ({ key, uploaded: v.uploaded })), truncated: false }),
+    delete: async (keys: string[]) => keys.forEach((k) => store.delete(k)),
+  };
+}
+
 describe("binary files of your page", () => {
+  test("a revert brings back the model an upload replaced", async () => {
+    try {
+      setSystemTime(new Date(Date.now() - 2 * 3_600_000));
+      const call = await boot({ GH_CLI: "off", LEVEL_CHUNKS: bucket() } as any);
+      const post = (url: string, body: unknown) => call("ryan", url, { method: "POST", body: JSON.stringify(body) });
+      const put = (name: string, byte: number) => call("ryan", `/api/me/page/assets/${name}`, { method: "PUT", body: new Uint8Array([byte]) });
+      const read = async (name: string) => {
+        const res = await call(null, `/api/users/ryan/page/assets/${name}`);
+        return res.ok ? [...new Uint8Array(await res.arrayBuffer())] : res.status;
+      };
+      await post("/api/login", { name: "ryan" });
+      await post("/api/repos", { name: "page" });
+      await put("robot.glb", 1);
+      setSystemTime();
+      await put("robot.glb", 2);
+      await put("hat.glb", 3);
+      expect([await read("robot.glb"), await read("hat.glb")]).toEqual([[2], [3]]);
+      expect((await post("/api/me/page/revert", { to: "hour" })).status).toBe(200);
+      expect([await read("robot.glb"), await read("hat.glb")]).toEqual([[1], 404]);
+    } finally { setSystemTime(); }
+  });
+
   test("go to R2 and come back under the sandbox, only for the owner and only the allowed kinds", async () => {
-    const store = new Map<string, Uint8Array>();
-    const LEVEL_CHUNKS = {
-      put: async (k: string, v: Uint8Array) => void store.set(k, v),
-      get: async (k: string) => (store.has(k) ? { arrayBuffer: async () => store.get(k)!.buffer } : null),
-      list: async ({ prefix }: { prefix: string }) => ({ objects: [...store.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })), truncated: false }), delete: async () => {},
-    };
+    const LEVEL_CHUNKS = bucket();
     const call = await boot({ GH_CLI: "off", LEVEL_CHUNKS } as any);
     const put = (user: string | null, name: string, bytes: Uint8Array) => call(user, `/api/me/page/assets/${name}`, { method: "PUT", body: bytes as BodyInit });
     await call("ryan", "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
@@ -161,7 +191,7 @@ describe("binary files of your page", () => {
     expect((await put(null, "cat.png", new Uint8Array([1]))).status).toBe(401);
     expect((await put("ryan", "run.exe", new Uint8Array([1]))).status).toBe(400);
     expect((await put("ryan", "cat.png", new Uint8Array(5_000_001))).status).toBe(413);
-    expect(await (await put("ryan", "cat.png", new Uint8Array([1, 2, 3]))).json()).toEqual({ path: "assets/cat.png", bytes: 3 });
+    expect(await (await put("ryan", "cat.png", new Uint8Array([1, 2, 3]))).json()).toEqual({ path: "assets/cat.png", bytes: 3, sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
     const got = await call(null, "/api/users/ryan/page/assets/cat.png");
     expect([got.status, got.headers.get("content-type"), got.headers.get("content-security-policy")]).toEqual([200, "image/png", expect.stringContaining("sandbox")]);
     expect([...new Uint8Array(await got.arrayBuffer())]).toEqual([1, 2, 3]);
@@ -171,6 +201,10 @@ describe("binary files of your page", () => {
     for (let i = 1; i < 50; i++) expect((await put("ryan", `f${i}.png`, new Uint8Array([1]))).status).toBe(200);
     expect((await put("ryan", "one-too-many.png", new Uint8Array([1]))).status).toBe(413);
     expect((await put("ryan", "cat.png", new Uint8Array([5]))).status).toBe(200);
+    // Old versions are kept up to a limit, then the oldest the page no longer uses goes.
+    for (let i = 0; i < 200; i++) await put("ryan", "cat.png", new Uint8Array([6, i]));
+    expect(LEVEL_CHUNKS.store.size).toBe(200);
+    expect((await call(null, "/api/users/ryan/page/assets/f1.png")).status).toBe(200);
     const big = await call("ryan", "/api/me/page", { method: "PUT", body: JSON.stringify({ path: "index.html", content: "x".repeat(1_000_001) }) });
     expect(big.status).toBe(413);
   });
