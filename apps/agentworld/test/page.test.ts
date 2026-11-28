@@ -1,15 +1,16 @@
 import { HtmlLocator, HtmlScene } from "@effect/ui/html/testing";
 import { Locator, Story } from "@effect/ui/testing";
 import { describe, expect, test } from "bun:test";
+import { Component } from "@effect/ui";
 import { Effect } from "effect";
 import { BUILD_TOOLS, decode, decodeReadFile, inputSchema, type Request, TOOLS } from "../src/tools.ts";
 import { apply, FILE_MAX, listing, type Page, starter, WORLD_MAX } from "../src/page.ts";
 import { worldDoc, WORLD_CSP } from "../src/world.ts";
-import { step, termLines, connectLines, CopyText, CreateWorld, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
+import { step, termLines, connectLines, CopyText, CreateWorld, FocusNext, MarkMade, PageMessage, ProfilePageNoDeps, ReportPage } from "../src/ProfilePage.ts";
 import { READY } from "../src/worlds.ts";
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name)!;
-const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false, who: null, made: false };
+const props = { room: "testroom0001", origin: "http://localhost", initial: starter, full: false, landing: false, who: null, made: false, back: false };
 const run = <A>(e: Effect.Effect<A, never, import("effect").Scope.Scope>) => Effect.runPromise(Effect.scoped(e));
 const write = (path: string, text: string) => ({ call: { call: 1, tool: "page_write_file", request: { _tag: "WriteFile" as const, path, text } } });
 
@@ -252,4 +253,19 @@ test("a fresh room lands on the landing, and the AI's first write brings up the 
     story.send(PageMessage.ReceivedAgentCall(write("world.js", "// mine")));
     expect(story.model.landing).toBe(false);
     story.resolve(ReportPage, PageMessage.CompletedReportPage());
+  })));
+
+test("back from signing in, the focus is sent on at each step: as you arrive, past the land picker, to the open galaxy", () =>
+  run(Effect.gen(function* () {
+    const s = yield* Story.make(ProfilePageNoDeps, { ...props, who: "Ada", back: true });
+    const sent = (step: "first" | "copy" | "galaxy") => { s.expectExact(FocusNext); expect(s.pending.at(-1)!.command.args).toEqual({ step }); s.resolve(FocusNext, Component.noop); };
+    sent("first");
+    s.send(PageMessage.ClickedLand({ name: "" }));
+    sent("copy");
+    s.send(PageMessage.MadeWorld({ made: true }));
+    sent("galaxy");
+    // Not back from signing in: the page leaves the focus alone.
+    const other = yield* Story.make(ProfilePageNoDeps, { ...props, who: "Ada" });
+    other.send(PageMessage.ClickedLand({ name: "" }));
+    expect(other.pending).toHaveLength(0);
   })));

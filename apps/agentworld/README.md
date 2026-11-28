@@ -330,15 +330,25 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 | --- | --- |
 | Component | One, `ProfilePage`, with the view split into `Def.fragment` helpers. No child components. |
 | Messages and `update` | `PageMessage`. Agent calls and clicks go through the same `step`. |
-| Commands | `ReportPage` (a `Command.Service`, `mode: "queue"`), `CreateWorld`, `MarkMade`, `ExportGif`, `CopyText`. The last four use the default mode, `concurrent`. |
+| Commands | `ReportPage` (a `Command.Service`, `mode: "queue"`), `CreateWorld`, `MarkMade`, `ExportGif`, `CopyText`, `FocusNext` (where the focus goes after sign-in). All but the first use the default mode, `concurrent`; `update` keeps `MarkMade` to one at a time. |
+| Mounts | `ShowGalaxy` (`src/galaxyView.ts`): Agent Galaxy's layer is up as long as the page's `data-galaxy` element is. |
 | Subscriptions | The agent's calls, the relay's state, what the frame said, GIF progress, galaxy asks. |
 | Services and Layers | `Agent` (`src/agent.ts`), given at mount; `ReportPage.layer` through `Component.provide`. |
-| Tests | `Story` and `HtmlScene` in `test/page.test.ts`, on `ProfilePageNoDeps`. |
-| Not used | Queries, shared state (`shares` / `reads`), routing, SSR, Effect UI Kit, DevTools, Play tests, `Story.check` / `explore`. |
+| Tests | `Story` and `HtmlScene` in `test/page.test.ts`; `Story.explore` in `test/overlap.test.ts`, which tries agent calls, a person's Undo and Start over, frame loads and Command results in every order. Both on `ProfilePageNoDeps`. |
+| DevTools | The overlay and, when asked for, its MCP server, in `bun run dev` only (below). |
+| Not used | Queries, shared state (`shares` / `reads`), routing, SSR, Effect UI Kit (installed only because DevTools needs it), Play tests, `Story.check`. |
 
-Outside the component, and so outside its Model and tests: Agent Galaxy (`src/galaxyView.ts` draws its own DOM and
-finds out it is on with a `MutationObserver`), the focus moves after sign-in (`src/main.ts`, three more observers) and
+Outside the component, and so outside its Model and tests: Agent Galaxy's own DOM (`src/galaxyView.ts`) and
 `galaxyLock` (`src/lock.ts`, a mutable global beside the Model's `made`).
 
-Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit
-(`@effect/ui@a0d7578`). To move it on: `bun add https://pkg.pr.new/Effect-TS/ui/@effect/ui@<commit>` in this folder.
+**DevTools** (`src/devtools.ts`). `bun run dev` puts a button in the page's bottom left corner: the timeline of every
+message, Command and mount, the Model at each, and time travel. A production build (`--conditions production`) takes
+`src/devtoolsOff.ts` instead (`#devtools` in `package.json`), so none of it is in `dist`. For an agent to read the same
+log, run `bun run devtools` beside the dev server and open the page with `?devtools=mcp` on its link; the MCP server is
+`http://127.0.0.1:4774/mcp`, on this machine only. It can read, not act: `bun run devtools --dispatch` lets it send
+messages. The overlay's WebMCP tools are off, so they don't mix with the page's own.
+
+Effect UI is in public preview and not on npm yet, so `package.json` pins pkg.pr.new snapshots by commit
+(`f4cddd0`: `@effect/ui`, `@effect/ui-devtools`, and `@effect/ui-kit`, which DevTools needs). To move it on, change the
+commit in all three and run `bun install` (not every commit has a snapshot). `effect` is the repo's (4.1.4, held by the
+root's `overrides`); `@effect/ui-kit` asks for 4.1.6, and DevTools runs on 4.1.4 all the same.

@@ -20,7 +20,7 @@ import { READY } from "./worlds.ts";
 import cityShot from "./levels/city.jpg";
 import fishShot from "./levels/fish.jpg";
 import spaceShot from "./levels/space.jpg";
-import { galaxyAsks, preloadGalaxy } from "./galaxyView.ts";
+import { galaxyAsks, preloadGalaxy, ShowGalaxy } from "./galaxyView.ts";
 import { galaxyLock, lockLine, SIGN_IN_FIRST } from "./lock.ts";
 
 export const PageMessage = UiSchema.TaggedEnum({
@@ -65,6 +65,20 @@ export const MarkMade = Command.make("agentworld/MarkMade", { args: { room: Sche
       if (made && signedIn) setTimeout(() => void preloadGalaxy(), 600);
       return PageMessage.MadeWorld({ made });
     })));
+
+/** Back from signing in (main.ts), the next step takes the focus: "first" as you arrive (Pick your land when it is up,
+ *  else Copy prompt, so one press copies), "copy" once your land is picked, "galaxy" once your world is made. A Command
+ *  starts after its update has rendered, so the button is there. Only "first" moves the focus off something in use. */
+export const FocusNext = Command.make("agentworld/FocusNext", { args: { step: Schema.Literals(["first", "copy", "galaxy"]) } }, ({ step }) =>
+  Effect.sync(() => {
+    const find = (selector: string) => document.querySelector<HTMLButtonElement>(selector);
+    const at = document.activeElement, idle = !at || at === document.body, copy = find(".dock button.big");
+    const to = step === "first" ? find(".pick [data-land]") ?? copy
+      : step === "copy" ? idle && copy
+      // On to the Galaxy tile only from Copy, or from nothing: never away from something else you were using.
+      : (idle || at === copy) && find("[data-galaxy-tile].next");
+    if (to) to.focus({ preventScroll: true });
+  }).pipe(Effect.as(Component.noop)));
 
 /** Record the world as a GIF (pictures.ts); how it goes comes back as ChangedGif. */
 export const ExportGif = Command.make("agentworld/ExportGif", { args: { room: Schema.String } }, ({ room }) =>
@@ -117,11 +131,21 @@ const Model = Schema.Struct({
   galaxy: Schema.Boolean,
   /** The world is made (its AI's write loaded clean and the server keeps it): with a sign-in, the galaxy opens. */
   made: Schema.Boolean,
+  /** MarkMade is out: a frame that loads again meanwhile doesn't send another. */
+  marking: Schema.Boolean,
 });
 type Model = typeof Model.Type;
 
-/** `who`: the eqosys name this browser is signed in as (account.ts), or null. `made`: the server says this room's world is. */
-const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean, who: Schema.NullOr(Schema.String), made: Schema.Boolean });
+const holds = (page: Page, files: Page["files"]) =>
+  Object.keys(page.files).length === Object.keys(files).length && Object.entries(files).every(([path, text]) => page.files[path] === text);
+/** A world the page hands out (the starter desert, a ready-made one, a land): a person's click put it up, not their AI. */
+const handedOut = (page: Page) => [starter, ...READY, ...LANDS].some((w) => holds(page, w.files));
+/** Pick your land is up: a signed-in person whose world is still the untouched starter. */
+const choosing = (who: string | null, m: Pick<Model, "page" | "picked" | "made">) => who !== null && !m.picked && !m.made && holds(m.page, starter.files);
+
+/** `who`: the eqosys name this browser is signed in as (account.ts), or null. `made`: the server says this room's world is.
+ *  `back`: the person just came back from signing in, so the next step takes the focus (FocusNext). */
+const Props = Schema.Struct({ room: Schema.String, origin: Schema.String, initial: Page, full: Schema.Boolean, landing: Schema.Boolean, who: Schema.NullOr(Schema.String), made: Schema.Boolean, back: Schema.Boolean });
 
 const Def = Html.component({ name: "ProfilePage", props: Props, model: Model, message: PageMessage });
 
@@ -396,8 +420,11 @@ const landingView = Def.fragment((h, explain: boolean, noSignIn: boolean, who: s
   explain && deepView(h), explain && footView(h)));
 
 export const ProfilePageNoDeps = Def.make({
-  init: ($) => ({ page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,
-    explain: false, noSignIn: false, picked: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null }),
+  init: ($) => {
+    const model = { page: $.props.initial, past: [], log: [], online: false, copied: null, gif: { busy: false, says: "" }, full: $.props.full, landing: $.props.landing, galaxy: false, made: $.props.made,
+      marking: false, explain: false, noSignIn: false, picked: false, steps: { here: false, asked: false, wrote: false, clean: true, up: false }, status: null };
+    return $.props.back ? $.set(model).run(FocusNext.make({ step: lockLine($.props.who !== null, model.made) === null ? "galaxy" : "first" })) : model;
+  },
   update: ($, message) => {
     switch (message._tag) {
       case "ChangedRelay": return $.evolve({ online: message.online });
@@ -409,7 +436,7 @@ export const ProfilePageNoDeps = Def.make({
       case "ClickedExplain": return $.evolve({ explain: !$.model.explain });
       case "ClickedCreate": return $.run(CreateWorld.make({ room: $.props.room }));
       case "ClickedLand": {
-        if (message.name === "") return $.evolve({ picked: true });
+        if (message.name === "") return $.props.back && choosing($.props.who, $.model) ? $.evolve({ picked: true }).run(FocusNext.make({ step: "copy" })) : $.evolve({ picked: true });
         break;
       }
       case "CreatedWorld": return message.went === "here" ? $.evolve({ landing: false }) : $.evolve({ noSignIn: message.went === "off" });
@@ -422,8 +449,9 @@ export const ProfilePageNoDeps = Def.make({
           case "error": return $.evolve({ steps: { ...s, clean: false, up: false } });
           case "loaded": {
             const steps = { ...s, up: s.wrote && s.clean };
-            return steps.up && !$.model.made
-              ? $.set({ ...$.model, steps }).run(MarkMade.make({ room: $.props.room, page: $.model.page, signedIn: $.props.who !== null }))
+            // Once at a time, and only for the AI's work: after Start over or Undo what loads may be the page's own.
+            return steps.up && !$.model.made && !$.model.marking && !handedOut($.model.page)
+              ? $.set({ ...$.model, steps, marking: true }).run(MarkMade.make({ room: $.props.room, page: $.model.page, signedIn: $.props.who !== null }))
               : $.evolve({ steps });
           }
         }
@@ -438,7 +466,10 @@ export const ProfilePageNoDeps = Def.make({
         if (why === SIGN_IN_FIRST) return $.run(CreateWorld.make({ room: $.props.room }));
         return why ? $.model : $.evolve({ galaxy: true, landing: false });
       }
-      case "MadeWorld": return $.evolve({ made: message.made });
+      case "MadeWorld": {
+        const done = $.evolve({ made: message.made, marking: false });
+        return message.made && $.props.back && $.props.who !== null ? done.run(FocusNext.make({ step: "galaxy" })) : done;
+      }
       case "ClickedBack": return $.evolve({ galaxy: false });
     }
     const a = asked(message);
@@ -450,8 +481,10 @@ export const ProfilePageNoDeps = Def.make({
     // An agent's call says it is here; its page_status that it is asking; its first write or edit that lands that it is writing.
     const s = model.steps;
     const steps = call > 0 ? { ...s, here: true, asked: s.asked || r._tag === "Status", wrote: s.wrote || (["WriteFile", "EditFile", "Build", "EditWorld"].includes(r._tag) && error === null) } : s;
-    return $.set({ ...model, landing, steps, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
+    const next = $.set({ ...model, landing, steps, log: [{ call, tool, error }, ...model.log].slice(0, LOG) })
       .run(ReportPage.make({ call, error, page: model.page }));
+    // The land picker was up and this change took it down: Copy prompt is next.
+    return $.props.back && choosing($.props.who, $.model) && !choosing($.props.who, model) ? next.run(FocusNext.make({ step: "copy" })) : next;
   },
   subscriptions: () => [
     Subscription.make("agent", Stream.unwrap(Effect.gen(function* () { return (yield* Agent).calls; })).pipe(
@@ -469,8 +502,9 @@ export const ProfilePageNoDeps = Def.make({
   view: (h, { page, past, log, online, copied, gif, full, landing, galaxy, explain, noSignIn, steps, status, made, picked }) => {
     const { room, origin, who } = h.props;
     const locked = lockLine(who !== null, made);
-    // The map is drawn by galaxyView.ts in its own layer over the page; here only the way back.
-    if (galaxy) return h.div.class("galaxy-mode").attr("data-galaxy", "on").children(
+    // The map is drawn by galaxyView.ts in its own layer over the page, up for as long as this element is (its mount);
+    // here only the way back.
+    if (galaxy) return h.div.class("galaxy-mode").key("galaxy").attr("data-galaxy", "on").onMount(ShowGalaxy({ room })).children(
       h.button.attr("type", "button").class("galaxy-back").on("click", PageMessage.ClickedBack()).children(icon(h, "back"), "Back to my world"));
     if (landing) return landingView(h, explain, noSignIn, who);
     const on = READY.find((w) => Object.entries(w.files).every(([path, text]) => page.files[path] === text));
@@ -480,7 +514,7 @@ export const ProfilePageNoDeps = Def.make({
       .find((c) => copied === `failed: ${c.what}`)?.text;
     const doc = worldDoc(page);
     // A signed-in person whose world is still the untouched starter: one tap says what it starts as.
-    const choose = who !== null && !picked && !made && Object.keys(page.files).length === Object.keys(starter.files).length && Object.entries(starter.files).every(([path, text]) => page.files[path] === text);
+    const choose = choosing(who, { page, picked, made });
     return h.div.class("shell", full && "full").children(
       // Someone's codeSplitter page behind everything: its own sandbox (opaque origin, scripts only), no referrer.
       page.backdrop && h.iframe.class("backdrop").key(`bd-${page.backdrop}`).attrs({
