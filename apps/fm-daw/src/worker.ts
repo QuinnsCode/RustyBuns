@@ -11,6 +11,7 @@ import { bounceFromPath, seshFromPath, seshName } from "./sesh.ts";
 import { DOOR } from "./paths.ts";
 import Profile from "./profile.ts";
 import { partyOwner, PARTIES_MAX } from "./party-store.ts";
+import { STAGE_MAX } from "./stage-store.ts";
 import { personId } from "./chat.ts";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import { whoIs } from "@rustybuns/util/token";
@@ -151,15 +152,15 @@ export default {
       const body = req.method === "PUT" ? (await req.text()).slice(0, 4096) : undefined;
       return env.PROFILE.get(env.PROFILE.idFromName(id)).fetch(new Request("https://profile/", { method: req.method, body }));
     }
-    if (url.pathname === "/parties" && (req.method === "GET" || req.method === "PUT")) {
-      // your Qevent parties on your eqosys account (#5932): only with a token (a bare uid is a guest's, and a guest has none)
+    if ((url.pathname === "/parties" || url.pathname === "/stage-builds") && (req.method === "GET" || req.method === "PUT")) {
+      // your Qevent parties (#5932) and Stage Builder builds (#6583) on your eqosys account: only with a token (a bare uid is a guest's, and a guest has none)
       if (!url.searchParams.has("token")) return new Response("sign in with eqosys", { status: 401 });
       const who = await whoIs(url, { app: APP, eqosys: env.EQOSYS_URL ?? EQOSYS, fallbackName: "Someone" });
       if (who instanceof Response) return who;
       const owner = await partyOwner(who.uid);
       if (req.method === "PUT" && ip && !partyGate.allow(ip, crypto.randomUUID(), Date.now())) return new Response("try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
-      const body = req.method === "PUT" ? (await req.text()).slice(0, PARTIES_MAX + 1) : undefined;
-      return env.PROFILE.get(env.PROFILE.idFromName(`parties:${owner}`)).fetch(new Request("https://profile/parties", { method: req.method, body, headers: { "X-Party-Owner": owner } }));
+      const body = req.method === "PUT" ? (await req.text()).slice(0, (url.pathname === "/parties" ? PARTIES_MAX : STAGE_MAX) + 1) : undefined;
+      return env.PROFILE.get(env.PROFILE.idFromName(`parties:${owner}`)).fetch(new Request(`https://profile${url.pathname}`, { method: req.method, body, headers: { "X-Party-Owner": owner } }));
     }
     const liveOf = /^\/party\/([0-9a-f]{24})$/.exec(url.pathname)?.[1];
     if (liveOf && req.method === "GET") {

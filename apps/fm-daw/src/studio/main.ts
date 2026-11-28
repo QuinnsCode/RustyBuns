@@ -89,6 +89,7 @@ import { crossoverPanel } from "@rustybuns/gear/crossover-panel";
 import { CROSSOVER_STEPS } from "@rustybuns/gear/crossover-lesson";
 import { rigCrossover } from "@rustybuns/gear/crossover";
 import { playWalkSet } from "./walk-set.ts";
+import { stageModel } from "./stage-model.ts";
 import { NightAir } from "./night-air.ts";
 import { turnWheels } from "@rustybuns/models/monosynth";
 import { Dancers } from "./dancers.ts";
@@ -192,7 +193,8 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: loadQuality() === 
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 const scene = new THREE.Scene();
 // a lens about a phone's main camera: wide enough to see the room, not so wide its corners stretch (the light: look.ts)
-const camera = new THREE.PerspectiveCamera(56, 1, 0.05, 80);
+// a big arena (the Stage Builder's, up to 200 by 150 m) sees across itself; open-air.ts sets its own
+const camera = new THREE.PerspectiveCamera(56, 1, 0.05, Math.max(80, Math.hypot(def.size.w, def.size.d)));
 camera.rotation.order = "YXZ";
 const std = (c: string, o: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...o });
 function buildRoom() {
@@ -234,6 +236,8 @@ function buildRoom() {
   }
   // every doorway in a drawn wall: the wall over it, a casing, and a studio door standing open (doors.ts)
   scene.add(doorways(def, h, { wallOf: (wl) => surface(wallSurface(wl.material ?? "drywall"), wl.material ? undefined : def.colors.walls), casing: surface("wood", def.colors.trim), leaf: surface("wood", "#6e5034"), lever: surface("metal", "#b9bcc0"), glass }));
+  // the Stage Builder's stage (#6053), as it was placed
+  if (def.stage) scene.add(stageModel(def.stage));
   // a seat on a riser stands on its deck, and so does what's played there
   for (const s of def.spots) { const t = thing(s); t.position.y = floorAt(def, s.at[0], s.at[1]); scene.add(t); }
   for (const p of def.props ?? []) { const o = prop(p, surface); scene.add(o); if (o.userData.tick) moving.push(o); }
