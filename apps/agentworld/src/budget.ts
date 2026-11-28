@@ -7,7 +7,7 @@ import { check, int, nul, obj, str } from "@rustybuns/util/guard";
 import { json, readJson } from "@rustybuns/util/http";
 import type { Kv } from "./galaxy.ts";
 
-/** At $0.50 per GB-month past the first, ALL_BYTES is $2 a month at most. */
+/** At $0.50 per GB-month, ALL_BYTES is $2.50 a month at most: $2 if the account's free GB is all this app's. */
 export const DAY_BYTES = 100_000_000, ALL_BYTES = 5_000_000_000;
 /** What a push costs beyond its files (the commit, its trees, a new repo), so an empty one is not free. */
 export const PUSH_BYTES = 4096;

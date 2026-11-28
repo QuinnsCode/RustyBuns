@@ -273,7 +273,7 @@ only what it stores. git keeps every version, so what a room stores only grows (
 one room: a push each 10 seconds at most, and 5 uploads in a row then one each half minute.
 
 The number of rooms has no limit, so what all of them together put into Artifacts does (`src/budget.ts`): 100 MB a day
-and 5 GB ever, $2 a month of storage at most. The `Galaxy` object keeps the count, of bytes as sent plus 4 KB a push.
+and 5 GB ever, $2.50 a month of storage at most ($2 if the account's free GB is all its own). The `Galaxy` object keeps the count, of bytes as sent plus 4 KB a push.
 Past either, an upload is refused with a 507 that says why, and a changed world is not pushed: it stays in its Room's
 storage and opens as before. No repo is ever deleted, since a world is kept for good, and the count never goes down:
 once it is full, the owner raises `ALL_BYTES`. The limits cover stored bytes, not operations.
