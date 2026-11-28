@@ -32,7 +32,7 @@ import * as amphi from "./venues/amphitheatre.ts";
 import { type AmphitheatreView, amphitheatreView } from "./venues/amphitheatre-view.ts";
 import { SHOW } from "./venues/show.ts";
 import { type ShowView, showView } from "./venues/show-view.ts";
-import { DESERT, bringRig, desertState, wrap } from "./venues/desert.ts";
+import { DESERT, bringRig, desertState, playedBands, wrap } from "./venues/desert.ts";
 import { type DesertView, desertView } from "./venues/desert-view.ts";
 import * as fest from "./venues/festival.ts";
 import { type FestivalView, festivalView } from "./venues/festival-view.ts";
@@ -676,6 +676,7 @@ function frame(now: number) {
   if (++shadeTick % 20 === 0) shade(scene);
   draw();
   sound.update(heard());
+  sound.amps(playedBands(world));
   // The room rings on the speakers: long when it is empty, tighter as the crowd comes in; out of doors, not at all.
   const spot = spotOf(world.level.name);
   sound.room(spot ? ringing(world, spot) : null);
@@ -730,7 +731,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), prompt: $("hint").textContent, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], reverb: sound.reverb, ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(band ? { bandNight: band.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(festival ? { festival: { ...fest.festivalState(world), heat: festival.heatOn } } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), ...(dj ? { decks: dj.state() } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(world.level === DIVE_BAR ? { crowd: crowdState(world) } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), prompt: $("hint").textContent, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], reverb: sound.reverb, channels: sound.channels, ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(band ? { bandNight: band.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(festival ? { festival: { ...fest.festivalState(world), heat: festival.heatOn } } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), ...(dj ? { decks: dj.state() } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(world.level === DIVE_BAR ? { crowd: crowdState(world) } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */

@@ -3,7 +3,7 @@
 // Butterworth, 12 to 48 dB/oct), gain, delay and polarity, as an amp's DSP has them (the PLD4.5's: crossover 20 Hz to
 // 20 kHz, 6 to 48 dB/oct, delay 0 to 50 ms). The math is the filters' complex response, so the sum of the bands at a
 // frequency carries their phase: a sub out of polarity or late against the tops leaves a hole at the split, as it
-// does in the field. Plain TS, no audio: the page plays it through Web Audio's own filters (apps/fm-daw).
+// does in the field. Plain TS, no audio: a page plays it through Web Audio's own filters (crossover-audio.ts).
 
 export const SLOPES = [12, 24, 48] as const;
 export type Slope = (typeof SLOPES)[number];
@@ -12,6 +12,27 @@ export type FilterType = "lr" | "bw";
 export type Edge = { hz: number; slope: Slope; type: FilterType };
 /** One amp channel's DSP. */
 export type ChannelDsp = { hp?: Edge; lp?: Edge; gainDb: number; delayMs: number; polarity: 1 | -1; /** dBFS the limiter holds the channel under */ limitDb?: number };
+/** The most amp channels a crossover here has. */
+export const MAX_CHANNELS = 8;
+const within = (v: unknown, lo: number, hi: number): v is number => typeof v === "number" && v >= lo && v <= hi;
+function readEdge(v: unknown): Edge | null {
+  if (typeof v !== "object" || !v || !("hz" in v && "slope" in v && "type" in v)) return null;
+  const slope = SLOPES.find((s) => s === v.slope);
+  return within(v.hz, 20, 20000) && slope && (v.type === "lr" || v.type === "bw") ? { hz: v.hz, slope, type: v.type } : null;
+}
+function readChannel(v: unknown): ChannelDsp | null {
+  if (typeof v !== "object" || !v || !("gainDb" in v && "delayMs" in v && "polarity" in v)) return null;
+  const { gainDb, delayMs, polarity } = v;
+  if (!within(gainDb, -24, 24) || !within(delayMs, 0, 50) || (polarity !== 1 && polarity !== -1)) return null;
+  const hp = "hp" in v ? readEdge(v.hp) : undefined, lp = "lp" in v ? readEdge(v.lp) : undefined;
+  return hp === null || lp === null ? null : { gainDb, delayMs, polarity, ...(hp ? { hp } : {}), ...(lp ? { lp } : {}) };
+}
+/** Amp channels that came over the wire or out of a save: each one's DSP, or null if any of it isn't one. */
+export function readChannels(v: unknown): ChannelDsp[] | null {
+  if (!Array.isArray(v) || !v.length || v.length > MAX_CHANNELS) return null;
+  const out = v.map(readChannel);
+  return out.every((c): c is ChannelDsp => c !== null) ? out : null;
+}
 /** The DSP limits of the amp it runs in. */
 export const PLD_DSP = { minHz: 20, maxHz: 20000, maxDelayMs: 50 } as const;
 
@@ -120,23 +141,24 @@ export const RIG_CROSSOVERS: Readonly<Record<string, readonly Band[]>> = {
   // Void's Air Motion user guide (UG10519): the LF section 140 to 600 Hz, the 8" and 1.5" above that through its own
   // 1.7 kHz passive network. The Incubus guide leaves its crossover to the amps' presets.
   sculpted: [
-    { box: "triple-21-sub", way: "triple 21", dsp: ch({ hp: bw24(25), lp: lr24(140) }), range: { name: "triple 21 sub", lowHz: 25, highHz: 150 }, ref: "Incubus guide UG10570: 25 Hz, preset dependent", guess: "25 Hz HP and the 140 Hz LR24 low-pass meeting the Air Motion's LF are ours" },
+    { box: "triple-21-sub", way: "triple 21", dsp: ch({ hp: bw24(25), lp: lr24(140) }), range: { name: "triple 21 sub", lowHz: 25, highHz: 150 }, ref: "Incubus guide UG10570 2.1: the crossover point is preset in a dedicated processor", guess: "25 Hz HP and the 140 Hz LR24 low-pass meeting the Air Motion's LF are ours" },
     { box: "sculpted-3way", way: '12" LF', dsp: ch({ hp: lr24(140), lp: lr24(600) }), range: { name: '12" LF', lowHz: 135, highHz: 600 }, ref: "Air Motion guide UG10519: LF section 140 Hz and 600 Hz", guess: "slopes not given: LR24" },
     { box: "sculpted-3way", way: '8" and 1.5" (passive 1.7 kHz)', dsp: ch({ hp: lr24(600) }), range: { name: '8" and 1.5"', lowHz: 600, highHz: 20000 }, ref: "Air Motion guide UG10519: MHF from 600 Hz, 1.7 kHz passive", guess: "slope not given: LR24" },
   ],
   // Turbosound's Flashlight manual (issue 1.4): the TFS-780H's 12" 150 Hz-1.3 kHz, 6.5" 1.3-8 kHz, 1" above 8 kHz; the
-  // 780L's 21" up to 150 Hz; the LMS-D6 controller at 24 dB/oct. It gives neither the filter family nor the delays.
+  // 780L's 21" up to 150 Hz. The TFS-780 engineering datasheet (1.2): its LMS-D6's crossovers are 24 dB/oct
+  // Linkwitz-Riley. Neither gives the delays.
   "tri-amp": [
-    { box: "tri-amp-bass", way: '21" TurboBass', dsp: ch({ hp: bw24(30), lp: lr24(150) }), range: { name: '21" bass', lowHz: 30, highHz: 150 }, ref: "Flashlight manual: 780L up to 150 Hz, 24 dB/oct", guess: "the 30 Hz high-pass and LR for the family are ours" },
-    { box: "tri-amp-top", way: '12" TurboMid', dsp: ch({ hp: lr24(150), lp: lr24(1300) }), range: { name: '12" TurboMid', lowHz: 150, highHz: 1300 }, ref: "Flashlight manual: 150 Hz-1.3 kHz", guess: "LR for the family is ours" },
-    { box: "tri-amp-top", way: '6.5" TurboMid', dsp: ch({ hp: lr24(1300), lp: lr24(8000) }), range: { name: '6.5" TurboMid', lowHz: 1300, highHz: 8000 }, ref: "Flashlight manual: 1.3-8 kHz", guess: "LR for the family is ours" },
-    { box: "tri-amp-top", way: '1" on its waveguide', dsp: ch({ hp: lr24(8000) }), range: { name: '1" compression driver', lowHz: 8000, highHz: 20000 }, ref: "Flashlight manual: above 8 kHz", guess: "LR for the family is ours" },
+    { box: "tri-amp-bass", way: '21" TurboBass', dsp: ch({ hp: bw24(30), lp: lr24(150) }), range: { name: '21" bass', lowHz: 30, highHz: 150 }, ref: "Flashlight manual: 780L up to 150 Hz, 24 dB/oct", guess: "the 30 Hz high-pass is ours (the sheet gives the 780L a 30-150 Hz range)" },
+    { box: "tri-amp-top", way: '12" TurboMid', dsp: ch({ hp: lr24(150), lp: lr24(1300) }), range: { name: '12" TurboMid', lowHz: 150, highHz: 1300 }, ref: "Flashlight manual: 150 Hz-1.3 kHz" },
+    { box: "tri-amp-top", way: '6.5" TurboMid', dsp: ch({ hp: lr24(1300), lp: lr24(8000) }), range: { name: '6.5" TurboMid', lowHz: 1300, highHz: 8000 }, ref: "Flashlight manual: 1.3-8 kHz" },
+    { box: "tri-amp-top", way: '1" on its waveguide', dsp: ch({ hp: lr24(8000) }), range: { name: '1" compression driver', lowHz: 8000, highHz: 20000 }, ref: "Flashlight manual: above 8 kHz" },
   ],
   // QSC: the KS118's low-pass menu is 80 or 100 Hz, 80 the default for K.2 and CP tops, time-aligned with a top on a
-  // pole over it (KS user manual, KS118 FAQ). The LA108's own crossover isn't published: its high-pass meets the sub's.
+  // pole over it (KS user manual, KS118 FAQ). The LA108 manual: high-pass 80 Hz by default over an L Class or KS sub.
   "line-array": [
     { box: "sub-18", way: '18" sub', dsp: ch({ lp: lr24(80) }), range: { name: '18" sub', lowHz: 0, highHz: 98 }, ref: "KS118 manual: LP 80 Hz (default for K.2/CP tops); sheet 41-98 Hz -6 dB; powered, its own DSP guards its low end", guess: "slope not given: LR24" },
-    { box: "line-array-10", way: "line array box", dsp: ch({ hp: lr24(80) }), range: { name: "line array box", lowHz: 62, highHz: 20000 }, ref: "LA108 sheet: 62 Hz-20 kHz -6 dB", guess: "the 80 Hz LR24 high-pass meeting the KS118 is ours" },
+    { box: "line-array-10", way: "line array box", dsp: ch({ hp: lr24(80) }), range: { name: "line array box", lowHz: 62, highHz: 20000 }, ref: "LA108 sheet: 62 Hz-20 kHz -6 dB; L Class manual: high-pass 80 Hz by default with a KS sub", guess: "slope not given: LR24" },
   ],
 };
 
@@ -204,7 +226,7 @@ export function response(bands: readonly ChannelDsp[], preset: readonly ChannelD
  *  channels), the split inside it (Hz, where the sheet gives it), the settings its own menu offers against a sub or a
  *  top, in plain words, and the sheet read. */
 export type BoxCrossover = { drive: "powered" | "passive"; internalHz?: number; menu?: { edge: "hp" | "lp"; hz: readonly number[] }; says: string; ref: string };
-const K2: BoxCrossover = { drive: "powered", menu: { edge: "hp", hz: [80, 100, 125] }, says: "powered: its own DSP splits it inside; over a sub, high-pass it at 80, 100 or 125 Hz, the sub's low-pass at the same", ref: "QSC, KS Series Crossover Settings: Do and Don't (the K.2's high-pass settings)" };
+const K2: BoxCrossover = { drive: "powered", internalHz: 2000, menu: { edge: "hp", hz: [80, 100, 125] }, says: "powered: its own DSP splits it inside at 2 kHz; over a sub, high-pass it at 80, 100 or 125 Hz, the sub's low-pass at the same", ref: "QSC K.2 FAQ (HF crossover); KS Series Crossover Settings: Do and Don't (the K.2's high-pass settings)" };
 const oneWay = (ref: string): BoxCrossover => ({ drive: "passive", says: "passive, one way: no network inside; the amp channel's DSP sets its whole band", ref });
 const airMotion: BoxCrossover = { drive: "passive", internalHz: 1700, says: 'two amp channels: the 12" on one, the 8" and 1.5" on another, split inside at 1.7 kHz', ref: "Air Motion guide UG10519" };
 /** Every speaker in the catalog, by gear id. A split the maker doesn't publish is left out and said so. */
@@ -213,10 +235,10 @@ export const BOX_CROSSOVERS: Readonly<Record<string, BoxCrossover>> = {
   "fill-8-powered": K2,
   "sub-18": { drive: "powered", menu: { edge: "lp", hz: [80, 100] }, says: "powered sub: low-pass it at 80 Hz (the default for K.2 and CP tops) or 100 Hz", ref: "KS118 manual and FAQ" },
   "wedge-12": { drive: "powered", menu: { edge: "hp", hz: [80] }, says: "powered: its own DSP splits it inside; its Ext Sub voicings high-pass it at 80 Hz", ref: "QSC CP12 presets (Default Ext Sub, Dance Ext Sub)" },
-  "line-array-10": { drive: "powered", says: "powered: its own DSP splits it inside; the split is not published", ref: "LA108 sheet" },
+  "line-array-10": { drive: "powered", internalHz: 1500, menu: { edge: "hp", hz: [80, 100] }, says: "powered: its own DSP splits it inside at 1.5 kHz; over a sub, high-pass it at 80 Hz (100 for older subs)", ref: "QSC LEAF waveguide white paper; L Class LA108/LA112 user manual" },
   "top-15-passive": { drive: "passive", internalHz: 2200, says: "passive two-way: its own network splits at 2.2 kHz, so one amp channel runs it full range", ref: "JBL JRX215 product page: crossover frequency 2.2 kHz" },
   "wedge-12-passive": { drive: "passive", internalHz: 2000, says: "passive two-way: its own network splits at 2.0 kHz, so one amp channel runs it full range", ref: "JBL PRX412M spec sheet: crossover frequency 2.0 kHz" },
-  "line-array-box": { drive: "passive", says: "passive, four amp channels (LF, LF, MF, HF): the split points are in the maker's amp presets, not published here", ref: "JBL VTX A12 spec sheet" },
+  "line-array-box": { drive: "passive", says: "passive, four amp channels (LF, LF, MF, HF): the split points are in the maker's amp presets, not published (its full-range preset reaches 45 Hz, its 80 preset 80 Hz)", ref: "JBL VTX A12 spec sheet and user manual" },
   "cab-4x12": { drive: "passive", says: "passive, four 12s full range: no crossover, the guitar amp drives it", ref: "Marshall 1960A: a 4x12 guitar cabinet" },
   "stack-mid-high": { drive: "passive", says: 'two amp channels: the 15" on one, the 8" and 1" on another through their own passive network (its point not published)', ref: "F1 crossover settings, Res2 with BR221" },
   "stack-mid-bass": oneWay("F215 MkII sheet, 55-250 Hz"),
@@ -235,3 +257,35 @@ export const BOX_CROSSOVERS: Readonly<Record<string, BoxCrossover>> = {
   "tri-amp-top": { drive: "passive", says: 'tri-amped: three amp channels (12", 6.5", 1"), no network inside; split at 1.3 and 8 kHz in the drive rack', ref: "Turbosound Flashlight manual, issue 1.4" },
   "tri-amp-bass": oneWay("Turbosound Flashlight manual: up to 150 Hz"),
 };
+
+// ---- boxes on their own: the amp channel each one takes outside a rig (a bar pair, a pair of tops, a wedge) ------
+
+/** A box's channel on its own: alone it plays its whole band; over or under another, the split QSC's menus give. */
+type Own = { way: string; role: "sub" | "top"; lowHz: number; highHz: number; ref: string; guess?: string };
+const own = (way: string, lowHz: number, ref: string, guess?: string): Own => ({ way, role: "top", lowHz, highHz: 20000, ref, ...(guess ? { guess } : {}) });
+const OWN: Readonly<Record<string, Own>> = {
+  "sub-18": { way: '18" sub', role: "sub", lowHz: 0, highHz: 98, ref: "KS118 manual: LP 80 Hz (default for K.2/CP tops)", guess: "slope not given: LR24" },
+  "top-12-powered": own('12" powered top', 55, "QSC KS Series crossover settings: the K.2's high-pass 80, 100 or 125 Hz"),
+  "fill-8-powered": own('8" powered fill', 70, "QSC KS Series crossover settings: the K.2's high-pass 80, 100 or 125 Hz"),
+  "wedge-12": own('12" powered wedge', 65, "QSC CP12 presets (Default Ext Sub): high-pass 80 Hz"),
+  "top-15-passive": own('15" two-way', 45, "JBL JRX215: passive, split inside at 2.2 kHz", "no maker's high-pass: ours is the sub's split, or the sheet's low limit alone"),
+  "wedge-12-passive": own('12" passive wedge', 65, "JBL PRX412M: passive, split inside at 2.0 kHz", "no maker's high-pass: ours is the sub's split, or the sheet's low limit alone"),
+};
+const SUB_SPLIT_HZ = 80;
+
+/**
+ * The crossover of boxes standing on their own (catalog ids; a dolly is no speaker): a channel for the sub and one for
+ * the top, split at 80 Hz, or the one channel of whichever is there alone. None when a box among them has no channel
+ * of its own here (a rig's box: `rigCrossover`) or there are two kinds of top.
+ */
+export function boxCrossover(ids: readonly string[]): readonly Band[] {
+  const kinds = [...new Set(ids.filter((id) => id !== "sand-dolly"))];
+  const boxes = kinds.flatMap((id) => (OWN[id] ? [{ id, o: OWN[id] }] : []));
+  const subs = boxes.filter((b) => b.o.role === "sub"), tops = boxes.filter((b) => b.o.role === "top");
+  if (boxes.length !== kinds.length || subs.length > 1 || tops.length > 1) return [];
+  return [...subs, ...tops].map(({ id, o }) => ({
+    box: id, way: o.way, ref: o.ref, ...(o.guess ? { guess: o.guess } : {}),
+    dsp: ch(o.role === "sub" ? { lp: lr24(SUB_SPLIT_HZ) } : { hp: lr24(subs.length ? SUB_SPLIT_HZ : o.lowHz) }),
+    range: { name: o.way, lowHz: o.lowHz, highHz: o.highHz },
+  }));
+}

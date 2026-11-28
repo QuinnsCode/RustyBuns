@@ -83,11 +83,10 @@ import { Keys, Kit, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
-import { paBoxes, PaRoom, paSpeakers, rigStacks, roomLevel, roomRig } from "./pa-room.ts";
+import { paBoxes, PaRoom, roomCrossover, paSpeakers, rigStacks, roomLevel, roomRig } from "./pa-room.ts";
 import { crossoverCommands, crossoverState, resetCrossover, setCrossover, type CrossoverDeps } from "./crossover-commands.ts";
 import { crossoverPanel } from "@rustybuns/gear/crossover-panel";
 import { CROSSOVER_STEPS } from "@rustybuns/gear/crossover-lesson";
-import { rigCrossover } from "@rustybuns/gear/crossover";
 import { playWalkSet } from "./walk-set.ts";
 import { stageModel } from "./stage-model.ts";
 import { NightAir } from "./night-air.ts";
@@ -603,6 +602,7 @@ async function startAudio() {
     guitars.sendsTo(out.node, CALL_SENDS, AUXES);
     for (const peer of plugged.keys()) guitars.ask(peer);
     paRoom = new PaRoom(out.ctx, def, out.speakers);
+    ampsOver();
     // out of doors, the night itself under the music: wind, crickets, the generator as you near it (night-air.ts)
     if (def.outdoor) nightAir = new NightAir(out.ctx, bus?.crowd ?? out.speakers, def.outdoor.generator?.at, def.outdoor.seed, def.outdoor.fire?.at, dancers?.count ?? 0);
     // the client walk-through (?walk=1, #6020): the planned PA plays a test set, here alone, to walk the site by
@@ -822,9 +822,10 @@ const atWall = new GearHands(def, (op) => net?.studio(op));
 /** The setup lessons at the gear wall (lessons.ts): started from the ? card, shown at the top left as you go. */
 const lessons = new Lessons(atWall, {
   rig: () => (def.outdoor ? roomRig(def).id : null),
-  bands: () => xo.bands(), set: (bands) => xo.set(bands),
+  // the lesson's crossover is yours alone to get wrong: it is set on this page, and the sesh's comes back after
+  bands: () => xo.bands(), set: (bands) => paRoom?.setBands(bands) ?? false,
   subAheadM: () => xo.subAheadM(), setSubAhead: (m) => xo.setSubAhead(m),
-  reset: () => void resetCrossover(xo),
+  reset: () => { xo.setSubAhead(0); ampsOver(true); },
 });
 /** Start a setup lesson; the crossover's opens its plot to work at. */
 function learn(id: string) {
@@ -988,7 +989,7 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); ampsOver(); }
 /** The sesh's built room: kept for this sesh, and walked into again when it isn't the one standing here. */
 function keepBuilt(p: Project) {
   if (!here) return;
@@ -1063,11 +1064,36 @@ const player: Player = {
 };
 addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
 addCommands(graphicsCommands(graphicsDeps));
-// the open-air rig's crossover, as its amps' DSP has it (#6473): heard through the room's PA once the speakers are up
+// the PA's crossover, as its amps' DSP has it (#6473): heard through the room's PA once the speakers are up. A move is
+// the sesh's (whoever has the desk makes it, everyone hears it), except in the lesson, which stays on this page.
+/** Which boxes' amp channels the sesh's setting is for: another PA keeps its preset. */
+const ampsKey = () => roomCrossover(def).map((b) => b.box).join("+");
+/** The sesh's crossover onto this page's PA, where it differs (`left`: the lesson is being left). */
+function ampsOver(left = false) {
+  const now = paRoom?.bands();
+  if (!now || (!left && lessons.on === "crossover")) return;
+  const saved = project.crossover, preset = roomCrossover(def).map((b) => b.dsp);
+  const want = saved?.rig === ampsKey() && saved.bands.length === preset.length ? saved.bands : preset;
+  if (JSON.stringify(want) !== JSON.stringify(now)) paRoom!.setBands(want);
+}
+/** A slider makes many moves a second: the sesh gets the latest, ten times a second at most. */
+let ampsSending: ReturnType<typeof setTimeout> | null = null;
+function shareAmps() {
+  ampsSending ??= setTimeout(() => {
+    ampsSending = null;
+    const bands = paRoom?.bands();
+    if (bands && lessons.on !== "crossover") player.edit({ t: "crossover", amps: { rig: ampsKey(), bands: [...bands] } });
+  }, 100);
+}
 const xo: CrossoverDeps = {
-  preset: () => (def.outdoor ? rigCrossover(roomRig(def).id) : []),
+  preset: () => roomCrossover(def),
   bands: () => paRoom?.bands() ?? null,
-  set: (bands) => paRoom?.setBands(bands) ?? false,
+  set: (bands) => {
+    if (lessons.on === "crossover") return paRoom?.setBands(bands) ?? false;
+    if (!may(player).mix || !paRoom?.setBands(bands)) return false;
+    shareAmps();
+    return true;
+  },
   subAheadM: () => paRoom?.subAheadM() ?? 0,
   setSubAhead: (m) => paRoom?.setSubAhead(m),
   panel: (open) => xoPanel.toggle(open),
