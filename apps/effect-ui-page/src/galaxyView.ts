@@ -378,7 +378,8 @@ function mount(room: string) {
   s.ready = (async () => {
     // Got ready before the click (preloadGalaxy): show it. Still getting ready: it hurries, and this waits for it.
     hurry = true;
-    const w = warming && preload !== "used" ? await warming : null;
+    // Always a real await: this runs inside mount, before `g = s`, and the `g !== s` check below must come after it.
+    const w = await (warming && preload !== "used" ? warming : null);
     if (g !== s) return;
     if (w) {
       preload = "used"; warm = null;
