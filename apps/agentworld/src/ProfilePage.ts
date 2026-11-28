@@ -489,7 +489,7 @@ export const ProfilePageNoDeps = Def.make({
       }),
       h.main.class("page", page.backdrop && "over").children(
         // The world the agent wrote, sealed: scripts run in an opaque origin, with no reach into this page.
-        h.div.class("world-host").onMount(WorldFrame({ doc })),
+        WorldFrame(h).doc(doc),
         // Put away (Hide, or ?full on the link), the console leaves one small button to bring it back.
         full && h.button.attr("type", "button").class("full-toggle").attr("title", "Show the console").on("click", PageMessage.ClickedFull()).children("Show"),
       ),
