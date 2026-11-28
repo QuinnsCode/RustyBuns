@@ -3,6 +3,7 @@
 // `buildRig` turns an amp, an optional pedal, the knobs, the mic on the cab and what is on the speaker jack into a
 // rig. Names are ours and describe the circuit, never a product.
 import { fuzz, hardClip, overdrive, toneStack, triodeStage, type BoardId, type Swaps } from "./circuits.ts";
+import { changedJson, type Edit } from "./edits.ts";
 import { envelopeWah, germaniumFuzz, octaveUp, opticalComp, opticalTremolo, phaser, vibe, wah } from "./effects.ts";
 import { DEFAULT_MIC, HEADS, headRig, type Blend, type Head, type HeadKnobs, type Link, type Mic, type Mod, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
 import type { BoardPedal, BoardStep } from "../amp/messages.ts";
@@ -18,7 +19,7 @@ export const AMPS: AmpDef[] = HEADS;
  * A pedal: its circuit at its one knob (0 to 10) with the player's part swaps, what the knob is called (Drive if not
  * said), what moves its `VarR`s, and its board (`circuits/<board>.tsx`), if it has one: a pedal dropped on the bench doesn't.
  * Every pedal with a board also reads another copy of it as `net`'s `json`: a remake of it, which
- * is how Q Builder retests one.
+ * is how Q Builder retests one, and how a pedal with its circuit edited plays (`pedalLink`).
  */
 export interface PedalDef { id: string; name: string; blurb: string; knob?: string; board?: BoardId; net: (k: number, swaps?: Swaps, json?: unknown) => Netlist; mods?: (k: number) => Mod[] }
 
@@ -58,6 +59,11 @@ export const PEDALS: PedalDef[] = [
 export interface Room { mic: Mic; load: number }
 export const DEFAULT_ROOM: Room = { mic: DEFAULT_MIC, load: 8 };
 
+/** A pedal as one rig link: its knob and the player's part swaps, on its board as they changed it (edits.ts). */
+export interface Played { def: PedalDef; drive: number; swaps?: Swaps; edits?: readonly Edit[] }
+export const pedalLink = ({ def, drive, swaps, edits }: Played): Link =>
+  ({ net: def.net(drive, swaps, changedJson(def.board, edits)), mods: def.mods?.(drive) });
+
 /**
  * A board's pedals as rig links, in order, with a `Blend` for each split: what goes ahead of the amp's links.
  * An unknown pedal is left out; a split with no pedal on either side is no split.
@@ -67,7 +73,7 @@ export function boardLinks(board: readonly BoardStep[]): { links: Link[]; blends
   const one = (p: BoardPedal): number => {
     const def = PEDALS.find((d) => d.id === p.pedal);
     if (p.pedal === "bench" && p.bench) links.push({ net: p.bench });
-    else if (def) links.push({ net: def.net(p.drive, p.swaps), mods: def.mods?.(p.drive) });
+    else if (def) links.push(pedalLink({ ...p, def }));
     else return 0;
     return 1;
   };
@@ -79,15 +85,15 @@ export function boardLinks(board: readonly BoardStep[]): { links: Link[]; blends
   return { links, blends };
 }
 
-/** A pedal (or none, and with the player's part swaps) into an amp, with these knobs, into a cab. */
-export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number; swaps?: Swaps }, room: Room = DEFAULT_ROOM): RigSpec {
-  const pre = pedal ? [{ net: pedal.def.net(pedal.drive, pedal.swaps), mods: pedal.def.mods?.(pedal.drive) }] : [];
+/** A pedal (or none, and with the player's parts) into an amp, with these knobs, into a cab. */
+export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: Played, room: Room = DEFAULT_ROOM): RigSpec {
+  const pre = pedal ? [pedalLink(pedal)] : [];
   return headRig(amp, knobs, { stage: triodeStage, tone: toneStack, pre, mic: room.mic, load: room.load });
 }
 
 /** A pedal (or nothing) straight into a desk: no amp, no power stage, no cab. The loop's machines go after it. */
-export function deskRig(pedal?: { def: PedalDef; drive: number; swaps?: Swaps }): RigSpec {
-  return { inputVolts: 0.5, links: pedal ? [{ net: pedal.def.net(pedal.drive, pedal.swaps), mods: pedal.def.mods?.(pedal.drive) }] : [], power: 0, cab: null };
+export function deskRig(pedal?: Played): RigSpec {
+  return { inputVolts: 0.5, links: pedal ? [pedalLink(pedal)] : [], power: 0, cab: null };
 }
 
 const amp = (id: string) => {

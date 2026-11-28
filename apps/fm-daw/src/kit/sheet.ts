@@ -1,11 +1,12 @@
 // A pedal's or a sound wall module's build sheet: its schematic and board (Q Amp's BoardView), its parts list with the player's swaps, the
-// Gerber layers, a tolerance band (how far a build may sound from the sim, tolerance.ts), and one button for the zip a builder needs. Opened from a pedal on the gear room's wall or in hand
+// Gerber layers (none of those for a pedal whose circuit they changed: the stock board doesn't fit it), a tolerance band (how far a build may sound from the sim, tolerance.ts), and one button for the zip a builder needs. Opened from a pedal on the gear room's wall or in hand
 // (room/main.ts), from a module in the sound wall's case (B on it, the same), and from Q Amp's board view (amp/main.ts). Kits are found by folder: whatever `circuits/<kit>/`
 // holds is loaded only when its sheet opens, so a new kit shows up with no change here.
 import "./sheet.css";
 import { readParts } from "../amp/parts-store.ts";
 import type { PedalDef } from "../circuit/amps.ts";
 import type { Swaps } from "../circuit/circuits.ts";
+import { changedJson, type Edit } from "../circuit/edits.ts";
 import { BoardView, svgOf, type Side } from "../amp/board.ts";
 import { h, iconButton } from "../amp/dom.ts";
 import { icon } from "../amp/icons.ts";
@@ -28,6 +29,11 @@ export async function kitFiles(kit: string): Promise<KitFiles> {
 export const savedSwaps = (pedal: string): Swaps => readParts().swaps[pedal] ?? {};
 /** The pedal's Drive knob as Q Amp last left it, 0 to 10 (5 if never turned). */
 export const savedDrive = (pedal: string): number => readParts().drive[pedal] ?? 5;
+/** The pedal's added, removed and rewired parts, from Q Builder. */
+export const savedEdits = (pedal: string): Edit[] => readParts().edits[pedal] ?? [];
+
+/** What a sheet says where the stock board's files would be, for a pedal whose circuit has changed. */
+const NEW_LAYOUT = "Your circuit has new parts or wiring, so the stock board doesn't fit it: it needs a new layout. Remake it in Q Builder, route the new board in tscircuit, and order that.";
 
 type Tab = Side | "panel" | "parts" | "files" | "band";
 /** Each tab, and whether a pedal's sheet and a module's have it: a module has its front panel, no tolerance band yet. */
@@ -58,8 +64,9 @@ export class BuildSheet {
   private module: Panel | null = null;
   private swaps: Swaps = {};
   private drive = 5;
+  private edits: readonly Edit[] = [];
   private asked = 0;
-  /** The band for the pedal as it is now (its swaps and Drive), and which pedal and setting that was. */
+  /** The band for the pedal as it is now (its swaps, edits and Drive), and which pedal and setting that was. */
   private tolerance: { key: string; band: Promise<Band>; done: Band | null } | null = null;
 
   constructor(private readonly onClose: () => void) {
@@ -77,15 +84,16 @@ export class BuildSheet {
     this.el.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); this.close(); } });
   }
 
-  /** Open `pedal`'s sheet with the player's `swaps` on it and its Drive at `drive` (0 to 10); resolves once its kit has loaded. */
-  async open(pedal: PedalDef, swaps: Swaps, drive = 5): Promise<Sheet> {
+  /** Open `pedal`'s sheet with the player's `swaps` and circuit `edits` on it and its Drive at `drive` (0 to 10);
+   *  resolves once its kit has loaded. */
+  async open(pedal: PedalDef, swaps: Swaps, drive = 5, edits: readonly Edit[] = []): Promise<Sheet> {
     const ask = this.opening(pedal.name, null);
-    this.def = pedal; this.swaps = swaps; this.drive = drive;
+    this.def = pedal; this.swaps = swaps; this.drive = drive; this.edits = edits;
     const kit = await kitFiles(sheetOf(pedal, {}).kit);
     const sheet = sheetOf(pedal, kit, swaps);
     if (ask !== this.asked) return sheet; // opened another while this loaded
     const swapped = sheet.parts.filter((p) => p.swapped).length;
-    return this.opened(kit, sheet, !sheet.made ? "fab files not made yet" : swapped ? `your version · ${swapped} part${swapped > 1 ? "s" : ""} changed, same board` : "stock parts");
+    return this.opened(kit, sheet, edits.length ? "your circuit: the stock board doesn't fit it" : !sheet.made ? "fab files not made yet" : swapped ? `your version · ${swapped} part${swapped > 1 ? "s" : ""} changed, same board` : "stock parts");
   }
 
   /** Open a sound wall module's sheet (`circuits/wall-<id>/`): its board, front panel, parts to order and files. */
@@ -98,7 +106,7 @@ export class BuildSheet {
   }
 
   private opening(title: string, module: Panel | null): number {
-    this.def = null; this.module = module;
+    this.def = null; this.module = module; this.edits = [];
     this.el.hidden = false;
     this.title.textContent = title;
     this.note.textContent = "loading";
@@ -110,13 +118,16 @@ export class BuildSheet {
   private opened(kit: KitFiles, sheet: Sheet, note: string): Sheet {
     this.kit = kit; this.sheet = sheet;
     this.note.textContent = note;
-    this.save.disabled = !sheet.made;
-    this.save.title = sheet.made ? "Download the kit: Gerbers, parts list, drill template and build sheet, as one zip" : "No fab files for this pedal yet";
+    this.save.disabled = !this.orderable(sheet);
+    this.save.title = this.edits.length ? NEW_LAYOUT : sheet.made ? "Download the kit: Gerbers, parts list, drill template and build sheet, as one zip" : "No fab files for this pedal yet";
     this.drawParts(sheet); this.drawFiles(sheet);
     this.show(this.tab);
     this.el.focus();
     return sheet;
   }
+
+  /** There are fab files, and they are for the circuit as it stands. */
+  private orderable(s: Sheet): boolean { return s.made && !this.edits.length; }
 
   close(): void {
     if (this.el.hidden) return;
@@ -127,19 +138,19 @@ export class BuildSheet {
   }
 
   /** What an agent reads: the open sheet, its tab, its parts and layers, and the tolerance band once it has run. */
-  state(): { open: string | null; tab: Tab; made: boolean; parts: Sheet["lines"]; layers: string[]; band: { widest: number; level: Band["level"]; runs: number } | null } | null {
+  state(): { open: string | null; tab: Tab; made: boolean; fits: boolean; note: string; parts: Sheet["lines"]; layers: string[]; band: { widest: number; level: Band["level"]; runs: number } | null } | null {
     const s = this.sheet, b = this.tolerance?.done;
-    return s && !this.el.hidden ? { open: s.pedal, tab: this.tab, made: s.made, parts: s.lines, layers: s.layers, band: b ? { widest: widest(b), level: b.level, runs: b.runs } : null } : null;
+    return s && !this.el.hidden ? { open: s.pedal, tab: this.tab, made: s.made, fits: !this.edits.length, note: this.note.textContent ?? "", parts: s.lines, layers: s.layers, band: b ? { widest: widest(b), level: b.level, runs: b.runs } : null } : null;
   }
 
   /** The open pedal's tolerance band, run once per pedal, swaps and Drive (a few seconds, yielding to the page between builds). */
   bandOf(): Promise<Band> | null {
     const def = this.def;
     if (!def) return null;
-    const key = JSON.stringify([def.id, this.swaps, this.drive]);
+    const key = JSON.stringify([def.id, this.swaps, this.edits, this.drive]);
     if (this.tolerance?.key !== key) {
       const mine = () => this.tolerance?.key === key;
-      const band = toleranceBand(def.net(this.drive, this.swaps), {
+      const band = toleranceBand(def.net(this.drive, this.swaps, changedJson(def.board, this.edits)), {
         pause: () => new Promise((r) => setTimeout(r, 0)),
         onRun: (done, of) => { if (mine() && this.tab === "band") this.band.replaceChildren(h("p", "sheet-empty", `Building it ${of} times with parts off their printed values: ${done} of ${of}`)); },
       }).then((b) => { if (mine() && this.tolerance) this.tolerance.done = b; return b; });
@@ -151,7 +162,7 @@ export class BuildSheet {
   /** The kit as a zip, saved as `<kit>-kit.zip`; its name and the paths in it. */
   async download(): Promise<{ name: string; bytes: number } | null> {
     const s = this.sheet, def = this.def;
-    if (!s?.made || (!def?.board && !this.module)) return null;
+    if (!s || !this.orderable(s) || (!def?.board && !this.module)) return null;
     const schematic = def?.board ? await svgOf(def.board, "schematic") : this.kit["schematic.svg"] ?? "";
     const zipped = kitZip(this.kit, s.text, schematic, s.parts);
     const name = `${s.kit}-kit.zip`, url = URL.createObjectURL(new Blob([zipped], { type: "application/zip" }));
@@ -164,12 +175,15 @@ export class BuildSheet {
     this.tab = tab;
     this.tabs.forEach((b, i) => b.setAttribute("aria-pressed", String(TABS[i].id === tab)));
     const def = this.def, m = this.module, drawing = tab === "schematic" || tab === "pcb" || tab === "panel";
-    this.board.el.hidden = !drawing; this.parts.hidden = tab !== "parts"; this.files.hidden = tab !== "files"; this.band.hidden = tab !== "band";
+    // A changed circuit has no fab board: the PCB tab says why, where the other board files would.
+    const noBoard = tab === "pcb" && this.edits.length > 0;
+    this.board.el.hidden = !drawing || noBoard; this.parts.hidden = tab !== "parts"; this.files.hidden = tab !== "files" && !noBoard; this.band.hidden = tab !== "band";
     if (tab === "band") { void this.drawBand(); return; }
     if (drawing && m) { this.drawModule(m, tab === "panel" ? "panel" : tab === "pcb" ? "pcb" : "schematic"); return; }
     if (!drawing || !def) return;
     if (!def.board) { this.board.blank(def.name, "this pedal has no board drawn yet"); return; }
-    const pcb = this.kit["pcb.svg"];
+    if (noBoard) return;
+    const pcb = this.edits.length ? undefined : this.kit["pcb.svg"];
     this.board.show(def.board, def.name, this.swaps, {
       readOnly: true, hint: pcb ? "the fab board" : "the circuit as played",
       pcb: pcb ? () => Promise.resolve(pcb) : undefined,
@@ -201,6 +215,7 @@ export class BuildSheet {
   }
 
   private drawParts(s: Sheet): void {
+    if (this.edits.length) { this.parts.replaceChildren(h("p", "sheet-empty", NEW_LAYOUT)); return; }
     if (!s.made) { this.parts.replaceChildren(h("p", "sheet-empty", "The fab files are not made yet, so there is no parts list. The schematic and board are in the other tabs.")); return; }
     const row = (...cells: (string | Node)[]) => h("tr", "", ...cells.map((c) => h("td", "", c)));
     const head = h("tr", "", ...["Part", "Value", "Count", "Footprint", "Part number", "Where"].map((t) => h("th", "", t)));
@@ -214,6 +229,7 @@ export class BuildSheet {
   }
 
   private drawFiles(s: Sheet): void {
+    if (this.edits.length) { this.files.replaceChildren(h("p", "sheet-empty", NEW_LAYOUT)); return; }
     if (!s.made) { this.files.replaceChildren(h("p", "sheet-empty", "The fab files are not made yet.")); return; }
     this.files.replaceChildren(h("ul", "sheet-layers", ...s.layers.map((l) => h("li", "", icon("file-text", 14), h("span", "", l)))));
   }

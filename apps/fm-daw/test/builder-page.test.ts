@@ -5,8 +5,10 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 import { PARTS_KEY } from "../src/amp/parts-store.ts";
+import { PEDALS } from "../src/circuit/amps.ts";
+import { riff } from "../src/circuit/riff.ts";
 setDefaultTimeout(120_000); // vite serves the page cold, then the riff runs through the fuzz a few times
-useBrowser();
+useBrowser("--autoplay-policy=no-user-gesture-required"); // Q Amp plays the riff in the last tests
 
 type Swing = { hi: number; lo: number; flat: number; top: number };
 type State = {
@@ -90,6 +92,53 @@ test.skipIf(!hasChrome)("add a capacitor across the fuzz's clipping diodes: less
     expect(await page<string>("qbuilder.unedit(null)")).toBe("");
     expect((await state()).board.fits).toBe(true);
   } finally { await tab.eval("window.qbuilder?.unedit(null)"); await tab.close(); }
+});
+
+// #6446: the circuit changed on Q Builder is the pedal Q Amp plays, in a tab already open: a 1 µF across the fuzz's
+// clipping diodes squashes what its audio thread reads on that net, and its build sheet says the stock board doesn't fit.
+test.skipIf(!hasChrome)("a capacitor added on Q Builder is on Q Amp's fuzz as it plays, and on its build sheet", async () => {
+  const builder = await openTab(chrome.cdp, { w: 1280, h: 860 }), amp = await openTab(chrome.cdp, { w: 1280, h: 860 });
+  try {
+    await load(chrome.cdp, builder, `${vite.url}/builder.html`, 0);
+    const page = <T>(expr: string) => builder.eval<T>(`(async () => (${expr}))()`);
+    const onAmp = <T>(expr: string) => amp.eval<T>(`(async () => (${expr}))()`);
+    await waitFor(builder, "Q Builder", "!!window.qbuilder && !!qbuilder.state().probe", 60_000);
+    await page("(localStorage.clear(), qbuilder.pick('fuzz'), qbuilder.swap(null, null), qbuilder.unedit(null))");
+
+    await load(chrome.cdp, amp, `${vite.url}/amp.html`, 0);
+    await waitFor(amp, "Q Amp", "!!window.qamp && !!qamp.state().amp", 60_000);
+    await onAmp("(qamp.start())");
+    await onAmp("(qamp.pedal('fuzz'), qamp.board(true))");
+
+    const clipper = PEDALS.find((p) => p.id === "fuzz")?.net(5, {}).parts.find((p) => p.kind === "D" && p.k === "gnd");
+    if (!clipper || clipper.kind !== "D") throw new Error("no diode to ground on Q Fuzz");
+    /** The scope put on the clipper's net afresh, a whole pass of the riff, and how far it swung. */
+    const swing = async () => {
+      expect(await onAmp<boolean>(`qamp.scope('fuzz', ${JSON.stringify(clipper.a)})`)).toBe(true);
+      await waitFor(amp, "a pass of the riff on the scope", `(qamp.state().scope?.samples ?? 0) > ${riff(48000).length + 48000}`, 60_000);
+      return onAmp<number>("qamp.state().scope.hi - qamp.state().scope.lo");
+    };
+    const stock = await swing();
+
+    expect(await page<boolean>("qbuilder.probe('R3 · D3 · D4 · R4')")).toBe(true);
+    expect(await page<string>("qbuilder.add('cap', '1u', 'R3 · D3 · D4 · R4', 'GND')")).toBe("");
+    await waitFor(amp, "the added capacitor on Q Amp", "qamp.state().edits.length === 1", 10_000);
+    expect(await swing()).toBeLessThan(stock * 0.7);
+    expect(await onAmp<string>("document.body.textContent")).toContain("rewired in Q Builder");
+
+    const sheet = await onAmp<{ made: boolean; fits: boolean; note: string }>("qamp.sheet()");
+    expect(sheet.fits).toBe(false);
+    expect(sheet.note).toContain("the stock board doesn't fit");
+    expect(await onAmp<unknown>("qamp.sheetDownload()")).toBeNull();
+    expect(await onAmp<string>(`(document.querySelector('.build-sheet [aria-label="Circuit board"]').click(), document.querySelector('.build-sheet .sheet-files:not([hidden])')?.textContent)`)).toContain("needs a new layout");
+
+    // a knob saved on Q Amp keeps Q Builder's edit; back to stock there, and Q Amp's board fits again
+    await onAmp("qamp.footswitch('drive', true)");
+    expect(await page<number>("qbuilder.state().edits.length")).toBe(1);
+    expect(await page<string>("qbuilder.unedit(null)")).toBe("");
+    await waitFor(amp, "the stock circuit back on Q Amp", "qamp.state().edits.length === 0", 10_000);
+    expect((await onAmp<{ fits: boolean }>("qamp.sheet()")).fits).toBe(true);
+  } finally { await builder.eval("window.qbuilder?.unedit(null)"); await builder.close(); await amp.close(); }
 });
 
 // #6118: an effect pedal on the bench. Q Phase's LFO is off its board, on GATE: the scope there sweeps the full
