@@ -4,8 +4,8 @@
 import { arr, obj, opt, raw, str } from "../packages/util/src/guard.ts";
 
 const Schema = obj({ type: opt(str(20)), properties: opt(raw), required: opt(arr(str(200), 200)) });
-const Tool = obj({ name: str(200), description: opt(str(20_000)), inputSchema: opt(Schema) });
-const Listed = obj({ result: obj({ tools: arr(Tool, 500) }) });
+export const Listed = obj({ name: str(200), description: opt(str(20_000)), inputSchema: opt(Schema) });
+const Reply = obj({ result: obj({ tools: arr(Listed, 500) }) });
 const Init = obj({ result: obj({ instructions: opt(str(50_000)) }) });
 const Called = obj({ result: obj({ content: arr(obj({ type: str(40), text: opt(str(1_000_000)) }), 100), isError: opt(raw) }) });
 
@@ -15,7 +15,7 @@ export interface Ask { name: string; args: unknown }
 
 export async function session(rpc: Rpc, asks: readonly Ask[]) {
   const init = Init(await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "tool-tokens", version: "1" } }));
-  const { tools } = Listed(await rpc("tools/list", {})).result;
+  const { tools } = Reply(await rpc("tools/list", {})).result;
   const calls: { name: string; args: string; reply: string; refused: boolean }[] = [];
   for (const a of asks) {
     const out = Called(await rpc("tools/call", { name: a.name, arguments: a.args }));

@@ -2,7 +2,7 @@
 // socket: what an agent's HTTP and MCP calls get back, and what happens when no page is open.
 import { describe, expect, test } from "bun:test";
 import { fromPage, linksFor, Relay } from "../src/relay.ts";
-import { listTools } from "../src/tools.ts";
+import { listTools, slimTools } from "../src/tools.ts";
 
 const links = linksFor("http://localhost:4799", "testroom0001");
 
@@ -52,7 +52,9 @@ describe("an agent over MCP", () => {
     const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
     expect(init.result).toMatchObject({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "agent-page" } });
     expect((await post("/mcp", { jsonrpc: "2.0", method: "notifications/initialized" })).status).toBe(202);
-    expect((await rpc("tools/list")).result.tools).toEqual(listTools());
+    // Listed: the build door and the status line. The older tools still answer by name (page_write_file, below).
+    expect((await rpc("tools/list")).result.tools).toEqual(slimTools());
+    expect(slimTools().map((t) => t.name)).toEqual(["world_build", "world_edit", "page_status"]);
     const ok = await rpc("tools/call", { name: "page_write_file", arguments: { path: "world.js", text: "//" } });
     expect(ok.result.isError).toBe(false);
     expect(JSON.parse(ok.result.content[0].text)).toEqual({ ok: true, files: [{ path: "world.js", bytes: 2 }] });

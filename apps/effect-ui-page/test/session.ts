@@ -1,7 +1,8 @@
 // One job, "make a night village with a pond, then make the houses taller", through each of the four doors, against
 // the app in this process (app-kit.ts): what the AI reads, writes and how many calls it makes (tokens.test.ts). Each
 // door says what it's doing once (the three questions). Change a script only to follow how an AI is told to use it.
-import { type Ask, session, type Session, split } from "../../../scripts/mcp-session.ts";
+import { arr } from "@rustybuns/util/guard";
+import { type Ask, Listed, session, type Session, split } from "../../../scripts/mcp-session.ts";
 import { buildLine, skill, statusLine } from "../src/doors.ts";
 import { prompt } from "../src/relay.ts";
 import { listTools } from "../src/tools.ts";
@@ -41,9 +42,12 @@ const TOOLS_A: readonly Ask[] = [
   { name: "page_read", args: {} },
 ];
 
+/** The full list as a client reads it back off the wire. */
+const fullList = () => arr(Listed, 50)(JSON.parse(JSON.stringify(listTools())));
+
 export const DOORS: Readonly<Record<string, (app: App) => Promise<Session>>> = {
   /** The full MCP tool list, as it was. */
-  "A tool list": async (app) => ({ ...(await session(app.rpc, TOOLS_A)), instructions: FULL_INSTRUCTIONS, tools: listTools() }),
+  "A tool list": async (app) => ({ ...(await session(app.rpc, TOOLS_A)), instructions: FULL_INSTRUCTIONS, tools: fullList() }),
   /** Code mode over MCP: what tools/list answers now. */
   "B code mode": (app) => session(app.rpc, [
     { name: "page_status", args: { text: SAYS } },

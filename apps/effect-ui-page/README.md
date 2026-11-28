@@ -33,15 +33,23 @@ the screen (**Hide** puts it away, **Show** brings it back): on the left what ha
 (connecting to the relay, connected, waiting for your AI, each call and how it went); on the right pictures and
 buttons: Copy, Paste, Watch across the top, then a button for each way in:
 
-- **Paste into any agent.** "Copy prompt" gives you a few lines to paste into Claude Code, Codex, opencode or
-  T3 Code. They tell the agent to call the page's tools with `curl`, so there's nothing to install or configure.
-- **Or add it as an MCP server** (the Claude, Codex and opencode buttons copy these), so the tools show up as the
-  agent's own:
+- **Add it as an MCP server** (the default: the landing's line, and the Claude, Codex and opencode buttons copy these):
   - Claude Code: `claude mcp add --transport http agent-page <room>/mcp`
   - Codex: `codex mcp add agent-page --url <room>/mcp`
   - opencode: `opencode mcp add agent-page --url <room>/mcp`
   - T3 Code runs Claude Code or Codex underneath, so add the server to whichever one it runs.
-- **In the browser:** an agent with WebMCP (`document.modelContext`) sees the same tools on the page itself.
+
+  The agent is listed three tools: `world_build`, `world_edit` and `page_status`.
+- **Paste into any agent.** "Copy prompt" gives you a few lines that say: use `world_build` if you have it, and if not,
+  write `world.js` and post it with `curl`. Nothing to install.
+- **A skill,** for an agent that has skills and can run `curl`. One file per room, holding the kit's calls:
+  `curl -s --create-dirs -o ~/.claude/skills/agent-page/SKILL.md <room>/skill.md` (the same text works pasted).
+- **A CLI line:** `curl -sS --data-binary @world.js <room>/build` answers `ok`, or each error on a line.
+  `<room>/kit.txt` is the kit's calls as plain text, and `curl -sd 'few words' <room>/status` says what it's doing.
+- **The full tool list,** every tool below: listed at `GET <room>/tools`, and each answers by name over MCP and HTTP.
+- **In the browser:** an agent with WebMCP (`document.modelContext`) sees all of them on the page itself.
+
+(`<room>` is the room's API link, `/api/r/<room>`.)
 
 Then ask for a world: "make me a rainy neon city in three.js, slowly orbiting". The world reloads with each file the
 agent writes, and the console lists its calls. A step strip there shows where your AI is: Waiting for your AI, Your
@@ -52,6 +60,8 @@ ground, what is on it, the weather) before it writes; the page never asks. A new
 
 | Tool | Does |
 |---|---|
+| `world_build` | Run `code` as `world.js` (an `index.html` that opens it is made when needed), wait for the frame to load (5 s at most) and answer in the same reply: `{ ok, errors }` |
+| `world_edit` | Swap the one exact match of `find` in `world.js` for `replace`; answers like `world_build` |
 | `page_read` | Each file's path and size, the backdrop, and what the frame said since it last loaded: errors with their file, loads it blocked |
 | `page_read_file` | One file's whole text |
 | `page_write_file` | Set one file (`index.html`, `world.js`, `lib/noise.js`, ...) to this text; `""` takes it away. Its description tells the agent how files load and what the frame allows |
@@ -127,19 +137,23 @@ kit's scene, so anything that hands the scene's shapes on carries them too. Thin
 
 ### What a world costs in tokens
 
-A fixed "build me a world" session (`test/session.ts`: `page_read`, read the starter's two files, write a small rainy
-town, look, one fix, look) counted with the instructions and tool list once, each call's arguments and each reply, at
-four characters a token (`scripts/mcp-session.ts`, the same session code as codeSplitter's `tool-tokens.ts`):
+One job, "make a night village with a pond, then make the houses taller", through four doors that end in the same
+checked write (`test/session.ts`, four characters a token, `scripts/mcp-session.ts`). Read is the tool list, skill or
+prompt once and every reply; written is every call's arguments, the world's code included.
 
-| | Tool list and instructions | Whole session |
-|---|---|---|
-| Before: three.js by hand, whole files resent | 682 | 4,473 |
-| After: `@world/kit` and `page_edit_file` | 612 | 2,119 |
-| The starter desert written with the kit too | 701 | 1,530 |
-| Now: the kit's building blocks in the tool text, and the rain town written with them | 790 | 1,531 |
+| Door | Read | Written | Total | Round trips |
+|---|---|---|---|---|
+| A: the full MCP tool list (how it was) | 1,296 | 196 | 1,492 | 8 |
+| **B: code mode, `world_build` and `world_edit` (the default)** | 436 | 173 | **609** | **3** |
+| C: the skill and `curl` | 341 | 248 | 589 | 3 |
+| D: write the file, `curl` it to `/build` | 380 | 269 | 649 | 6 |
 
-`test/tokens.test.ts` fails when the session passes the budget in `test/tokens.json`. A change that earns more tokens
-raises it there, in the same PR. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
+C's estimate is 20 tokens (3%) under B's, a tie within 5 percent with the same calls on paper. Real Claude Code runs
+(Sonnet, one run each, 2026-11-27) broke it: B took 3 calls (loading the tools, build, edit), 13 s and 1,307 output
+tokens; C took 6 (two of them refused: code inside a `curl` line trips its shell checks), 31 s and 4,100.
+
+`test/tokens.test.ts` fails when the default door passes the budget in `test/tokens.json`, or stops being tied for
+cheapest. The budget only goes down. For Claude's own count on a live room: `apps/codesplitter/scripts/tool-tokens.ts`.
 
 From a script or the console, the same tools are on `window.__commands`:
 
@@ -197,7 +211,8 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
   (`bearer`) and your world as the server keeps it (`myWorld`). `src/who.ts`: the server's side, the token checked
   against eqosys's keys (`EQOSYS_URL`) for app `agent-page`. `src/lock.ts`: when the galaxy opens, and its two lines.
 - `src/answers.ts`: what the tools answer, shared by the page and the tests' stand-in for it (`test/app-kit.ts`).
-- `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP) and the frames between the relay and the page.
+- `src/tools.ts`: the tool list every door shares (WebMCP, HTTP, MCP), the kit's calls as an agent is told them, and
+  the frames between the relay and the page. `src/doors.ts`: the skill, the kit sheet and the `curl` lines.
 - `src/agent.ts`: the `Agent` service in the page. Its Layer puts the WebMCP tools up (`@rustybuns/util/commands`)
   and keeps a socket to the room's relay while the page is mounted. A call from either becomes a message on a queue
   and waits for the page's report.
@@ -224,7 +239,7 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 - `test/page.test.ts`: the Schema checks, `apply`, the frame's document, a `Story` of an agent's writes through
   `update`, and `Scene`s of a person's clicks. `test/relay.test.ts`: HTTP and MCP calls to a fake page, a refusal, a
   missing page, a timeout. `test/pictures.test.ts`: in headless Chrome, a world's picture, its link preview and Export
-  GIF. `test/tokens.test.ts`: the token budget. `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in
+  GIF. `test/tokens.test.ts`: what each door costs, and the budget. `test/kit.test.ts`: the dev server and headless Chrome, an edit seen in
   the frame and a kit world running there.
 
 Effect UI is in public preview and not on npm yet, so `package.json` pins a pkg.pr.new snapshot by commit

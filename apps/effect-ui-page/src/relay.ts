@@ -78,7 +78,7 @@ export class Relay {
     // The world.js file itself, or a few words of status, as the body: the answer is "ok" or a line for each error.
     if ((rest === "/build" || rest === "/status") && req.method === "POST") {
       const body = await req.text();
-      const a = await this.call(...(rest === "/build" ? ["world_build", { code: body }] as const : ["page_status", { text: body.trim() }] as const), links);
+      const a = await (rest === "/build" ? this.call("world_build", { code: body }, links) : this.call("page_status", { text: body.trim() }, links));
       if (!a.ok) return plain(a.error, a.status);
       const checked = check(Checked, a.result);
       return plain(checked && !checked.ok ? checked.errors.join("\n") : "ok");
