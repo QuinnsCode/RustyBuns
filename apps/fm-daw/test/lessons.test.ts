@@ -12,6 +12,8 @@ import { GearHands } from "../src/studio/gear-hands.ts";
 import { gearPlace, toStudio } from "../src/studio/gear-wall.ts";
 import { hear, newJam, walkTo } from "../src/studio/jam.ts";
 import { Lessons, markAt } from "../src/studio/lessons.ts";
+import { crossoverState, resetCrossover, setCrossover, type CrossoverDeps } from "../src/studio/crossover-commands.ts";
+import { rigCrossover, type ChannelDsp } from "@rustybuns/gear/crossover";
 import { classOf, lessonLine } from "../src/studio/class.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 
@@ -318,4 +320,33 @@ test("a teacher's class card: a second page in the sesh sees the student's lesso
   // they leave the lesson: the card still shows what they finished
   lessons.leave();
   expect(await look()).toMatchObject({ lesson: null, finished: ["Patch a synth voice"] });
+});
+
+test("set a tri-amp stack's crossover: only on that rig, found wrong, put right split by split, then the sub lined up", async () => {
+  const { jam, hands } = await walkIn();
+  // the room's rig as the page keeps it (its PA plays these bands); the commands move the same ones
+  const preset = rigCrossover("tri-amp");
+  let rig = "dance-stack", bands: readonly ChannelDsp[] = preset.map((b) => b.dsp), ahead = 0;
+  const xo: CrossoverDeps = { preset: () => preset, bands: () => bands, set: (b) => { bands = b; return true; }, subAheadM: () => ahead, setSubAhead: (m) => { ahead = m; }, panel: () => {} };
+  const lessons = new Lessons(hands, { ...xo, rig: () => rig, reset: () => void resetCrossover(xo) });
+  const now = () => lessons.state()!;
+  expect(lessons.start("crossover", jam)).toMatchObject({ ok: false, why: expect.stringContaining("tri-amp stack") });
+  rig = "tri-amp";
+  expect(lessons.start("crossover", jam)).toEqual({ ok: true });
+  expect(now()).toMatchObject({ next: 0, mark: null });
+  expect(now().steps[0]!.why).toContain("A gap");
+  // left half done, the amps go back to their preset
+  lessons.leave();
+  expect(crossoverState(xo)).toMatchObject({ dipDb: 0, warnings: [] });
+  lessons.start("crossover", jam);
+  for (const [band, hz] of [[0, 150], [1, 1300], [2, 8000]] as const) {
+    setCrossover(xo, { band, lp: hz });
+    setCrossover(xo, { band: band + 1, hp: hz });
+    expect(now().next).toBe(band + 1);
+  }
+  expect(crossoverState(xo)!.dipDb).toBeLessThan(-6); // the sub, out in front
+  expect(setCrossover(xo, { band: 0, delayMs: 4.37 })).toMatchObject({ dipDb: 0, subAheadM: 1.5 });
+  expect(now().done).toBe(true);
+  lessons.leave();
+  expect(bands[0]!.delayMs).toBe(4.37); // what you finished stays
 });

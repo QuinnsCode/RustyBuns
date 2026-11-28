@@ -20,7 +20,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./circuit": "./src/circuit/index.ts",
-    "./crossover": "./src/crossover.ts"
+    "./crossover": "./src/crossover.ts",
+    "./crossover-lesson": "./src/crossover-lesson.ts",
+    "./crossover-panel": "./src/crossover-panel.ts"
   },
   "files": [
     "src"
