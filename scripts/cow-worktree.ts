@@ -7,9 +7,10 @@
 //   bun scripts/cow-worktree.ts dedupe --under <dir>  only the worktrees inside <dir> (give it again for more)
 //   --from <dir>                                     the donor checkout (default: the repo's main one)
 //
-// `dedupe` skips a worktree that is dirty, locked, on another volume or has a file open or a process in it. It replaces a
-// file only when both indexes name the same blob and the bytes match, by renaming a finished clone over it, and never
-// deletes a worktree, branch or commit. The next `git status` in a deduped worktree is slow once.
+// `dedupe` skips a worktree that is locked, on another volume or has a file open or a process in it. In the rest it leaves
+// files with uncommitted changes alone, and replaces another only when both indexes name the same blob and the bytes
+// match, by renaming a finished clone over it. It never deletes a worktree, branch or commit. The next `git status` in a
+// deduped worktree is slow once.
 // `add` refuses a donor with changes to tracked files, a different volume, a disk that can't clone or too little space.
 // `du` can't see clones; the sizes here are APFS's own count of bytes a file shares with nothing.
 // Portable: this file and `cow-clone.ts` beside it need only Bun and git, so another repo can copy the pair
@@ -31,6 +32,9 @@ function index(dir: string) {
     return mode?.startsWith("100") && stage === "0" ? [[e.slice(e.indexOf("\t") + 1), `${mode} ${oid}`] as const] : [];
   }));
 }
+
+/** Paths in `dir` with uncommitted changes. By content: a new mtime alone is not a change. */
+const edited = (dir: string) => new Set(records(git(dir, "status", "--porcelain", "-z", "--no-renames")).map((e) => e.slice(3)));
 
 /** Bytes of a file that no other file shares (APFS `ATTR_CMNEXT_PRIVATESIZE`). */
 function privateSizer() {
@@ -59,7 +63,7 @@ export function dedupe(donor: string, go = false, inUse: () => string[] = openPa
   if (process.platform !== "darwin") throw new Error("dedupe measures with APFS, so it runs on macOS only");
   donor = realpathSync(donor);
   const privateSize = privateSizer();
-  const changed = new Set(records(git(donor, "diff-files", "--name-only", "-z")));
+  const changed = edited(donor);
   const have = [...index(donor)].filter(([file]) => !changed.has(file));
   const trees = git(donor, "worktree", "list", "--porcelain").split("\n\n").filter(Boolean).map((block) => ({
     path: block.split("\n")[0]!.slice("worktree ".length), locked: /^(locked|prunable|bare)/m.test(block),
@@ -75,14 +79,14 @@ export function dedupe(donor: string, go = false, inUse: () => string[] = openPa
     const skip = (skipped: string) => ({ path: tree, files: 0, bytes: 0, skipped });
     if (locked || !existsSync(tree)) return skip("locked or missing");
     if (statSync(tree).dev !== statSync(donor).dev) return skip("another volume");
-    if (git(tree, "status", "--porcelain")) return skip("uncommitted changes");
     // a worktree nested in this one is its own entry, so a process there doesn't count as being in this one
     const inner = trees.filter((t) => t.path.startsWith(`${tree}/`)).map((t) => `${t.path}/`);
     if (used().some((p) => (p === tree || p.startsWith(`${tree}/`)) && !inner.some((i) => `${p}/`.startsWith(i)))) return skip("in use");
     const mine = index(tree);
+    const theirs = edited(tree);
     let files = 0, bytes = 0;
     for (const [file, blob] of have) {
-      if (mine.get(file) !== blob) continue;
+      if (mine.get(file) !== blob || theirs.has(file)) continue;
       const from = path.join(donor, file), to = path.join(tree, file), tmp = `${to}.cow-${process.pid}`;
       const stat = lstatSync(to, { throwIfNoEntry: false });
       const own = stat?.isFile() ? privateSize(to) : 0;
