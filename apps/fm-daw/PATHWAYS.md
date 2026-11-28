@@ -181,7 +181,7 @@ stage or stack). Things are placed on an isometric view of the builder's own 3D:
 green outline snapping to 0.5 m and 15°. The crowd zone says its area and cap (2 a square metre). Test it is the
 coverage map and `walk-set.ts` through `PaRoom` from a tapped spot. Each change is a save (60 kept per build, 8 builds,
 24 orders, in this browser), so Undo and History work between visits. Lock in freezes an order; The Event makes it a
-live party. A stage is `StudioDef.stage`, set by the builder's `stage` edit, so the jam room draws what was placed.
+live party. A stage is `StudioDef.stage`, set by the builder's `stage` edit, so the studio draws what was placed.
 Code: `stage-build.ts` (model and storage), `stage-page.ts` (the screen), `stage-model.ts`; `window.qstage`; the journey
 is `test/stage-page.test.ts`. Not yet: stage parts, several stages and flown arrays.
 Signed in, builds and orders follow the account (#6583): `GET`/`PUT /stage-builds` (`src/stage-store.ts`) and
