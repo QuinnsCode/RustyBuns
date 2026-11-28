@@ -83,6 +83,12 @@ test.skipIf(!hasChrome)("add a capacitor across the fuzz's clipping diodes: less
     expect(capped.board.fits).toBe(false);
     expect(await page<boolean>("[...document.querySelectorAll('.qb-act')].find((b) => b.textContent === 'Gerbers').disabled")).toBe(true);
 
+    // #6445: the schematic shows C5, and a click on its wire (the last drawn) scopes the net it is on
+    await waitFor(tab, "C5 on the schematic", "!!document.querySelector('.board-art [data-part=C5]')", 10_000);
+    expect(await page<boolean>("qbuilder.probe('OUT')")).toBe(true);
+    await page("[...document.querySelectorAll('.board-art .sch-trace')].at(-1).querySelector('path').dispatchEvent(new MouseEvent('click', { bubbles: true }))");
+    expect((await state()).probe!.label).toBe("R3 · D3 · D4 · R4 · C5");
+
     const r = await page<State["retest"]>("qbuilder.retest()");
     expect(r!.same).toBe(true);
     expect((await state()).files).toEqual(["fuzz-yours.tsx", "fuzz-yours.circuit.json"]);
@@ -91,6 +97,7 @@ test.skipIf(!hasChrome)("add a capacitor across the fuzz's clipping diodes: less
     expect(await page<string>("qbuilder.add('res', 'lots', 'OUT', 'GND')")).toContain("isn't a value");
     expect(await page<string>("qbuilder.unedit(null)")).toBe("");
     expect((await state()).board.fits).toBe(true);
+    await waitFor(tab, "the stock schematic back", "!document.querySelector('.board-art [data-part=C5]') && !!document.querySelector('.board-art [data-part=D4]')", 10_000);
   } finally { await tab.eval("window.qbuilder?.unedit(null)"); await tab.close(); }
 });
 
@@ -125,10 +132,12 @@ test.skipIf(!hasChrome)("a capacitor added on Q Builder is on Q Amp's fuzz as it
     await waitFor(amp, "the added capacitor on Q Amp", "qamp.state().edits.length === 1", 10_000);
     expect(await swing()).toBeLessThan(stock * 0.7);
     expect(await onAmp<string>("document.body.textContent")).toContain("rewired in Q Builder");
+    await waitFor(amp, "C5 on Q Amp's board view", "!!document.querySelector('.board-view [data-part=C5]')", 10_000);
 
     const sheet = await onAmp<{ made: boolean; fits: boolean; note: string }>("qamp.sheet()");
     expect(sheet.fits).toBe(false);
     expect(sheet.note).toContain("the stock board doesn't fit");
+    await waitFor(amp, "C5 on the build sheet's schematic", "!!document.querySelector('.build-sheet [data-part=C5]')", 10_000);
     expect(await onAmp<unknown>("qamp.sheetDownload()")).toBeNull();
     expect(await onAmp<string>(`(document.querySelector('.build-sheet [aria-label="Circuit board"]').click(), document.querySelector('.build-sheet .sheet-files:not([hidden])')?.textContent)`)).toContain("needs a new layout");
 

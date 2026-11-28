@@ -610,7 +610,7 @@ function showBoard() {
   refused = ""; // said once, on the change it turned away
   const rewired = def && edits[def.id]?.length ? "rewired in Q Builder" : "";
   const hint = why ? `won't play, kept your last parts: ${why}` : rewired;
-  if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {}, { hint });
+  if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {}, { hint, edits: edits[def.id] });
   else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
   else if (l.spring.on) ui.board.show("spring", "Q Spring · the driver and recovery tubes around the tank", null);
   else if (l.tape.on) ui.board.show("tape", "Q Tape · the record amp", null);
