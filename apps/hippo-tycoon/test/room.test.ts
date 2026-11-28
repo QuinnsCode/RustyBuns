@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MAX_SOCKETS, MAX_WATCHERS, MSG_BURST, Room, WATCHDOG_MS } from "../src/engine/room.ts";
+import { HELLO_MS, MAX_SOCKETS, MAX_WATCHERS, MSG_BURST, Room, WATCHDOG_MS } from "../src/engine/room.ts";
 import { TickLoop, TICK_MS, MAX_CATCHUP } from "../src/engine/tickLoop.ts";
 import { CLOSE_FLOOD, CLOSE_FULL, CLOSE_REPLACED, CLOSE_VERSION, PROTO_VERSION } from "../src/engine/wire.ts";
 import { COUNTDOWN_TICKS } from "../src/sim/rules.ts";
@@ -109,6 +109,19 @@ test("sockets that never say hello get nothing, count against the room, and only
   expect(quiet[0]!.closed?.code).toBe(CLOSE_REPLACED);          // the older try of the same uid is closed
   expect(again.closed).toBeNull();
   expect(room.admits("stranger")).toBe(false);
+});
+
+test("a room filled with sockets that never say hello opens again after HELLO_MS", () => {
+  const { room, ctx, join, clock } = setup();
+  const a = join("a");
+  const quiet = Array.from({ length: MAX_SOCKETS - 1 }, (_, i) => { const ws = new FakeSocket(); ctx.sockets.push(ws); room.onConnect(ws, `q${i}`, "Q"); return ws; });
+  clock.advance(HELLO_MS - 1);
+  expect(room.admits("stranger")).toBe(false);
+  expect(quiet.every((q) => q.closed === null)).toBe(true);
+  clock.advance(1);
+  expect(room.admits("stranger")).toBe(true);                   // though the closed ones are still listed
+  expect(quiet.every((q) => q.closed?.reason === "no hello")).toBe(true);
+  expect(a.closed).toBeNull();                                  // a player who said hello stays, however quiet
 });
 
 test("couch over the network: one socket, two seats, each driven by its own input", () => {
