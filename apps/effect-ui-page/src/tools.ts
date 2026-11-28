@@ -1,30 +1,38 @@
 // The world's tools as one list, for every door: WebMCP in the page (agent.ts), and HTTP and MCP in the relay
 // (relay.ts), for an agent in a terminal (Claude Code, Codex, opencode). No DOM or Bun here: the Worker, the
 // local dev server and the page all import it. The frames between the relay and the page are here too.
-import { bool, obj, opt, raw, int, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, obj, opt, raw, int, str, type Of } from "@rustybuns/util/guard";
 import type { Hints, InputSchema } from "@rustybuns/util/commands";
 import { Schema } from "effect";
-import { EditFile, FILE_MAX, FILES_MAX, Path, Reset, SetBackdrop, WORLD_MAX, WriteFile } from "./page.ts";
+import { Build, EditFile, EditWorld, FILE_MAX, FILES_MAX, Path, Reset, SetBackdrop, WORLD_MAX, WriteFile } from "./page.ts";
 import { LIBRARY_HOSTS } from "./world.ts";
 
 export const Undo = Schema.TaggedStruct("Undo", {});
 /** A few words on what the agent is doing, for the page to show: no file changes, nothing to undo. */
 export const Status = Schema.TaggedStruct("Status", { text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)) });
 /** What a call asks the page for: an action on the page, undo (which needs the page's history), or a status line. */
-export const Request = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset, Undo, Status]);
+export const Request = Schema.Union([WriteFile, EditFile, SetBackdrop, Reset, Build, EditWorld, Undo, Status]);
 export type Request = typeof Request.Type;
 
-type Tagged = typeof WriteFile | typeof EditFile | typeof SetBackdrop | typeof Reset | typeof Undo | typeof Status;
+type Tagged = typeof WriteFile | typeof EditFile | typeof SetBackdrop | typeof Reset | typeof Build | typeof EditWorld | typeof Undo | typeof Status;
 
 /** What the agent does before a new world, told in the tools, the pasted prompt and the MCP instructions alike. */
-export const ASK = "New world? Ask in chat first: the ground, what's on it, the weather; page_status as you ask.";
+export const asking = (say: string) => `New world? Ask in chat first: the ground, what's on it, the weather; ${say} as you ask.`;
+export const ASK = asking("page_status");
 export interface Tool { name: string; title: string; description: string; schema: Tagged; hints?: Hints }
+
+const PLOT = "three.js; plot 200x200 around 0, x east, z south";
+/** `@world/kit`'s calls by name: every door's only copy of them. */
+export const KIT_CALLS = "world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass}), sky(day|night|dusk), weather(rain|snow|fireflies|fog), mood({top,low,fog,bloom}), smoke(x,y,z), flyers(n), grass|flowers(n), water({y,x,z,width,depth}), trees|cactus|rocks(n,{area}), lamp({x,y,z,color}), building({x,z,w,d,h,color,roof:peak|flat}), box({x,z,w,h,d,color}); voxels(layers,palette,{x,z,size}) and sprite(rows,palette,{x,z,size}) draw text rows, a letter a cube or pixel ([rows,rows] animates); streets() gives 4 blocks {x,z,w,d}; path([[x,z]...]), sign(text,{x,z}), creature({sprite|voxels,palette,area,flee,follow}), near(x,z,r,onEnter,onLeave), block(x,z,w,d), glow:2 on box|voxels|sign lights it, onPlayer(cb), every(f), heightAt(x,z), THREE.";
+/** What a world is, for the doors that say nothing else: where it runs and what it imports. */
+export const ABOUT = `module in a sealed frame (no fetch or storage). import from "@world/kit" (${PLOT}): ${KIT_CALLS}`;
+export const LIBRARIES = `Libraries: pinned versions from ${LIBRARY_HOSTS.map((h) => h.slice("https://".length)).join(", ")}.`;
 
 /** How a world is made, told once with the write tool: what the frame opens, how files load, what it may reach. */
 const HOW = [
   "The frame opens index.html, which loads your other files by <script src> and <link rel=stylesheet>; modules import each other as \"./name.js\".",
-  `Libraries: pinned versions from ${LIBRARY_HOSTS.map((h) => h.slice("https://".length)).join(", ")}.`,
-  "A module may import \"@world/kit\" (three.js; plot 200x200 around 0, x east, z south; kit worlds stand in 3D among neighbours): world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass}), sky(day|night|dusk), weather(rain|snow|fog), water({y,x,z,width,depth}), trees|cactus|rocks(n,{area}), lamp({x,y,z,color}), building({x,z,w,d,h,color,roof:peak|flat}), box({x,z,w,h,d,color}); voxels(layers,palette,{x,z,size}) and sprite(rows,palette,{x,z,size}) draw text rows, a letter a cube or pixel ([rows,rows] animates); streets() gives 4 blocks {x,z,w,d}; path([[x,z]...]), sign(text,{x,z}), creature({sprite|voxels,palette,area,flee,follow}), near(x,z,r,onEnter,onLeave), block(x,z,w,d), onPlayer(cb), every(f), heightAt(x,z), THREE.",
+  LIBRARIES,
+  `A module may import "@world/kit" (${PLOT}; kit worlds stand in 3D among neighbours): ${KIT_CALLS}`,
   "Sealed: no fetch, sockets, storage or forms; draw images and sounds in code or data: URLs.",
   ASK,
   `Limits: ${FILE_MAX / 1000}k characters a file, ${WORLD_MAX / 1000}k and ${FILES_MAX} files a world.`,
@@ -45,6 +53,16 @@ export const READ = {
   inputSchema: { type: "object", properties: {} } satisfies InputSchema,
   annotations: { readOnlyHint: true } satisfies Hints,
 };
+
+/** The default door, code mode: write world.js and hear how it ran in the same reply. All an MCP client is listed,
+ *  with page_status; the tools above stay callable by name. */
+export const BUILD_TOOLS: readonly Tool[] = [
+  { name: "world_build", title: "Build the world", schema: Build, description: `Run \`code\` as world.js, a ${ABOUT} Replies {ok,errors}. ${ASK}` },
+  { name: "world_edit", title: "Change the world", schema: EditWorld, description: "Replace the one exact match of `find` in world.js; replies like world_build." },
+];
+/** What world_build and world_edit answer: whether the frame loaded clean, and each thing it said if not. */
+export const Checked = obj({ ok: bool(), errors: arr(str(2000), 40) });
+export type Checked = Of<typeof Checked>;
 
 export const ReadFile = Schema.Struct({ path: Path });
 export const READ_FILE = {
@@ -69,7 +87,13 @@ export const decode = (tool: Tool, args: unknown): Request =>
 
 /** Every tool as an agent is told of it: name, title, description, inputSchema and annotations. */
 export const listTools = () => [READ, READ_FILE, ...TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: inputSchema(t.schema), annotations: t.hints ?? {} }))];
-export const toolNames = new Set(listTools().map((t) => t.name));
+/** What `tools/list` over MCP answers: the default door and page_status, each argument just a string (the Schema still
+ *  checks its limits when it's called; telling them costs tokens). */
+export const slimTools = () => [...BUILD_TOOLS, ...TOOLS.filter((t) => t.name === "page_status")].map(({ name, title, description, schema }) => {
+  const args = Object.keys(schema.fields).filter((k) => k !== "_tag");
+  return { name, title, description, inputSchema: { type: "object", properties: Object.fromEntries(args.map((k) => [k, { type: "string" }])), required: args } satisfies InputSchema };
+});
+export const toolNames = new Set([...listTools(), ...BUILD_TOOLS].map((t) => t.name));
 
 /** The relay to the page: run this tool with these arguments. */
 export const ToPage = obj({ t: str(8, { re: /^call$/ }), id: int(1, Number.MAX_SAFE_INTEGER), name: str(64), args: raw });

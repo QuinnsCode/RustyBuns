@@ -53,7 +53,36 @@ export async function fakeEqosys() {
 /** A page on the landing presses "Create your world" with eqosys at `eqosys`, signed in there as whoever it names,
  *  and comes back on `/r/<world>`: the room it answers. */
 export async function signIn(tab: Tab, eqosys: string): Promise<string> {
-  await tab.eval(`localStorage.setItem("agent-page.eqosys", ${JSON.stringify(eqosys)}), document.querySelector(".l-card.c-pink").click()`);
+  await tab.eval(`localStorage.setItem("agent-page.eqosys", ${JSON.stringify(eqosys)}), document.querySelector(".l-create").click()`);
   await waitFor(tab, "back from signing in", `location.pathname.startsWith("/r/") && !!window.agentGalaxy && !!document.querySelector(".dock")`, 30_000);
   return tab.eval<string>(`location.pathname.slice(3)`);
+}
+
+/** Draw a scrawl on the signature pad that is up, with real mouse or touch input. */
+export async function scrawlOnPad(tab: Tab, touch = false): Promise<void> {
+  await waitFor(tab, "the signature pad", `!!document.querySelector(".sign-screen canvas")`, 30_000);
+  const r = await tab.eval<{ x: number; y: number; w: number; h: number }>(`(() => { const b = document.querySelector(".sign-screen canvas").getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; })()`);
+  const at = Array.from({ length: 24 }, (_, i) => ({ x: r.x + r.w * (0.12 + i * 0.03), y: r.y + r.h * (0.45 + 0.25 * Math.sin(i * 0.7)) }));
+  const [first, ...rest] = at;
+  if (touch) {
+    await tab.call("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [first] });
+    for (const p of rest) await tab.call("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [p] });
+    await tab.call("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    return;
+  }
+  const mouse = (type: string, p: { x: number; y: number }) => tab.call("Input.dispatchMouseEvent", { type, ...p, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+  await mouse("mousePressed", first!);
+  for (const p of rest) await mouse("mouseMoved", p);
+  await mouse("mouseReleased", rest.at(-1)!);
+}
+
+/** `agentGalaxy.enter()`, signing at the pad first when it asks (a first visit). */
+export async function enterSigned<T>(tab: Tab): Promise<T> {
+  const enter = () => tab.eval<T & { signing?: boolean }>(`agentGalaxy.enter()`);
+  const first = await enter();
+  if (!first.signing) return first;
+  await scrawlOnPad(tab);
+  await tab.eval(`document.querySelector(".sign-done").click()`);
+  await waitFor(tab, "the pad to go", `!agentGalaxy.state().signing`, 15_000);
+  return enter();
 }

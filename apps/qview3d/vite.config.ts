@@ -13,7 +13,7 @@ export default defineConfig({
     target: "es2022",
     modulePreload: false,
     rollupOptions: {
-      input: { qview3d: "src/widget/index.ts", admin: "src/admin.ts", orgs: "src/orgs-page.ts", try: "src/try-page.ts" },
+      input: { qview3d: "src/widget/index.ts", admin: "src/admin.ts", orgs: "src/orgs-page.ts", try: "src/try-page.ts", menu: "src/menu.ts" },
       preserveEntrySignatures: "strict",
       output: {
         entryFileNames: (c) => `v1/${c.name}.js`,

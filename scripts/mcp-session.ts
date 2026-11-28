@@ -4,8 +4,8 @@
 import { arr, obj, opt, raw, str } from "../packages/util/src/guard.ts";
 
 const Schema = obj({ type: opt(str(20)), properties: opt(raw), required: opt(arr(str(200), 200)) });
-const Tool = obj({ name: str(200), description: opt(str(20_000)), inputSchema: opt(Schema) });
-const Listed = obj({ result: obj({ tools: arr(Tool, 500) }) });
+export const Listed = obj({ name: str(200), description: opt(str(20_000)), inputSchema: opt(Schema) });
+const Reply = obj({ result: obj({ tools: arr(Listed, 500) }) });
 const Init = obj({ result: obj({ instructions: opt(str(50_000)) }) });
 const Called = obj({ result: obj({ content: arr(obj({ type: str(40), text: opt(str(1_000_000)) }), 100), isError: opt(raw) }) });
 
@@ -15,7 +15,7 @@ export interface Ask { name: string; args: unknown }
 
 export async function session(rpc: Rpc, asks: readonly Ask[]) {
   const init = Init(await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "tool-tokens", version: "1" } }));
-  const { tools } = Listed(await rpc("tools/list", {})).result;
+  const { tools } = Reply(await rpc("tools/list", {})).result;
   const calls: { name: string; args: string; reply: string; refused: boolean }[] = [];
   for (const a of asks) {
     const out = Called(await rpc("tools/call", { name: a.name, arguments: a.args }));
@@ -36,7 +36,15 @@ export const estimate = (text: string) => Math.ceil(text.length / 4);
 
 /** A session's estimated tokens: the list and instructions once, each call's arguments, each reply. */
 export function cost(s: Session) {
-  const list = estimate(s.instructions + JSON.stringify(asTools(s.tools)));
+  const list = estimate(s.instructions + (s.tools.length ? JSON.stringify(asTools(s.tools)) : ""));
   const calls = s.calls.map((c) => ({ name: c.name, args: estimate(c.args), reply: estimate(c.reply) }));
   return { list, calls, total: calls.reduce((n, c) => n + c.args + c.reply, list) };
+}
+
+/** The same cost as the AI pays it: read (the list or sheet once, every reply), write (every call's arguments), and
+ *  how many calls it made. */
+export function split(s: Session) {
+  const { calls, total } = cost(s);
+  const write = calls.reduce((n, c) => n + c.args, 0);
+  return { read: total - write, write, total, trips: s.calls.length };
 }

@@ -1,9 +1,9 @@
-// The browser entry: find this page's room (its address, /r/<room>, or a new one), bring back what this browser
-// kept of it (or, when it kept nothing, the world the room saved on the server: your world, signed in on another
-// browser), ask the server whether that world is made (lock.ts), and mount the page with the agents' doors up.
+// The browser entry: find this page's room (its address, /r/<room>, or a new one), bring back its world (what the
+// server keeps, so every browser sees the same one; this browser's copy when the server has none, or when it holds a
+// change that never got there), ask whether that world is made (lock.ts), and mount the page with the agents' doors up.
 import { BrowserHost } from "@effect/ui/html";
 import { Effect, Layer, Option, Schema } from "effect";
-import { layer as agent, savedKey } from "./agent.ts";
+import { layer as agent, savedKey, unsavedKey } from "./agent.ts";
 import { Page, starter } from "./page.ts";
 import { exportGif, startPictures } from "./pictures.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -31,12 +31,14 @@ const room = here && ROOM.test(here) ? here : newRoom();
 if (location.pathname !== `/r/${room}`) history.replaceState(null, "", `/r/${room}${location.search}`);
 
 const kept = (() => { try { return localStorage.getItem(savedKey(room)); } catch { return null; } })();
+const unsent = (() => { try { return localStorage.getItem(unsavedKey(room)) !== null; } catch { return false; } })();
 const [onServer, made] = await Promise.all([
-  kept ? null : fetch(`/api/r/${room}/world`).then((r): unknown => (r.ok ? r.json() : null)).catch(() => null),
+  fetch(`/api/r/${room}/world`).then((r): unknown => (r.ok ? r.json() : null)).catch(() => null),
   getJson(`/api/r/${room}/made`, Made).then((m) => m?.made ?? false),
 ]);
 const fromServer = Option.getOrNull(Schema.decodeUnknownOption(Page)(onServer));
-const initial = kept ? Option.getOrElse(Schema.decodeUnknownOption(Schema.fromJsonString(Page))(kept), () => starter) : (fromServer ?? starter);
+const local = kept ? Option.getOrNull(Schema.decodeUnknownOption(Schema.fromJsonString(Page))(kept)) : null;
+const initial = (unsent ? local ?? fromServer : fromServer ?? local) ?? starter;
 const who = login()?.name ?? null;
 galaxyLock.why = lockLine(who !== null, made);
 
@@ -49,16 +51,28 @@ const Main = BrowserHost.mount(ProfilePage, { room, origin: location.origin, ini
 Layer.launch(Main).pipe(Effect.runFork);
 const galaxy = startGalaxy(room);
 
-// Back from signing in, the next step is copying the prompt for your AI: its button has the focus, so one press copies.
+// Back from signing in, the next step has the focus: Pick your land when it is up (a new world), else Copy prompt,
+// so one press copies.
 if (back !== null) {
-  const focus = () => { const b = document.querySelector<HTMLButtonElement>(".dock button.big"); b?.focus({ preventScroll: true }); return b !== null; };
+  const focus = () => { const b = document.querySelector<HTMLButtonElement>(".pick [data-land]") ?? document.querySelector<HTMLButtonElement>(".dock button.big"); b?.focus({ preventScroll: true }); return b !== null; };
   if (!focus()) { const o = new MutationObserver(() => { if (focus()) o.disconnect(); }); o.observe(document.getElementById("app")!, { childList: true, subtree: true }); }
+  // Your land picked: the picker goes, and Copy prompt is next.
+  let picking = document.querySelector(".pick") !== null;
+  const picked = new MutationObserver(() => {
+    const now = document.querySelector(".pick") !== null;
+    if (picking && !now && (document.activeElement === document.body || !document.activeElement)) document.querySelector<HTMLButtonElement>(".dock button.big")?.focus({ preventScroll: true });
+    picking = now;
+    if (document.querySelector("[data-galaxy-tile].next")) picked.disconnect();
+  });
+  picked.observe(document.getElementById("app")!, { childList: true, subtree: true });
   // Still there when your world is made: the focus goes on to the Galaxy tile, the next step.
   const on = new MutationObserver(() => {
     const tile = document.querySelector<HTMLButtonElement>("[data-galaxy-tile].next");
     if (!tile) return;
     on.disconnect();
-    if (document.activeElement?.matches(".dock button.big")) tile.focus({ preventScroll: true });
+    // Only from Copy, or from nothing (the body): never away from something else you were using.
+    const at = document.activeElement;
+    if (!at || at === document.body || at.matches(".dock button.big")) tile.focus({ preventScroll: true });
   });
   on.observe(document.getElementById("app")!, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
 }
@@ -78,8 +92,14 @@ addCommands([
     description: "Records three seconds of the world and downloads an animated GIF.", execute: () => exportGif(room) },
   // The dock's Agent Galaxy button and window.agentGalaxy.enter() send the same message.
   { name: "page_galaxy", title: "Agent Galaxy", group: "Galaxy", agent: false,
-    description: "Walk the galaxy: your land next to everyone's, once your world is made.", answers: true,
+    description: "Walk the galaxy as your robot: your land next to everyone's, once your world is made.", answers: true,
     execute: () => galaxyLock.why ?? void galaxy.enter() },
+  { name: "page_sign", title: "Sign for your land", group: "Galaxy", agent: false, answers: true,
+    description: "Your signature, standing as a sign on your land for neighbours to see. Opens the pad, again too.",
+    execute: () => galaxyLock.why ?? void galaxy.sign() },
+  { name: "page_robot", title: "My robot", group: "Galaxy", agent: false, answers: false,
+    description: "Build your robot, the body you walk the galaxy in: its paint, head, eyes, top and feet.",
+    execute: () => galaxyLock.why ?? void galaxy.robot() },
   { name: "page_galaxy_back", title: "Back to my world", group: "Galaxy", agent: false,
     description: "Leave the galaxy and go back to your world and its console.", execute: () => { void galaxy.leave(); } },
 ]);

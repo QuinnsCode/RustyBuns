@@ -12,6 +12,7 @@ import { drawSheet, withDpi } from "./print-sheet.ts";
 import { sha256Of } from "./widget/image.ts";
 import { problem, upload } from "./widget/upload.ts";
 import { QView3D } from "./widget/index.ts";
+import "./menu.ts";
 
 const PHOTO_MAX = 1600;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T; // the page's own elements, by id

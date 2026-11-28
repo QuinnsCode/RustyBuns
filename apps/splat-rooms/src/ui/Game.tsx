@@ -193,7 +193,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
         {phase !== "found" && <ScopeFrame plate={`Optic 7 · ${serial(sceneId)}`} />}
 
         <div className="game-hud bezel">
-          <button className="mini" onClick={playing ? pause : onQuit} title="Esc">{playing ? "❚❚ Pause" : "← Menu"}</button>
+          <button className="mini" data-cmd="pause" onClick={playing ? pause : onQuit} title="Esc">{playing ? "❚❚ Pause" : "← Menu"}</button>
           {round && phase !== "loading" && <strong className="target"><small>Objective</small>Find the {targetName}</strong>}
           {playing && (
             <>
@@ -224,10 +224,10 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
               <WatchFace seconds={elapsed} charge={charge} capacity={CAPACITY} />
               <h2>Paused</h2>
               <p className="dim">Find the {targetName} · {elapsed.toFixed(1)}s · {shots} splat{shots === 1 ? "" : "s"}</p>
-              <button className="big go" onClick={resume}>Resume</button>
-              <button className="big" onClick={start}>New target</button>
-              <button className="big" onClick={onRooms}>Choose a room</button>
-              <button className="big" onClick={onQuit}>Quit to menu</button>
+              <button className="big go" data-cmd="resume" onClick={resume}>Resume</button>
+              <button className="big" data-cmd="new-target" onClick={start}>New target</button>
+              <button className="big" data-cmd="choose-room" onClick={onRooms}>Choose a room</button>
+              <button className="big" data-cmd="back" onClick={onQuit}>Quit to menu</button>
             </div>
           </div>
         )}
@@ -245,9 +245,9 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
               </div>
               <p className="stamp">{clearance(stars(result.points))}</p>
               <p className="dim">{result.seconds.toFixed(1)}s · {result.splats} splat{result.splats === 1 ? "" : "s"} · {result.wrong} wrong</p>
-              <button className="big go" onClick={start}>Next hunt (space)</button>
-              <button className="big" onClick={onAnotherRoom}>Another room</button>
-              <button className="big" onClick={onQuit}>Menu</button>
+              <button className="big go" data-cmd="next-hunt" onClick={start}>Next hunt (space)</button>
+              <button className="big" data-cmd="another-room" onClick={onAnotherRoom}>Another room</button>
+              <button className="big" data-cmd="back" onClick={onQuit}>Menu</button>
             </div>
           </div>
         )}
@@ -258,8 +258,8 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
               <Band label="SIGNAL LOST" />
               <h2>Can't hunt here</h2>
               <p className="dim">{status}</p>
-              <button className="big go" onClick={onAnotherRoom}>Another room</button>
-              <button className="big" onClick={onQuit}>Menu</button>
+              <button className="big go" data-cmd="another-room" onClick={onAnotherRoom}>Another room</button>
+              <button className="big" data-cmd="back" onClick={onQuit}>Menu</button>
             </div>
           </div>
         )}

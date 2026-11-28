@@ -18,7 +18,7 @@ export function JoinLan({ onJoin, onBack }: { onJoin: (address: string, code: st
         <input className="text mono" placeholder="join code" title="Like crude-kettle" value={code} onChange={(e) => setCode(e.target.value)} />
         {address && lanUrl(address) === null && <p className="err">Include the port, like 192.168.1.20:4000.</p>}
         <button className="btn go" disabled={!ok} onClick={() => onJoin(address, code.trim())}>Join</button>
-        <button className="btn" onClick={onBack}>Back</button>
+        <button className="btn" data-cmd="back" onClick={onBack}>Back</button>
       </div>
     </div></div>
   );
@@ -35,7 +35,7 @@ export function JoinOnline({ onJoin, onBack }: { onJoin: (room: string) => void;
         <input className="text mono" placeholder="ROOM CODE" value={clean} onChange={(e) => setRoom(e.target.value)} autoFocus maxLength={8} />
         <button className="btn go" disabled={clean.length < 3} onClick={() => onJoin(clean)}>Join</button>
         <button className="btn" onClick={() => onJoin(makeRoomCode())}>New room</button>
-        <button className="btn" onClick={onBack}>Back</button>
+        <button className="btn" data-cmd="back" onClick={onBack}>Back</button>
       </div>
     </div></div>
   );

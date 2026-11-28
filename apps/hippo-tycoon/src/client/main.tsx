@@ -6,6 +6,7 @@ import { App } from "./App.tsx";
 import { finishSignIn, reportButton } from "./eqosys.ts";
 import { tuning } from "./input.ts";
 import "./style.css";
+import "./menu.ts";
 
 /** The Controls cog sits outside React so it stays put across the menu, couch setup and play. */
 function mountCog() {

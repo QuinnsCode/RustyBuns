@@ -10,6 +10,7 @@ import { APP, EQOSYS, Hosted, MAX_BYTES, Problem, SITE, iframeFor } from "./api.
 import { clean } from "./clean.ts";
 import { demoCarton } from "./demo.ts";
 import { nextShot, plan, readiness, type PlanId, type Shot } from "./shots.ts";
+import "./menu.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const ICONS = { box: Box, camera: Camera, aperture: Aperture, images: Images, "rotate-ccw": RotateCcw, "rotate-3d": Rotate3d, upload: Upload, "refresh-cw": RefreshCw, "sun-moon": SunMoon, code: Code, scissors: Scissors, "cloud-upload": CloudUpload };
