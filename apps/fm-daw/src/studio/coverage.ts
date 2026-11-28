@@ -39,7 +39,7 @@ export function heatCanvas(grid: Grid, ref: number): HTMLCanvasElement {
  *  floor's middle), and how the crowd's part of it sounds (the ground in front of the speakers' line). */
 export type FloorMap = { grid: Grid; ref: number; stats: FloorStats; middle: [number, number] };
 
-export function floorMap(def: StudioDef, cell = 0.5): FloorMap | null {
+export function floorMap(def: StudioDef, cell = Math.max(0.5, Math.max(def.size.w, def.size.d) / 160)): FloorMap | null {
   const sp = paSpeakers(def);
   if (!sp.length) return null;
   const mid = floorMiddle(sp), middle: [number, number] = [mid.x, mid.z];
@@ -63,7 +63,7 @@ export function mapAt(m: FloorMap, x: number, z: number): number {
 /** The delay view: across the ground, `cell` metres a cell, how far apart the PA's speakers land (pa-room.ts
  *  arrivalSpread, ms), in a grid laid out as the coverage map's. */
 export type DelayMap = Area & { ms: Float32Array };
-export function delayMap(def: StudioDef, cell = 1): DelayMap | null {
+export function delayMap(def: StudioDef, cell = Math.max(1, Math.max(def.size.w, def.size.d) / 100)): DelayMap | null {
   if (paSpeakers(def).length < 2) return null;
   const { w, d } = def.size, nx = Math.max(1, Math.round(w / cell)), nz = Math.max(1, Math.round(d / cell));
   const ms = new Float32Array(nx * nz);

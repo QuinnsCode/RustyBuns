@@ -170,6 +170,18 @@ what power, before the truck is loaded.
 - `window.qrooms`: `pa()` (with `field`: the air, ground, speed of sound and banks), `level(x, z)`, `delay(x, z)`, `pickStack(i)`, `showMap()`, `showDelay()`, `view()`, `download("list" | "plan")`; the journey is
   `test/pa-builder.test.ts`.
 
+### The Stage Builder
+
+The Event Planner's quick build (#6053): **Stage Builder** on `/rooms.html`. **+** offers New (arena 10 × 8 to 200 × 150 m,
+a one-piece stage 4 × 3 to 24 × 16 m, one stack of 1 to 3 boxes) or Old (locked-in orders: the whole build, or just its
+stage or stack). Things are placed on an isometric view of the builder's own 3D: set pieces solid, the one in hand a
+green outline snapping to 0.5 m and 15°. The crowd zone says its area and cap (2 a square metre). Test it is the
+coverage map and `walk-set.ts` through `PaRoom` from a tapped spot. Each change is a save (60 kept per build, 8 builds,
+24 orders, in this browser), so Undo and History work between visits. Lock in freezes an order; The Event makes it a
+live party. A stage is `StudioDef.stage`, set by the builder's `stage` edit, so the jam room draws what was placed.
+Code: `stage-build.ts` (model and storage), `stage-page.ts` (the screen), `stage-model.ts`; `window.qstage`; the journey
+is `test/stage-page.test.ts`. Not yet: stage parts, several stages, flown arrays, and builds on your account.
+
 ### Out of doors: the air, the ground and the land
 
 Out of doors the sound crosses a field (`@rustybuns/gear` `field.ts`, #6018), and `coverage`, `levelAt` and `splAt` take
