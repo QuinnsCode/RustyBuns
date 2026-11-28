@@ -14,6 +14,7 @@ import { exportGif, type GifState, watchGif } from "./pictures.ts";
 import { linksFor, prompt } from "./relay.ts";
 import { copyright, FOOT_LINKS, MAKER, TAGLINE } from "./foot.ts";
 import { listTools } from "./tools.ts";
+import { WorldFrame } from "./world-frame.ts";
 import { worldDoc } from "./world.ts";
 import { LANDS } from "./lands.ts";
 import { READY } from "./worlds.ts";
@@ -488,9 +489,7 @@ export const ProfilePageNoDeps = Def.make({
       }),
       h.main.class("page", page.backdrop && "over").children(
         // The world the agent wrote, sealed: scripts run in an opaque origin, with no reach into this page.
-        // A changed world gets a fresh frame (keyed by its document): Chrome can drop a new srcdoc set while the last
-        // one is still loading, which left the old world on screen after an agent's quick first write.
-        h.iframe.class("world").key(doc).attrs({ srcdoc: doc, sandbox: "allow-scripts allow-pointer-lock", referrerpolicy: "no-referrer", title: "Your world", allow: "fullscreen" }),
+        h.div.class("world-host").onMount(WorldFrame({ doc })),
         // Put away (Hide, or ?full on the link), the console leaves one small button to bring it back.
         full && h.button.attr("type", "button").class("full-toggle").attr("title", "Show the console").on("click", PageMessage.ClickedFull()).children("Show"),
       ),
