@@ -70,8 +70,9 @@ Jump links: `/?battle=theater` (or `quick`, `armada`, `campaign`, `levels`), `/?
 | `src/view/fog.ts`, `minimap.ts` | the fog of war over the table (explored, seen, the veils) and the minimap |
 | `src/sim/scenarios.ts` | the battles: the assault on a base, a picket, a strike on a half-built base, the Armada |
 | `src/sector.ts` | the campaign map: worlds, lanes, supply, bases that spread, refits |
-| `src/view/scene.ts`, `models.ts` | the view: hulls made in code, tracer streams, bolts, drive plumes, explosions, the orders overlay, holo and cinema looks |
-| `src/view/sheets.ts`, `ships.ts` | the hull drawing sheets (our own: size in metres and every named piece) and each piece built from its sheet, with a cheap far level for the Theater. Built so far: the Lance-class destroyer and the Bastion cruiser; the other hulls and the craft are still plain shapes in `models.ts`. See them on `/ships.html?ship=destroyer` (`~exploded`, `~<piece>`, `~far`; `&view=three\|top\|side\|front\|below\|stern`) |
+| `src/view/scene.ts`, `models.ts` | the view: tracer streams, bolts, drive plumes, explosions, the orders overlay, holo and cinema looks |
+| `src/view/sheets.ts`, `ships.ts`, `rim-ships.ts` | the hull drawing sheets (our own: size in metres and every named piece) and each of the ten hulls built from its sheet, with a cheap far level for the Theater; `piece.ts` is the shared kit. See them on `/ships.html?ship=destroyer` (`~exploded`, `~<piece>`, `~far`; `&view=three\|top\|side\|front\|below\|stern`) |
+| `src/view/craft-sheets.ts`, `craft.ts` | the eight craft's sheets, each baked to one vertex-painted geometry of a few hundred triangles so a wing stays one instanced draw. `/ships.html?ship=rim-scout`, or `?ship=craft` for all eight |
 | `src/main.ts` | the page: input, the HUD, the sector screen, the harness |
 | `src/names.ts` | every faction, hull and wing name the player reads |
 
