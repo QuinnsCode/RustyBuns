@@ -70,10 +70,15 @@
   .apps .feat { grid-column: 2; }
   /* more of this lane is coming: a greyed line, not a link */
   .apps .soon > span { grid-column: 2; color: #f4f1ea59; font-family: var(--q-thick); font-weight: 400; letter-spacing: .04em; cursor: default; }
-  .sector > .apps .soon { display: none; }
+  .sector > .apps .soon, .sector > .apps .group { display: none; }
+  /* Learn's lessons sit under where each is done: that heading is a line of the card's text tier, on its own row */
+  .apps .group, .lane .apps li.group:not(.start) { grid-template-columns: minmax(0, 1fr); align-content: end; }
+  .apps .group .feat { grid-column: 1; color: var(--tone); }
+  @media (max-width: 599px), (max-height: 640px) { .lane .apps .group, .lane .apps .lesson.more { display: none; } }
+  @media (max-width: 599px) { .sector > .apps { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 100%; box-sizing: border-box; } .sector > .apps a { white-space: normal; } }
   @media (min-width: 600px) and (min-height: 641px) {
     .lanes { grid-template-rows: minmax(0, 1fr); padding-bottom: 24px; }
-    .lane .apps { grid-auto-rows: minmax(min-content, 1fr); align-content: stretch; gap: 0 24px; padding-block: 14px; font-size: clamp(16px, min(2.1vh, 1.5vw), 23px); }
+    .lane .apps { grid-template-rows: auto; grid-auto-rows: minmax(min-content, 1fr); align-content: stretch; gap: 0 24px; padding-block: 14px; font-size: clamp(16px, min(2.1vh, 1.5vw), 23px); }
     .lane .feat { font-size: clamp(12.5px, min(1.55vh, 1.1vw), 17px); line-height: 1.3; }
     .lane .apps .start { align-content: start; }
     .lane .apps li:not(.start) { grid-template-columns: 1.1em minmax(0, 1fr); }
@@ -82,7 +87,8 @@
     .lane .apps:not(:has(li:nth-child(4))) { grid-template-rows: auto auto minmax(0, 1fr); }
     .lane .apps:not(:has(li:nth-child(4))) li:not(.start) { align-content: start; padding-top: clamp(16px, 2.9vh, 30px); }
     .lane .apps:not(:has(li:nth-child(4))) .feat { line-height: 2.1; }
-    .lane .apps .soon { padding-top: clamp(10px, 2vh, 22px) !important; }
+    .lane .apps:not(:has(li:nth-child(4))) .soon { padding-top: clamp(10px, 2vh, 22px); }
+    .lane .apps .lesson a { white-space: nowrap; }
     .lane .apps .start a { padding-block: clamp(9px, 1.6vh, 16px); font-size: clamp(17px, 2.2vh, 21px); }
   }
   .apps .start { grid-template-columns: minmax(0, 1fr); grid-column: 1 / -1; margin-bottom: 4px; }
@@ -211,22 +217,32 @@
   section.block { margin-top: 36px; display: grid; gap: 12px; }
   section.block > h2 { margin: 0; font: 600 15px/1 var(--qs-head), sans-serif; letter-spacing: .18em; text-transform: uppercase; color: #d8d3c8; }
   /* the chain: five steps in a row on a desk, a column on a phone */
-  #chain { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); counter-reset: step; }
-  #chain a { display: grid; gap: 6px; height: 100%; box-sizing: border-box; padding: 14px; border-radius: 14px; background: #1a1c21; border: 1px solid #2a2d33; color: inherit; text-decoration: none; }
-  #chain a:hover, #chain a:focus-visible { border-color: #ff6b4a; outline: none; }
-  #chain .head { display: flex; align-items: center; gap: 8px; color: #ff9b7a; }
-  #chain b { font: 600 20px/1.1 var(--qs-head), sans-serif; color: #f4f1ea; white-space: nowrap; }
-  #chain span { color: #b9b4aa; font-size: 13px; }
-  #live { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
-  #live li { display: flex; gap: 10px; align-items: flex-start; color: #b9b4aa; }
-  #live li svg { flex: none; margin-top: 2px; color: #5fb38a; }
-  #live b { color: #f4f1ea; font-weight: 600; }
-  #pitches { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
-  #pitches a { display: flex; gap: 14px; padding: 18px; border-radius: 14px; background: #1a1c21; border: 1px solid #2a2d33; color: inherit; text-decoration: none; }
-  #pitches a:hover, #pitches a:focus-visible { border-color: #ff6b4a; outline: none; }
-  #pitches .icon { display: grid; place-items: center; flex: none; width: 46px; height: 46px; border-radius: 12px; background: #2a2d33; color: #ff9b7a; }
-  #pitches b { display: block; font: 600 22px/1.1 var(--qs-head), sans-serif; margin-bottom: 4px; }
-  #pitches p { margin: 0; color: #b9b4aa; }
+  /* the foot of the door, in pictures. The chain: five lit nodes on one cable, each a link */
+  #chain { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  #chain li { position: relative; display: grid; justify-items: center; }
+  #chain li + li::before { content: ""; position: absolute; top: clamp(24px, 4.4vw, 36px); right: 50%; width: 100%; height: 3px; background: linear-gradient(90deg, #2a2d33, var(--tone)); }
+  #chain a { position: relative; z-index: 1; display: grid; justify-items: center; gap: 10px; color: inherit; text-decoration: none; }
+  .node { display: grid; place-items: center; width: clamp(48px, 8.8vw, 72px); aspect-ratio: 1; border-radius: 50%; background: #14161a; border: 2px solid var(--tone); color: var(--tone); box-shadow: 0 0 22px color-mix(in srgb, var(--tone) 35%, transparent); transition: transform .15s; }
+  a:hover > .node, a:focus-visible > .node { transform: scale(1.08); background: color-mix(in srgb, var(--tone) 18%, #14161a); }
+  #chain a:focus-visible, #pitches a:focus-visible, #live a:focus-visible { outline: 2px solid #f4f1ea; outline-offset: 4px; border-radius: 12px; }
+  #chain b { font: 400 clamp(12px, 2.2vw, 19px)/1.1 var(--q-thick); color: #f4f1ea; white-space: nowrap; }
+  /* what is live, under its lane's word */
+  #live { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #live li { display: grid; align-content: start; gap: 10px; padding-top: 12px; border-top: 2px solid var(--tone); }
+  #live b { font: 400 20px/1 var(--q-thick); letter-spacing: .12em; text-transform: uppercase; color: var(--tone); }
+  #live div { display: flex; flex-wrap: wrap; gap: 8px; }
+  #live a, #live .more { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent); color: #f4f1ea; font: 600 14px/1 var(--q-thin); text-decoration: none; white-space: nowrap; }
+  #live a svg { color: var(--tone); }
+  #live a:hover { background: color-mix(in srgb, var(--tone) 16%, transparent); }
+  #live .more { border-style: dashed; color: #f4f1ea59; cursor: default; }
+  /* who it's for: a face a tile, and what they get in a few words */
+  #pitches { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+  #pitches a { display: grid; justify-items: center; align-content: start; gap: 12px; padding: 22px 14px; border-radius: 16px; background: #1a1c21; border: 1px solid #2a2d33; color: inherit; text-decoration: none; text-align: center; }
+  #pitches a:hover { border-color: var(--tone); }
+  #pitches b { font: 400 24px/1 var(--q-thick); }
+  .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .tags i { font: 400 12px/1 var(--q-thin); font-style: normal; letter-spacing: .1em; text-transform: uppercase; color: #b9b4aa; padding: 5px 8px; border-radius: 6px; background: #ffffff0d; }
+  @media (max-width: 599px) { #live { grid-template-columns: minmax(0, 1fr); } }
   .foot { margin: 28px 0 0; color: #8b877f; font-size: 13px; }
   @media (min-width: 1000px) { h1 { font-size: 56px; } }
   /* the light look (the pick in the room pill, src/ui/theme.ts): the field is a night scene and keeps its dusk, words
@@ -252,12 +268,12 @@
   :root[data-theme="light"] .sector > .apps { background: #f4f5f6e6; }
   :root[data-theme="light"] .sector > .apps a { color: #17191c; }
   :root[data-theme="light"] .tag { background: #d4d8dd; color: #2a2e34; }
-  :root[data-theme="light"] #chain a, :root[data-theme="light"] #pitches a { background: #f4f5f6; border-color: #c9cdd2; }
-  :root[data-theme="light"] #chain .head, :root[data-theme="light"] #pitches .icon { color: #c2361c; }
-  :root[data-theme="light"] #pitches .icon { background: #e4e6e9; }
-  :root[data-theme="light"] #chain b, :root[data-theme="light"] #live b { color: #17191c; }
-  :root[data-theme="light"] #chain span, :root[data-theme="light"] #live li, :root[data-theme="light"] #pitches p, :root[data-theme="light"] .foot { color: #555c66; }
-  :root[data-theme="light"] #live li svg { color: #158a4f; }
+  :root[data-theme="light"] #pitches a { background: #f4f5f6; border-color: #c9cdd2; }
+  :root[data-theme="light"] .node { background: #f4f5f6; }
+  :root[data-theme="light"] #chain b, :root[data-theme="light"] #live a { color: #17191c; }
+  :root[data-theme="light"] .tags i { color: #555c66; background: #0000000d; }
+  :root[data-theme="light"] #live .more { color: #17191c66; }
+  :root[data-theme="light"] :root[data-theme="light"] .foot { color: #555c66; }
 </style>
 </head><body>
 <header id="hero">
@@ -302,7 +318,7 @@
   <section class="block"><h2>Who it's for</h2>
     <div id="pitches"></div>
   </section>
-  <p class="foot">Only Playground and The Event ask you to sign in: they are rooms you share. Everything else works signed out, and the Paths button on every page brings you back here.</p>
+  <p class="foot">Only rooms you share ask for a sign-in.</p>
 </main>
 <dialog id="demo" aria-labelledby="demo-h">
   <h2 id="demo-h">Try one</h2>

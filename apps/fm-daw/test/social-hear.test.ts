@@ -44,6 +44,8 @@ test.skipIf(!hasChrome)("chat from the one panel, then walk away from the stage 
   try {
     const url = `${vite.url}jam.html?room=social-hear&studio=desert-gathering&quality=low&walk=1`;
     const walkIn = async (tab: typeof phone) => {
+      // nothing here looks at the picture, and two rooms drawing every frame in software GL held a page past a look's 60 s (#6638)
+      await tab.call("Page.addScriptToEvaluateOnNewDocument", { source: "for (const f of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced', 'drawRangeElements']) WebGL2RenderingContext.prototype[f] = () => {};" });
       await tab.call("Page.addScriptToEvaluateOnNewDocument", { source: `{ const W = WebSocket; window.WebSocket = class extends W { constructor(u, p) { const url = new URL(u); if (url.pathname === "/ws") url.host = "127.0.0.1:${bridge.port}"; super(url, p); } }; }` });
       await load(chrome.cdp, tab, url, 0);
       await until(tab, "!!window.qjam && !!window.qjam.state().me.wearing && qjam.state().net === 'online'", "the room", 90_000);

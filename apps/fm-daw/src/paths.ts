@@ -33,8 +33,30 @@ export const SECTORS: readonly Sector[] = [
   // the owner's copy (#6527): Studio's line is a console prompt whose last word rolls through what you build, each word
   // opening the app that builds it; `line` is the one still sentence a screen reader gets
   { id: "studio", word: "Studio", line: "Build your set, speaker, signal, pedal, song or plugin.", rolls: [["set", "instruments"], ["speaker", "speakers"], ["signal", "planner"], ["pedal", "amps"], ["song", "daw"], ["plugin", "builder"]], start: { say: "Walk in and play", href: STUDIO_START, icon: PIANO } },
-  { id: "event", word: "Event", line: "Take your studio pieces to a 3D hangout and experience the sound and the worlds.", weigh: "experience", start: { say: "Host or join", href: "/rooms.html#party", icon: TICKET, fork: { host: "Host", join: "Join", icon: LOG_IN } } },
+  { id: "event", word: "Event", line: "Take your studio pieces to a 3D hangout and experience the sound and the worlds.", weigh: "experience", start: { say: "Host or join", href: "/rooms.html#party", icon: TICKET, fork: { host: "Host", join: "Join", icon: LOG_IN } }, soon: "More is on the way" },
 ];
+
+/** One of Learn's lessons as its card lists it: a link that starts it. `on` is the app whose page it runs on (its icon). */
+export interface Lesson { id: string; name: string; does: string; href: string; on: PathId; signIn: boolean }
+/** Learn's lessons, under where each is done. The five at the gear wall are src/studio/lessons.ts's: lesson one runs in the gear room
+ *  (`/studio.html?lesson=guitar`, signed out), the four that bring a kit in the studio room (`/jam.html?lesson=`, a room you sign in for); the five on the tools each run on that tool's own page, signed out. */
+export const LESSON_GROUPS: readonly { say: string; lessons: readonly Lesson[] }[] = [
+  { say: "At the gear wall", lessons: [
+    { id: "guitar", name: "Guitar to amp", does: "Guitar, through a pedal, into an amp and its cab, with the gain set so it doesn't fizz.", href: "/studio.html?lesson=guitar", on: "learn", signIn: false },
+    { id: "voice", name: "Patch a synth", does: "On the sound wall: an oscillator through a filter and a level into Q Out.", href: "/jam.html?lesson=voice", on: "learn", signIn: true },
+    { id: "pa", name: "Set up a PA", does: "Place two speakers, aim them, cable a mic through a mixer, and power on in order.", href: "/jam.html?lesson=pa", on: "learn", signIn: true },
+    { id: "plugs", name: "XLR plugs", does: "What an XLR carries and its pins: a mic into the mixer, a speaker's combo input, its thru on to the next box.", href: "/jam.html?lesson=plugs", on: "learn", signIn: true },
+    { id: "rack", name: "Run an amp rack", does: "Mains off a distro, the mixer into the amps, out to two passive speakers, and the power kept off the signal.", href: "/jam.html?lesson=rack", on: "learn", signIn: true },
+  ] },
+  { say: "On the tools", lessons: [
+    { id: "beat", name: "Make a beat", does: "A kick on every beat, a snare on 2 and 4, hats between, then play it.", href: "/desk?lesson=beat", on: "daw", signIn: false },
+    { id: "mix", name: "Mix two tracks", does: "Both decks loaded, tempos matched, then cross the fader from one to the other.", href: "/decks.html?lesson=mix", on: "instruments", signIn: false },
+    { id: "amp", name: "Dial in an amp", does: "Gain down for a clean amp, a drive in front to push it, an echo in the loop.", href: "/amp.html?lesson=amp", on: "amps", signIn: false },
+    { id: "build", name: "Swap a part", does: "Open a drive pedal's board, swap its clipping diodes, and hear why it changes.", href: "/amp.html?lesson=build", on: "builder", signIn: false },
+    { id: "plan", name: "Plan a field's PA", does: "Two stacks either side, aimed at the middle, on a generator that holds them.", href: "/rooms.html?lesson=plan", on: "planner", signIn: false },
+  ] },
+];
+export const LESSONS = LESSON_GROUPS.flatMap((g) => g.lessons);
 
 export type PathId = "learn" | "planner" | "daw" | "instruments" | "amps" | "builder" | "speakers" | "playground" | "event";
 export interface Path {
@@ -121,26 +143,19 @@ export const CHAIN: readonly { step: string; does: string; path: PathId }[] = [
   { step: "Build it", does: "Swap the parts on a pedal's board in Q Builder.", path: "builder" },
   { step: "Play it", does: "Plug in and play it through Q Amp, solved as a circuit.", path: "amps" },
   { step: "Record it", does: "Lay the take down in QDAW and loop it.", path: "daw" },
-  { step: "Plan the stage", does: "Place the stacks on the field and see who hears what.", path: "planner" },
-  { step: "Play it live", does: "Take the planned party live; the crowd walks in and hears it.", path: "event" },
+  { step: "Plan it", does: "Place the stacks on the field and see who hears what.", path: "planner" },
+  { step: "Go live", does: "Take the planned party live; the crowd walks in and hears it.", path: "event" },
 ];
 
 /** What works end to end today (PATHWAYS.md's table), a line an app. */
-export const LIVE: readonly { path: PathId; line: string }[] = [
-  { path: "planner", line: "Coverage, delay, power and the gear list, indoors and out over the night's air, the ground and banks." },
-  { path: "learn", line: "Four lessons at the gear wall, checked on the gear as you go." },
-  { path: "daw", line: "A loop at a time: play, record, mix and bounce it to a file." },
-  { path: "instruments", line: "Two decks into the room, to a file, or out on a listen link." },
-  { path: "amps", line: "An amp and pedals solved as circuits." },
-  { path: "speakers", line: "Speaker boxes from the makers' drawings." },
-  { path: "playground", line: "An invite link, a guest list, and the room's PA from where you stand." },
-  { path: "event", line: "A planned party live from the Event Planner, on its stacks, with a listen link for the crowd." },
-];
 
 /** Two short pitches, for crews and for classes, each with its path's icon and door. */
-export const PITCHES: readonly { who: string; line: string; path: PathId }[] = [
-  { who: "For crews", line: "Know the field covers before the night: place the stacks, set the air and the ground, see where the highs drop, and take the power plan and the gear list with you.", path: "planner" },
-  { who: "For classes", line: "Cabling, gain staging, a PA and a circuit, learned on gear that can't break: each step checked as you go, no account needed.", path: "learn" },
+/** Who it's for, as the foot of the door draws it: a few words each, the sentence kept for the hover tip and for agents. */
+export const PITCHES: readonly { who: string; tags: readonly string[]; line: string; path: PathId }[] = [
+  { who: "Crews", tags: ["Coverage", "Power", "Gear list"], line: "Know the field covers before the night: place the stacks, see where the highs drop, and take the power plan and the gear list with you.", path: "planner" },
+  { who: "Classes", tags: ["Cabling", "Gain", "A PA"], line: "Cabling, gain staging, a PA and a circuit, learned on gear that can't break: each step checked as you go.", path: "learn" },
+  { who: "DJs", tags: ["Two decks", "Your library", "A listen link"], line: "Prep a set at home on two decks and a mixer, then play the same set out at an event.", path: "instruments" },
+  { who: "Bands", tags: ["Your room", "Invite", "Jam"], line: "A studio of your own: send the link, pick up an instrument each, and play together.", path: "playground" },
 ];
 
 // lucide (ISC): thermometer, droplets, mountain, play, pause, headphones, arrow-right, check

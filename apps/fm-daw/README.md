@@ -8,6 +8,11 @@
 
 **New here:** each lane's card on the front door opens with one filled button: **First lesson** (Learn), **Walk in and play** (Studio: a room of your own with no form to fill, and Enter sits you at the keys with the drums, the bass, the vocal booth, the desk and the decks around you) and **Host | Join** (Event). First lesson opens the gear room with lesson one on. Host opens the planner's Party panel; **Join** takes the link you were sent (an event's, a room's, or a listen link) or the room's code (words joined by dashes) and lands you there, or says why not (`src/join.ts`, `qdoor_join`). **Not sure? Try a demo** under the title offers four that make a sound in one click, signed out: make a beat, mix two tracks, play an amp, plan a stage. Cmd+K on the door lists the same starts, and an agent reads the door in words with `qdoor_offers` and goes with `qdoor_open` (`src/front.ts`). A link of your own can do what the Studio button does: `/jam.html?start=keys` makes the room, and `&sit=<spot>` on any room's link sits whoever opens it there (`keys`, `drums`, `bass`, `booth`, `desk`).
 
+**Learn's card lists its lessons** (`LESSON_GROUPS` in `src/paths.ts`), each a link that starts it: five at the gear wall
+(lesson one in the gear room, `/studio.html?lesson=guitar`, signed out; `/jam.html?lesson=voice`, `pa`, `plugs`, `rack`: a room of your own with no form, and Enter puts the lesson's card
+up) and five on the tools' own pages (`?lesson=beat`, `mix`, `amp`, `build`, `plan`). **First lesson** is the guitar one. The
+crossover lesson, out of doors, has no link yet: the card ends on a greyed "… soon".
+
 **Type:** every page is set in two faces, from `src/brand.css` (the owner's pick, 2026-11-28). Russo One, the thick one
 (`--q-thick`), is for names, headings and buttons. Exo 2, the thin one (`--q-thin`), is for everything else: small text at its
 regular weight, labels at 600, hairline only from 24px up. Readouts keep the mono face. A new page imports `brand.css` and
