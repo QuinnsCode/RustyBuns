@@ -2,8 +2,9 @@
 // apps.yml and desktop-drop.yml both read this, so adding an app is one entry here.
 //
 //   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if the CI pipeline itself changed;
-//                                              packages/ or the lockfile moving runs bun test packages, and
-//                                              every app waits for the hourly ring), whether .claude/ moved
+//                                              code under packages/ also runs the apps that import it (packageUsers);
+//                                              packages/ or the lockfile moving runs bun test packages, and every
+//                                              other app waits for the hourly ring), whether .claude/ moved
 //                                              (the guard hook tests). With the root commit as base: every app.
 //                                              Each app's tests run in up to LANES time-balanced jobs ("test mythic-masters 2/3")
 //                                              A suite under a minute is one lane, and with no prep or boot it shares a
@@ -34,8 +35,8 @@ type App = {
 };
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
-import { check, num, rec } from "../packages/util/src/guard.ts";
-import { readFileSync } from "node:fs";
+import { check, num, obj, opt, rec, str } from "../packages/util/src/guard.ts";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { appDir, appDirs, appOf, upFrom } from "./app-dirs.ts";
 import { testFiles } from "./ci-test-count.ts";
@@ -199,6 +200,66 @@ export function reachedApps(app: string, root = join(import.meta.dir, "..")): st
   return [...found].sort();
 }
 
+// The apps a change under packages/ can break (#6419): each app whose code or tests reach a changed file by imports,
+// its own or through other files (an app imports @rustybuns/models/human; a barrel re-exports the module that
+// changed). Module by module, not by package.json dependencies: nearly every app depends on @rustybuns/util, and few
+// of them import any one of its modules. Every quoted "@rustybuns/..." or "./" "../" string that names a file counts.
+// A file the code finds some other way (a folder read, a built name, a package's bin) slips by: the hourly ring runs it.
+const SPECIFIER = /["'`]((?:\.{1,2}\/|@rustybuns\/)[^"'`\s?#$]*)/g;
+const CODE = /\.(ts|tsx|js|jsx|mjs|cjs|css|html)$/;
+const PackageJson = obj({ exports: opt(rec(str())) });
+
+export function packageUsers(changed: string[], root = join(import.meta.dir, "..")): string[] {
+  const targets = new Set(changed.filter((f) => f.startsWith("packages/") && sharedCode(f)));
+  if (!targets.size) return [];
+  const isFile = (f: string) => !!statSync(join(root, f), { throwIfNoEntry: false })?.isFile();
+  const exported = new Map<string, Record<string, string>>();
+  // "@rustybuns/util/guard" -> the file its package.json exports it as (no install needed: CI's plan job has none).
+  const fromPackage = (spec: string) => {
+    const [, name, ...rest] = spec.split("/");
+    const dir = `packages/${name}`, key = [".", ...rest].join("/");
+    let map = exported.get(dir);
+    if (!map) {
+      const json = isFile(`${dir}/package.json`) ? check(PackageJson, JSON.parse(readFileSync(join(root, dir, "package.json"), "utf8"))) : null;
+      exported.set(dir, map = json?.exports ?? {});
+    }
+    for (const [pattern, to] of Object.entries(map)) {
+      const [head = "", tail] = pattern.split("*");
+      if (tail === undefined ? key === pattern : key.startsWith(head) && key.endsWith(tail))
+        return join(dir, tail === undefined ? to : to.replace("*", key.slice(head.length, key.length - tail.length)));
+    }
+  };
+  const seen = new Map<string, string[]>();
+  const imports = (file: string) => {
+    let found = seen.get(file);
+    if (found) return found;
+    seen.set(file, found = []);
+    for (const [, spec] of readFileSync(join(root, file), "utf8").matchAll(SPECIFIER)) {
+      const to = spec!.startsWith("@") ? fromPackage(spec!) : join(dirname(file), spec!);
+      if (!to) continue;
+      // A deleted or renamed module is in `changed` but not on disk: whoever still names it is broken, so it counts.
+      const hit = [to, `${to}.ts`, `${to}.tsx`, `${to}.js`, `${to}/index.ts`, to.replace(/\.js$/, ".ts")].find((c) => targets.has(c) || isFile(c));
+      if (hit) found.push(hit);
+    }
+    return found;
+  };
+  const reaches = (dir: string) => {
+    const todo = [...new Bun.Glob("**/*").scanSync({ cwd: join(root, dir) })]
+      .filter((f) => CODE.test(f) && !f.includes("node_modules/")).map((f) => `${dir}/${f}`);
+    const walked = new Set(todo);
+    for (let file = todo.pop(); file; file = todo.pop()) {
+      for (const to of imports(file)) {
+        if (targets.has(to)) return true;
+        if (walked.has(to) || !CODE.test(to) || to.includes("node_modules/") || !isFile(to)) continue;
+        walked.add(to);
+        todo.push(to);
+      }
+    }
+    return false;
+  };
+  return [...appDirs(root)].filter(([, dir]) => reaches(dir)).map(([id]) => id);
+}
+
 // The app folders a test lane checks out (apps.yml's sparse checkout, #5509): its own, its `with` apps and the ones
 // its code reaches (reachedApps).
 export const sparseDirs = (app: string, root?: string) =>
@@ -242,7 +303,7 @@ const out = (k: string, v: unknown) => console.log(`${k}=${JSON.stringify(v)}`);
 export const slowRun = (a: App, changed: string[], rowChanged = false): string =>
   a.slow && (rowChanged || changed.some((f) => a.slow!.when.test(f))) ? a.slow.run : "";
 
-const changedFiles = async (base: string) => (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
+const changedFiles = async (base: string) => (await Bun.$`git diff --name-only --no-renames ${base}...HEAD`.text()).split("\n").filter(Boolean);
 
 // Editing one app's row in APPS should only rerun that app. Returns the apps whose rows changed,
 // or "all" when any other line of this file did.
@@ -291,14 +352,15 @@ if (cmd === "drop") {
 } else if (cmd === "test") {
   if (!arg) throw new Error("test needs a base ref");
   const changed = await changedFiles(arg);
-  // A change to the pipeline (this file's machinery, apps.yml) runs every app here. Shared code, the lockfile or the root
-  // package.json's dependencies can break any app too, but that sweep is the hourly ring's (desktop-hourly.yml, release
-  // rings step 5, #4492): the PR runs the packages' own tests and the apps it touched.
+  // A change to the pipeline (this file's machinery, apps.yml) runs every app here. Shared code runs the packages' own
+  // tests and the apps whose imports reach what changed (packageUsers). The lockfile or the root package.json's
+  // dependencies can break any app too, but that sweep is the hourly ring's (desktop-hourly.yml, release rings step 5, #4492).
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
   const shared = rows === "all" || changed.includes(".github/workflows/apps.yml");
   const deps = changed.some(sharedCode) || (changed.includes("package.json") && await rootDepsChanged(arg));
   const touched = new Set([...changed.filter((f) => docRead(f)).flatMap(appsFor), ...(rows === "all" ? [] : rows)]);
-  const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
+  const users = new Set(packageUsers(changed));
+  const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || users.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const files = new Map(await Promise.all(names.map(async (n) => [n, APPS[n]!.test ? await weighed(n, APPS[n]!.test!) : []] as const)));
   const small = names.filter((n) => isSmall(APPS[n]!, files.get(n)!));
   const own = new Set(changed);
