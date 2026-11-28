@@ -33,7 +33,7 @@ export function environmentBanner(cfg: Cfg, stage: string, sub: string): string 
   const head = why.length
     ? `environment: REAL (stage ${stage}): this can hold customer data.\n${why.map((w) => `  because ${w}`).join("\n")}\n  ${sub === "destroy" ? "destroy" : sub === "drift" ? "repair" : "deploy"} only with a plan you have read; the report below says what survives a destroy.`
     : `environment: EPHEMERAL (stage ${stage}): everything is made new with names Alchemy picks, nothing already on the account is looked up or changed, and \`rustybuns destroy --stage ${stage}\` removes it all.`;
-  const report = protectReport(cfg, sub);
+  const report = protectReport(cfg, sub, !!process.stdout.isTTY && !process.env.NO_COLOR);
   return report ? `${head}\n${report}` : head;
 }
 

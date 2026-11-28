@@ -6,6 +6,7 @@
 // be kept on its own: its storage lives in its Worker, so protecting one keeps the Worker (#3416).
 // What this file adds is the part a person sees: a KEPT list in front of every plan, deploy and destroy.
 
+import { ALARM } from "./plan-summary.ts";
 import type { Binding, RustyBunsConfig } from "./config.ts";
 
 type Protectable = Extract<Binding, { protect?: boolean }>;
@@ -70,7 +71,7 @@ export function destroyedNames(cfg: Cfg): string[] {
  * The block printed before a plan, deploy or destroy. Always says what is kept and what goes, so
  * "will this wipe my vector index?" never has to be read out of a plan. Empty when no binding holds data.
  */
-export function protectReport(cfg: Cfg, sub: string): string {
+export function protectReport(cfg: Cfg, sub: string, color = false): string {
   const kept = protectedNames(cfg), gone = destroyedNames(cfg), refs = refNames(cfg);
   if (!kept.length && !gone.length && !refs.length) return "";
   const lines = [sub === "destroy" ? "protection (destroy):" : `protection, if you ever run destroy (this ${sub} isn't one: what it changes is in the plan below):`];
@@ -78,7 +79,9 @@ export function protectReport(cfg: Cfg, sub: string): string {
   const fixed = new Set(unprotectableNames(cfg));
   const why = (n: string) => fixed.has(n) ? " (protect can't keep this kind)"
     : n.startsWith("Durable Object ") ? " (with the Worker: `protect: true` on the binding or `worker.protect` keeps it)" : "";
-  for (const n of gone) lines.push(`  [REMOVED] ${n}: destroy deletes it, and its data${why(n)}`);
+  // Alarm colour only when this run is the destroy: on a plan or deploy these lines are "if you ever", and would cry wolf.
+  const loud = (s: string) => color && sub === "destroy" ? `${ALARM}${s}\x1b[0m` : s;
+  for (const n of gone) lines.push(`  ${loud(`[REMOVED] ${n}: destroy deletes it, and its data${why(n)}`)}`);
   for (const r of refs) lines.push(`  [NOT OURS] ${r.name}: ${r.app} owns it, so this destroy leaves it`);
   if (kept.length && sub !== "destroy") lines.push(`  protect saves with the resource, so a new \`protect: true\` counts from the next deploy: deploy before you destroy.`);
   if (!kept.length && !fixed.size && gone.length) lines.push(`  nothing is protected. Set \`protect: true\` on a binding to keep it through destroy.`);

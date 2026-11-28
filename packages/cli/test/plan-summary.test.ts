@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { formatPlanSummary, readPlanRows } from "../src/plan-summary.ts";
+import { ALARM, formatPlanSummary, readPlanRows } from "../src/plan-summary.ts";
 
 // Alchemy's plain plan log (LoggingCli's formatPlanLines): a coloured `[id]` tag, then the action; bindings as `[id/sid]`.
 const tag = (id: string) => `\x1b[38;2;80;160;255m[${id}]\x1b[0m`;
@@ -23,6 +23,9 @@ test("plan summary: a log it can't read says nothing, never a false safe", () =>
   expect(formatPlanSummary(readPlanRows("│ [~] Worker (Cloudflare.Worker)\n· BACKUP"))).toBe("");
 });
 
-test("plan summary: REPLACE is orange", () => {
-  expect(formatPlanSummary([{ id: "BACKUP", action: "replace" }])).toContain("\x1b[1;38;5;208mREPLACE");
+test("plan summary: a row that loses data is filled with the alarm colour, a kept one is not", () => {
+  const out = formatPlanSummary([{ id: "DB", action: "replace" }, { id: "FILES", action: "delete" }, { id: "BACKUP", action: "noop" }]);
+  expect(out).toContain(`${ALARM}REPLACE  DB`);
+  expect(out).toContain(`${ALARM}DELETE   FILES`);
+  expect(out).not.toContain(`${ALARM}KEEP`);
 });
