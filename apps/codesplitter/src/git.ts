@@ -14,7 +14,7 @@ export const GIT_BOT = "codesplitters";
 /** A crew member without an email of their own commits as `<name>@` this. */
 export const GIT_EMAIL_DOMAIN = "codesplitters.local";
 
-// By path, not by package name: Agent Page imports this file too (its src/keep.ts), and its CI install has none of
+// By path, not by package name: Agent World imports this file too (its src/keep.ts), and its CI install has none of
 // codeSplitter's node_modules.
 import { hex } from "../../../packages/util/src/bytes.ts";
 

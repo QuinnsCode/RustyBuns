@@ -1,14 +1,14 @@
 // What an AI pays, in tokens, to use an MCP server's tools: the server's instructions and tool list (read once when it
 // connects, then in its context every turn after), and the reply to each call you name. Counted by Claude's own
 // count_tokens (free), per model, with what a thousand of each would cost at that model's input price. The session
-// itself (list, calls, replies) is scripts/mcp-session.ts, which the Agent Page's token budget test counts too.
+// itself (list, calls, replies) is scripts/mcp-session.ts, which Agent World's token budget test counts too.
 //
 //   cd apps/codesplitter && bunx varlock run -- bun scripts/tool-tokens.ts <mcp url> [--call name '{json args}'] ...
 //
 //   bunx varlock run -- bun scripts/tool-tokens.ts http://127.0.0.1:4799/api/r/<room>/mcp \
 //     --call page_read '{}' --call page_set_profile '{"name":"Ada"}' --call page_set_theme '{"accent":"red"}'
 //
-// A call really runs, so name only calls you're happy to make (the Agent Page's page has to be open for its tools).
+// A call really runs, so name only calls you're happy to make (Agent World's page has to be open for its tools).
 // Needs ANTHROPIC_API_KEY (codeSplitter's .env.schema, through varlock); without it, it prints byte sizes and a rough
 // local estimate (four characters a token).
 import Anthropic from "@anthropic-ai/sdk";
