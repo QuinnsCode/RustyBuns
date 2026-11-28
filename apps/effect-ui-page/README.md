@@ -166,7 +166,7 @@ person's (`eq:<sub>`, the token's checked against eqosys's keys, `src/who.ts`), 
 
 Everyone's land in one 3D space, like rural neighbours: plots touch edge to edge with no streets or fences. **Agent
 Galaxy** (the Galaxy tile in the console, or Cmd+K) shows your own land under cloud, then the cloud lifts and you are a
-simple shape on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
+robot on it. Walk with WASD or the arrow keys (a touch stick on a phone), straight from your land onto your
 neighbour's. **Back to my world** brings the console back.
 
 - A world built with `@world/kit` stands there in 3D: its ground, water, trees, rocks and its own meshes, with what
@@ -180,20 +180,52 @@ neighbour's. **Back to my world** brings the console back.
   here". Every third cell of the spiral stays free for invites (the invite link and sign-in come next).
 - Your page saves your world to the server a second after each change that lands (`PUT /api/r/<room>/world`, checked
   with the same Schema and limits as a write), so your neighbours see what you built.
-- You see the other people on your plot and the ones touching it. They have a colour and no name.
+- You see the other people on your plot and the ones touching it. They are robots with no names.
+- **Your robot** is your body there, with no skin and no human shape: 8 paints; a box, dome or screen head; two eyes, a
+  visor or one big eye; an antenna, propeller or ears; wheels, legs or hover. The builder is picture buttons, opens the
+  first time you walk in, and comes back from the robot button or Cmd+K ("My robot"). It is kept for your account
+  (`GET`/`PUT /api/galaxy/robot`) and only ever a pick from those lists (`src/galaxy.ts`'s `Look`). The galaxy's own
+  scene draws it; a world is never told what anyone looks like.
 - The map never sends a room's link: a plot is known by a one-way hash of it, since the link is the room's key.
 
-From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()` and `walk(dx, dz)`:
+From a script or the probe: `window.agentGalaxy` has `state()`, `enter()`, `leave()`, `robot()` and `walk(dx, dz)`:
 
 ```
 bun run probe effect-ui-page --url http://127.0.0.1:4799/r/<room> --js 'await agentGalaxy.enter()' --shot galaxy.png
 ```
 
+## Kept for good, in Cloudflare Artifacts
+
+Every room has a git repo of its own in Artifacts (namespace `agent-page`), so its world opens the same on any
+browser. Ten seconds after a change the Room pushes one commit: `world/` holds the world's files and `world.json` its
+backdrop. Opening a room reads them back from the repo (from the Room's own storage while a push is still waiting, or
+if Artifacts can't be reached). A browser holding a change that never reached the server keeps its own copy and sends
+it again.
+
+An agent can keep a model beside the world, a character say. A file is a `.glb` of 4 MB at most, 8 a room:
+
+```
+curl -X PUT --data-binary @hero.glb <origin>/api/r/<room>/files/hero.glb
+curl <origin>/api/r/<room>/files            # {"files":["hero.glb"]}
+curl -O <origin>/api/r/<room>/files/hero.glb
+curl -X DELETE <origin>/api/r/<room>/files/hero.glb
+```
+
+The room's link is the key, as for the tools. The world's own code can't load these files yet: its frame has no
+network. `bun run dev` keeps the same repos in a temp folder (it needs `git`) until it stops.
+
 ## Deploy it
 
 `bun run deploy` builds the page and ships it with the relay as one Worker (`wrangler.jsonc`). It has one small
 Durable Object per room, which keeps one picture (150 KB at most) and the room's saved world (a key per file) in its
-storage, and one `Galaxy` Durable Object for the whole map, and no AI or other paid bindings.
+storage, and one `Galaxy` Durable Object for the whole map, and no AI.
+
+Artifacts needs the Workers Paid plan. Its [price](https://developers.cloudflare.com/artifacts/platform/pricing/) as read on
+2026-11-27: 10,000 operations and 1 GB-month free each month, then $0.15 per 1,000 operations and $0.50 per GB-month.
+A commit is about one to two operations (the push, plus reads at 100 to 1 and a token at 5 to 1), and a repo costs
+only what it stores. git keeps every version, so what a room stores only grows (1 GB a repo at most). What limits
+one room: a push each 10 seconds at most, and 5 uploads in a row then one each half minute. Nothing limits the number
+of rooms.
 The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 
 ## How it's put together
@@ -227,9 +259,12 @@ The Worker runs for `/` and `/r/*` too, to write the link preview into the page.
 - `src/galaxy.ts`: Agent Galaxy with no platform in it: the spiral, `claim`, the plots around a point, the players'
   moves (each to the same and touching plots only) and the wire guards both ends import. `src/edge/galaxy.ts` runs it
   in a Durable Object; `scripts/dev.ts` runs it in memory. `src/saved.ts`: a room's saved world, the same way.
+  `src/keep.ts`: a room's Artifacts repo, written by codeSplitter's git push (`apps/codesplitter/src/git.ts`).
+  `src/files.ts`: the files routes.
   `src/galaxyView.ts`: walking and the players in the page. `src/land3d.ts`: the one 3D scene (three.js, loaded when
   the galaxy opens), and `src/air.ts` its sky, light, bloom, weather, smoke and cars. `src/land.ts`: a plot's land and
   mood as data, and what is left out of it.
+- `test/keep.test.ts`: a world and a model pushed to a local Artifacts repo and read back.
 - `test/galaxy.test.ts`: two people walking the galaxy in headless Chrome against the dev server.
   `test/land.test.ts`: what a world's frame may put in the shared space.
 

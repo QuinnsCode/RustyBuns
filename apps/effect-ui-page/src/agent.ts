@@ -36,6 +36,8 @@ export class Agent extends Context.Service<Agent, {
 
 /** Where the page is kept between visits, per room: this browser only. */
 export const savedKey = (room: string) => `agent-page:${room}`;
+/** Set while this browser's copy has a change the server hasn't taken yet. */
+export const unsavedKey = (room: string) => `agent-page:${room}:unsaved`;
 
 /** Whoever else needs the world as it stands (Agent Galaxy, which shows it and saves it to the server): told after
  *  each change that lands. */
@@ -113,7 +115,11 @@ export const layer = (room: string, initial: Page) => Layer.effect(Agent, Effect
     seen: Stream.fromQueue(seen),
     report: (r) => Effect.sync(() => {
       page = r.page;
-      if (r.error === null && current !== r.page) { current = r.page; for (const w of watchers) w(r.page); }
+      if (r.error === null && current !== r.page) {
+        current = r.page;
+        try { localStorage.setItem(unsavedKey(room), "1"); } catch { /* private window */ }
+        for (const w of watchers) w(r.page);
+      }
       try { localStorage.setItem(savedKey(room), JSON.stringify(r.page)); } catch { /* private window: kept for this visit only */ }
       waiting.get(r.call)?.(r);
       waiting.delete(r.call);

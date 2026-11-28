@@ -150,6 +150,17 @@ export function airs(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THRE
     composer.setSize(wide, tall);
   };
   return {
+    /** The sun and the sky's fill, for whoever must light a layer of its own. */
+    lights: [sun, hemi] as const,
+    /** Draw one layer again over the frame just drawn, in front of everything. */
+    over(layer: number) {
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      camera.layers.set(layer);
+      renderer.render(scene, camera);
+      camera.layers.set(0);
+      renderer.autoClear = true;
+    },
     size(w: number, h: number) { wide = w; tall = h; resize(); },
     now: () => ({ weather, fps: Math.round(fps), top: `#${now.top.getHexString()}`, bloom: Math.round(num.bloom * 100) / 100 }),
     /** One frame, `at` being where you stand and `down` how far under the cloud you have come (0 to 1). */
