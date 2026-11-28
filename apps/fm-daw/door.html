@@ -31,9 +31,9 @@
   .apps { margin: 0; padding: 12px 18px 14px 36px; display: grid; align-content: start; gap: 8px 24px; text-align: left; font: 600 17px/1.3 var(--qs-body), system-ui, sans-serif; }
   .lane .apps { border-top: 0; border-radius: 0 0 18px 18px; opacity: var(--list, 1); }
   .apps li::marker { color: var(--tone); }
-  .apps a { color: #f4f1ea; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tone) 55%, transparent); text-underline-offset: 3px; white-space: nowrap; }
+  .apps a { color: #f4f1ea; font-family: var(--q-thick); font-weight: 400; letter-spacing: .02em; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tone) 55%, transparent); text-underline-offset: 3px; white-space: nowrap; }
   .apps a:hover, .apps a:focus-visible { color: var(--tone); text-decoration-color: currentColor; }
-  .feat { display: block; color: #b9b4aa; font-weight: 400; font-size: 14px; line-height: 1.35; white-space: pre-line; }
+  .feat { display: block; color: #b9b4aa; font: 400 14px/1.35 var(--q-thin); letter-spacing: .09em; text-transform: uppercase; white-space: pre-line; }
   .sector > .apps .feat { display: none; }
   /* an open lane's list, over its shelf */
   .sector > .apps { grid-template-columns: repeat(2, max-content); justify-content: center; justify-self: center; margin: 0 0 24px; padding: 10px 18px 10px 34px; border-radius: 14px; background: #0f1013d9; font-size: 17px; }
@@ -76,13 +76,13 @@
     .lane .apps li:not(.start) { grid-template-columns: 1.1em minmax(0, 1fr); }
     .lane .apps li > svg { width: 1.1em; height: 1.1em; }
     /* a lane with one app has the room: its name and each feature line larger */
-    .lane .apps:not(:has(li:nth-child(3))) { grid-template-rows: auto minmax(0, 1fr); font-size: clamp(20px, min(3vh, 2.2vw), 32px); }
-    .lane .apps:not(:has(li:nth-child(3))) li:not(.start) { align-content: start; padding-top: 18px; row-gap: 10px; }
-    .lane .apps:not(:has(li:nth-child(3))) .feat { font-size: clamp(15px, min(2.3vh, 1.7vw), 25px); line-height: clamp(32px, 7.5vh, 84px); }
+    .lane .apps:not(:has(li:nth-child(3))) { grid-template-rows: auto minmax(0, 1fr); }
+    .lane .apps:not(:has(li:nth-child(3))) li:not(.start) { align-content: start; padding-top: clamp(16px, 2.9vh, 30px); }
+    .lane .apps:not(:has(li:nth-child(3))) .feat { line-height: 2.1; }
     .lane .apps .start a { padding-block: clamp(9px, 1.6vh, 16px); font-size: clamp(17px, 2.2vh, 21px); }
   }
   .apps .start { grid-template-columns: minmax(0, 1fr); grid-column: 1 / -1; margin-bottom: 4px; }
-  .apps .start a { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border-radius: 12px; background: var(--tone); color: #101216; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .apps .start a { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border-radius: 12px; background: var(--tone); color: #101216; text-decoration: none; white-space: nowrap; }
   .apps .start a:hover, .apps .start a:focus-visible { color: #101216; filter: brightness(1.12); outline: 2px solid #f4f1ea; outline-offset: 2px; }
   @media (max-width: 899px) { .apps { padding-left: 10px; } .apps li { column-gap: 6px; } }
   @media (max-width: 599px), (max-height: 640px) { .apps .start a { padding: 6px 12px; } .apps .start { margin-bottom: 2px; } }
@@ -158,7 +158,7 @@
   }
   /* what explains things (the line under the title, a lane's line, each app's features and what you do there) shouts in
      Russo One capitals */
-  #hero .lede, .sector > .line:not(.console), .feat, .does { font-family: "Russo One", var(--qs-head), sans-serif; font-weight: 400; text-transform: uppercase; letter-spacing: .02em; }
+  #hero .lede, .sector > .line:not(.console), .does { font-family: "Russo One", var(--qs-head), sans-serif; font-weight: 400; text-transform: uppercase; letter-spacing: .02em; }
   .cards { display: grid; gap: clamp(24px, 6vh, 72px); }
   .path { display: grid; grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 8px; width: min(100%, 720px); justify-self: center; padding: clamp(12px, 2.5vw, 28px); border-radius: 24px; color: inherit; text-decoration: none; border: 1px solid #ffffff1a; background: #101216c4; backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 24px 60px #0007; opacity: 0; transform: translateY(64px) scale(.97); transition: opacity .7s ease, transform .8s cubic-bezier(.2,.75,.2,1), border-color .2s, background .2s; }
   .path.in { opacity: 1; transform: none; }
