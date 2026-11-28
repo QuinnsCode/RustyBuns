@@ -217,15 +217,21 @@
   section.block { margin-top: 36px; display: grid; gap: 12px; }
   section.block > h2 { margin: 0; font: 600 15px/1 var(--qs-head), sans-serif; letter-spacing: .18em; text-transform: uppercase; color: #d8d3c8; }
   /* the chain: five steps in a row on a desk, a column on a phone */
-  /* the foot of the door, in pictures. The chain: five lit nodes on one cable, each a link */
-  #chain { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  #chain li { position: relative; display: grid; justify-items: center; }
-  #chain li + li::before { content: ""; position: absolute; top: clamp(24px, 4.4vw, 36px); right: 50%; width: 100%; height: 3px; background: linear-gradient(90deg, #2a2d33, var(--tone)); }
-  #chain a { position: relative; z-index: 1; display: grid; justify-items: center; gap: 10px; color: inherit; text-decoration: none; }
-  .node { display: grid; place-items: center; width: clamp(48px, 8.8vw, 72px); aspect-ratio: 1; border-radius: 50%; background: #14161a; border: 2px solid var(--tone); color: var(--tone); box-shadow: 0 0 22px color-mix(in srgb, var(--tone) 35%, transparent); transition: transform .15s; }
+  /* the foot of the door, in pictures. A flow: who it is for, then its steps as lit nodes on one cable, each a link */
+  #flows { display: grid; }
+  .flow { --n: clamp(38px, 5.6vw, 58px); display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px 16px; align-items: start; padding: 18px 0; border-top: 1px solid #2a2d33; }
+  .who { display: flex; align-items: center; gap: 12px; min-height: var(--n); }
+  .who .node { --n: 42px; flex: none; box-shadow: none; }
+  .who b { font: 400 20px/1.1 var(--q-thick); color: #f4f1ea; }
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .steps li { position: relative; display: grid; justify-items: center; }
+  .steps li + li::before { content: ""; position: absolute; top: calc(var(--n) / 2 - 1px); right: 50%; width: 100%; height: 3px; background: linear-gradient(90deg, #2a2d33, var(--tone)); }
+  .steps a { position: relative; z-index: 1; display: grid; justify-items: center; gap: 8px; color: inherit; text-decoration: none; }
+  .node { display: grid; place-items: center; width: var(--n, 58px); aspect-ratio: 1; border-radius: 50%; background: #14161a; border: 2px solid var(--tone); color: var(--tone); box-shadow: 0 0 22px color-mix(in srgb, var(--tone) 35%, transparent); transition: transform .15s; }
   a:hover > .node, a:focus-visible > .node { transform: scale(1.08); background: color-mix(in srgb, var(--tone) 18%, #14161a); }
-  #chain a:focus-visible, #pitches a:focus-visible, #live a:focus-visible { outline: 2px solid #f4f1ea; outline-offset: 4px; border-radius: 12px; }
-  #chain b { font: 400 clamp(12px, 2.2vw, 19px)/1.1 var(--q-thick); color: #f4f1ea; white-space: nowrap; }
+  .steps a:focus-visible, #live a:focus-visible { outline: 2px solid #f4f1ea; outline-offset: 4px; border-radius: 12px; }
+  .steps b { font: 400 clamp(11px, 1.5vw, 16px)/1.15 var(--q-thick); color: #f4f1ea; text-align: center; }
+  @media (max-width: 759px) { .flow { grid-template-columns: minmax(0, 1fr); } .who { min-height: 0; } }
   /* what is live, under its lane's word */
   #live { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   #live li { display: grid; align-content: start; gap: 10px; padding-top: 12px; border-top: 2px solid var(--tone); }
@@ -235,13 +241,6 @@
   #live a svg { color: var(--tone); }
   #live a:hover { background: color-mix(in srgb, var(--tone) 16%, transparent); }
   #live .more { border-style: dashed; color: #f4f1ea59; cursor: default; }
-  /* who it's for: a face a tile, and what they get in a few words */
-  #pitches { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
-  #pitches a { display: grid; justify-items: center; align-content: start; gap: 12px; padding: 22px 14px; border-radius: 16px; background: #1a1c21; border: 1px solid #2a2d33; color: inherit; text-decoration: none; text-align: center; }
-  #pitches a:hover { border-color: var(--tone); }
-  #pitches b { font: 400 24px/1 var(--q-thick); }
-  .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-  .tags i { font: 400 12px/1 var(--q-thin); font-style: normal; letter-spacing: .1em; text-transform: uppercase; color: #b9b4aa; padding: 5px 8px; border-radius: 6px; background: #ffffff0d; }
   @media (max-width: 599px) { #live { grid-template-columns: minmax(0, 1fr); } }
   .foot { margin: 28px 0 0; color: #8b877f; font-size: 13px; }
   @media (min-width: 1000px) { h1 { font-size: 56px; } }
@@ -268,10 +267,9 @@
   :root[data-theme="light"] .sector > .apps { background: #f4f5f6e6; }
   :root[data-theme="light"] .sector > .apps a { color: #17191c; }
   :root[data-theme="light"] .tag { background: #d4d8dd; color: #2a2e34; }
-  :root[data-theme="light"] #pitches a { background: #f4f5f6; border-color: #c9cdd2; }
   :root[data-theme="light"] .node { background: #f4f5f6; }
-  :root[data-theme="light"] #chain b, :root[data-theme="light"] #live a { color: #17191c; }
-  :root[data-theme="light"] .tags i { color: #555c66; background: #0000000d; }
+  :root[data-theme="light"] .steps b, :root[data-theme="light"] .who b, :root[data-theme="light"] #live a { color: #17191c; }
+  :root[data-theme="light"] .flow { border-color: #c9cdd2; }
   :root[data-theme="light"] #live .more { color: #17191c66; }
   :root[data-theme="light"] :root[data-theme="light"] .foot { color: #555c66; }
 </style>
@@ -309,14 +307,11 @@
   <nav id="paths" aria-label="Learn, Studio and Event"></nav>
 </section>
 <main>
-  <section class="block"><h2>From a pedal to the show</h2>
-    <ol id="chain"></ol>
+  <section class="block"><h2>From scratch to the show</h2>
+    <div id="flows"></div>
   </section>
   <section class="block"><h2>Live now</h2>
     <ul id="live"></ul>
-  </section>
-  <section class="block"><h2>Who it's for</h2>
-    <div id="pitches"></div>
   </section>
   <p class="foot">Only rooms you share ask for a sign-in.</p>
 </main>

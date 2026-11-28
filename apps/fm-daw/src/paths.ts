@@ -138,24 +138,44 @@ export const iconSvg = (body: string, size = 24) =>
 // lucide (ISC): door-open
 export const DOOR_OPEN = '<path d="M10 21H2"/><path d="M10 3H7a2 2 0 0 0-2 2v16"/><path d="M14 12h.01"/><path d="M19 21V5a2 2 0 0 0-1.675-1.974l-6.163-1.013A1 1 0 0 0 10 3v18a1 1 0 0 0 1.124.992z"/><path d="M22 21h-3"/>';
 
-/** The landing page's pedal-to-show chain (#6019): one idea carried through the apps, each step a path's door. */
-export const CHAIN: readonly { step: string; does: string; path: PathId }[] = [
-  { step: "Build it", does: "Swap the parts on a pedal's board in Q Builder.", path: "builder" },
-  { step: "Play it", does: "Plug in and play it through Q Amp, solved as a circuit.", path: "amps" },
-  { step: "Record it", does: "Lay the take down in QDAW and loop it.", path: "daw" },
-  { step: "Plan it", does: "Place the stacks on the field and see who hears what.", path: "planner" },
-  { step: "Go live", does: "Take the planned party live; the crowd walks in and hears it.", path: "event" },
-];
-
-/** What works end to end today (PATHWAYS.md's table), a line an app. */
-
-/** Two short pitches, for crews and for classes, each with its path's icon and door. */
-/** Who it's for, as the foot of the door draws it: a few words each, the sentence kept for the hover tip and for agents. */
-export const PITCHES: readonly { who: string; tags: readonly string[]; line: string; path: PathId }[] = [
-  { who: "Crews", tags: ["Coverage", "Power", "Gear list"], line: "Know the field covers before the night: place the stacks, see where the highs drop, and take the power plan and the gear list with you.", path: "planner" },
-  { who: "Classes", tags: ["Cabling", "Gain", "A PA"], line: "Cabling, gain staging, a PA and a circuit, learned on gear that can't break: each step checked as you go.", path: "learn" },
-  { who: "DJs", tags: ["Two decks", "Your library", "A listen link"], line: "Prep a set at home on two decks and a mixer, then play the same set out at an event.", path: "instruments" },
-  { who: "Bands", tags: ["Your room", "Invite", "Jam"], line: "A studio of your own: send the link, pick up an instrument each, and play together.", path: "playground" },
+/** The foot of the door: the whole walk from nothing to the show, once for each kind of person. A step opens a tool on
+ *  a real first step (its page, a lesson, a seat in your studio); `does` is its hover tip and what an agent reads. */
+export interface Flow { id: string; who: string; icon: PathId; steps: readonly { say: string; does: string; path: PathId; href?: string }[] }
+export const FLOWS: readonly Flow[] = [
+  { id: "scratch", who: "From scratch", icon: "builder", steps: [
+    { say: "Circuit", does: "Swap the parts on a pedal's board and hear why it changes.", path: "builder" },
+    { say: "Signal", does: "Plug in and play it through an amp, solved as a circuit.", path: "amps" },
+    { say: "Record", does: "Lay the take down and loop it.", path: "daw" },
+    { say: "Jam", does: "Play it with friends in a studio of your own.", path: "playground", href: STUDIO_START },
+    { say: "Stage", does: "Place the stacks on the field and see who hears what.", path: "planner" },
+    { say: "Live", does: "Take it live: the crowd walks in and hears it.", path: "event" },
+  ] },
+  { id: "dj", who: "DJ", icon: "instruments", steps: [
+    { say: "Speakers", does: "Build your speaker stack from the makers' drawings.", path: "speakers" },
+    { say: "Set", does: "Prep a set on two decks and a mixer.", path: "instruments" },
+    { say: "Practice", does: "Play it in your studio with friends.", path: "playground", href: STUDIO_START },
+    { say: "Layout", does: "Lay the event out and see where the sound reaches.", path: "planner" },
+    { say: "Live", does: "Play the same set out, on the stacks you planned.", path: "event" },
+  ] },
+  { id: "musician", who: "Musician", icon: "amps", steps: [
+    { say: "Pedals", does: "Build your pedal board, a pedal at a time.", path: "amps" },
+    { say: "Tone", does: "A clean amp, a drive in front, an echo in the loop.", path: "amps", href: "/amp.html?lesson=amp" },
+    { say: "Band", does: "Sit down at the keys with the drums and the bass around you.", path: "playground", href: STUDIO_START },
+    { say: "Record", does: "Lay the take down and loop it.", path: "daw" },
+    { say: "Live", does: "Play it live for a crowd.", path: "event" },
+  ] },
+  { id: "crew", who: "Crew", icon: "planner", steps: [
+    { say: "Cabling", does: "Lesson one: a guitar through a pedal into an amp, checked as you cable.", path: "learn", href: "/studio.html?lesson=guitar" },
+    { say: "Speakers", does: "Speaker boxes from the makers' drawings: sizes, drivers, cut sheets.", path: "speakers" },
+    { say: "Coverage", does: "Plan the PA for a field: two stacks, aimed, on a generator that holds them.", path: "planner", href: "/rooms.html?lesson=plan" },
+    { say: "Live", does: "Run it on the night.", path: "event" },
+  ] },
+  { id: "class", who: "Class", icon: "learn", steps: [
+    { say: "Cabling", does: "Lesson one: a guitar through a pedal into an amp, checked as you cable.", path: "learn", href: "/studio.html?lesson=guitar" },
+    { say: "A beat", does: "A kick on every beat, a snare on 2 and 4, hats between.", path: "daw", href: "/desk?lesson=beat" },
+    { say: "A mix", does: "Two decks, tempos matched, one track into the next.", path: "instruments", href: "/decks.html?lesson=mix" },
+    { say: "A circuit", does: "Swap one part on a pedal's board and hear why.", path: "builder", href: "/amp.html?lesson=build" },
+  ] },
 ];
 
 // lucide (ISC): thermometer, droplets, mountain, play, pause, headphones, arrow-right, check

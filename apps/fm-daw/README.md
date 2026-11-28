@@ -13,6 +13,10 @@
 up) and five on the tools' own pages (`?lesson=beat`, `mix`, `amp`, `build`, `plan`). **First lesson** is the guitar one. The
 crossover lesson, out of doors, has no link yet: the card ends on a greyed "… soon".
 
+**The foot of the door is the flows** (`FLOWS` in `src/paths.ts`): the whole walk from nothing to the show, a row each for
+someone starting from scratch, a DJ, a musician, a crew and a class. Every step is a link that opens its tool on a real first
+step (a page, a lesson, a seat in your studio). A new flow is a row there; an agent reads them in `qdoor_offers`.
+
 **Type:** every page is set in two faces, from `src/brand.css` (the owner's pick, 2026-11-28). Russo One, the thick one
 (`--q-thick`), is for names, headings and buttons. Exo 2, the thin one (`--q-thin`), is for everything else: small text at its
 regular weight, labels at 600, hairline only from 24px up. Readouts keep the mono face. A new page imports `brand.css` and
