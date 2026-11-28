@@ -26,6 +26,7 @@ import { icon } from "./icons.ts";
 import { h, iconButton } from "./dom.ts";
 import { benchSlot } from "./bench-slot.ts";
 import { swapWontPlay } from "../circuit/bench.ts";
+import { changedJson } from "../circuit/edits.ts";
 import { DEFAULT_DRIVE, keepParts, onParts, readParts } from "./parts-store.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { startMidi } from "../ui/input.ts";
@@ -116,6 +117,8 @@ function loadState(): State {
   return { ...fresh, drive: parts.drive, swaps: parts.swaps };
 }
 const S = loadState();
+/** Q Builder's added, removed and rewired parts, by pedal: read here, never written (parts-store.ts). */
+let edits = readParts().edits;
 /** The page's store, and the knobs and swaps into parts-store only if they changed (so a save never undoes Q Builder's). */
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } keepParts({ drive: S.drive, swaps: S.swaps }); };
 const loopOf = () => (S.loop ??= freshLoop());
@@ -149,7 +152,7 @@ function slotOf(id: string): ChainSlot | null {
   if (isMachine(id)) { const sp = machineSpec(id); return sp ? { machine: sp, ...(id === "bbd" ? { stereo: true } : {}) } : null; }
   if (!S.lit.includes(id)) return null;
   if (id === "bench") { const net = ui.bench.net(); return net ? { pedal: "bench", drive: 0, bench: net } : null; }
-  return PEDALS.some((p) => p.id === id) ? { pedal: id, drive: S.drive[id] ?? 5, swaps: S.swaps[id] ?? {} } : null;
+  return PEDALS.some((p) => p.id === id) ? { pedal: id, drive: S.drive[id] ?? 5, swaps: S.swaps[id] ?? {}, edits: edits[id] } : null;
 }
 /**
  * The board as the audio thread plays it, and each slot's tile id: what the cables run from the guitar through
@@ -183,7 +186,7 @@ function readOrder() {
 readOrder();
 
 function settings(): AmpSettings {
-  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4, mic: { at: S.micAt / 10, angle: S.micAngle * 9 }, loop: loopSpecs(), chain: board().chain };
+  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, edits: S.pedal ? edits[S.pedal] : undefined, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4, mic: { at: S.micAt / 10, angle: S.micAngle * 9 }, loop: loopSpecs(), chain: board().chain };
 }
 /** A pedalboard cabled out of the chain is out of the sound, whatever its switch says. */
 const patched = (s: AmpSettings): AmpSettings => (sound.pedals ? s : { ...s, pedal: null, drive: 0 });
@@ -605,7 +608,9 @@ function showBoard() {
   ui.sheetBtn.hidden = !def?.board;
   const why = refused;
   refused = ""; // said once, on the change it turned away
-  if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {}, why ? { hint: `won't play, kept your last parts: ${why}` } : {});
+  const rewired = def && edits[def.id]?.length ? "rewired in Q Builder" : "";
+  const hint = why ? `won't play, kept your last parts: ${why}` : rewired;
+  if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {}, { hint });
   else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
   else if (l.spring.on) ui.board.show("spring", "Q Spring · the driver and recovery tubes around the tank", null);
   else if (l.tape.on) ui.board.show("tape", "Q Tape · the record amp", null);
@@ -615,7 +620,7 @@ function showBoard() {
 /** The playing pedal's build sheet, with your swaps on it. */
 function openSheet() {
   const def = PEDALS.find((p) => p.id === S.pedal);
-  return def?.board ? ui.sheet.open(def, S.swaps[def.id] ?? {}, S.drive[def.id] ?? 5) : null;
+  return def?.board ? ui.sheet.open(def, S.swaps[def.id] ?? {}, S.drive[def.id] ?? 5, edits[def.id]) : null;
 }
 
 /** Why the last part change was turned away (the board view says so until the next one), or "". */
@@ -633,7 +638,7 @@ function swapPart(socket: string | null, choice: string | null): string[] {
   if (socket === null) for (const k of Object.keys(mine)) delete mine[k];
   else if (choice === null || choice === "silicon" || choice === "1") delete mine[socket];
   else mine[socket] = choice;
-  const why = swapWontPlay(def, mine);
+  const why = swapWontPlay(def, mine, changedJson(def.board, edits[def.id]));
   refused = why.join("; ");
   if (!why.length) {
     if (Object.keys(mine).length) S.swaps[S.pedal] = mine; else delete S.swaps[S.pedal];
@@ -721,10 +726,11 @@ function frame() {
 }
 requestAnimationFrame(frame);
 
-// A part swapped or a knob turned on Q Builder (another tab) is on this amp's pedals too, as it plays: listened for
+// A part swapped, added or rewired, or a knob turned, on Q Builder (another tab) is on this amp's pedals too, as it plays: listened for
 // once, at load, so a tab in the background (no frames) still takes the change.
 onParts((p) => {
   S.swaps = p.swaps;
+  edits = p.edits;
   Object.assign(S.drive, p.drive);
   for (const e of ui.pedalEls) e.knob.set(S.drive[e.id] ?? 5);
   send();
@@ -755,7 +761,7 @@ Object.assign(window, {
   qamp: {
     state: () => ({
       started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
-      drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes], mic: settings().mic,
+      drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, edits: S.pedal ? edits[S.pedal] ?? [] : [], board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes], mic: settings().mic,
       load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, threads: threads?.state() ?? null, bench: ui.bench.state(), loop: loopSpecs(), order: [...S.order], lit: [...S.lit],
       slots: S.order.map((id) => { const i = chainIds.indexOf(id); return { id, on: i >= 0, load: i < 0 ? null : meter.slots?.[i] ?? null }; }), midi: { cc: S.cc, inputs: midiInputs },
       stage: { on: S.stage === 1 && !!stage3d, webgl, ...stage3d?.state() },
