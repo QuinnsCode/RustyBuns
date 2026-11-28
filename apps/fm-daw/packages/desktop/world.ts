@@ -10,11 +10,12 @@ import { applyLantern, decodeLanternClient, dropLanterns, noLanterns, sanitizeLa
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
-import { decodeGrantClient, grant, handOn, isMuted, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
+import { decodeGrantClient, floorCans, voice, grant, handOn, isMuted, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { act, guestList, GuestList, type GuestAct } from "@rustybuns/util/guests";
 import { EventDoor } from "@rustybuns/util/events";
 import { EQOSYS } from "../../src/account.ts";
-import { decodeGuestClient, listFor, mayHere, STUDIO_ROLES, type GuestServer } from "../../src/guest-list.ts";
+import { EventSlot } from "../../src/lobby.ts";
+import { decodeGuestClient, eventCans, listFor, mayHere, STUDIO_ROLES, withNewPerms, type GuestServer } from "../../src/guest-list.ts";
 import { applySpin, decodeSpinClient, leave as leaveSpin, mayDeck, noSpin, onNow, sanitizeSpin, stepUp, type Spin, type SpinOp, type SpinServer } from "../../src/spin.ts";
 import type { DeckPress, DeckSay, MixSay } from "../../src/dj/booth.ts";
 import { decodeRtcClient, type RtcClient, type RtcServer } from "../../src/guitar.ts";
@@ -51,6 +52,7 @@ const LIMITS = {
 const REFUSED: Record<Full, string> = {
   room: "this room is full", rooms: "every room is taken", closed: "the maker closed this sesh", code: "this sesh needs its code", tries: "too many wrong codes", blocked: "you can't come in here",
   rsvp: "this event lets in those who RSVPed", invite: "this event is invite only", unchecked: "the event's list couldn't be read",
+  over: "this event's time is up", busy: "the maker's other event is open",
 };
 
 interface Stub { fetch(url: string, init?: RequestInit): Promise<Response> }
@@ -100,7 +102,7 @@ export interface WorldEnv {
 type DeckHeld = { peer: number; who: string | undefined; name: string; playing: boolean };
 /** `invite`: the code the page brought on ?invite=, run as a join once its hello names the person. `tab`: the hash of the
  *  page's own name for itself, when it sent one: a reconnect with the same name gets its peer number back. */
-type Seat = { userId: string; peer: number; room: string; host: boolean; me?: string; invite?: string; tab?: string };
+type Seat = { userId: string; peer: number; room: string; host: boolean; me?: string; invite?: string; tab?: string; /** What they last said they plugged in is their mic. */ mic?: boolean; /** Their role on the room's event, as its door said. */ role?: string };
 /** An invite code as a page brings it. */
 const INVITE = /^[A-Za-z0-9_-]{4,40}$/;
 /** An invite's code: random and too long to guess. */
@@ -159,6 +161,10 @@ export default class World {
   private lock = "";
   /** The Qollab event this room is (#6428), as the maker's page named it: "" is no event. Its door is the event's. */
   private event = "";
+  /** Whose event room this is, for one open event at a time: the maker's eqosys id, or their key's hash signed out. */
+  private by = "";
+  /** When the event's four hours end (the Lobby says, at the first guest): everyone but the maker is sent out then. 0: not running. */
+  private until = 0;
   private eqosys: string;
   /** When each address last got the code wrong. */
   private wrong = new Map<string, number[]>();
@@ -195,9 +201,12 @@ export default class World {
       if (floor === "held" || floor === "closed") this.floor = floor;
       this.lock = String((await ctx.storage.get("lock")) ?? "");
       this.event = String((await ctx.storage.get("event")) ?? "");
+      this.by = String((await ctx.storage.get("eventBy")) ?? "");
+      this.until = Number(await ctx.storage.get("eventUntil")) || 0;
       this.grants = sanitizeGrants(await ctx.storage.get("grants"));
       this.spin = sanitizeSpin(await ctx.storage.get("spin"));
-      this.guests = check(GuestList, await ctx.storage.get("guests"));
+      const kept = check(GuestList, await ctx.storage.get("guests"));
+      this.guests = kept && withNewPerms(kept);
       this.takes = check(TakeIndex, await ctx.storage.get("takes")) ?? {};
       this.ladder = check(LadderGuard, await ctx.storage.get("ladder")) ?? this.ladder;
       this.ladderTakes = this.offTracks(await this.ladderTakeIds());
@@ -227,16 +236,32 @@ export default class World {
     if (locked) return this.refuse(userId, locked);
     // an event's room: the maker's page names the event, and everyone else comes in only if the event lets them (#6428)
     const event = new URL(request.url).searchParams.get("event") ?? "";
-    if (host && room && EVENT.test(event) && event !== this.event) { this.event = event; this.backupDirty = true; await this.ctx.storage.put("event", event); }
-    const shut = !host && room && this.event ? await this.eventDoor(this.event, request.headers.get("X-Eqosys-Token")) : null;
-    if (shut) return this.refuse(userId, shut);
+    if (host && room && EVENT.test(event) && event !== this.event) {
+      this.event = event; this.backupDirty = true; await this.ctx.storage.put("event", event);
+      await this.setUntil(0);
+      // an event's guests come to watch: they speak and listen until the leader grants more (or sets the floor free)
+      if (this.floor === "free") { this.floor = "held"; await this.ctx.storage.put("floor", this.floor); }
+    }
+    const token = request.headers.get("X-Eqosys-Token");
+    if (host && this.event) {
+      const by = token ? `u:${userId}`.slice(0, 80) : this.by || `k:${hash}`;
+      if (by !== this.by) { this.by = by; await this.ctx.storage.put("eventBy", by); }
+    }
+    const door = !host && room && this.event ? await this.eventDoor(this.event, token) : null;
+    if (door?.why) return this.refuse(userId, door.why);
     if (this.lobby && !(await this.admitted(this.lobby, room))) return this.refuse(userId, "rooms");
+    // an event's four hours, and one event at a time: the Lobby keeps both (online only)
+    const late = door && !door.gone && this.lobby ? await this.eventSlot(this.lobby, room) : null;
+    if (late) {
+      if (!this.sockets.open().length) void this.release(room);
+      return this.refuse(userId, late);
+    }
     const idle = Number(request.headers.get("X-Room-Idle-Ms"));
     if (idle > 0) this.idleMs = idle;
     if (room && room !== this.room) { this.room = room; await this.ctx.storage.put("room", room); }
     const invite = new URL(request.url).searchParams.get("invite") ?? "";
     const peer = this.peerFor(tab);
-    const { server, response } = this.sockets.upgrade({ userId, peer, room, host, ...(INVITE.test(invite) ? { invite } : {}), ...(tab ? { tab } : {}) });
+    const { server, response } = this.sockets.upgrade({ userId, peer, room, host, ...(INVITE.test(invite) ? { invite } : {}), ...(tab ? { tab } : {}), ...(door?.role ? { role: door.role } : {}) });
     // back within the grace: nobody heard it go, so nothing is said now; its old socket closes without a word
     const back = this.leaving.get(peer);
     if (back) { clearTimeout(back.timer); this.leaving.delete(peer); }
@@ -307,7 +332,7 @@ export default class World {
       if (b?.grants) { this.grants = sanitizeGrants(b.grants); await this.ctx.storage.put("grants", this.grants); }
       if (b?.spin) { this.spin = sanitizeSpin(b.spin); await this.ctx.storage.put("spin", this.spin); }
       const gl = check(GuestList, b?.guests);
-      if (gl) { this.guests = gl; await this.ctx.storage.put("guests", gl); }
+      if (gl) { this.guests = withNewPerms(gl); await this.ctx.storage.put("guests", this.guests); }
       const ladder = check(BackupLadder, b?.ladder);
       if (ladder) {
         const snaps: number[] = [];
@@ -341,15 +366,54 @@ export default class World {
 
   /**
    * An event's door: eqosys says who the event lets in and whether this is one of them (GET /q/events/<id>/door, with the
-   * guest's own token, X-Eqosys-Token from the Worker). null is come in; so is an event that's gone (its room stays a room).
+   * guest's own token, X-Eqosys-Token from the Worker). No `why` is come in, as the `role` eqosys names; an event that's
+   * `gone` lets everyone in (its room stays a room).
    * eqosys out of reach shuts the door rather than opening an invite-only event to anyone.
    */
-  private async eventDoor(id: string, token: string | null): Promise<Full | null> {
+  private async eventDoor(id: string, token: string | null): Promise<{ why?: Full; role?: string; gone?: boolean }> {
     const r = await fetch(`${this.eqosys}/q/events/${encodeURIComponent(id)}/door`, { headers: token ? { authorization: `Bearer ${token}` } : {} }).catch(() => null);
-    if (r?.status === 404) return null;
+    if (r?.status === 404) { await this.setUntil(0); return { gone: true }; }
     const d = r?.ok ? check(EventDoor, await r.json().catch(() => null)) : null;
-    if (!d) return "unchecked";
-    return d.in ? null : d.access === "anyone" ? "blocked" : d.access;
+    if (!d) return { why: "unchecked" };
+    return d.in ? { role: d.role } : { why: d.access === "anyone" ? "blocked" : d.access };
+  }
+
+  /** Why the Lobby won't let one more guest into this room's event now, or null: then `until` is when it ends. */
+  private async eventSlot(lobby: Stub, room: string): Promise<Full | null> {
+    try {
+      const r = await lobby.fetch("https://lobby/event", { method: "POST", body: JSON.stringify({ by: this.by || `k:${this.host}`, event: this.event, room }) });
+      const s = check(EventSlot, await r.json());
+      if (s && !s.ok) return s.why ?? "over";
+      if (s?.until) await this.setUntil(s.until);
+    } catch { /* a Lobby hiccup doesn't lock everyone out */ }
+    return null;
+  }
+
+  private async setUntil(until: number) {
+    if (until === this.until) return;
+    this.until = until;
+    await this.ctx.storage.put("eventUntil", until);
+    this.wake();
+  }
+
+  /** Set the alarm for the event's end, unless a save is due first (it comes back here after saving). */
+  private wake() {
+    if (this.until && !this.dirty && !this.chatDirty && !this.studioDirty) void this.ctx.storage.setAlarm(this.until);
+  }
+
+  /** The event's time is up: everyone but the maker is sent out. The room stays the maker's. */
+  private async endEvent() {
+    await this.setUntil(0);
+    for (const ws of this.sockets.open()) {
+      const seat = this.sockets.who(ws);
+      if (!seat?.peer || seat.host) continue;
+      this.sockets.send(ws, { t: "full", why: "over" });
+      try { ws.close(CLOSE_FULL, REFUSED.over); } catch { /* closing */ }
+    }
+  }
+
+  private release(room: string) {
+    return this.lobby?.fetch("https://lobby/release", { method: "POST", body: JSON.stringify({ room }) }).catch(() => {});
   }
 
   /** The maker sets, changes or clears the code; everyone in gets the new one so their reconnects work. */
@@ -404,7 +468,7 @@ export default class World {
     }
     const seat = this.sockets.who(ws);
     // every message is checked against what its sender may do, here and not only in the page
-    const allowed = this.may(seat, needs(msg), trackOf(msg));
+    const allowed = this.may(seat, needs(msg), trackOf(msg)) || (voice(msg) && this.may(seat, "speak"));
     if (msg.t === "floor") { if (allowed) void this.setFloor(msg.state); return; }
     if (msg.t === "lock") { if (allowed) void this.setLock(msg.code); return; }
     // a look back is for this page alone, so anyone in may ask, whatever their grants
@@ -415,6 +479,8 @@ export default class World {
       const muted = (msg.e.t === "on" || msg.e.t === "sound") && isMuted(this.grants, seat?.me);
       // where each body stands, so a lantern's carrier who leaves drops it there
       if (seat?.peer && msg.e.t === "body") { if (msg.e.room) this.stood.delete(seat.peer); else this.stood.set(seat.peer, [msg.e.at[0], msg.e.at[2]]); }
+      // a mic or a guitar: which of the two their calls carry from here (onRtc)
+      if (seat?.peer && msg.e.t === "guitar") this.sockets.attach(ws, { ...seat, mic: allowed && !!msg.e.mic && msg.e.track !== null });
       if (msg.e.t === "deck" || msg.e.t === "press" || msg.e.t === "mix") { if (seat?.peer) this.onDeck(ws, seat, msg.e); return; }
       if (seat?.peer && !muted && (allowed || lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
       return;
@@ -574,8 +640,10 @@ export default class World {
   private onRtc(ws: RoomSocket, m: RtcClient) {
     const seat = this.sockets.who(ws);
     if (!seat?.peer || m.to === seat.peer) return;
-    // sending sound (a guitar, a set on the PA) needs the play grant; asking to hear one never does
-    if ((m.line === "out" || m.line === "pa-out") && !this.may(seat, "play")) return;
+    // sending sound (a guitar, a set on the PA) needs the play grant, or for a mic said on the live line, speak;
+    // asking to hear one never does
+    if (m.line === "pa-out" && !this.may(seat, "play")) return;
+    if (m.line === "out" && !this.may(seat, "play") && !(seat.mic && this.may(seat, "speak"))) return;
     this.sockets.broadcast({ t: "rtc", from: seat.peer, line: m.line, s: m.s } satisfies RtcServer, ws, (a) => a.peer === m.to);
   }
 
@@ -668,8 +736,12 @@ export default class World {
       else if (this.host) this.broadcast(this.grantsMsg());
       this.sockets.send(ws, { t: "spin", spin: this.spin });
       await this.helloGuests(ws, seat, me);
+      // an event's artist or crew walks in with their role's grant, unless the leader or the room's list has had a say
+      const cans = seat.role && !seat.host && this.host && !this.guests?.guests[me] && !this.grants.who[me] ? eventCans(seat.role, this.floor) : null;
+      if (cans) await this.setGrants(grant(this.grants, me, cans));
     } else {
       if (m.t === "say") {
+        if (!this.may(seat, "speak")) return;
         const bucket = this.talk.get(ws) ?? new TokenBucket(CHAT_RATE, CHAT_BURST, Date.now());
         this.talk.set(ws, bucket);
         if (!bucket.take(Date.now())) return;
@@ -772,7 +844,7 @@ export default class World {
     else if (m.t === "handOn") next = handOn(next, me, m.who);
     else if (m.t === "mute") next = mute(next, m.who, m.on);
     else if (asked && m.yes) {
-      const had = next.who[m.who] ?? (this.floor === "free" ? (["play", "edit", "mix"] as const) : []);
+      const had = next.who[m.who] ?? floorCans(this.floor);
       next = grant(next, m.who, [...had, asked]);
     }
     if (m.t !== "answer" || asked) this.asks = rest;
@@ -886,11 +958,12 @@ export default class World {
     if (this.sockets.open().some((w) => w !== ws)) return;
     // the last one out: save now, start the idle clock, and give the room's slot back
     void this.alarm(true);
-    if (this.lobby) void this.lobby.fetch("https://lobby/release", { method: "POST", body: JSON.stringify({ room: seat.room }) }).catch(() => {});
+    void this.release(seat.room);
   }
 
   async alarm(lastOut = false) {
     const s = this.ctx.storage;
+    if (this.until && Date.now() >= this.until) await this.endEvent();
     if (this.dirty && this.project) {
       this.dirty = false;
       await s.put("project", this.project);
@@ -924,13 +997,14 @@ export default class World {
       this.ladderTakes = this.offTracks(await this.ladderTakeIds());
       await this.dropTakes(new Set([...soundIds(this.project), ...this.ladderTakes]));
     }
+    if (this.sockets.open().length) this.wake();
     if (!this.idleMs || this.sockets.open().length) return;
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
       await this.dropTakes(new Set());
       this.ladderTakes.clear();
-      for (const k of ["project", "chat", "studio", "boards", "lanterns", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "spin", "guests", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
+      for (const k of ["project", "chat", "studio", "boards", "lanterns", "idleMs", "idleAt", "room", "host", "floor", "lock", "event", "eventBy", "eventUntil", "grants", "spin", "guests", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
       this.ladder = { snaps: [], edited: 0 };
       if (this.bucket && this.room) for (const k of [backupKey(this.room), bounceKey(this.room)]) await this.bucket.delete(k).catch(() => {});
       this.project = null;
@@ -942,6 +1016,8 @@ export default class World {
       this.host = "";
       this.floor = "free";
       this.lock = "";
+      this.event = this.by = "";
+      this.until = 0;
       this.grants = noGrants();
       this.guests = null;
       this.spin = noSpin();

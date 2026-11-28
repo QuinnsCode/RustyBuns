@@ -513,7 +513,7 @@ For demo scripts, the optional Rust engines and troubleshooting, see [DEMO.md](D
 
 - **One Rust crate, two builds.** `wasm32` renders live audio in the AudioWorklet; the cdylib runs on the host over `bun:ffi`. Both match the TypeScript engine bit for bit, and you can switch engines mid-groove. `bun run build:native` builds them (optional).
 - **Speaker-safe by construction.** Params are clamped in the engine and a limiter holds every sample under −1 dBFS; the tests try to break it.
-- **Uses:** spa mode with a world (`desktop.world`) that saves the project to sqlite, `"use server"` actions for bounces, and the same world class as a Durable Object for shared jam rooms on Cloudflare.
+- **Uses:** spa mode with a world (`desktop.world`) that saves the project to sqlite, `"use server"` actions for bounces, and the same world class as a Durable Object for shared studios on Cloudflare.
 
 ### auto-rig
 

@@ -10,7 +10,7 @@ export type Here = "paths" | "character" | "jam" | "gear" | "amp" | "builder" | 
 export const PLACES: Record<Here, { page: string; label: string; title: string }> = {
   paths: { page: DOOR, label: "Paths", title: "Qollab Studio's front door: learn, build, play" },
   character: { page: `${EQOSYS}/?tab=account`, label: "Character", title: "Your character, on eqosys" },
-  jam: { page: "/jam.html", label: "Jam room", title: "Qollab Studio: the jam room (the lobby when you're not in a room)" },
+  jam: { page: "/jam.html", label: "Studio", title: "Qollab Studio: the studio (the lobby when you're not in a room)" },
   gear: { page: "/studio.html", label: "Gear room", title: "Qollab Studio: the gear room, amps and pedals to cable" },
   amp: { page: "/amp.html", label: "Q Amp", title: "Qollab Studio: Q Amp, the amp as circuits" },
   builder: { page: "/builder.html", label: "Q Builder", title: "Qollab Studio: Q Builder, a pedal's board to change, scope and remake" },

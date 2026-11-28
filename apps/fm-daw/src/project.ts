@@ -15,6 +15,7 @@ import { Instrument, MAX_MADE } from "./studio/made.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { SYSTEM_IDS, TOPS_ON, type SystemId, type TopsOn } from "@rustybuns/gear";
 import { Studio } from "./studio/builder.ts";
+import { StageLights } from "./studio/stage-lights.ts";
 import type { StudioDef } from "./studio/room.ts";
 import { RUNG, type Rung } from "./rewind.ts";
 import { DeckPress, DeckSay, MixSay } from "./dj/booth.ts";
@@ -73,7 +74,7 @@ export interface TrackDoc {
  * master: the room's level, dB (MASTER_MIN to 0), on top of each listener's own; set from the remote (src/remote/), only there below 0. A bounce leaves it out.
  * song: song mode (src/song.ts), the loop as a chain of patterns, bars × chain slots long; only there when on.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; tops?: Tops; crossover?: Amps; built?: StudioDef; song?: Song }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; tops?: Tops; crossover?: Amps; built?: StudioDef; lights?: StageLights; song?: Song }
 /** The PA's amp channels as set, and which boxes' they are. */
 export type Amps = { rig: string; bands: ChannelDsp[] };
 
@@ -113,6 +114,8 @@ export type Op =
   | { t: "setup"; tops: Tops }
   /** The PA's amp channels (an amp's DSP moved, mix), or null to put them back to the preset. */
   | { t: "crossover"; amps: Amps | null }
+  /** The room's light desk as it's set now (src/studio/stage-lights.ts): for whoever holds the lights grant. */
+  | { t: "lights"; lights: StageLights }
   /** Song mode: the patterns each slot plays (the first time, the loop as it is becomes pattern A), or null to leave it (the notes stay). */
   | { t: "song"; chain: number[] | null }
   | { t: "replace"; project: Project };
@@ -221,12 +224,13 @@ const bad = (why: string): never => { throw new Bad(why); };
 const CHANNELS = (v: unknown): ChannelDsp[] => readChannels(v) ?? bad("amp channels");
 const AMPS = obj({ rig: str(200), bands: CHANNELS });
 const ampsOf = (v: unknown): { crossover?: Amps } => { const a = check(AMPS, v); return a ? { crossover: a } : {}; };
-const PROJECT = obj({ crossover: raw,  tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, tops: raw, built: raw, song: raw });
+const PROJECT = obj({ crossover: raw, tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, tops: raw, built: raw, lights: raw, song: raw });
 /** A studio's id, as the rooms name them. */
 const STUDIO_ID = (v: unknown) => (typeof v === "string" && /^[a-z0-9-]{1,64}$/.test(v) ? v : bad("a studio id"));
 const studioOf = (v: unknown): { studio?: string } => { const id = check(STUDIO_ID, v); return id ? { studio: id } : {}; };
 const builtOf = (v: unknown): { built?: StudioDef } => { const b = check(Studio, v); return b ? { built: b } : {}; };
 const rigOf = (v: unknown): { rig?: SystemId } => { const id = check(oneOf(SYSTEM_IDS), v); return id ? { rig: id } : {}; };
+const lightsOf = (v: unknown): { lights?: StageLights } => { const l = check(StageLights, v); return l ? { lights: l } : {}; };
 const setupOf = (v: { tops?: unknown }): { tops?: Tops } => { const t = check(oneOf(TOPS), v.tops); return t ? { tops: t } : {}; };
 
 export function sanitize(x: unknown): Project | null {
@@ -237,7 +241,7 @@ export function sanitize(x: unknown): Project | null {
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
   const song = songOf(p.song, bars).song;
-  const out: Project = { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitTakes(tracks.map((v, ti) => track(v, ti, beats))), ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...ampsOf(p.crossover), ...builtOf(p.built), ...songOf(p.song, bars) };
+  const out: Project = { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitTakes(tracks.map((v, ti) => track(v, ti, beats))), ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...ampsOf(p.crossover), ...builtOf(p.built), ...lightsOf(p.lights), ...songOf(p.song, bars) };
   return song ? laidOut(out, song, song) : out;
 }
 
@@ -377,6 +381,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("rig"), id: oneOf(SYSTEM_IDS) }),
   obj({ t: tag("setup"), tops: oneOf(TOPS) }),
   obj({ t: tag("crossover"), amps: nul((v: unknown) => AMPS(v)) }),
+  obj({ t: tag("lights"), lights: StageLights }),
   obj({ t: tag("song"), chain: nul(Chain) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
@@ -473,9 +478,10 @@ const FLOOR = oneOf(["free", "held", "closed"]);
 /**
  * Why a world turned a socket away: every seat in this room is taken, every room is open, the maker
  * closed it, the sesh is private and the code was missing or wrong, this address got it wrong too often lately, or the
- * room is an event's and the event lets in only those who RSVPed or were invited (`unchecked`: its list couldn't be read, #6428).
+ * room is an event's and the event lets in only those who RSVPed or were invited (`unchecked`: its list couldn't be read, #6428),
+ * its four hours are up (`over`), or its maker has another event open (`busy`, #6554).
  */
-export const FULL = ["room", "rooms", "closed", "code", "tries", "blocked", "rsvp", "invite", "unchecked"] as const;
+export const FULL = ["room", "rooms", "closed", "code", "tries", "blocked", "rsvp", "invite", "unchecked", "over", "busy"] as const;
 export type Full = (typeof FULL)[number];
 /** A private sesh's code: what the maker types and every joiner types after. */
 export const CODE = str(32, { min: 4 });
@@ -618,13 +624,17 @@ export function apply(p: Project, op: Op): Project {
       const { crossover: _, ...rest } = p;
       return { ...rest, ...ampsOf(op.amps) };
     }
+    case "lights": {
+      const was = p.lights;
+      return was && was.level === op.lights.level && was.beam === op.lights.beam && was.lasers === op.lights.lasers ? p : { ...p, lights: op.lights };
+    }
     case "replace": {
-      // an undo or a loaded groove keeps the room where the leader put it: moving it is the leader's alone
+      // an undo or a loaded groove keeps the room where the leader put it and its lights as the light desk has them
       const next = sanitize(op.project);
       if (!next) return p;
       // the amps' DSP is the desk's, not the groove's: an undo leaves it too
-      const { studio: _, rig: __, built: ___, tops: _t, crossover: _x, ...rest } = next;
-      return { ...rest, ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...ampsOf(p.crossover), ...builtOf(p.built) };
+      const { studio: _, rig: __, built: ___, tops: _t, crossover: _x, lights: _l, ...rest } = next;
+      return { ...rest, ...studioOf(p.studio), ...rigOf(p.rig), ...setupOf(p), ...ampsOf(p.crossover), ...builtOf(p.built), ...lightsOf(p.lights) };
     }
     case "song": {
       if (!op.chain) { const { song: _, ...rest } = p; return rest; }

@@ -9,7 +9,7 @@
 // the notes sounding there, or what's touched at the decks.
 import { record } from "@rustybuns/util";
 import * as THREE from "three";
-import { FINGERS, HAND, HandSolver, PALM, SKIN_TONE, gripFor, handMesh, localQuats, placeHand, type Finger, type HandMesh, type Side, type What } from "@rustybuns/rig/hand";
+import { FAR_CELL, FINGERS, HAND, HandSolver, NEAR_CELL, PALM, SKIN_TONE, gripFor, handMesh, localQuats, placeHand, type Finger, type HandMesh, type Side, type What } from "@rustybuns/rig/hand";
 import type { Play } from "@rustybuns/models/character";
 import type { Keys, Kit, Part } from "./played.ts";
 
@@ -93,8 +93,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 /** Where each arm's elbow goes (the shoulder's parent's space: +x the figure's right, +z behind it): down, out and back at the keys, more out at the kit. */
 const POLE = { keys: { 1: new THREE.Vector3(0.6, -1, 0.45), [-1]: new THREE.Vector3(-0.6, -1, 0.45) }, kit: { 1: new THREE.Vector3(0.8, -1, 0.3), [-1]: new THREE.Vector3(-0.8, -1, 0.3) } } as Record<"keys" | "kit", Record<Side, THREE.Vector3>>;
 
-/** Wear real hands on the character in `group` (`root` the character's own group, whose stub hands they replace). */
-export function hands(group: THREE.Group, root: THREE.Object3D, height: number): Hands {
+/** Wear real hands on the character in `group` (`root` the character's own group, whose stub hands they replace).
+ *  `far`: someone seen across the room, whose skin is meshed coarser (FAR_CELL). */
+export function hands(group: THREE.Group, root: THREE.Object3D, height: number, far = false): Hands {
   const arms: Arm[] = [];
   const tones: THREE.Color[] = [];
   root.traverse((o) => {
@@ -112,7 +113,7 @@ export function hands(group: THREE.Group, root: THREE.Object3D, height: number):
   const stickGeo = new THREE.CylinderGeometry(0.006, 0.0095, STICK.length, 8);
   const k = Math.min(1.08, Math.max(0.9, height / 1.72));
   const list: Hand[] = arms.sort((a, b) => b.side - a.side).map((arm) => {
-    const mesh = handMesh(arm.side, skin, nail), stick = new THREE.Mesh(stickGeo, wood);
+    const mesh = handMesh(arm.side, skin, nail, far ? FAR_CELL : NEAR_CELL), stick = new THREE.Mesh(stickGeo, wood);
     group.add(mesh.root, stick);
     stick.visible = false;
     const rest = turnsFor(REST);

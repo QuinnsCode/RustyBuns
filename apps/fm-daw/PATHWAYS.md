@@ -16,7 +16,7 @@ Every app starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts`
 
 | Lane | App | The real problem | Who | Door | Works end to end today? |
 |---|---|---|---|---|---|
-| LEARN | [Learn the setup](#1-learn-learn-the-setup) | Nobody teaches cabling, gain staging or a PA unless a tech stands next to you; breaking real gear is a dear way to learn | beginners, students, teachers | `/studio.html`, the gear room; the jam room's `?` card | Yes, five lessons at the gear wall; more to come |
+| LEARN | [Learn the setup](#1-learn-learn-the-setup) | Nobody teaches cabling, gain staging or a PA unless a tech stands next to you; breaking real gear is a dear way to learn | beginners, students, teachers | `/studio.html`, the gear room; the studio's `?` card | Yes, five lessons at the gear wall; more to come |
 | STUDIO | [Event Planner](#5-studio-event-planner) | Crews guess whether the rig covers the room or the field and whether the power holds, and find out on the night | sound engineers, venues, festival and wedding crews | `/rooms.html`, the studio builder | Yes indoors and out: coverage, delay, power, gear list; out of doors over the night's air, the ground and banks on the field. No wind, forecast or captured terrain yet |
 | STUDIO | [QDAW](#2-studio-qdaw) | A music maker in the browser is a toy, or an install and an account first | bedroom producers | `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | STUDIO | [Q Instruments](#4-studio-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
@@ -49,10 +49,10 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 - The front door's **First lesson** opens the gear room with the first one already on (`/studio.html?lesson=guitar`, plug a guitar into an amp): the same card and marker, no `?` card to find ([#6551](https://github.com/QuinnsCode/RustyBuns/issues/6551)).
 - Three setup lessons, started from the `?` card's "Learn to set it up" row (`src/studio/lessons.ts`, [#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)): plug a guitar through a pedal into an amp and its cab; patch a sound wall voice (VCO, VCF, VCA, Q Out); set up a small PA (two powered speakers placed apart and aimed at the room's middle, a mic through a mixer, powered on mixer first). All with your hands at the gear wall, on the sesh's own patch. A card at the top left ticks each step off as the gear says so and, when something is in the way, says what and why (straight into the amp, the filter's CV, gain too hot, a speaker facing the wall, a thump). A small warm cone floats over the jack, knob or box the next step is about and moves on as each step goes green; with a cable in your hand it points at where the cable goes ([#6086](https://github.com/QuinnsCode/RustyBuns/issues/6086); `qjam.lesson()` returns its `mark` and `marker`). Leave any time; what you built stays. The steps run on `packages/gear`'s checker (`steps.ts`), the one Sound Guy Simulator's first-minute hints use, and the PA's switch-on order is the catalog's own `thumps`.
 - A fourth, "Know your plugs: XLR" ([#6029](https://github.com/QuinnsCode/RustyBuns/issues/6029)): the mic into the mixer, the mixer into a powered speaker's combo input A, its thru on to the next speaker. Each step reads the connector off `@rustybuns/util/connectors`, the same list Sound Guy Simulator plugs by (what it carries, its pins), and an XLR out into an out is refused with why (an out is male, an in female).
-- A class card for the teacher (**L**, `src/studio/class.ts`, [#6087](https://github.com/QuinnsCode/RustyBuns/issues/6087)): everyone in the jam room, the lesson each is in, a dot per step done, the step they are on and what is in their way, live. Whoever is stuck comes first. A class is the people in one room: the teacher sends the room's link, and nobody needs an account beyond what the jam room already asks.
+- A class card for the teacher (**L**, `src/studio/class.ts`, [#6087](https://github.com/QuinnsCode/RustyBuns/issues/6087)): everyone in the studio, the lesson each is in, a dot per step done, the step they are on and what is in their way, live. Whoever is stuck comes first. A class is the people in one room: the teacher sends the room's link, and nobody needs an account beyond what the studio already asks.
 - A fifth, "Run an amp rack: power apart from audio" ([#6030](https://github.com/QuinnsCode/RustyBuns/issues/6030)): a power distro, a mixer, a rolling amp rack and two passive 15" tops. Mains go on cables of their own: a cord from the distro into the rack's blue powerCON and the mixer's IEC, and a box whose cord isn't in stays dark with its switch up. The mixer's outs into the amp's XLR inputs, a speakON from each amp channel to a speaker. Then keep the mains off the signal: carry the mixer out front and its cord from the distro lies along its XLRs, so the step asks you to move the distro until the cords leave them at an angle. Power on mixer first, amp last, or it thumps. Every jack in the PA kits now has its real socket from `@rustybuns/util/connectors`, and a cable only goes between sockets that carry the same thing: an XLR out into a speakON, or an amp's speaker line into a powered speaker's combo, is refused in the connector list's words.
 - A lesson on a STUDIO app's own page ([#6085](https://github.com/QuinnsCode/RustyBuns/issues/6085)), started from the round cap button at its bottom left or `?lesson=<id>`, on the same checker and card (`src/studio/page-lesson.ts`, `lesson-card.ts`): the Event Planner's "Plan the PA for a field" (`/rooms.html?lesson=plan`, `src/studio/plan-lesson.ts`: two stacks 10 m or more apart either side of the front, aimed at the middle, a generator that holds the rig, the gear list) and Q Amps' "A clean amp, a drive, an echo" (`/amp.html?lesson=amp`, `src/amp/lesson.ts`: Gain down, Q Drive in front at a low Drive, Q Tape in the amp's loop), and Q Builder's "Swap one part and hear why" ([#6173](https://github.com/QuinnsCode/RustyBuns/issues/6173), `/amp.html?lesson=build`, `src/amp/build-lesson.ts`: Q Drive on with its board open, its clipping diodes D1 and D2 swapped for germanium, then LEDs, each read off the solved circuit as the volts it peaks at against silicon's, and a capacitor or resistor swapped by mistake told what it does instead). The cap button on `/amp.html` lists both of its lessons. QDAW's and Q Instruments' wait in [#6171](https://github.com/QuinnsCode/RustyBuns/issues/6171) and [#6172](https://github.com/QuinnsCode/RustyBuns/issues/6172). The journeys are `test/sector-lessons.test.ts` and the last one in `test/pa-builder.test.ts`.
-- The jam room's "What you can do here" card (`?`, `src/studio/help.ts`) and the key strip: what each key does where you stand.
+- The studio's "What you can do here" card (`?`, `src/studio/help.ts`) and the key strip: what each key does where you stand.
 - The studio builder's Why line and ring time per seat (`/rooms.html`): change a wall's material and hear and see the room change.
 - QDAW's lesson, "Make a beat" ([#6171](https://github.com/QuinnsCode/RustyBuns/issues/6171)), on the desk (`/?lesson=beat`, or the cap button at the bottom left; `src/beat-lesson.ts`): starting it empties the groove's Kick, Snare and Hat rows (one undo puts them back), then a kick on every beat, a snare on 2 and 4, hats on every "and", and play it. Each step reads the project's own drum rows as the grid lights them, and says why when a hit is missing or the snare lands on 1 and 3 with the kick. The journey is `test/qdaw-lesson.test.ts`.
 - The sound wall's build sheets explain each module in plain words (`B` in the gear room, [WALL.md](WALL.md)).
@@ -99,6 +99,9 @@ test set (`src/studio/walk-set.ts`) on that page alone, so a client walks the si
 `qrooms.event(walk?)` gives the link; `qjam.state().pa.sources` is the same list as `qrooms.pa().sources`. The journey
 is `test/event.test.ts`.
 
+**Being there** (#6535): an event's room starts on Hold, the host grants each person instruments, console, lights, speak or
+nothing, and everyone hears the performer's set on the room's PA (`test/event-world.test.ts`).
+
 **Join** (#6551): the front door's Event start forks **Host | Join**. Join takes that room's link or its code (the `room=`
 name; a party's code also follows its host's scene) and lands the guest in the room (`src/join.ts`,
 `test/event-join-journey.test.ts`). **A set prepped at home** is in the decks' library at the event on the same browser
@@ -116,7 +119,7 @@ stand on the gear wall in every room (`src/studio/gear-wall.ts`, #5393).
 **The walk:**
 1. Open `/decks.html`: two decks and a four-channel mixer. Add music (files stay on your computer), a folder, or a YouTube link.
 2. Practise: sync, cue, hot cues, loops, scratch, master tempo, MIDI controller learn.
-3. Take it to a room: in a jam room, click the DJ table; your master goes to the room's PA over WebRTC
+3. Take it to a room: in a studio, click the DJ table; your master goes to the room's PA over WebRTC
    (`src/studio/pa-line.ts`), and every listener hears it from the room's speakers, from where they stand (`pa-room.ts`).
 4. Take it out: record it to a file to post later, or send a listen link to people outside the sesh.
 
@@ -158,7 +161,7 @@ what power, before the truck is loaded.
 
 **Works today:**
 - Step 1: the studio builder (`/rooms.html`, `src/studio/builder.ts`): size, materials, panels, booths, seats.
-- Step 2: a room, indoors or out, picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the owner picks one in the jam room's Settings, #6420). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
+- Step 2: a room, indoors or out, picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the owner picks one in the studio's Settings, #6420). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
   tops and sets a line array's pins (#5863). Indoors the stacks are the room's own `pa` (with none, a club stack
   stands either side of the decks), drawn in the builder and on Walk in, with the same power check and gear list (#5883).
 - Step 3: the Coverage button draws the PA's mids and highs over the floor, on the blueprint or the 3D view's floor (`src/studio/coverage.ts`),
@@ -185,7 +188,7 @@ stage or stack). Things are placed on an isometric view of the builder's own 3D:
 green outline snapping to 0.5 m and 15°. The crowd zone says its area and cap (2 a square metre). Test it is the
 coverage map and `walk-set.ts` through `PaRoom` from a tapped spot. Each change is a save (60 kept per build, 8 builds,
 24 orders, in this browser), so Undo and History work between visits. Lock in freezes an order; The Event makes it a
-live party. A stage is `StudioDef.stage`, set by the builder's `stage` edit, so the jam room draws what was placed.
+live party. A stage is `StudioDef.stage`, set by the builder's `stage` edit, so the studio draws what was placed.
 Code: `stage-build.ts` (model and storage), `stage-page.ts` (the screen), `stage-model.ts`; `window.qstage`; the journey
 is `test/stage-page.test.ts`. Not yet: stage parts, several stages and flown arrays.
 Signed in, builds and orders follow the account (#6583): `GET`/`PUT /stage-builds` (`src/stage-store.ts`) and

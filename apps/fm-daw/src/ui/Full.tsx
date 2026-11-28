@@ -23,15 +23,19 @@ function SignupCard(props: CardProps) {
   return (
     <div className="gate" role="dialog" aria-modal="true" aria-labelledby="full-title">
       <div className="gate-card">
-        <h2 id="full-title">{props.why === "room" ? "This sesh is full" : props.why === "closed" ? "This sesh is closed" : props.why === "blocked" ? "You can't come in here" : "Every room is taken"}</h2>
+        <h2 id="full-title">{props.why === "room" ? "This sesh is full" : props.why === "closed" ? "This sesh is closed" : props.why === "blocked" ? "You can't come in here" : props.why === "over" ? "This event is over" : props.why === "busy" ? "Their other event is open" : "Every room is taken"}</h2>
         <p>{props.why === "room"
           ? "Every seat in this sesh has a player. Try again in a bit, or start your own sesh."
           : props.why === "closed"
-            ? "Its maker closed it out. Play on alone (not saved), or start your own sesh. If you were in the jam, the groove is still in this page to bounce."
+            ? "Its maker closed it out. Play on alone (not saved), or start your own sesh. If you were in the studio, the groove is still in this page to bounce."
+          : props.why === "over"
+            ? "Its four hours are up. Play on alone (saved here), or start your own sesh."
+          : props.why === "busy"
+            ? "Whoever made this room has another event open, and it's one at a time."
           : props.why === "blocked"
             ? "Someone who runs this sesh's guest list blocked you. Play on alone (saved here), or start your own sesh."
             : "FM DAW keeps a few rooms open at once while it grows. Leave your email and you're on the list for more."}</p>
-        {props.why === "closed" || props.why === "blocked" ? null : state.place
+        {props.why === "closed" || props.why === "blocked" || props.why === "over" || props.why === "busy" ? null : state.place
           ? <p role="status">You're on the list, number {state.place}.</p>
           : <form className="signup" onSubmit={signUp}>
               <input type="email" required placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.currentTarget.value)} aria-label="Email" />

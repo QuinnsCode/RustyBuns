@@ -28,6 +28,10 @@ export const LIVE_SLACK_MS = 10 * 60 * 1000;
 /** Usage records kept (the oldest go first); the monthly totals keep everything. */
 export const USAGE_KEPT = 500;
 export const HOUR_MS = 60 * 60 * 1000;
+/** An event's room is open to guests this long (the lanes plan), counted from the first one in. */
+export const EVENT_MS = 4 * HOUR_MS;
+/** Once over, the same event gets a new four hours only this long after the last ones began: a rehearsal the day before doesn't use up the night. */
+export const EVENT_REST_MS = 24 * HOUR_MS;
 
 const ROOM = obj({ room: str(64) });
 const SIGNUP = obj({ email: str(254, { min: 3, re: /^[^\s@]+@[^\s@]+$/ }), room: str(64, { min: 0, dflt: "" }), list: opt(oneOf(LISTS)) });
@@ -37,6 +41,15 @@ const SAVED_ROOMS: Guard<Record<string, number>> = (v) => {
   return out;
 };
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
+
+/** An event's room asks to let a guest in: whose room (its maker), which event and which room. */
+export const EventAsk = obj({ by: str(80, { min: 1 }), event: str(40, { min: 1 }), room: str(64) });
+/** The Lobby's answer: open until `until`, or why not. */
+export const EventSlot = obj({ ok: bool(), why: opt(oneOf(["over", "busy"] as const)), until: opt(num(0, 1e15)) });
+export type EventSlot = Of<typeof EventSlot>;
+/** A maker's event as it runs: its room, when its first guest came in, and whether anyone is still in it. */
+const RUN = obj({ by: str(80), event: str(40), room: str(64), since: num(0, 1e15), open: bool() });
+const RUNS = rec(RUN, 1e6);
 
 /** Listen asks to go live: the DJ key's hash, the address's hash, the set's link id, when, and how long a set may run. */
 export const GoLive = obj({ dj: HASH, ip: HASH, set: str(10), at: num(0, 1e15), setMs: num(0, 1e9) });
@@ -87,6 +100,8 @@ export default class Lobby {
   private rooms = new Map<string, number>();
   /** Every sesh still kept, with when someone last came in. */
   private kept = new Map<string, number>();
+  /** Events that began less than EVENT_REST_MS ago, by maker and event. */
+  private events = new Map<string, Of<typeof RUN>>();
   /** DJ key hashes live now. */
   private live = new Map<string, Of<typeof LIVE_SET>>();
   private max: number;
@@ -100,6 +115,7 @@ export default class Lobby {
     ctx.blockConcurrencyWhile(async () => {
       for (const [k, at] of Object.entries(SAVED_ROOMS(await ctx.storage.get("rooms")))) this.rooms.set(k, at);
       for (const [k, at] of Object.entries(SAVED_ROOMS(await ctx.storage.get("kept")))) this.kept.set(k, at);
+      try { for (const [k, v] of Object.entries(RUNS(await ctx.storage.get("events") ?? {}))) this.events.set(k, v); } catch { /* none kept */ }
       try { for (const [k, v] of Object.entries(LIVE(await ctx.storage.get("live") ?? {}))) this.live.set(k, v); } catch { /* none kept */ }
     });
   }
@@ -154,6 +170,19 @@ export default class Lobby {
     try { return UsageReply(await this.ctx.storage.get("usage") ?? { totals: {}, records: [] }); } catch { return { totals: {}, records: [] }; }
   }
 
+  private saveEvents() { return this.ctx.storage.put("events", Object.fromEntries(this.events)); }
+
+  /** One event open at a time for each maker, each for EVENT_MS. */
+  private async eventSlot(a: Of<typeof EventAsk>, now: number): Promise<EventSlot> {
+    for (const [k, r] of this.events) if (now - r.since >= EVENT_REST_MS) this.events.delete(k);
+    const key = `${a.by}\n${a.event}`, since = this.events.get(key)?.since ?? now;
+    if (now >= since + EVENT_MS) return { ok: false, why: "over" };
+    for (const r of this.events.values()) if (r.by === a.by && r.open && now < r.since + EVENT_MS && (r.event !== a.event || r.room !== a.room)) return { ok: false, why: "busy" };
+    this.events.set(key, { ...a, since, open: true });
+    await this.saveEvents();
+    return { ok: true, until: since + EVENT_MS };
+  }
+
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url), path = url.pathname, now = Date.now();
     for (const [r, at] of this.rooms) if (now - at > LEASE_MS) this.rooms.delete(r);
@@ -180,6 +209,10 @@ export default class Lobby {
       await this.ctx.storage.put(listCount(list), row.place);
       return json({ place: row.place });
     }
+    if (path === "/event") {
+      const a = await readJson(req, EventAsk);
+      return a ? json((await this.eventSlot(a, now)) satisfies EventSlot) : json({ error: "which event?" }, 400);
+    }
     if (path === "/live") {
       const g = await readJson(req, GoLive);
       return g ? json(await this.goLive(g)) : json({ error: "which set?" }, 400);
@@ -201,6 +234,9 @@ export default class Lobby {
       await this.ctx.storage.put("kept", Object.fromEntries(this.kept));
     } else if (path === "/release") {
       this.rooms.delete(r.room);
+      // an emptied room's event is not the one open now; its clock runs on
+      for (const [k, run] of this.events) if (run.room === r.room) this.events.set(k, { ...run, open: false });
+      await this.saveEvents();
       if (this.kept.has(r.room)) this.kept.set(r.room, now);       // its idle clock starts now, as the World's does
       await this.ctx.storage.put("kept", Object.fromEntries(this.kept));
     } else return json({ error: "not found" }, 404);

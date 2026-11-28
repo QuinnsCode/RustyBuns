@@ -101,8 +101,10 @@ function armPose(arm: Arm, t: number, play: Play | null) {
 const HEEL_UP = 0.35;
 const X = new THREE.Vector3(1, 0, 0);
 
-/** `name` null: no tag over its head (you, seen over your own shoulder, don't need yours). */
-export function figure(a: Avatar, name: string | null): Figure {
+/** `name` null: no tag over its head (you, seen over your own shoulder, don't need yours). `far`: someone only ever seen
+ *  across the room (everyone but you, and the crowd), whose hands are meshed coarser: a figure's hands were five sixths
+ *  of its triangles, and with no GPU three rooms in one browser could not draw them (#6555). */
+export function figure(a: Avatar, name: string | null, far = false): Figure {
   const group = new THREE.Group(), seed = name ? [...name].reduce((h, ch) => Math.imul(h, 31) + ch.charCodeAt(0), 7) >>> 0 : 1;
   const { build, outfit, palette } = fromAvatar(a);
   const body = human(build, outfit, palette, seed || 1), bn = body.bones;
@@ -135,7 +137,7 @@ export function figure(a: Avatar, name: string | null): Figure {
     hand.scale.setScalar(0.01);
     return { s, shoulder, elbow, wrist, bones: [arm, fore, hand] };
   });
-  const real = wearHands(group, group, body.height);
+  const real = wearHands(group, group, body.height, far);
   const q = new THREE.Quaternion(), e = new THREE.Euler();
   const followBody = () => { for (const arm of arms) [arm.shoulder, arm.elbow, arm.wrist].forEach((o, i) => across(o.quaternion, arm.bones[i]!.quaternion)); };
   const leadBody = () => { for (const arm of arms) [arm.shoulder, arm.elbow, arm.wrist].forEach((o, i) => across(arm.bones[i]!.quaternion, o.quaternion)); };

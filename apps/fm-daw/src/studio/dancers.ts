@@ -34,7 +34,7 @@ export class Dancers {
   constructor(def: StudioDef, n = 12) {
     const seed = (def.outdoor?.seed ?? 1) + 77, r = mulberry32(seed);
     for (const at of floorSpots(def, n, seed)) {
-      const fig = figure(randomAvatar(r), null);
+      const fig = figure(randomAvatar(r), null, true);
       fig.group.position.set(at.x, 0, at.z); fig.group.rotation.y = at.yaw;
       this.group.add(fig.group);
       this.people.push({ fig, at, phase: r() * 0.3, bounce: 0.02 + r() * 0.035 });
