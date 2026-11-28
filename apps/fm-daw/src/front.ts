@@ -60,7 +60,10 @@ const appList = (id: SectorId) => {
   for (const p of appsOf(id)) {
     const li = document.createElement("li"), a = document.createElement("a");
     a.href = p.href; a.dataset.app = p.id; a.textContent = p.name;
-    li.append(a); ul.append(li);
+    const feat = document.createElement("span");
+    feat.className = "feat"; // a lane with one app has the room to give each feature its own line
+    feat.textContent = appsOf(id).length === 1 ? p.features.replaceAll(" · ", "\n") : p.features;
+    li.append(a, feat); ul.append(li);
   }
   return ul;
 };
