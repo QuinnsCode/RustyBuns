@@ -25,9 +25,9 @@ export interface Tool { name: string; title: string; description: string; schema
 
 const PLOT = "three.js; plot 200x200 around 0, x east, z south";
 /** `@world/kit`'s calls by name: every door's only copy of them. */
-export const KIT_CALLS = "world({orbit}) gives {scene}; ground({type:flat|dunes|hills|grass}), sky(day|night|dusk), weather(rain|snow|fireflies|fog), mood({top,low,fog,bloom}), smoke(x,y,z), flyers(n), grass|flowers(n), water({y,x,z,width,depth}), trees|cactus|rocks(n,{area}), lamp({x,y,z,color}), building({x,z,w,d,h,color,roof:peak|flat}), box({x,z,w,h,d,color}); voxels(layers,palette,{x,z,size}) and sprite(rows,palette,{x,z,size}) draw text rows, a letter a cube or pixel ([rows,rows] animates); streets() gives 4 blocks {x,z,w,d}; path([[x,z]...]), sign(text,{x,z}), creature({sprite|voxels,palette,area,flee,follow}), near(x,z,r,onEnter,onLeave), block(x,z,w,d), glow:2 on box|voxels|sign lights it, onPlayer(cb), every(f), heightAt(x,z), model(\"a.glb\",{x,z,h}), THREE.";
+export const KIT_CALLS = "world({orbit}) has {scene}; ground({type:flat|dunes|hills|grass}), sky(day|night|dusk), weather(rain|snow|fireflies|fog), mood({top,low,fog,bloom}), smoke(x,y,z), flyers(n), grass|flowers(n), water({y,x,z,width,depth}), trees|cactus|rocks(n,{area}), lamp({x,y,z,color}), building({x,z,w,d,h,color,roof:peak|flat}), box({x,z,w,h,d,color}); voxels(layers,palette,{x,z,size}) and sprite(rows,palette,{x,z,size}) draw text rows, a letter per cube|pixel ([rows,rows] animates); streets() is 4 blocks {x,z,w,d}; path([[x,z]...]), sign(text,{x,z}), creature({sprite|voxels,palette,area,flee,follow}), near(x,z,r,onEnter,onLeave), block(x,z,w,d), glow:2 lights box|voxels|sign, onPlayer(cb), every(f), heightAt(x,z), model(\"a.glb\",{x,z,h}), THREE.";
 /** What a world is, for the doors that say nothing else: where it runs and what it imports. */
-export const ABOUT = `module in a sealed frame (no fetch or storage). import from "@world/kit" (${PLOT}): ${KIT_CALLS}`;
+export const ABOUT = `module in a sealed frame (no fetch/storage). import from "@world/kit" (${PLOT}): ${KIT_CALLS}`;
 export const LIBRARIES = `Libraries: pinned versions from ${LIBRARY_HOSTS.map((h) => h.slice("https://".length)).join(", ")}.`;
 
 /** How a world is made, told once with the write tool: what the frame opens, how files load, what it may reach. */
@@ -60,7 +60,7 @@ export const READ = {
  *  with page_status; the tools above stay callable by name. */
 export const BUILD_TOOLS: readonly Tool[] = [
   { name: "world_build", title: "Build the world", schema: Build, description: `Run \`code\` as world.js, a ${ABOUT} Replies {ok,errors}. ${ASK}` },
-  { name: "world_edit", title: "Change the world", schema: EditWorld, description: "Replace the one exact match of `find` in world.js; replies like world_build." },
+  { name: "world_edit", title: "Change the world", schema: EditWorld, description: "Replace the one exact `find` in world.js; replies like world_build." },
 ];
 /** What world_build and world_edit answer: whether the frame loaded clean, and each thing it said if not. */
 export const Checked = obj({ ok: bool(), errors: arr(str(2000), 40) });
