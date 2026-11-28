@@ -37,7 +37,7 @@ test.skipIf(!hasChrome)("each lane on the field scrolls to its shelf and becomes
       expect(sky.top).toBeLessThan(80);
       expect(door.paths.map((p) => [p.sector, p.id, p.href])).toEqual(SECTORS.flatMap((s) => PATHS.filter((p) => p.sector === s.id).map((p) => [s.id, p.id, p.href])));
       // each lane's card on the field lists its apps as links, all of them on the screen at once
-      expect(door.lanes.map((l) => [l.id, l.apps.map((a) => [a.id, a.href])])).toEqual(SECTORS.map((s) => [s.id, PATHS.filter((p) => p.sector === s.id).map((p) => [p.id, p.href])]));
+      expect(door.lanes.map((l) => [l.id, l.apps.map((a) => [a.id, a.href])])).toEqual(SECTORS.map((s) => [s.id, s.id === "learn" ? [] : PATHS.filter((p) => p.sector === s.id).map((p) => [p.id, p.href])])); // Learn's card lists its lessons instead (front-door-paths.test.ts)
       expect(door.lanes.flatMap((l) => l.apps).filter((a) => !a.onScreen).map((a) => a.id)).toEqual([]);
       expect(door.lane).toBe(null);
       expect(door.paths.filter((p) => !p.shown || !p.oneLine).map((p) => p.name)).toEqual([]);
