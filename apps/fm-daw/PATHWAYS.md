@@ -99,6 +99,12 @@ test set (`src/studio/walk-set.ts`) on that page alone, so a client walks the si
 `qrooms.event(walk?)` gives the link; `qjam.state().pa.sources` is the same list as `qrooms.pa().sources`. The journey
 is `test/event.test.ts`.
 
+**Join** (#6551): the front door's Event start forks **Host | Join**. Join takes that room's link or its code (the `room=`
+name; a party's code also follows its host's scene) and lands the guest in the room (`src/join.ts`,
+`test/event-join-journey.test.ts`). **A set prepped at home** is in the decks' library at the event on the same browser
+(`src/dj/crate.ts`, `test/decks-set-journey.test.ts`). Not carried: another machine's files, cue points, tempos from a
+dropped collection file.
+
 **Missing:** the character is a stand-in until [#4987](https://github.com/QuinnsCode/RustyBuns/issues/4987); the
 rooms' look is a climb ([#5365](https://github.com/QuinnsCode/RustyBuns/issues/5365)). Pedals, amps and cables
 stand on the gear wall in every room (`src/studio/gear-wall.ts`, #5393).
