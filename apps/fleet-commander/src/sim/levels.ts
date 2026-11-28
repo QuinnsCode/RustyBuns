@@ -143,7 +143,7 @@ export const LEVELS: Level[] = [
   },
   {
     id: "slingshot", name: "Slingshot", stars: 2,
-    teaches: "A well is a drive. Pick your destroyer (F) and right-drag a route low round the planet's rim: straight there is too slow.",
+    teaches: "A well is a drive. Draw your destroyer (F) a route low round the planet's rim (right-drag, or the pen): straight there is too slow.",
     build: (seed) => {
       const w = level(seed, 290, "loss", "The gate closed with us outside it.", { name: "Thessaly", x: 9000, z: 0, r: 420, base: 9000 });
       const f = (w.field = newField(4500, 3000, 0));
